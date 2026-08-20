@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Client } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -127,6 +128,36 @@ export class ClientsService {
       },
       orderBy: { dateVente: 'desc' },
     });
+  }
+
+  // Tableau de bord client (§6.6) : agrège des données déjà exposées par
+  // historique-achats et par le module fidélité — aucun nouveau modèle,
+  // simple lecture consolidée réseau.
+  async tableauDeBord(clientId: string) {
+    await this.findOne(clientId);
+
+    const [agregat, dernierAchat, fidelite] = await Promise.all([
+      this.prisma.vente.aggregate({
+        where: { clientId },
+        _sum: { montantTotal: true },
+        _count: true,
+      }),
+      this.prisma.vente.findFirst({
+        where: { clientId },
+        orderBy: { dateVente: 'desc' },
+      }),
+      this.prisma.fidelite.findUnique({ where: { clientId } }),
+    ]);
+
+    return {
+      totalDepense: (
+        agregat._sum.montantTotal ?? new Prisma.Decimal(0)
+      ).toFixed(2),
+      nombreAchats: agregat._count,
+      dateDernierAchat: dernierAchat?.dateVente ?? null,
+      pointsCumules: fidelite?.pointsCumules ?? 0,
+      niveauFidelite: fidelite?.niveau ?? 'BRONZE',
+    };
   }
 
   // Recalcul de segment basé sur le nombre de ventes historisées du client

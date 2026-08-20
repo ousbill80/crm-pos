@@ -54,6 +54,12 @@ export class ClientsController {
     return this.clientsService.historiqueAchats(id);
   }
 
+  @Get(':id/tableau-de-bord')
+  @Roles(...CRM_ROLES_LECTURE)
+  tableauDeBord(@Param('id') id: string) {
+    return this.clientsService.tableauDeBord(id);
+  }
+
   @Patch(':id')
   @Roles(...CRM_ROLES_ADMIN)
   update(

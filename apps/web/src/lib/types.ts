@@ -1,4 +1,5 @@
 import type {
+  CanalInteraction,
   ModePaiement,
   NiveauFidelite,
   SegmentClient,
@@ -41,6 +42,33 @@ export interface ClientDto {
   segment: SegmentClient;
   consentementMarketing: boolean;
   fidelite: FideliteDto | null;
+}
+
+export interface CampagneCrmDto {
+  id: string;
+  nom: string;
+  message: string;
+  segment: SegmentClient | null;
+  niveauFidelite: NiveauFidelite | null;
+  canal: CanalInteraction;
+  dateCreation: string;
+  createdById: string;
+}
+
+export interface ContactCampagneDto {
+  clientId: string;
+  nom: string;
+  prenom: string;
+  contact: string | null;
+  pointsCumules: number;
+}
+
+export interface TableauDeBordClientDto {
+  totalDepense: string;
+  nombreAchats: number;
+  dateDernierAchat: string | null;
+  pointsCumules: number;
+  niveauFidelite: NiveauFidelite;
 }
 
 export interface ProduitDto {
