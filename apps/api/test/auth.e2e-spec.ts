@@ -41,7 +41,11 @@ describe('Auth (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
     );
     await app.init();
   }, 120_000);
@@ -71,6 +75,7 @@ describe('Auth (e2e)', () => {
       .send({ login: 'jdupont', password: 'MotDePasse!123' })
       .expect(200);
 
-    expect(response.body.accessToken).toEqual(expect.any(String));
+    const body = response.body as { accessToken: string };
+    expect(body.accessToken).toEqual(expect.any(String));
   });
 });
