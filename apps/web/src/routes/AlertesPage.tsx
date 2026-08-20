@@ -26,28 +26,52 @@ export function AlertesPage() {
   }
 
   if (isError) {
-    return <p>Erreur alertes : {(error as Error).message}</p>;
+    return <p role="alert">Erreur alertes : {(error as Error).message}</p>;
   }
 
   const alertes = data ?? [];
 
   return (
     <div>
-      <h1>Alertes</h1>
-      <p>
-        Écarts de caisse, versements en retard (&gt; 24 h), accès refusés —
-        §6.7
-      </p>
+      <header className="page-header">
+        <div>
+          <h1>Alertes</h1>
+          <p className="lead">
+            Écarts de caisse, versements &gt; 24 h, accès refusés — contrôle
+            interne §6.7
+          </p>
+        </div>
+      </header>
 
       {alertes.length === 0 ? (
-        <p>Aucune alerte active sur votre périmètre.</p>
+        <div className="panel">
+          <p className="lead" style={{ margin: 0 }}>
+            Aucune alerte active sur votre périmètre.
+          </p>
+        </div>
       ) : (
-        <ul>
+        <ul className="alerte-list">
           {alertes.map((a) => (
-            <li key={`${a.type}-${a.entiteId}-${a.dateHeure}`}>
-              <strong>[{a.severite}]</strong> {a.type} — {a.message}
-              <br />
-              <small>{new Date(a.dateHeure).toLocaleString()}</small>
+            <li
+              key={`${a.type}-${a.entiteId}-${a.dateHeure}`}
+              className={
+                a.severite === 'CRITICAL' ? 'alerte-item critical' : 'alerte-item warning'
+              }
+            >
+              <div className="alerte-item-meta">
+                <span
+                  className={
+                    a.severite === 'CRITICAL' ? 'badge badge-critical' : 'badge badge-warning'
+                  }
+                >
+                  {a.severite}
+                </span>
+                <span className="badge badge-ok">{a.type}</span>
+                <time dateTime={a.dateHeure}>
+                  {new Date(a.dateHeure).toLocaleString()}
+                </time>
+              </div>
+              <div>{a.message}</div>
             </li>
           ))}
         </ul>

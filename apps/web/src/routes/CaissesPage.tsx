@@ -24,7 +24,7 @@ function SoldeCaisse({ caisseId }: { caisseId: string }) {
 
   if (isLoading) return <span>Calcul...</span>;
   if (isError) return <span>Erreur</span>;
-  return <span>{data?.solde}</span>;
+  return <span className="money">{data?.solde} FCFA</span>;
 }
 
 export function CaissesPage() {
@@ -32,10 +32,17 @@ export function CaissesPage() {
 
   return (
     <div>
-      <h1>Caisses</h1>
+      <header className="page-header">
+        <div>
+          <h1>Caisses</h1>
+          <p className="lead">
+            Soldes recalculés depuis le grand livre — jamais depuis le cache
+          </p>
+        </div>
+      </header>
 
       {isLoading && <p>Chargement des caisses...</p>}
-      {isError && <p>Erreur lors du chargement des caisses.</p>}
+      {isError && <p role="alert">Erreur lors du chargement des caisses.</p>}
 
       {caisses && (
         <table>
@@ -50,9 +57,19 @@ export function CaissesPage() {
           <tbody>
             {caisses.map((c) => (
               <tr key={c.id}>
-                <td>{c.id}</td>
-                <td>{c.type}</td>
-                <td>{c.boutiqueId ?? '—'}</td>
+                <td>
+                  <code style={{ fontSize: 12 }}>{c.id.slice(0, 8)}…</code>
+                </td>
+                <td>
+                  <span
+                    className={
+                      c.type === 'CENTRALE' ? 'badge badge-info' : 'badge badge-neutral'
+                    }
+                  >
+                    {c.type}
+                  </span>
+                </td>
+                <td>{c.boutiqueId ? `${c.boutiqueId.slice(0, 8)}…` : '—'}</td>
                 <td>
                   <SoldeCaisse caisseId={c.id} />
                 </td>

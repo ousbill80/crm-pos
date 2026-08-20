@@ -138,7 +138,7 @@ function ProduitRow({ produit }: { produit: ProduitDto }) {
     return (
       <tr>
         <td>{produit.designation}</td>
-        <td>{produit.prixUnitaire}</td>
+        <td className="money">{produit.prixUnitaire} FCFA</td>
         <td>{produit.stock}</td>
         <td>
           <button type="button" onClick={() => setEdition(true)}>
@@ -195,13 +195,18 @@ export function ProduitsPage() {
 
   return (
     <div>
-      <h1>Produits</h1>
+      <header className="page-header">
+        <div>
+          <h1>Produits</h1>
+          <p className="lead">Catalogue réseau — prix et stocks boutique</p>
+        </div>
+      </header>
 
       {peutGerer && <NouveauProduitForm />}
 
       {!peutLire && <p>Vous n’avez pas accès au catalogue produit.</p>}
       {isLoading && <p>Chargement des produits...</p>}
-      {isError && <p>Erreur lors du chargement des produits.</p>}
+      {isError && <p role="alert">Erreur lors du chargement des produits.</p>}
 
       {produits && (
         <table>
@@ -220,7 +225,7 @@ export function ProduitsPage() {
               ) : (
                 <tr key={p.id}>
                   <td>{p.designation}</td>
-                  <td>{p.prixUnitaire}</td>
+                  <td className="money">{p.prixUnitaire} FCFA</td>
                   <td>{p.stock}</td>
                 </tr>
               ),

@@ -213,13 +213,18 @@ export function FournisseursPage() {
 
   return (
     <div>
-      <h1>Fournisseurs</h1>
+      <header className="page-header">
+        <div>
+          <h1>Fournisseurs</h1>
+          <p className="lead">Fiches fournisseurs et réceptions de stock</p>
+        </div>
+      </header>
 
       {peutGerer && <NouveauFournisseurForm />}
 
       {!peutLire && <p>Vous n’avez pas accès aux fournisseurs.</p>}
       {isLoading && <p>Chargement des fournisseurs...</p>}
-      {isError && <p>Erreur lors du chargement des fournisseurs.</p>}
+      {isError && <p role="alert">Erreur lors du chargement des fournisseurs.</p>}
 
       {fournisseurs && (
         <table>

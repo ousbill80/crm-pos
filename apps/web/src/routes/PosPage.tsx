@@ -575,7 +575,12 @@ export function PosPage() {
   if (!peutEncaisser) {
     return (
       <div>
-        <h1>Point de vente</h1>
+        <header className="page-header">
+          <div>
+            <h1>Point de vente</h1>
+            <p className="lead">Encaissement boutique</p>
+          </div>
+        </header>
         <p>
           L’encaissement est réservé aux rôles Caissier boutique et Responsable boutique
           (règle de séparation des tâches — cf. CLAUDE.md).
@@ -586,7 +591,12 @@ export function PosPage() {
 
   return (
     <div>
-      <h1>Point de vente</h1>
+      <header className="page-header">
+        <div>
+          <h1>Point de vente</h1>
+          <p className="lead">Session, panier et modes de paiement</p>
+        </div>
+      </header>
 
       {(caissesLoading || sessionsLoading) && <p>Chargement...</p>}
 

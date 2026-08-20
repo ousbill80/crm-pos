@@ -168,7 +168,15 @@ function TransactionActions({ transaction }: { transaction: TransactionDto }) {
     );
   }
 
-  return <>{actions}</>;
+  return <div className="table-actions">{actions}</div>;
+}
+
+function badgeStatut(statut: string) {
+  if (statut === StatutTransaction.VALIDEE) return 'badge badge-ok';
+  if (statut === StatutTransaction.LITIGE) return 'badge badge-critical';
+  if (statut === StatutTransaction.EN_TRANSIT) return 'badge badge-warning';
+  if (statut === StatutTransaction.RECEPTIONNEE) return 'badge badge-info';
+  return 'badge badge-neutral';
 }
 
 export function TransactionsPage() {
@@ -179,12 +187,19 @@ export function TransactionsPage() {
 
   return (
     <div>
-      <h1>Transactions</h1>
+      <header className="page-header">
+        <div>
+          <h1>Transactions</h1>
+          <p className="lead">
+            Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE
+          </p>
+        </div>
+      </header>
 
       {peutInitier && caisses && <NouvelleTransactionForm caisses={caisses} />}
 
       {isLoading && <p>Chargement des transactions...</p>}
-      {isError && <p>Erreur lors du chargement des transactions.</p>}
+      {isError && <p role="alert">Erreur lors du chargement des transactions.</p>}
 
       {transactions && (
         <table>
@@ -203,9 +218,13 @@ export function TransactionsPage() {
               <tr key={t.id}>
                 <td>{new Date(t.dateHeure).toLocaleString()}</td>
                 <td>{t.type}</td>
-                <td>{t.montant}</td>
-                <td>{t.statut}</td>
-                <td>{t.caisseId}</td>
+                <td className="money">{t.montant} FCFA</td>
+                <td>
+                  <span className={badgeStatut(t.statut)}>{t.statut}</span>
+                </td>
+                <td>
+                  <code style={{ fontSize: 12 }}>{t.caisseId.slice(0, 8)}…</code>
+                </td>
                 <td>
                   <TransactionActions transaction={t} />
                 </td>

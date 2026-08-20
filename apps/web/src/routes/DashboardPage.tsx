@@ -43,6 +43,10 @@ function useReportingDashboard() {
   });
 }
 
+function formatFcfa(value: string) {
+  return `${value} FCFA`;
+}
+
 export function DashboardPage() {
   const { data, isLoading, isError, error } = useReportingDashboard();
 
@@ -51,7 +55,7 @@ export function DashboardPage() {
   }
 
   if (isError) {
-    return <p>Erreur reporting : {(error as Error).message}</p>;
+    return <p role="alert">Erreur reporting : {(error as Error).message}</p>;
   }
 
   if (!data) {
@@ -60,71 +64,120 @@ export function DashboardPage() {
 
   return (
     <div>
-      <h1>Tableau de bord</h1>
-      <p>
-        Périmètre : <strong>{data.perimetre}</strong> — généré à{' '}
-        {new Date(data.genereAt).toLocaleString()}
-      </p>
+      <header className="page-header">
+        <div>
+          <h1>Tableau de bord</h1>
+          <p className="lead">
+            Périmètre <strong>{data.perimetre}</strong> · mis à jour{' '}
+            {new Date(data.genereAt).toLocaleString()}
+          </p>
+        </div>
+      </header>
 
-      <section>
-        <h2>Chiffre d&apos;affaires</h2>
-        <p>Total : {data.chiffreAffaires.total} FCFA</p>
-        <ul>
-          {data.chiffreAffaires.parBoutique.map((b) => (
-            <li key={b.boutiqueId}>
-              {b.nomBoutique} : {b.montant} FCFA
-            </li>
-          ))}
-        </ul>
-      </section>
+      <div className="kpi-grid">
+        <div className="kpi-card">
+          <div className="kpi-label">Chiffre d&apos;affaires</div>
+          <div className="kpi-value">{formatFcfa(data.chiffreAffaires.total)}</div>
+          <div className="kpi-hint">
+            {data.chiffreAffaires.parBoutique.length} boutique(s)
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Trésorerie auxiliaire</div>
+          <div className="kpi-value">
+            {formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}
+          </div>
+          <div className="kpi-hint">{data.tresorerie.caisses.length} caisse(s)</div>
+        </div>
+        <div
+          className={
+            data.versements.enRetard24h > 0 ? 'kpi-card kpi-warning' : 'kpi-card'
+          }
+        >
+          <div className="kpi-label">Versements en retard</div>
+          <div className="kpi-value">{data.versements.enRetard24h}</div>
+          <div className="kpi-hint">&gt; 24 h non transmis</div>
+        </div>
+        <div
+          className={
+            data.ecarts.nombreLitiges > 0 ? 'kpi-card kpi-danger' : 'kpi-card'
+          }
+        >
+          <div className="kpi-label">Litiges / écarts</div>
+          <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
+          <div className="kpi-hint">
+            {formatFcfa(data.ecarts.montantEcartsAbsolus)} cumulés
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-label">Clients CRM</div>
+          <div className="kpi-value">{data.crm.nombreClients}</div>
+          <div className="kpi-hint">fichier consolidé réseau</div>
+        </div>
+      </div>
 
-      <section>
-        <h2>Versements</h2>
-        <p>En retard (&gt; 24 h) : {data.versements.enRetard24h}</p>
-        <ul>
-          {data.versements.parStatut
-            .filter((s) => s.nombre > 0)
-            .map((s) => (
-              <li key={s.statut}>
-                {s.statut} — {s.nombre} / {s.montant} FCFA
+      <div className="panel-grid">
+        <section className="panel">
+          <h2>CA par boutique</h2>
+          {data.chiffreAffaires.parBoutique.length === 0 ? (
+            <p className="lead">Aucune vente sur la période.</p>
+          ) : (
+            <ul>
+              {data.chiffreAffaires.parBoutique.map((b) => (
+                <li key={b.boutiqueId}>
+                  <span>{b.nomBoutique}</span>
+                  <span className="money">{formatFcfa(b.montant)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2>Versements par statut</h2>
+          <ul>
+            {data.versements.parStatut
+              .filter((s) => s.nombre > 0)
+              .map((s) => (
+                <li key={s.statut}>
+                  <span>
+                    {s.statut} · {s.nombre}
+                  </span>
+                  <span className="money">{formatFcfa(s.montant)}</span>
+                </li>
+              ))}
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2>Soldes de caisse</h2>
+          <ul>
+            {data.tresorerie.caisses.map((c) => (
+              <li key={c.caisseId}>
+                <span>
+                  {c.type}{' '}
+                  <small style={{ color: 'var(--text-muted)' }}>
+                    {c.caisseId.slice(0, 8)}
+                  </small>
+                </span>
+                <span className="money">{formatFcfa(c.solde)}</span>
               </li>
             ))}
-        </ul>
-      </section>
+          </ul>
+        </section>
 
-      <section>
-        <h2>Écarts / litiges</h2>
-        <p>
-          {data.ecarts.nombreLitiges} litige(s) — écarts cumulés{' '}
-          {data.ecarts.montantEcartsAbsolus} FCFA
-        </p>
-      </section>
-
-      <section>
-        <h2>Trésorerie</h2>
-        <p>
-          Soldes auxiliaires : {data.tresorerie.totalSoldesAuxiliaires} FCFA
-        </p>
-        <ul>
-          {data.tresorerie.caisses.map((c) => (
-            <li key={c.caisseId}>
-              {c.type} ({c.caisseId.slice(0, 8)}…) : {c.solde} FCFA
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <h2>CRM</h2>
-        <p>{data.crm.nombreClients} client(s)</p>
-        <ul>
-          {data.crm.parSegment.map((s) => (
-            <li key={s.segment}>
-              {s.segment} : {s.nombre}
-            </li>
-          ))}
-        </ul>
-      </section>
+        <section className="panel">
+          <h2>Segments clients</h2>
+          <ul>
+            {data.crm.parSegment.map((s) => (
+              <li key={s.segment}>
+                <span>{s.segment}</span>
+                <span className="money">{s.nombre}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
     </div>
   );
 }

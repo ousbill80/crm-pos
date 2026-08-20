@@ -178,36 +178,50 @@ export function CrmClientsPage() {
 
   return (
     <div>
-      <h1>Clients</h1>
+      <header className="page-header">
+        <div>
+          <h1>Clients</h1>
+          <p className="lead">Fichier CRM consolidé — segments et fidélité</p>
+        </div>
+      </header>
 
       {peutCreer && <NouveauClientForm />}
 
-      <h2>Liste des clients</h2>
-      <label htmlFor="filtre-segment">Segment</label>
-      <select id="filtre-segment" value={segment} onChange={(e) => setSegment(e.target.value)}>
-        <option value="">Tous</option>
-        {Object.values(SegmentClient).map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-      <label htmlFor="filtre-fidelite">Fidélité</label>
-      <select
-        id="filtre-fidelite"
-        value={niveauFidelite}
-        onChange={(e) => setNiveauFidelite(e.target.value)}
-      >
-        <option value="">Tous</option>
-        {Object.values(NiveauFidelite).map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
+      <div className="toolbar">
+        <div>
+          <label htmlFor="filtre-segment">Segment</label>
+          <select
+            id="filtre-segment"
+            value={segment}
+            onChange={(e) => setSegment(e.target.value)}
+          >
+            <option value="">Tous</option>
+            {Object.values(SegmentClient).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-fidelite">Fidélité</label>
+          <select
+            id="filtre-fidelite"
+            value={niveauFidelite}
+            onChange={(e) => setNiveauFidelite(e.target.value)}
+          >
+            <option value="">Tous</option>
+            {Object.values(NiveauFidelite).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {isLoading && <p>Chargement des clients...</p>}
-      {isError && <p>Erreur lors du chargement des clients.</p>}
+      {isError && <p role="alert">Erreur lors du chargement des clients.</p>}
 
       {clients && (
         <table>
