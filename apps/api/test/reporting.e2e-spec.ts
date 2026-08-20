@@ -121,7 +121,24 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
       boutique1Id,
       4,
     );
-    await creerUtilisateur('rep-caissier-b3', 'CAISSIER_BOUTIQUE', boutique3Id, 4);
+    const temoinB1Id = await creerUtilisateur(
+      'rep-temoin-b1',
+      'RESPONSABLE_BOUTIQUE',
+      boutique1Id,
+      3,
+    );
+    const caissierB3Id = await creerUtilisateur(
+      'rep-caissier-b3',
+      'CAISSIER_BOUTIQUE',
+      boutique3Id,
+      4,
+    );
+    const temoinB3Id = await creerUtilisateur(
+      'rep-temoin-b3',
+      'RESPONSABLE_BOUTIQUE',
+      boutique3Id,
+      3,
+    );
     await creerUtilisateur('rep-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('rep-daf', 'DAF', null, 1);
     await creerUtilisateur('rep-crm', 'RESPONSABLE_CRM', null, 1);
@@ -132,17 +149,38 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
       2,
     );
 
+    const session1 = await env.prisma.sessionCaisse.create({
+      data: {
+        caisseId: caisseBoutique1Id,
+        fondInitial: 0,
+        ouvertureUtilisateurId: caissierB1Id,
+        ouvertureTemoinId: temoinB1Id,
+      },
+    });
+    const session3 = await env.prisma.sessionCaisse.create({
+      data: {
+        caisseId: caisseBoutique3Id,
+        fondInitial: 0,
+        ouvertureUtilisateurId: caissierB3Id,
+        ouvertureTemoinId: temoinB3Id,
+      },
+    });
+
     await env.prisma.vente.create({
       data: {
         caisseId: caisseBoutique1Id,
+        sessionCaisseId: session1.id,
         montantTotal: 10000,
+        modePaiement: 'ESPECES',
         dateVente: new Date(),
       },
     });
     await env.prisma.vente.create({
       data: {
         caisseId: caisseBoutique3Id,
+        sessionCaisseId: session3.id,
         montantTotal: 4000,
+        modePaiement: 'ESPECES',
         dateVente: new Date(),
       },
     });
