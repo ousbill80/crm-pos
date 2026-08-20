@@ -48,6 +48,19 @@ export interface ProduitDto {
   designation: string;
   prixUnitaire: string;
   stock: number;
+  seuilReappro: number | null;
+  coutMoyenPondere: string;
+}
+
+export interface MouvementStockDto {
+  id: string;
+  produitId: string;
+  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT';
+  quantite: number;
+  stockApres: number;
+  reference: string | null;
+  dateHeure: string;
+  utilisateurId: string;
 }
 
 export interface LigneVenteDto {
@@ -118,6 +131,7 @@ export interface ReceptionStockDto {
   produitId: string;
   fournisseurId: string;
   quantite: number;
+  prixAchat: string;
   dateReception: string;
   utilisateurId: string;
 }

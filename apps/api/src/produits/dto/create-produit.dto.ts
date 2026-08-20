@@ -1,6 +1,7 @@
 import {
   IsInt,
   IsNumber,
+  IsOptional,
   IsPositive,
   IsString,
   Min,
@@ -22,4 +23,9 @@ export class CreateProduitDto {
   @IsInt()
   @Min(0)
   stock: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  seuilReappro?: number;
 }

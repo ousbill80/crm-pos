@@ -4,11 +4,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcrypt';
-import {
-  StatutTransaction,
-  TypeCaisse,
-  TypeTransaction,
-} from '@prisma/client';
+import { StatutTransaction, TypeCaisse, TypeTransaction } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
@@ -128,6 +124,25 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
       },
     });
 
+    // Stock bas : produit sous son seuil de réapprovisionnement
+    await env.prisma.produit.create({
+      data: {
+        designation: 'Produit stock bas',
+        prixUnitaire: '1000.00',
+        stock: 2,
+        seuilReappro: 5,
+      },
+    });
+    // Produit au-dessus du seuil : ne doit pas déclencher d'alerte
+    await env.prisma.produit.create({
+      data: {
+        designation: 'Produit stock ok',
+        prixUnitaire: '1000.00',
+        stock: 50,
+        seuilReappro: 5,
+      },
+    });
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -180,6 +195,23 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     expect(types).toContain('ECART_CAISSE');
     expect(types).toContain('VERSEMENT_EN_RETARD');
     expect(types).toContain('ACCES_REFUSE');
+    expect(types).toContain('STOCK_BAS');
+  });
+
+  it('STOCK_BAS ne signale que les produits sous leur seuil de réapprovisionnement', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+
+    const body = response.body as AlerteDto[];
+    const stockBas = body.filter((a) => a.type === 'STOCK_BAS');
+    expect(stockBas.some((a) => a.message.includes('Produit stock bas'))).toBe(
+      true,
+    );
+    expect(stockBas.some((a) => a.message.includes('Produit stock ok'))).toBe(
+      false,
+    );
   });
 
   it('CAISSIER_BOUTIQUE voit écart/retard de sa boutique, pas les ACCES_REFUSE réseau', async () => {

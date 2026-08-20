@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Produit } from '@prisma/client';
+import type { MouvementStock, Produit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/types';
@@ -25,6 +25,7 @@ export class ProduitsService {
         designation: dto.designation,
         prixUnitaire: dto.prixUnitaire,
         stock: dto.stock,
+        seuilReappro: dto.seuilReappro,
       },
     });
 
@@ -64,6 +65,7 @@ export class ProduitsService {
         designation: dto.designation,
         prixUnitaire: dto.prixUnitaire,
         stock: dto.stock,
+        seuilReappro: dto.seuilReappro,
       },
     });
 
@@ -76,5 +78,14 @@ export class ProduitsService {
     });
 
     return produit;
+  }
+
+  async findMouvements(id: string): Promise<MouvementStock[]> {
+    await this.findOne(id);
+    return this.prisma.mouvementStock.findMany({
+      where: { produitId: id },
+      orderBy: { dateHeure: 'desc' },
+      take: 200,
+    });
   }
 }

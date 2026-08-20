@@ -28,6 +28,7 @@ interface ReceptionStockDto {
   produitId: string;
   fournisseurId: string;
   quantite: number;
+  prixAchat: string;
   utilisateurId: string;
 }
 
@@ -222,7 +223,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       return request(app.getHttpServer())
         .post(`/fournisseurs/${fournisseurId}/receptions`)
         .set(auth(tokens.caissierBoutique))
-        .send({ produitId, quantite: 10 })
+        .send({ produitId, quantite: 10, prixAchat: 1500 })
         .expect(403);
     });
 
@@ -234,13 +235,14 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post(`/fournisseurs/${fournisseurId}/receptions`)
         .set(auth(tokens.respsi))
-        .send({ produitId, quantite: 15 })
+        .send({ produitId, quantite: 15, prixAchat: 1500 })
         .expect(201);
 
       const body = response.body as ReceptionStockDto;
       expect(body.quantite).toBe(15);
       expect(body.produitId).toBe(produitId);
       expect(body.fournisseurId).toBe(fournisseurId);
+      expect(Number(body.prixAchat)).toBe(1500);
 
       const apres = await env.prisma.produit.findUniqueOrThrow({
         where: { id: produitId },
@@ -252,13 +254,29 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       });
       expect(entreeAudit).not.toBeNull();
       expect(entreeAudit?.action).toBe('RECEPTION_STOCK_CREATED');
+
+      const mouvement = await env.prisma.mouvementStock.findFirst({
+        where: { reference: body.id },
+      });
+      expect(mouvement).not.toBeNull();
+      expect(mouvement?.type).toBe('RECEPTION');
+      expect(mouvement?.quantite).toBe(15);
+      expect(mouvement?.stockApres).toBe(avant.stock + 15);
     });
 
     it('refuse (400) une quantité négative ou nulle', () => {
       return request(app.getHttpServer())
         .post(`/fournisseurs/${fournisseurId}/receptions`)
         .set(auth(tokens.respsi))
-        .send({ produitId, quantite: 0 })
+        .send({ produitId, quantite: 0, prixAchat: 1500 })
+        .expect(400);
+    });
+
+    it('refuse (400) un prixAchat absent', () => {
+      return request(app.getHttpServer())
+        .post(`/fournisseurs/${fournisseurId}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId, quantite: 5 })
         .expect(400);
     });
 
@@ -266,7 +284,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       return request(app.getHttpServer())
         .post('/fournisseurs/00000000-0000-0000-0000-000000000000/receptions')
         .set(auth(tokens.respsi))
-        .send({ produitId, quantite: 5 })
+        .send({ produitId, quantite: 5, prixAchat: 1500 })
         .expect(404);
     });
 
@@ -277,8 +295,57 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
         .send({
           produitId: '00000000-0000-0000-0000-000000000000',
           quantite: 5,
+          prixAchat: 1500,
         })
         .expect(404);
+    });
+  });
+
+  describe('Coût moyen pondéré (CMP)', () => {
+    let fournisseurId: string;
+    let produitCmpId: string;
+
+    beforeAll(async () => {
+      const fournisseur = await env.prisma.fournisseur.create({
+        data: { nom: 'Fournisseur CMP Test' },
+      });
+      fournisseurId = fournisseur.id;
+
+      const produit = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit CMP Test',
+          prixUnitaire: '5000.00',
+          stock: 0,
+        },
+      });
+      produitCmpId = produit.id;
+    });
+
+    it('recalcule le CMP à chaque réception, pondéré par la quantité', async () => {
+      // 10 unités à 1000 -> CMP = 1000
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${fournisseurId}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId: produitCmpId, quantite: 10, prixAchat: 1000 })
+        .expect(201);
+
+      let produit = await env.prisma.produit.findUniqueOrThrow({
+        where: { id: produitCmpId },
+      });
+      expect(produit.coutMoyenPondere.toNumber()).toBeCloseTo(1000, 2);
+
+      // +10 unités à 2000 -> CMP = (10*1000 + 10*2000) / 20 = 1500
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${fournisseurId}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId: produitCmpId, quantite: 10, prixAchat: 2000 })
+        .expect(201);
+
+      produit = await env.prisma.produit.findUniqueOrThrow({
+        where: { id: produitCmpId },
+      });
+      expect(produit.coutMoyenPondere.toNumber()).toBeCloseTo(1500, 2);
+      expect(produit.stock).toBe(20);
     });
   });
 

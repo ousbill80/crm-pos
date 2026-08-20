@@ -3,7 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import type { FournisseurDto, ProduitDto, ReceptionStockDto } from '../lib/types';
+import type {
+  FournisseurDetailDto,
+  FournisseurDto,
+  ProduitDto,
+  ReceptionStockDto,
+} from '../lib/types';
 
 // Miroir de access-scope.constants.ts (apps/api/src/caisses) : fournisseurs
 // et réception de stock sont traités comme de l'administration système,
@@ -37,6 +42,14 @@ function useProduits(enabled: boolean) {
   return useQuery({
     queryKey: ['produits'],
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
+    enabled,
+  });
+}
+
+function useFournisseurDetail(fournisseurId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['fournisseurs', fournisseurId],
+    queryFn: () => apiFetch<FournisseurDetailDto>(`/fournisseurs/${fournisseurId}`),
     enabled,
   });
 }
@@ -98,6 +111,7 @@ function ReceptionStockForm({
   const queryClient = useQueryClient();
   const [produitId, setProduitId] = useState(produits[0]?.id ?? '');
   const [quantite, setQuantite] = useState('1');
+  const [prixAchat, setPrixAchat] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [succes, setSucces] = useState<ReceptionStockDto | null>(null);
 
@@ -105,15 +119,22 @@ function ReceptionStockForm({
     mutationFn: () =>
       apiFetch<ReceptionStockDto>(`/fournisseurs/${fournisseurId}/receptions`, {
         method: 'POST',
-        body: JSON.stringify({ produitId, quantite: Number(quantite) }),
+        body: JSON.stringify({
+          produitId,
+          quantite: Number(quantite),
+          prixAchat: Number(prixAchat),
+        }),
       }),
     onSuccess: (reception) => {
       setError(null);
       setSucces(reception);
       setQuantite('1');
+      setPrixAchat('');
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      void queryClient.invalidateQueries({ queryKey: ['fournisseurs', fournisseurId] });
     },
-    onError: () => setError('Échec de la réception : vérifiez le produit et la quantité.'),
+    onError: () =>
+      setError('Échec de la réception : vérifiez le produit, la quantité et le prix d’achat.'),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -154,6 +175,18 @@ function ReceptionStockForm({
           required
         />
       </div>
+      <div>
+        <label htmlFor={`prix-achat-${fournisseurId}`}>Prix d’achat unitaire</label>
+        <input
+          id={`prix-achat-${fournisseurId}`}
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={prixAchat}
+          onChange={(e) => setPrixAchat(e.target.value)}
+          required
+        />
+      </div>
       <button type="submit" disabled={mutation.isPending}>
         Enregistrer la réception
       </button>
@@ -170,6 +203,40 @@ function ReceptionStockForm({
   );
 }
 
+function HistoriqueReceptions({ fournisseurId }: { fournisseurId: string }) {
+  const { data: detail, isLoading } = useFournisseurDetail(fournisseurId, true);
+
+  if (isLoading) {
+    return <p>Chargement de l’historique...</p>;
+  }
+  if (!detail || detail.receptions.length === 0) {
+    return <p>Aucune réception enregistrée pour ce fournisseur.</p>;
+  }
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Produit</th>
+          <th>Quantité</th>
+          <th>Prix d’achat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {detail.receptions.map((r) => (
+          <tr key={r.id}>
+            <td>{new Date(r.dateReception).toLocaleString('fr-FR')}</td>
+            <td>{r.produit.designation}</td>
+            <td>{r.quantite}</td>
+            <td className="money">{r.prixAchat} FCFA</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function FournisseurRow({
   fournisseur,
   produits,
@@ -180,6 +247,7 @@ function FournisseurRow({
   peutGerer: boolean;
 }) {
   const [receptionOuverte, setReceptionOuverte] = useState(false);
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(false);
 
   return (
     <tr>
@@ -198,6 +266,10 @@ function FournisseurRow({
               Enregistrer une réception
             </button>
           )}
+          <button type="button" onClick={() => setHistoriqueOuvert((v) => !v)}>
+            {historiqueOuvert ? 'Masquer l’historique' : 'Historique des réceptions'}
+          </button>
+          {historiqueOuvert && <HistoriqueReceptions fournisseurId={fournisseur.id} />}
         </td>
       )}
     </tr>

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Fournisseur, ReceptionStock } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -75,19 +76,48 @@ export class FournisseursService {
     }
 
     const reception = await this.prisma.$transaction(async (tx) => {
+      // Coût moyen pondéré (CMP) : recalculé à chaque réception, cf. plan
+      // de la tâche. stockAvant/cmpAvant lus dans la même transaction pour
+      // rester cohérent avec des réceptions concurrentes.
+      const stockAvant = produit.stock;
+      const cmpAvant = new Prisma.Decimal(produit.coutMoyenPondere);
+      const prixAchat = new Prisma.Decimal(dto.prixAchat);
+      const stockApres = stockAvant + dto.quantite;
+      const nouveauCmp = cmpAvant
+        .mul(stockAvant)
+        .plus(prixAchat.mul(dto.quantite))
+        .div(stockApres);
+
       await tx.produit.update({
         where: { id: dto.produitId },
-        data: { stock: { increment: dto.quantite } },
+        data: {
+          stock: { increment: dto.quantite },
+          coutMoyenPondere: nouveauCmp,
+        },
       });
 
-      return tx.receptionStock.create({
+      const created = await tx.receptionStock.create({
         data: {
           produitId: dto.produitId,
           fournisseurId,
           quantite: dto.quantite,
+          prixAchat: dto.prixAchat,
           utilisateurId: user.userId,
         },
       });
+
+      await tx.mouvementStock.create({
+        data: {
+          produitId: dto.produitId,
+          type: 'RECEPTION',
+          quantite: dto.quantite,
+          stockApres,
+          reference: created.id,
+          utilisateurId: user.userId,
+        },
+      });
+
+      return created;
     });
 
     await this.audit.record({
@@ -99,6 +129,7 @@ export class FournisseursService {
         fournisseurId,
         produitId: dto.produitId,
         quantite: dto.quantite,
+        prixAchat: dto.prixAchat,
       }),
     });
 

@@ -49,29 +49,32 @@ model Role {
 }
 
 model Utilisateur {
-  id           String        @id @default(uuid())
+  id           String    @id @default(uuid())
   nom          String
   prenom       String
-  login        String        @unique
+  login        String    @unique
   passwordHash String
-  role         Role          @relation(fields: [roleId], references: [id])
+  role         Role      @relation(fields: [roleId], references: [id])
   roleId       String
   // Périmètre de données : null pour les profils à vue consolidée réseau
   // (Direction Générale, DAF, Caissier Central, Contrôle interne — §6.2)
-  boutique     Boutique?     @relation(fields: [boutiqueId], references: [id])
+  boutique     Boutique? @relation(fields: [boutiqueId], references: [id])
   boutiqueId   String?
-  actif        Boolean       @default(true)
-  createdAt    DateTime      @default(now())
+  actif        Boolean   @default(true)
+  createdAt    DateTime  @default(now())
 
-  transactionsInitiees   TransactionCaisse[] @relation("Initiateur")
-  receptionsValidees     ReceptionValidation[] @relation("Validateur")
-  entreesAudit           JournalAudit[]
+  transactionsInitiees TransactionCaisse[]   @relation("Initiateur")
+  receptionsValidees   ReceptionValidation[] @relation("Validateur")
+  entreesAudit         JournalAudit[]
 
-  sessionsOuvertes        SessionCaisse[] @relation("OuvertureSession")
-  sessionsTemoinOuverture SessionCaisse[] @relation("OuvertureTemoin")
-  sessionsFermees         SessionCaisse[] @relation("ClotureSession")
-  sessionsTemoinCloture   SessionCaisse[] @relation("ClotureTemoin")
+  sessionsOuvertes        SessionCaisse[]  @relation("OuvertureSession")
+  sessionsTemoinOuverture SessionCaisse[]  @relation("OuvertureTemoin")
+  sessionsFermees         SessionCaisse[]  @relation("ClotureSession")
+  sessionsTemoinCloture   SessionCaisse[]  @relation("ClotureTemoin")
   receptionsStock         ReceptionStock[]
+  mouvementsStock         MouvementStock[]
+  retoursVente            RetourVente[]
+  campagnesCreees         CampagneCrm[]
 
   @@map("utilisateur")
 }
@@ -86,14 +89,14 @@ enum TypeCaisse {
 }
 
 model Caisse {
-  id         String     @id @default(uuid())
-  type       TypeCaisse
+  id           String     @id @default(uuid())
+  type         TypeCaisse
   // Colonne de cache en lecture seule : recalculée exclusivement à partir du
   // journal des TransactionCaisse (grand livre append-only — voir CLAUDE.md).
   // Ne jamais écrire directement via UPDATE ; toujours passer par le service
   // de recalcul du solde.
-  soldeCourant Decimal   @default(0) @db.Decimal(14, 2)
-  boutique     Boutique? @relation(fields: [boutiqueId], references: [id])
+  soldeCourant Decimal    @default(0) @db.Decimal(14, 2)
+  boutique     Boutique?  @relation(fields: [boutiqueId], references: [id])
   boutiqueId   String?
 
   transactions TransactionCaisse[]
@@ -120,45 +123,45 @@ enum StatutTransaction {
 }
 
 model TransactionCaisse {
-  id                    String            @id @default(uuid())
-  type                  TypeTransaction
-  montant               Decimal           @db.Decimal(14, 2)
-  dateHeure             DateTime          @default(now())
-  statut                StatutTransaction @default(INITIEE)
-  caisse                Caisse            @relation(fields: [caisseId], references: [id])
-  caisseId              String
-  initiateur             Utilisateur      @relation("Initiateur", fields: [initiateurId], references: [id])
-  initiateurId           String
+  id           String            @id @default(uuid())
+  type         TypeTransaction
+  montant      Decimal           @db.Decimal(14, 2)
+  dateHeure    DateTime          @default(now())
+  statut       StatutTransaction @default(INITIEE)
+  caisse       Caisse            @relation(fields: [caisseId], references: [id])
+  caisseId     String
+  initiateur   Utilisateur       @relation("Initiateur", fields: [initiateurId], references: [id])
+  initiateurId String
 
-  bordereau             BordereauVersement?
-  sessionCaisse         SessionCaisse?
+  bordereau     BordereauVersement?
+  sessionCaisse SessionCaisse?
 
   @@map("transaction_caisse")
 }
 
 model BordereauVersement {
-  id               String             @id @default(uuid())
-  transaction      TransactionCaisse  @relation(fields: [transactionId], references: [id])
-  transactionId    String             @unique
-  montantDeclare   Decimal            @db.Decimal(14, 2)
-  dateEmission     DateTime           @default(now())
-  pieceJointe      String?
+  id             String            @id @default(uuid())
+  transaction    TransactionCaisse @relation(fields: [transactionId], references: [id])
+  transactionId  String            @unique
+  montantDeclare Decimal           @db.Decimal(14, 2)
+  dateEmission   DateTime          @default(now())
+  pieceJointe    String?
 
-  reception        ReceptionValidation?
+  reception ReceptionValidation?
 
   @@map("bordereau_versement")
 }
 
 model ReceptionValidation {
-  id              String              @id @default(uuid())
-  bordereau       BordereauVersement  @relation(fields: [bordereauId], references: [id])
-  bordereauId     String              @unique
-  montantRecu     Decimal             @db.Decimal(14, 2)
-  ecart           Decimal             @db.Decimal(14, 2)
-  statutFinal     StatutTransaction
-  validateur      Utilisateur         @relation("Validateur", fields: [validateurId], references: [id])
-  validateurId    String
-  dateReception   DateTime            @default(now())
+  id            String             @id @default(uuid())
+  bordereau     BordereauVersement @relation(fields: [bordereauId], references: [id])
+  bordereauId   String             @unique
+  montantRecu   Decimal            @db.Decimal(14, 2)
+  ecart         Decimal            @db.Decimal(14, 2)
+  statutFinal   StatutTransaction
+  validateur    Utilisateur        @relation("Validateur", fields: [validateurId], references: [id])
+  validateurId  String
+  dateReception DateTime           @default(now())
 
   @@map("reception_validation")
 }
@@ -168,14 +171,48 @@ model ReceptionValidation {
 // ---------------------------------------------------------------------------
 
 model Produit {
-  id            String        @id @default(uuid())
-  designation   String
-  prixUnitaire  Decimal       @db.Decimal(14, 2)
-  stock         Int           @default(0)
-  lignesVente   LigneVente[]
-  receptions    ReceptionStock[]
+  id               String           @id @default(uuid())
+  designation      String
+  prixUnitaire     Decimal          @db.Decimal(14, 2)
+  stock            Int              @default(0)
+  // Coût moyen pondéré (CMP) — recalculé à chaque réception fournisseur
+  // (apps/api/src/fournisseurs/fournisseurs.service.ts). Sert de base à la
+  // valorisation du stock (§ extension audit modules Odoo/QuickBooks).
+  coutMoyenPondere Decimal          @default(0) @db.Decimal(14, 2)
+  // Seuil de réapprovisionnement optionnel : déclenche l'alerte STOCK_BAS
+  // (apps/api/src/alertes/alertes.service.ts) quand stock <= seuilReappro.
+  seuilReappro     Int?
+  lignesVente      LigneVente[]
+  receptions       ReceptionStock[]
+  mouvements       MouvementStock[]
 
   @@map("produit")
+}
+
+// Grand livre append-only des mouvements de stock — même principe que
+// TransactionCaisse pour la trésorerie (voir CLAUDE.md) : Produit.stock est
+// un cache rapide, MouvementStock est la source de vérité auditable.
+enum TypeMouvementStock {
+  RECEPTION
+  VENTE
+  RETOUR
+  AJUSTEMENT
+}
+
+model MouvementStock {
+  id            String             @id @default(uuid())
+  produit       Produit            @relation(fields: [produitId], references: [id])
+  produitId     String
+  type          TypeMouvementStock
+  // Signé : positif = entrée, négatif = sortie
+  quantite      Int
+  stockApres    Int
+  reference     String?
+  dateHeure     DateTime           @default(now())
+  utilisateur   Utilisateur        @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
+
+  @@map("mouvement_stock")
 }
 
 // ---------------------------------------------------------------------------
@@ -198,15 +235,18 @@ model Fournisseur {
 // Réception de stock : incrémente Produit.stock de façon atomique (même
 // principe que le décrément lors d'une vente — voir ventes.service.ts).
 model ReceptionStock {
-  id             String      @id @default(uuid())
-  produit        Produit     @relation(fields: [produitId], references: [id])
-  produitId      String
-  fournisseur    Fournisseur @relation(fields: [fournisseurId], references: [id])
-  fournisseurId  String
-  quantite       Int
-  dateReception  DateTime    @default(now())
-  utilisateur    Utilisateur @relation(fields: [utilisateurId], references: [id])
-  utilisateurId  String
+  id            String      @id @default(uuid())
+  produit       Produit     @relation(fields: [produitId], references: [id])
+  produitId     String
+  fournisseur   Fournisseur @relation(fields: [fournisseurId], references: [id])
+  fournisseurId String
+  quantite      Int
+  // Prix d'achat unitaire réel — alimente le recalcul du coût moyen pondéré
+  // (Produit.coutMoyenPondere) et l'historique des prix par fournisseur.
+  prixAchat     Decimal     @db.Decimal(14, 2)
+  dateReception DateTime    @default(now())
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
 
   @@map("reception_stock")
 }
@@ -250,38 +290,66 @@ model SessionCaisse {
   transactionVersement   TransactionCaisse?  @relation(fields: [transactionVersementId], references: [id])
   transactionVersementId String?             @unique
   ventes                 Vente[]
+  retours                RetourVente[]
 
   @@map("session_caisse")
 }
 
 model Vente {
-  id             String        @id @default(uuid())
-  dateVente      DateTime      @default(now())
-  montantTotal   Decimal       @db.Decimal(14, 2)
-  modePaiement   ModePaiement
-  caisse         Caisse        @relation(fields: [caisseId], references: [id])
-  caisseId       String
-  sessionCaisse  SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  id              String        @id @default(uuid())
+  dateVente       DateTime      @default(now())
+  montantTotal    Decimal       @db.Decimal(14, 2)
+  modePaiement    ModePaiement
+  caisse          Caisse        @relation(fields: [caisseId], references: [id])
+  caisseId        String
+  sessionCaisse   SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
   sessionCaisseId String
   // Rattachement client optionnel — la vente anonyme doit rester possible (§6.6)
-  client         Client?       @relation(fields: [clientId], references: [id])
-  clientId       String?
-  lignes         LigneVente[]
+  client          Client?       @relation(fields: [clientId], references: [id])
+  clientId        String?
+  lignes          LigneVente[]
+  retours         RetourVente[]
 
   @@map("vente")
 }
 
 // Extension nécessaire au socle MCD pour un POS fonctionnel (détail des articles vendus)
 model LigneVente {
-  id           String  @id @default(uuid())
-  vente        Vente   @relation(fields: [venteId], references: [id])
+  id           String        @id @default(uuid())
+  vente        Vente         @relation(fields: [venteId], references: [id])
   venteId      String
-  produit      Produit @relation(fields: [produitId], references: [id])
+  produit      Produit       @relation(fields: [produitId], references: [id])
   produitId    String
   quantite     Int
-  prixUnitaire Decimal @db.Decimal(14, 2)
+  prixUnitaire Decimal       @db.Decimal(14, 2)
+  // Montant de remise sur cette ligne (jamais un pourcentage stocké — évite
+  // toute ambiguïté d'arrondi). Plafonné à 20% de prixUnitaire×quantite,
+  // contrôle serveur dans ventes.service.ts (extension au-delà du cahier
+  // des charges, assumée — voir plan de la tâche).
+  remise       Decimal       @default(0) @db.Decimal(14, 2)
+  retours      RetourVente[]
 
   @@map("ligne_vente")
+}
+
+// Retour/avoir : limité à une vente de la session de caisse en cours
+// (contrôle applicatif dans ventes.service.ts) — évite de rouvrir une
+// trésorerie déjà versée/validée. Extension au-delà du cahier des charges.
+model RetourVente {
+  id               String        @id @default(uuid())
+  vente            Vente         @relation(fields: [venteId], references: [id])
+  venteId          String
+  ligneVente       LigneVente    @relation(fields: [ligneVenteId], references: [id])
+  ligneVenteId     String
+  quantite         Int
+  montantRembourse Decimal       @db.Decimal(14, 2)
+  sessionCaisse    SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisseId  String
+  utilisateur      Utilisateur   @relation(fields: [utilisateurId], references: [id])
+  utilisateurId    String
+  dateHeure        DateTime      @default(now())
+
+  @@map("retour_vente")
 }
 
 // ---------------------------------------------------------------------------
@@ -295,17 +363,17 @@ enum SegmentClient {
 }
 
 model Client {
-  id            String            @id @default(uuid())
-  nom           String
-  prenom        String
-  contact       String?
-  dateNaissance DateTime?
-  segment       SegmentClient     @default(NOUVEAU)
-  consentementMarketing Boolean   @default(false)
+  id                    String        @id @default(uuid())
+  nom                   String
+  prenom                String
+  contact               String?
+  dateNaissance         DateTime?
+  segment               SegmentClient @default(NOUVEAU)
+  consentementMarketing Boolean       @default(false)
 
-  ventes        Vente[]
-  fidelite      Fidelite?
-  interactions  InteractionCrm[]
+  ventes       Vente[]
+  fidelite     Fidelite?
+  interactions InteractionCrm[]
 
   @@map("client")
 }
@@ -317,11 +385,11 @@ enum NiveauFidelite {
 }
 
 model Fidelite {
-  id             String         @id @default(uuid())
-  client         Client         @relation(fields: [clientId], references: [id])
-  clientId       String         @unique
-  pointsCumules  Int            @default(0)
-  niveau         NiveauFidelite @default(BRONZE)
+  id            String         @id @default(uuid())
+  client        Client         @relation(fields: [clientId], references: [id])
+  clientId      String         @unique
+  pointsCumules Int            @default(0)
+  niveau        NiveauFidelite @default(BRONZE)
 
   @@map("fidelite")
 }
@@ -335,15 +403,32 @@ enum CanalInteraction {
 }
 
 model InteractionCrm {
-  id        String           @id @default(uuid())
-  client    Client           @relation(fields: [clientId], references: [id])
-  clientId  String
-  type      String
-  date      DateTime         @default(now())
-  canal     CanalInteraction
-  contenu   String?
+  id       String           @id @default(uuid())
+  client   Client           @relation(fields: [clientId], references: [id])
+  clientId String
+  type     String
+  date     DateTime         @default(now())
+  canal    CanalInteraction
+  contenu  String?
 
   @@map("interaction_crm")
+}
+
+// Campagnes ciblées (§6.6) : ciblage par segment/niveau de fidélité + export
+// CSV de la liste de contacts pour envoi manuel — pas d'envoi automatisé
+// (décision validée avec l'utilisateur, pas de dépendance/coût externe SMS).
+model CampagneCrm {
+  id             String           @id @default(uuid())
+  nom            String
+  message        String
+  segment        SegmentClient?
+  niveauFidelite NiveauFidelite?
+  canal          CanalInteraction
+  dateCreation   DateTime         @default(now())
+  createdBy      Utilisateur      @relation(fields: [createdById], references: [id])
+  createdById    String
+
+  @@map("campagne_crm")
 }
 
 // ---------------------------------------------------------------------------
@@ -352,14 +437,14 @@ model InteractionCrm {
 // ---------------------------------------------------------------------------
 
 model JournalAudit {
-  id          String      @id @default(uuid())
-  dateHeure   DateTime    @default(now())
-  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id])
+  id            String      @id @default(uuid())
+  dateHeure     DateTime    @default(now())
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
   utilisateurId String
-  action      String
-  entite      String
-  entiteId    String
-  details     String?
+  action        String
+  entite        String
+  entiteId      String
+  details       String?
 
   @@map("journal_audit")
 }

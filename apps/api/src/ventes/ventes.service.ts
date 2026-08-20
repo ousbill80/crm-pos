@@ -161,6 +161,16 @@ export class VentesService {
           data: { stock: { decrement: ligne.quantite } },
         });
 
+        await tx.mouvementStock.create({
+          data: {
+            produitId: produit.id,
+            type: 'VENTE',
+            quantite: -ligne.quantite,
+            stockApres: produit.stock - ligne.quantite,
+            utilisateurId: utilisateur.userId,
+          },
+        });
+
         const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
         montantTotal = montantTotal.plus(prixUnitaire.times(ligne.quantite));
         lignesData.push({

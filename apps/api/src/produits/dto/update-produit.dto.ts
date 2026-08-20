@@ -23,4 +23,9 @@ export class UpdateProduitDto {
   @IsInt()
   @Min(0)
   stock?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  seuilReappro?: number;
 }

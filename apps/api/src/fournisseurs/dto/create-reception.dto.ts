@@ -1,4 +1,4 @@
-import { IsInt, IsPositive, IsString } from 'class-validator';
+import { IsInt, IsNumber, IsPositive, IsString } from 'class-validator';
 
 export class CreateReceptionDto {
   @IsString()
@@ -7,4 +7,10 @@ export class CreateReceptionDto {
   @IsInt()
   @IsPositive()
   quantite: number;
+
+  // Prix d'achat unitaire réel — alimente le recalcul du coût moyen pondéré
+  // (Produit.coutMoyenPondere) et l'historique des prix par fournisseur.
+  @IsNumber()
+  @IsPositive()
+  prixAchat: number;
 }

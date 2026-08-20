@@ -38,6 +38,12 @@ export class ProduitsController {
     return this.produitsService.findOne(id);
   }
 
+  @Get(':id/mouvements')
+  @Roles(...ROLES_LECTURE_STRUCTURE)
+  findMouvements(@Param('id') id: string) {
+    return this.produitsService.findMouvements(id);
+  }
+
   @Patch(':id')
   @Roles(...ROLES_ADMIN_STRUCTURE)
   update(

@@ -1,9 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import {
-  Prisma,
-  StatutTransaction,
-  TypeTransaction,
-} from '@prisma/client';
+import { Prisma, StatutTransaction, TypeTransaction } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   requireOwnBoutiqueId,
@@ -21,9 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 // écart de caisse, versement non transmis sous 24 h, accès non autorisé.
 
 export type TypeAlerte =
-  | 'ECART_CAISSE'
-  | 'VERSEMENT_EN_RETARD'
-  | 'ACCES_REFUSE';
+  'ECART_CAISSE' | 'VERSEMENT_EN_RETARD' | 'ACCES_REFUSE' | 'STOCK_BAS';
 
 export interface AlerteDto {
   type: TypeAlerte;
@@ -49,13 +43,14 @@ export class AlertesService {
     }
 
     const caisseFilter = await this.resolveCaisseFilter(user);
-    const [ecarts, retards, acces] = await Promise.all([
+    const [ecarts, retards, acces, stocksBas] = await Promise.all([
       this.alertesEcarts(caisseFilter),
       this.alertesRetards(caisseFilter),
       this.alertesAccesRefuses(user),
+      this.alertesStockBas(),
     ]);
 
-    return [...ecarts, ...retards, ...acces].sort(
+    return [...ecarts, ...retards, ...acces, ...stocksBas].sort(
       (a, b) =>
         new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime(),
     );
@@ -117,8 +112,7 @@ export class AlertesService {
         details: {
           montant: t.montant.toFixed(2),
           ecart: ecart?.toFixed(2) ?? null,
-          montantRecu:
-            t.bordereau?.reception?.montantRecu?.toFixed(2) ?? null,
+          montantRecu: t.bordereau?.reception?.montantRecu?.toFixed(2) ?? null,
           boutiqueId: t.caisse.boutiqueId,
         },
       };
@@ -213,5 +207,29 @@ export class AlertesService {
         },
       };
     });
+  }
+
+  // Stock bas : catalogue réseau entier (Produit n'est pas scopé boutique),
+  // pas d'historique persisté — alerte calculée sur l'état courant, comme
+  // un snapshot (contrairement aux autres alertes dérivées du journal).
+  private async alertesStockBas(): Promise<AlerteDto[]> {
+    const produits = await this.prisma.produit.findMany({
+      where: { seuilReappro: { not: null } },
+    });
+
+    return produits
+      .filter((p) => p.seuilReappro !== null && p.stock <= p.seuilReappro)
+      .map((p) => ({
+        type: 'STOCK_BAS' as const,
+        severite: 'WARNING' as const,
+        message: `Stock bas — ${p.designation} (${p.stock} unité(s), seuil ${p.seuilReappro})`,
+        dateHeure: new Date().toISOString(),
+        entite: 'Produit',
+        entiteId: p.id,
+        details: {
+          stock: p.stock,
+          seuilReappro: p.seuilReappro,
+        },
+      }));
   }
 }

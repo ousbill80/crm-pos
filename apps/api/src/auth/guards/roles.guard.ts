@@ -20,7 +20,7 @@ export class RolesGuard implements CanActivate {
     private readonly audit: AuditService,
   ) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<RoleLibelle[]>(
       ROLES_KEY,
       [context.getHandler(), context.getClass()],

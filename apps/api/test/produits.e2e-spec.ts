@@ -21,6 +21,16 @@ interface ProduitDto {
   designation: string;
   prixUnitaire: string;
   stock: number;
+  seuilReappro: number | null;
+  coutMoyenPondere: string;
+}
+
+interface MouvementStockDto {
+  id: string;
+  produitId: string;
+  type: string;
+  quantite: number;
+  stockApres: number;
 }
 
 describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
@@ -252,6 +262,73 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         },
       });
       expect(entreeAudit).not.toBeNull();
+    });
+
+    it('autorise la mise à jour du seuil de réapprovisionnement', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/produits/${produitId}`)
+        .set(auth(tokens.respsi))
+        .send({ seuilReappro: 3 })
+        .expect(200);
+
+      const body = response.body as ProduitDto;
+      expect(body.seuilReappro).toBe(3);
+    });
+  });
+
+  describe('Mouvements de stock (ROLES_LECTURE_STRUCTURE)', () => {
+    let produitId: string;
+
+    beforeAll(async () => {
+      const produit = await env.prisma.produit.create({
+        data: {
+          designation: 'Étui protection',
+          prixUnitaire: '2000.00',
+          stock: 8,
+        },
+      });
+      produitId = produit.id;
+
+      await env.prisma.mouvementStock.create({
+        data: {
+          produitId,
+          type: 'RECEPTION',
+          quantite: 8,
+          stockApres: 8,
+          utilisateurId: (
+            await env.prisma.utilisateur.findUniqueOrThrow({
+              where: { login: 'respsi' },
+            })
+          ).id,
+        },
+      });
+    });
+
+    it('autorise un CAISSIER_BOUTIQUE à consulter l’historique des mouvements', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/produits/${produitId}/mouvements`)
+        .set(auth(tokens.caissierBoutique))
+        .expect(200);
+
+      const body = response.body as MouvementStockDto[];
+      expect(body.length).toBe(1);
+      expect(body[0].type).toBe('RECEPTION');
+      expect(body[0].quantite).toBe(8);
+      expect(body[0].stockApres).toBe(8);
+    });
+
+    it('refuse (403) la lecture des mouvements par RESPONSABLE_CRM', () => {
+      return request(app.getHttpServer())
+        .get(`/produits/${produitId}/mouvements`)
+        .set(auth(tokens.respcrm))
+        .expect(403);
+    });
+
+    it('renvoie 404 pour un produit inexistant', () => {
+      return request(app.getHttpServer())
+        .get('/produits/00000000-0000-0000-0000-000000000000/mouvements')
+        .set(auth(tokens.daf))
+        .expect(404);
     });
   });
 
