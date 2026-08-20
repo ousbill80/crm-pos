@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   RoleLibelle,
@@ -15,9 +17,11 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
+import { ROLES_LECTURE_CAISSES } from '../caisses/access-scope.constants';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
+import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
 
 // Endpoints de la machine à états des transactions de caisse (§6.4). Chaque
 // route sensible porte @Roles(...) explicitement : aucune route de ce
@@ -26,6 +30,26 @@ import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
+
+  // Lecture (§6.2) : même périmètre de rôles que la lecture des caisses
+  // (réseau trésorerie, superviseur de zone, périmètre boutique).
+  @Get()
+  @Roles(...ROLES_LECTURE_CAISSES)
+  findAll(
+    @Query() query: ListTransactionsQueryDto,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.transactionsService.findAll(utilisateur, query);
+  }
+
+  @Get(':id')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.transactionsService.findOne(id, utilisateur);
+  }
 
   // INITIEE — §6.4 : caissier boutique / responsable boutique uniquement.
   @Post()

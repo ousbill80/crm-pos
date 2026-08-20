@@ -9,9 +9,19 @@ import { StatutTransaction, TypeCaisse } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/types';
+import {
+  ROLES_PERIMETRE_BOUTIQUE,
+  ROLES_RESEAU_TRESORERIE,
+  ROLE_SUPERVISEUR_ZONE,
+} from '../caisses/access-scope.constants';
+import {
+  requireOwnBoutiqueId,
+  resolveZoneScopeForSuperviseur,
+} from '../boutiques/boutique-scope.util';
 import { TransactionStateMachineService } from './transaction-state-machine.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
+import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
 
 // Orchestre le cycle de vie d'une TransactionCaisse (§6.4). Toute évolution
 // de statut passe par TransactionStateMachineService (objet de domaine
@@ -242,7 +252,87 @@ export class TransactionsService {
     return misAJour;
   }
 
-  private async trouverOuEchouer(id: string): Promise<TransactionCaisse> {
+  // Lecture (§6.2) : périmètre de données identique à celui des caisses —
+  // réseau entier pour la trésorerie réseau, zone pour le superviseur, et
+  // boutique propre pour le périmètre boutique. Filtrage appliqué côté
+  // serveur via la relation caisse -> boutique -> zone.
+  async findAll(
+    utilisateur: AuthenticatedUser,
+    query: ListTransactionsQueryDto,
+  ): Promise<TransactionCaisse[]> {
+    const statutFiltre = query.statut ? { statut: query.statut } : {};
+
+    if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
+      return this.prisma.transactionCaisse.findMany({
+        where: statutFiltre,
+        orderBy: { dateHeure: 'desc' },
+      });
+    }
+
+    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
+      const zoneId = await resolveZoneScopeForSuperviseur(
+        this.prisma,
+        utilisateur,
+      );
+      return this.prisma.transactionCaisse.findMany({
+        where: { ...statutFiltre, caisse: { boutique: { zoneId } } },
+        orderBy: { dateHeure: 'desc' },
+      });
+    }
+
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
+      const boutiqueId = requireOwnBoutiqueId(utilisateur);
+      return this.prisma.transactionCaisse.findMany({
+        where: { ...statutFiltre, caisse: { boutiqueId } },
+        orderBy: { dateHeure: 'desc' },
+      });
+    }
+
+    throw new ForbiddenException(
+      `Rôle "${utilisateur.role}" non habilité à consulter les transactions.`,
+    );
+  }
+
+  async findOne(
+    id: string,
+    utilisateur: AuthenticatedUser,
+  ): Promise<TransactionCaisse> {
+    const transaction = await this.trouverOuEchouer(id);
+
+    if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
+      return transaction;
+    }
+
+    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
+      const zoneId = await resolveZoneScopeForSuperviseur(
+        this.prisma,
+        utilisateur,
+      );
+      const boutiqueId = transaction.caisse.boutiqueId;
+      const boutique = boutiqueId
+        ? await this.prisma.boutique.findUnique({ where: { id: boutiqueId } })
+        : null;
+      if (!boutique || boutique.zoneId !== zoneId) {
+        throw new ForbiddenException(
+          'Vous ne pouvez consulter que les transactions de votre propre zone.',
+        );
+      }
+      return transaction;
+    }
+
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
+      this.verifierPerimetreBoutique(transaction, utilisateur);
+      return transaction;
+    }
+
+    throw new ForbiddenException(
+      `Rôle "${utilisateur.role}" non habilité à consulter les transactions.`,
+    );
+  }
+
+  private async trouverOuEchouer(
+    id: string,
+  ): Promise<TransactionCaisse & { caisse: { boutiqueId: string | null } }> {
     const transaction = await this.prisma.transactionCaisse.findUnique({
       where: { id },
       include: { caisse: true },

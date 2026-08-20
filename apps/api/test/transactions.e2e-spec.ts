@@ -30,8 +30,10 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
   let boutique1Id: string;
   let boutique2Id: string;
-  let caisseBoutique1Id: string; // AUXILIAIRE, boutique 1
-  let caisseBoutique2Id: string; // AUXILIAIRE, boutique 2
+  let boutique3Id: string; // zone B — sert à prouver l'étanchéité entre zones
+  let caisseBoutique1Id: string; // AUXILIAIRE, boutique 1 (zone A)
+  let caisseBoutique2Id: string; // AUXILIAIRE, boutique 2 (zone A)
+  let caisseBoutique3Id: string; // AUXILIAIRE, boutique 3 (zone B)
   let caisseCentraleId: string; // CENTRALE
 
   const tokens: Record<string, string> = {};
@@ -86,15 +88,20 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
-    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone A' } });
+    const zoneA = await env.prisma.zone.create({ data: { nomZone: 'Zone A' } });
+    const zoneB = await env.prisma.zone.create({ data: { nomZone: 'Zone B' } });
     const boutique1 = await env.prisma.boutique.create({
-      data: { nom: 'Boutique 1', adresse: 'Adresse 1', zoneId: zone.id },
+      data: { nom: 'Boutique 1', adresse: 'Adresse 1', zoneId: zoneA.id },
     });
     const boutique2 = await env.prisma.boutique.create({
-      data: { nom: 'Boutique 2', adresse: 'Adresse 2', zoneId: zone.id },
+      data: { nom: 'Boutique 2', adresse: 'Adresse 2', zoneId: zoneA.id },
+    });
+    const boutique3 = await env.prisma.boutique.create({
+      data: { nom: 'Boutique 3', adresse: 'Adresse 3', zoneId: zoneB.id },
     });
     boutique1Id = boutique1.id;
     boutique2Id = boutique2.id;
+    boutique3Id = boutique3.id;
 
     const caisseBoutique1 = await env.prisma.caisse.create({
       data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
@@ -102,19 +109,28 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     const caisseBoutique2 = await env.prisma.caisse.create({
       data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
     });
+    const caisseBoutique3 = await env.prisma.caisse.create({
+      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique3Id },
+    });
     const caisseCentrale = await env.prisma.caisse.create({
       data: { type: TypeCaisse.CENTRALE, boutiqueId: null },
     });
     caisseBoutique1Id = caisseBoutique1.id;
     caisseBoutique2Id = caisseBoutique2.id;
+    caisseBoutique3Id = caisseBoutique3.id;
     caisseCentraleId = caisseCentrale.id;
 
     await creerUtilisateur('caissier-b1', 'CAISSIER_BOUTIQUE', boutique1Id, 4);
     await creerUtilisateur('resp-b1', 'RESPONSABLE_BOUTIQUE', boutique1Id, 3);
     await creerUtilisateur('caissier-b2', 'CAISSIER_BOUTIQUE', boutique2Id, 4);
+    await creerUtilisateur('caissier-b3', 'CAISSIER_BOUTIQUE', boutique3Id, 4);
     await creerUtilisateur('caissier-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('daf', 'DAF', null, 1);
     await creerUtilisateur('controle', 'CONTROLEUR_INTERNE', null, 1);
+    // Superviseur de zone rattaché à boutique1 (zone A) : la zone de
+    // supervision est résolue via Utilisateur.boutiqueId -> Boutique.zoneId
+    // (limite de schéma documentée dans boutique-scope.util.ts).
+    await creerUtilisateur('superviseur-a', 'SUPERVISEUR_ZONE', boutique1Id, 2);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -136,9 +152,11 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     tokens.caissierB1 = await login('caissier-b1');
     tokens.respB1 = await login('resp-b1');
     tokens.caissierB2 = await login('caissier-b2');
+    tokens.caissierB3 = await login('caissier-b3');
     tokens.caissierCentral = await login('caissier-central');
     tokens.daf = await login('daf');
     tokens.controle = await login('controle');
+    tokens.superviseurA = await login('superviseur-a');
   }, 120_000);
 
   afterAll(async () => {
@@ -433,6 +451,140 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         .set('Authorization', `Bearer ${tokens.caissierB1}`)
         .send({ caisseId: caisseCentraleId, type: 'VENTE', montant: 100 })
         .expect(400);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // §6.2 — GET /transactions et GET /transactions/:id : lecture scopée par
+  // rôle, même périmètre que la lecture des caisses (réseau trésorerie,
+  // superviseur de zone, périmètre boutique).
+  // ---------------------------------------------------------------------
+  describe('lecture scopée par rôle (§6.2)', () => {
+    it('un rôle réseau trésorerie (DAF) voit les transactions des trois boutiques', async () => {
+      const t1 = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        111,
+      );
+      const t2 = await initierTransaction(
+        tokens.caissierB2,
+        caisseBoutique2Id,
+        222,
+      );
+      const t3 = await initierTransaction(
+        tokens.caissierB3,
+        caisseBoutique3Id,
+        333,
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/transactions')
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+
+      const ids = (response.body as TransactionDto[]).map((t) => t.id);
+      expect(ids).toEqual(expect.arrayContaining([t1.id, t2.id, t3.id]));
+    });
+
+    it('un CAISSIER_BOUTIQUE ne voit que les transactions de sa propre boutique', async () => {
+      const t1 = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        50,
+      );
+      const t2 = await initierTransaction(
+        tokens.caissierB2,
+        caisseBoutique2Id,
+        60,
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/transactions')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(200);
+
+      const ids = (response.body as TransactionDto[]).map((t) => t.id);
+      expect(ids).toEqual(expect.arrayContaining([t1.id]));
+      expect(ids).not.toEqual(expect.arrayContaining([t2.id]));
+    });
+
+    it('un SUPERVISEUR_ZONE voit les transactions de sa zone (boutiques 1 et 2) mais pas celles de la zone B (boutique 3)', async () => {
+      const t1 = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        71,
+      );
+      const t2 = await initierTransaction(
+        tokens.caissierB2,
+        caisseBoutique2Id,
+        72,
+      );
+      const t3 = await initierTransaction(
+        tokens.caissierB3,
+        caisseBoutique3Id,
+        73,
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/transactions')
+        .set('Authorization', `Bearer ${tokens.superviseurA}`)
+        .expect(200);
+
+      const ids = (response.body as TransactionDto[]).map((t) => t.id);
+      expect(ids).toEqual(expect.arrayContaining([t1.id, t2.id]));
+      expect(ids).not.toEqual(expect.arrayContaining([t3.id]));
+    });
+
+    it('GET /transactions/:id — un CAISSIER_BOUTIQUE peut consulter le détail de sa propre transaction', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        90,
+      );
+
+      const response = await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(200);
+
+      expect((response.body as TransactionDto).id).toBe(transaction.id);
+    });
+
+    it('GET /transactions/:id — refuse (403) qu’un CAISSIER_BOUTIQUE consulte une transaction d’une autre boutique', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB2,
+        caisseBoutique2Id,
+        90,
+      );
+
+      await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(403);
+    });
+
+    it('GET /transactions/:id — refuse (403) qu’un SUPERVISEUR_ZONE consulte une transaction hors de sa zone', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB3,
+        caisseBoutique3Id,
+        90,
+      );
+
+      await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.superviseurA}`)
+        .expect(403);
+    });
+
+    it('GET /transactions — refuse (401) tout accès sans authentification', async () => {
+      await request(app.getHttpServer()).get('/transactions').expect(401);
+    });
+
+    it('GET /transactions/:id — renvoie 404 pour une transaction inexistante', async () => {
+      await request(app.getHttpServer())
+        .get('/transactions/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(404);
     });
   });
 });
