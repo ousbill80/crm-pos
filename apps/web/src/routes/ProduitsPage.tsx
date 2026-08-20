@@ -168,7 +168,6 @@ function ProduitRow({ produit }: { produit: ProduitDto }) {
   const [edition, setEdition] = useState(false);
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false);
   const [prixUnitaire, setPrixUnitaire] = useState(produit.prixUnitaire);
-  const [stock, setStock] = useState(String(produit.stock));
   const [seuilReappro, setSeuilReappro] = useState(
     produit.seuilReappro !== null ? String(produit.seuilReappro) : '',
   );
@@ -180,7 +179,6 @@ function ProduitRow({ produit }: { produit: ProduitDto }) {
         method: 'PATCH',
         body: JSON.stringify({
           prixUnitaire: Number(prixUnitaire),
-          stock: Number(stock),
           ...(seuilReappro ? { seuilReappro: Number(seuilReappro) } : {}),
         }),
       }),
@@ -210,7 +208,12 @@ function ProduitRow({ produit }: { produit: ProduitDto }) {
             )}
           </td>
           <td className="money">{produit.prixUnitaire} FCFA</td>
-          <td>{produit.stock}</td>
+          <td>
+            {produit.stock}{' '}
+            <a href="/stocks" style={{ fontSize: 12 }}>
+              détail
+            </a>
+          </td>
           <td>
             <button type="button" onClick={() => setEdition(true)}>
               Modifier
@@ -246,16 +249,10 @@ function ProduitRow({ produit }: { produit: ProduitDto }) {
             onChange={(e) => setPrixUnitaire(e.target.value)}
             required
           />
-          <label htmlFor={`stock-${produit.id}`}>Stock</label>
-          <input
-            id={`stock-${produit.id}`}
-            type="number"
-            min="0"
-            step="1"
-            value={stock}
-            onChange={(e) => setStock(e.target.value)}
-            required
-          />
+          <p>
+            Stock réseau : {produit.stock} — ajuster via{' '}
+            <a href="/stocks">Stocks</a>
+          </p>
           <label htmlFor={`seuil-${produit.id}`}>Seuil de réapprovisionnement</label>
           <input
             id={`seuil-${produit.id}`}
@@ -289,7 +286,9 @@ export function ProduitsPage() {
       <header className="page-header">
         <div>
           <h1>Produits</h1>
-          <p className="lead">Catalogue réseau — prix et stocks boutique</p>
+          <p className="lead">
+            Catalogue réseau — stock total = somme des entrepôts (voir Stocks)
+          </p>
         </div>
       </header>
 

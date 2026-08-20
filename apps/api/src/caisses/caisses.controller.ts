@@ -1,8 +1,9 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
-import { ROLES_LECTURE_CAISSES } from './access-scope.constants';
+import { ROLES_ADMIN_STRUCTURE, ROLES_LECTURE_CAISSES } from './access-scope.constants';
+import { CreateCaisseDto } from './dto/create-caisse.dto';
 import { CaissesService } from './caisses.service';
 
 // Endpoints Caisse — §6.3.1, §6.2 du cahier des charges. Le solde n'est
@@ -11,6 +12,15 @@ import { CaissesService } from './caisses.service';
 @Controller('caisses')
 export class CaissesController {
   constructor(private readonly caissesService: CaissesService) {}
+
+  @Post()
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  create(
+    @Body() dto: CreateCaisseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.caissesService.create(dto, user);
+  }
 
   @Get()
   @Roles(...ROLES_LECTURE_CAISSES)

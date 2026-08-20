@@ -4,6 +4,7 @@ import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import type {
+  EntrepotDto,
   FournisseurDetailDto,
   FournisseurDto,
   ProduitDto,
@@ -112,8 +113,14 @@ function ReceptionStockForm({
   const [produitId, setProduitId] = useState(produits[0]?.id ?? '');
   const [quantite, setQuantite] = useState('1');
   const [prixAchat, setPrixAchat] = useState('');
+  const [entrepotId, setEntrepotId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [succes, setSucces] = useState<ReceptionStockDto | null>(null);
+
+  const { data: entrepots } = useQuery({
+    queryKey: ['entrepots'],
+    queryFn: () => apiFetch<EntrepotDto[]>('/entrepots'),
+  });
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -123,6 +130,7 @@ function ReceptionStockForm({
           produitId,
           quantite: Number(quantite),
           prixAchat: Number(prixAchat),
+          ...(entrepotId ? { entrepotId } : {}),
         }),
       }),
     onSuccess: (reception) => {
@@ -131,6 +139,7 @@ function ReceptionStockForm({
       setQuantite('1');
       setPrixAchat('');
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      void queryClient.invalidateQueries({ queryKey: ['stocks'] });
       void queryClient.invalidateQueries({ queryKey: ['fournisseurs', fournisseurId] });
     },
     onError: () =>
@@ -158,7 +167,21 @@ function ReceptionStockForm({
         >
           {produits.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.designation} (stock actuel {p.stock})
+              {p.designation} (stock réseau {p.stock})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor={`entrepot-${fournisseurId}`}>Entrepôt de réception</label>
+        <select
+          id={`entrepot-${fournisseurId}`}
+          value={entrepotId || entrepots?.find((e) => e.type === 'PRINCIPAL')?.id || ''}
+          onChange={(e) => setEntrepotId(e.target.value)}
+        >
+          {(entrepots ?? []).map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.nom} ({e.code})
             </option>
           ))}
         </select>

@@ -11,6 +11,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Auth (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;

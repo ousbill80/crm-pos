@@ -83,7 +83,8 @@ export interface ProduitDto {
 export interface MouvementStockDto {
   id: string;
   produitId: string;
-  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT';
+  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT' | 'TRANSFERT_OUT' | 'TRANSFERT_IN';
+  entrepotId: string | null;
   quantite: number;
   stockApres: number;
   reference: string | null;
@@ -178,4 +179,47 @@ export interface ReceptionStockDto {
 
 export interface FournisseurDetailDto extends FournisseurDto {
   receptions: (ReceptionStockDto & { produit: ProduitDto })[];
+}
+
+
+export interface SocieteDto {
+  id: string;
+  raisonSociale: string;
+  adresse: string;
+  telephone: string | null;
+  email: string | null;
+  devise: string;
+  logoUrl: string | null;
+}
+
+export interface ZoneDto {
+  id: string;
+  nomZone: string;
+}
+
+export interface BoutiqueDto {
+  id: string;
+  nom: string;
+  adresse: string;
+  zoneId: string;
+  code: string | null;
+  actif: boolean;
+}
+
+export interface EntrepotDto {
+  id: string;
+  nom: string;
+  code: string;
+  boutiqueId: string;
+  type: 'PRINCIPAL' | 'SECONDAIRE';
+  actif: boolean;
+}
+
+export interface StockQuantDto {
+  id: string;
+  produitId: string;
+  entrepotId: string;
+  quantite: number;
+  produit: { designation: string; seuilReappro: number | null };
+  entrepot: { nom: string; code: string; boutiqueId: string };
 }

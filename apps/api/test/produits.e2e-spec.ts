@@ -33,6 +33,8 @@ interface MouvementStockDto {
   stockApres: number;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;
@@ -79,6 +81,19 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
 
   beforeAll(async () => {
     await env.start();
+
+    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone Test Produits' } });
+    const boutique = await env.prisma.boutique.create({
+      data: { nom: 'Boutique Test Produits', adresse: 'Adr', zoneId: zone.id },
+    });
+    await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal Test',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique.id,
+      },
+    });
 
     await creerUtilisateur('respsi', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('direction', 'DIRECTION_GENERALE', null, 0);
@@ -243,15 +258,22 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         .expect(403);
     });
 
-    it("autorise RESPONSABLE_SI à mettre à jour le stock et journalise une entrée d'audit", async () => {
+    it('refuse (400) la mise à jour directe du stock (via PATCH produit)', async () => {
+      await request(app.getHttpServer())
+        .patch(`/produits/${produitId}`)
+        .set(auth(tokens.respsi))
+        .send({ stock: 12 })
+        .expect(400);
+    });
+
+    it("autorise RESPONSABLE_SI à mettre à jour le prix et journalise une entrée d'audit", async () => {
       const response = await request(app.getHttpServer())
         .patch(`/produits/${produitId}`)
         .set(auth(tokens.respsi))
-        .send({ stock: 12, prixUnitaire: 3200 })
+        .send({ prixUnitaire: 3200 })
         .expect(200);
 
       const body = response.body as ProduitDto;
-      expect(body.stock).toBe(12);
       expect(Number(body.prixUnitaire)).toBe(3200);
 
       const entreeAudit = await env.prisma.journalAudit.findFirst({

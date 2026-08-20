@@ -45,6 +45,8 @@ interface ClotureResponseDto {
   transactionVersementId: string | null;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;
@@ -149,6 +151,22 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
         designation: 'Coque téléphone',
         prixUnitaire: '1000.00',
         stock: 100,
+      },
+    });
+
+    const entrepotPrincipal = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal Remises',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique1.id,
+      },
+    });
+    await env.prisma.stockQuant.create({
+      data: {
+        produitId: produit.id,
+        entrepotId: entrepotPrincipal.id,
+        quantite: produit.stock,
       },
     });
     produitId = produit.id;

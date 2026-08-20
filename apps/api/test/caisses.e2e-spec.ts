@@ -34,6 +34,8 @@ interface CaisseDto {
   boutiqueId: string | null;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Caisses / Zones / Boutiques (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;

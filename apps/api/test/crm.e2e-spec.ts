@@ -42,6 +42,8 @@ function body<T>(response: request.Response): T {
   return response.body as T;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('CRM (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;

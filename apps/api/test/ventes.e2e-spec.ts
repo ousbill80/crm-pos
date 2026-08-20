@@ -37,6 +37,8 @@ interface ClotureResponseDto {
   transactionVersementId: string | null;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;
@@ -115,6 +117,23 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     boutique1Id = boutique1.id;
     boutique2Id = boutique2.id;
 
+    const entrepot1 = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal B1',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique1Id,
+      },
+    });
+    const entrepot2 = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal B2',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique2Id,
+      },
+    });
+
     const caisse1 = await env.prisma.caisse.create({
       data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
     });
@@ -140,6 +159,13 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     });
     produitStock5Id = produitStock5.id;
     produitStock2Id = produitStock2.id;
+
+    await env.prisma.stockQuant.createMany({
+      data: [
+        { produitId: produitStock5Id, entrepotId: entrepot1.id, quantite: 5 },
+        { produitId: produitStock2Id, entrepotId: entrepot1.id, quantite: 2 },
+      ],
+    });
 
     const client = await env.prisma.client.create({
       data: { nom: 'Client', prenom: 'Test' },
@@ -539,6 +565,32 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
   // ---------------------------------------------------------------------
   describe('Clôture d’une session sans vente ESPECES (uniquement CARTE)', () => {
     it('ne génère aucune TransactionCaisse à la clôture quand le total ESPECES est nul', async () => {
+      const entrepotB2 = await env.prisma.entrepot.findFirstOrThrow({
+        where: { boutiqueId: boutique2Id, type: 'PRINCIPAL' },
+      });
+      await env.prisma.stockQuant.upsert({
+        where: {
+          produitId_entrepotId: {
+            produitId: produitStock5Id,
+            entrepotId: entrepotB2.id,
+          },
+        },
+        update: { quantite: 5 },
+        create: {
+          produitId: produitStock5Id,
+          entrepotId: entrepotB2.id,
+          quantite: 5,
+        },
+      });
+      const somme = await env.prisma.stockQuant.aggregate({
+        where: { produitId: produitStock5Id },
+        _sum: { quantite: true },
+      });
+      await env.prisma.produit.update({
+        where: { id: produitStock5Id },
+        data: { stock: somme._sum.quantite ?? 0 },
+      });
+
       const ouverture = await ouvrirSession(
         tokens.caissierB2,
         caisse2Id,

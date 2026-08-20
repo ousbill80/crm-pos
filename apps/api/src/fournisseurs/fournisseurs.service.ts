@@ -1,23 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Fournisseur, ReceptionStock } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StockService } from '../stocks/stock.service';
 import type { AuthenticatedUser } from '../auth/types';
 import { CreateFournisseurDto } from './dto/create-fournisseur.dto';
 import { CreateReceptionDto } from './dto/create-reception.dto';
 
-// Fournisseurs & réception de stock — extension au socle MCD (§6.5), portée
-// validée avec l'utilisateur : fiche fournisseur simple + réception qui
-// incrémente Produit.stock. Pas de bon de commande ni de facturation
-// fournisseur (hors périmètre, aucun rôle "Achats" dans le cahier des
-// charges §4). RBAC identique au catalogue produit — voir
-// fournisseurs.controller.ts.
 @Injectable()
 export class FournisseursService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly stockService: StockService,
   ) {}
 
   async create(
@@ -75,26 +75,21 @@ export class FournisseursService {
       throw new NotFoundException(`Produit ${dto.produitId} introuvable.`);
     }
 
+    const entrepotId = await this.resolveEntrepotReception(dto.entrepotId, user);
+
     const reception = await this.prisma.$transaction(async (tx) => {
-      // Coût moyen pondéré (CMP) : recalculé à chaque réception, cf. plan
-      // de la tâche. stockAvant/cmpAvant lus dans la même transaction pour
-      // rester cohérent avec des réceptions concurrentes.
+      // CMP réseau : basé sur le cache Produit.stock (somme des quants).
       const stockAvant = produit.stock;
       const cmpAvant = new Prisma.Decimal(produit.coutMoyenPondere);
       const prixAchat = new Prisma.Decimal(dto.prixAchat);
-      const stockApres = stockAvant + dto.quantite;
-      const nouveauCmp = cmpAvant
-        .mul(stockAvant)
-        .plus(prixAchat.mul(dto.quantite))
-        .div(stockApres);
-
-      await tx.produit.update({
-        where: { id: dto.produitId },
-        data: {
-          stock: { increment: dto.quantite },
-          coutMoyenPondere: nouveauCmp,
-        },
-      });
+      const stockApresReseau = stockAvant + dto.quantite;
+      const nouveauCmp =
+        stockApresReseau === 0
+          ? new Prisma.Decimal(0)
+          : cmpAvant
+              .mul(stockAvant)
+              .plus(prixAchat.mul(dto.quantite))
+              .div(stockApresReseau);
 
       const created = await tx.receptionStock.create({
         data: {
@@ -106,15 +101,21 @@ export class FournisseursService {
         },
       });
 
-      await tx.mouvementStock.create({
-        data: {
+      await this.stockService.appliquerMouvement(
+        {
           produitId: dto.produitId,
+          entrepotId,
           type: 'RECEPTION',
-          quantite: dto.quantite,
-          stockApres,
-          reference: created.id,
+          delta: dto.quantite,
           utilisateurId: user.userId,
+          reference: created.id,
         },
+        tx,
+      );
+
+      await tx.produit.update({
+        where: { id: dto.produitId },
+        data: { coutMoyenPondere: nouveauCmp },
       });
 
       return created;
@@ -130,9 +131,36 @@ export class FournisseursService {
         produitId: dto.produitId,
         quantite: dto.quantite,
         prixAchat: dto.prixAchat,
+        entrepotId,
       }),
     });
 
     return reception;
+  }
+
+  private async resolveEntrepotReception(
+    entrepotId: string | undefined,
+    user: AuthenticatedUser,
+  ): Promise<string> {
+    if (entrepotId) {
+      const e = await this.prisma.entrepot.findUnique({ where: { id: entrepotId } });
+      if (!e || !e.actif) {
+        throw new BadRequestException(`Entrepôt ${entrepotId} introuvable ou inactif.`);
+      }
+      return e.id;
+    }
+    if (user.boutiqueId) {
+      return this.stockService.trouverEntrepotPrincipalBoutique(user.boutiqueId);
+    }
+    const premier = await this.prisma.entrepot.findFirst({
+      where: { type: 'PRINCIPAL', actif: true },
+      orderBy: { nom: 'asc' },
+    });
+    if (!premier) {
+      throw new BadRequestException(
+        'Aucun entrepôt PRINCIPAL : configurez Entreprise / Stocks avant réception.',
+      );
+    }
+    return premier.id;
   }
 }

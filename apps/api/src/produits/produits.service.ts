@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { MouvementStock, Produit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StockService } from '../stocks/stock.service';
 import type { AuthenticatedUser } from '../auth/types';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
@@ -14,20 +15,42 @@ export class ProduitsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly stockService: StockService,
   ) {}
 
   async create(
     dto: CreateProduitDto,
     user: AuthenticatedUser,
   ): Promise<Produit> {
+    const stockInitial = dto.stock ?? 0;
     const produit = await this.prisma.produit.create({
       data: {
         designation: dto.designation,
         prixUnitaire: dto.prixUnitaire,
-        stock: dto.stock,
+        stock: 0,
         seuilReappro: dto.seuilReappro,
       },
     });
+
+    if (stockInitial > 0) {
+      const entrepot = await this.prisma.entrepot.findFirst({
+        where: { type: 'PRINCIPAL', actif: true },
+        orderBy: { nom: 'asc' },
+      });
+      if (!entrepot) {
+        throw new NotFoundException(
+          'Aucun entrepôt PRINCIPAL : créez une boutique/entrepôt avant de stocker.',
+        );
+      }
+      await this.stockService.appliquerMouvement({
+        produitId: produit.id,
+        entrepotId: entrepot.id,
+        type: 'AJUSTEMENT',
+        delta: stockInitial,
+        utilisateurId: user.userId,
+        reference: 'STOCK_INITIAL',
+      });
+    }
 
     await this.audit.record({
       utilisateurId: user.userId,
@@ -37,7 +60,7 @@ export class ProduitsService {
       details: JSON.stringify({ designation: produit.designation }),
     });
 
-    return produit;
+    return this.findOne(produit.id);
   }
 
   findAll(): Promise<Produit[]> {
@@ -64,7 +87,6 @@ export class ProduitsService {
       data: {
         designation: dto.designation,
         prixUnitaire: dto.prixUnitaire,
-        stock: dto.stock,
         seuilReappro: dto.seuilReappro,
       },
     });

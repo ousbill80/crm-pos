@@ -19,10 +19,6 @@ export class UpdateProduitDto {
   @IsPositive()
   prixUnitaire?: number;
 
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  stock?: number;
 
   @IsOptional()
   @IsInt()

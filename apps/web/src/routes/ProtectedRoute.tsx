@@ -21,12 +21,17 @@ const NAV = [
     items: [
       { to: '/pos', label: 'Point de vente' },
       { to: '/produits', label: 'Produits' },
+      { to: '/stocks', label: 'Stocks' },
       { to: '/fournisseurs', label: 'Fournisseurs' },
     ],
   },
   {
     group: 'Relation client',
     items: [{ to: '/clients', label: 'Clients' }],
+  },
+  {
+    group: 'Configuration',
+    items: [{ to: '/entreprise', label: 'Entreprise' }],
   },
 ] as const;
 
@@ -44,8 +49,8 @@ export function ProtectedRoute() {
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="app-brand">
-          <span className="app-brand-mark">Marché des Accessoires</span>
-          <span className="app-brand-name">Caisse CRM</span>
+          <span className="app-brand-mark">CaissePOS</span>
+          <span className="app-brand-name">Caisses &amp; CRM</span>
         </div>
 
         <nav className="app-nav" aria-label="Navigation principale">

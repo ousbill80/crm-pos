@@ -32,6 +32,8 @@ interface ReceptionStockDto {
   utilisateurId: string;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Fournisseurs & réception de stock (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;
@@ -80,6 +82,19 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
+    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone Fournisseurs' } });
+    const boutique = await env.prisma.boutique.create({
+      data: { nom: 'Boutique Fournisseurs', adresse: 'Adr', zoneId: zone.id },
+    });
+    await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal Fournisseurs',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique.id,
+      },
+    });
+
     await creerUtilisateur('respsi-fourn', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('direction-fourn', 'DIRECTION_GENERALE', null, 0);
     await creerUtilisateur('daf-fourn', 'DAF', null, 1);
@@ -90,6 +105,16 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       data: { designation: 'Câble USB-C', prixUnitaire: '2000.00', stock: 5 },
     });
     produitId = produit.id;
+    const entrepotPrincipal = await env.prisma.entrepot.findFirstOrThrow({
+      where: { type: 'PRINCIPAL' },
+    });
+    await env.prisma.stockQuant.create({
+      data: {
+        produitId: produit.id,
+        entrepotId: entrepotPrincipal.id,
+        quantite: 5,
+      },
+    });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

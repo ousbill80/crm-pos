@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -16,6 +17,9 @@ import {
   resolveZoneScopeForSuperviseur,
 } from '../boutiques/boutique-scope.util';
 import { CaisseBalanceService } from './caisse-balance.service';
+import { AuditService } from '../audit/audit.service';
+import { CreateCaisseDto } from './dto/create-caisse.dto';
+import { ROLES_ADMIN_STRUCTURE } from './access-scope.constants';
 
 type CaisseAvecBoutique = Caisse & { boutique: { zoneId: string } | null };
 
@@ -28,7 +32,40 @@ export class CaissesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly caisseBalanceService: CaisseBalanceService,
+    private readonly audit: AuditService,
   ) {}
+
+
+  async create(dto: CreateCaisseDto, user: AuthenticatedUser) {
+    if (!ROLES_ADMIN_STRUCTURE.includes(user.role)) {
+      throw new ForbiddenException('Création de caisse réservée à l\'admin structure.');
+    }
+    if (dto.type === 'CENTRALE') {
+      throw new BadRequestException(
+        'La caisse CENTRALE unique ne se provisionne pas via cet endpoint.',
+      );
+    }
+    if (dto.type === 'AUXILIAIRE' && !dto.boutiqueId) {
+      throw new BadRequestException('boutiqueId obligatoire pour une caisse AUXILIAIRE.');
+    }
+    const boutique = await this.prisma.boutique.findUnique({
+      where: { id: dto.boutiqueId },
+    });
+    if (!boutique) {
+      throw new BadRequestException(`Boutique ${dto.boutiqueId} introuvable.`);
+    }
+    const caisse = await this.prisma.caisse.create({
+      data: { type: dto.type, boutiqueId: dto.boutiqueId },
+    });
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'CAISSE_CREATED',
+      entite: 'Caisse',
+      entiteId: caisse.id,
+      details: `type=${caisse.type};boutiqueId=${caisse.boutiqueId}`,
+    });
+    return caisse;
+  }
 
   async findAll(user: AuthenticatedUser): Promise<Caisse[]> {
     if (ROLES_RESEAU_TRESORERIE.includes(user.role)) {

@@ -24,6 +24,8 @@ interface TransactionDto {
   initiateurId: string;
 }
 
+process.env.JWT_SECRET ??= 'test-secret-e2e';
+
 describe('Transactions — machine à états §6.4 (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;

@@ -18,6 +18,7 @@ import {
   resolveZoneScopeForSuperviseur,
 } from './boutique-scope.util';
 import { CreateBoutiqueDto } from './dto/create-boutique.dto';
+import { UpdateBoutiqueDto } from './dto/update-boutique.dto';
 
 // Service Boutique (§3, §4, §6.2 du cahier des charges) : création réservée
 // aux profils d'administration structurelle, lecture filtrée au périmètre de
@@ -40,8 +41,19 @@ export class BoutiquesService {
       throw new BadRequestException(`Zone ${dto.zoneId} introuvable.`);
     }
 
-    const boutique = await this.prisma.boutique.create({
-      data: { nom: dto.nom, adresse: dto.adresse, zoneId: dto.zoneId },
+    const boutique = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.boutique.create({
+        data: { nom: dto.nom, adresse: dto.adresse, zoneId: dto.zoneId },
+      });
+      await tx.entrepot.create({
+        data: {
+          nom: `Principal — ${created.nom}`,
+          code: 'PRINCIPAL',
+          type: 'PRINCIPAL',
+          boutiqueId: created.id,
+        },
+      });
+      return created;
     });
 
     await this.audit.record({
@@ -86,6 +98,27 @@ export class BoutiquesService {
 
     await this.assertBoutiqueInScope(boutique, user);
     return boutique;
+  }
+
+
+  async update(
+    id: string,
+    dto: UpdateBoutiqueDto,
+    user: AuthenticatedUser,
+  ): Promise<Boutique> {
+    const boutique = await this.findOne(id, user);
+    const updated = await this.prisma.boutique.update({
+      where: { id: boutique.id },
+      data: dto,
+    });
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'BOUTIQUE_UPDATED',
+      entite: 'Boutique',
+      entiteId: updated.id,
+      details: JSON.stringify(dto),
+    });
+    return updated;
   }
 
   private async assertBoutiqueInScope(

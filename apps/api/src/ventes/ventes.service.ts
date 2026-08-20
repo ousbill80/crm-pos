@@ -13,6 +13,7 @@ import {
   TypeTransaction,
 } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stocks/stock.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/types';
 import {
@@ -60,6 +61,7 @@ export class VentesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly transactionsService: TransactionsService,
+    private readonly stockService: StockService,
   ) {}
 
   async ouvrirSession(
@@ -139,6 +141,15 @@ export class VentesService {
       );
     }
 
+    if (!session.caisse.boutiqueId) {
+      throw new BadRequestException(
+        'La caisse de session n\'est rattachée à aucune boutique (stock multi-emplacement).',
+      );
+    }
+    const entrepotIdPos = await this.stockService.trouverEntrepotPrincipalBoutique(
+      session.caisse.boutiqueId,
+    );
+
     const vente = await this.prisma.$transaction(async (tx) => {
       let montantTotal = new Prisma.Decimal(0);
       const lignesData: {
@@ -157,9 +168,10 @@ export class VentesService {
             `Produit ${ligne.produitId} introuvable.`,
           );
         }
-        if (produit.stock < ligne.quantite) {
+        const dispo = await this.stockService.getQuantite(produit.id, entrepotIdPos);
+        if (dispo < ligne.quantite) {
           throw new BadRequestException(
-            `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${produit.stock}, demandé : ${ligne.quantite}).`,
+            `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
           );
         }
 
@@ -173,20 +185,16 @@ export class VentesService {
           );
         }
 
-        await tx.produit.update({
-          where: { id: produit.id },
-          data: { stock: { decrement: ligne.quantite } },
-        });
-
-        await tx.mouvementStock.create({
-          data: {
+        await this.stockService.appliquerMouvement(
+          {
             produitId: produit.id,
+            entrepotId: entrepotIdPos,
             type: 'VENTE',
-            quantite: -ligne.quantite,
-            stockApres: produit.stock - ligne.quantite,
+            delta: -ligne.quantite,
             utilisateurId: utilisateur.userId,
           },
-        });
+          tx,
+        );
 
         montantTotal = montantTotal.plus(montantLigne.minus(remise));
         lignesData.push({
@@ -276,8 +284,6 @@ export class VentesService {
       .toDecimalPlaces(2);
 
     const retour = await this.prisma.$transaction(async (tx) => {
-      const stockAvant = ligneVente.produit.stock;
-      const stockApres = stockAvant + dto.quantite;
 
       const created = await tx.retourVente.create({
         data: {
@@ -290,21 +296,26 @@ export class VentesService {
         },
       });
 
-      await tx.produit.update({
-        where: { id: ligneVente.produitId },
-        data: { stock: { increment: dto.quantite } },
-      });
-
-      await tx.mouvementStock.create({
-        data: {
+      if (!session.caisse.boutiqueId) {
+        throw new BadRequestException(
+          'Caisse sans boutique : impossible de créditer le stock.',
+        );
+      }
+      const entrepotRetour =
+        await this.stockService.trouverEntrepotPrincipalBoutique(
+          session.caisse.boutiqueId,
+        );
+      await this.stockService.appliquerMouvement(
+        {
           produitId: ligneVente.produitId,
+          entrepotId: entrepotRetour,
           type: 'RETOUR',
-          quantite: dto.quantite,
-          stockApres,
-          reference: created.id,
+          delta: dto.quantite,
           utilisateurId: utilisateur.userId,
+          reference: created.id,
         },
-      });
+        tx,
+      );
 
       return created;
     });

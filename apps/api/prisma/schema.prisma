@@ -15,6 +15,22 @@ datasource db {
 // Organisation (§3, §4)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Entreprise — fiche société mono-tenant (paramètres légaux / devise).
+// ---------------------------------------------------------------------------
+
+model Societe {
+  id            String  @id @default(uuid())
+  raisonSociale String
+  adresse       String
+  telephone     String?
+  email         String?
+  devise        String  @default("XOF")
+  logoUrl       String?
+
+  @@map("societe")
+}
+
 model Zone {
   id        String     @id @default(uuid())
   nomZone   String
@@ -27,12 +43,37 @@ model Boutique {
   id           String        @id @default(uuid())
   nom          String
   adresse      String
+  code         String?
+  actif        Boolean       @default(true)
   zone         Zone          @relation(fields: [zoneId], references: [id])
   zoneId       String
   caisses      Caisse[]
   utilisateurs Utilisateur[]
+  entrepots    Entrepot[]
 
   @@map("boutique")
+}
+
+enum TypeEntrepot {
+  PRINCIPAL
+  SECONDAIRE
+}
+
+// Emplacement de stock rattaché à une boutique. Chaque boutique a au moins
+// un entrepôt PRINCIPAL (consommé par le POS de la boutique).
+model Entrepot {
+  id         String       @id @default(uuid())
+  nom        String
+  code       String
+  type       TypeEntrepot @default(PRINCIPAL)
+  actif      Boolean      @default(true)
+  boutique   Boutique     @relation(fields: [boutiqueId], references: [id])
+  boutiqueId String
+  quants     StockQuant[]
+  mouvements MouvementStock[]
+
+  @@unique([boutiqueId, code])
+  @@map("entrepot")
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +215,8 @@ model Produit {
   id               String           @id @default(uuid())
   designation      String
   prixUnitaire     Decimal          @db.Decimal(14, 2)
+  // Cache réseau = somme(StockQuant.quantite). Ne jamais écrire à la
+  // main — passer par StockService.
   stock            Int              @default(0)
   // Coût moyen pondéré (CMP) — recalculé à chaque réception fournisseur
   // (apps/api/src/fournisseurs/fournisseurs.service.ts). Sert de base à la
@@ -185,6 +228,7 @@ model Produit {
   lignesVente      LigneVente[]
   receptions       ReceptionStock[]
   mouvements       MouvementStock[]
+  quants           StockQuant[]
 
   @@map("produit")
 }
@@ -197,22 +241,43 @@ enum TypeMouvementStock {
   VENTE
   RETOUR
   AJUSTEMENT
+  TRANSFERT_OUT
+  TRANSFERT_IN
 }
 
 model MouvementStock {
   id            String             @id @default(uuid())
   produit       Produit            @relation(fields: [produitId], references: [id])
   produitId     String
+  entrepot      Entrepot?          @relation(fields: [entrepotId], references: [id])
+  // Nullable pour rétrocompatibilité des mouvements historiques (pré multi-emplacement).
+  entrepotId    String?
   type          TypeMouvementStock
-  // Signé : positif = entrée, négatif = sortie
+  // Signé : positif = entrée, négatif = sortie (sur l'entrepôt ciblé)
   quantite      Int
+  // Quantité du StockQuant après mouvement (pas le cache réseau Produit.stock)
   stockApres    Int
   reference     String?
   dateHeure     DateTime           @default(now())
   utilisateur   Utilisateur        @relation(fields: [utilisateurId], references: [id])
   utilisateurId String
 
+  @@index([entrepotId, produitId])
   @@map("mouvement_stock")
+}
+
+// Quantité source de vérité par emplacement. Produit.stock = somme des quants
+// (cache réseau recalculé, jamais écrit à la main).
+model StockQuant {
+  id         String   @id @default(uuid())
+  produit    Produit  @relation(fields: [produitId], references: [id])
+  produitId  String
+  entrepot   Entrepot @relation(fields: [entrepotId], references: [id])
+  entrepotId String
+  quantite   Int      @default(0)
+
+  @@unique([produitId, entrepotId])
+  @@map("stock_quant")
 }
 
 // ---------------------------------------------------------------------------

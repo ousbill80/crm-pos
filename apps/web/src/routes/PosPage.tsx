@@ -7,10 +7,12 @@ import type {
   CaisseDto,
   ClientDto,
   ClotureSessionResponseDto,
+  EntrepotDto,
   LigneVenteDto,
   ProduitDto,
   RetourVenteDto,
   SessionCaisseDto,
+  StockQuantDto,
   VenteDto,
 } from '../lib/types';
 
@@ -91,6 +93,32 @@ function useProduits(enabled: boolean) {
     queryKey: ['produits'],
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
     enabled,
+  });
+}
+
+function useEntrepotPrincipalBoutique(boutiqueId: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['entrepots', boutiqueId, 'principal'],
+    queryFn: async () => {
+      const entrepots = await apiFetch<EntrepotDto[]>(
+        `/entrepots?boutiqueId=${boutiqueId}`,
+      );
+      const principal = entrepots.find((e) => e.type === 'PRINCIPAL' && e.actif);
+      if (!principal) {
+        throw new Error('Aucun entrepôt PRINCIPAL pour cette boutique.');
+      }
+      return principal;
+    },
+    enabled: enabled && !!boutiqueId,
+  });
+}
+
+function useStocksEntrepot(entrepotId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['stocks', entrepotId],
+    queryFn: () =>
+      apiFetch<StockQuantDto[]>(`/stocks?entrepotId=${entrepotId}`),
+    enabled: enabled && !!entrepotId,
   });
 }
 
@@ -328,6 +356,7 @@ function PaiementScreen({
       setError(null);
       onVenteEnregistree(vente);
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      void queryClient.invalidateQueries({ queryKey: ['stocks'] });
     },
     onError: () =>
       setError(
@@ -616,6 +645,7 @@ function RetourLigneForm({
       setQuantite('1');
       onRetourEnregistre(retour);
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      void queryClient.invalidateQueries({ queryKey: ['stocks'] });
     },
     onError: () =>
       setError(
@@ -784,7 +814,23 @@ export function PosPage() {
   );
 
   const { data: produits } = useProduits(peutEncaisser && !!sessionOuverte);
+  const { data: entrepotPos } = useEntrepotPrincipalBoutique(
+    caisseBoutique?.boutiqueId,
+    peutEncaisser && !!sessionOuverte,
+  );
+  const { data: stocksPos } = useStocksEntrepot(
+    entrepotPos?.id,
+    peutEncaisser && !!sessionOuverte && !!entrepotPos,
+  );
   const { data: clients } = useClients(peutEncaisser && !!sessionOuverte);
+
+  const produitsEntrepot =
+    produits && stocksPos
+      ? produits.map((p) => ({
+          ...p,
+          stock: stocksPos.find((q) => q.produitId === p.id)?.quantite ?? 0,
+        }))
+      : undefined;
 
   if (!peutEncaisser) {
     return (
@@ -822,8 +868,12 @@ export function PosPage() {
         <OuvertureSessionForm caisseId={caisseBoutique.id} />
       )}
 
-      {sessionOuverte && produits && clients && (
-        <SessionOuverte session={sessionOuverte} produits={produits} clients={clients} />
+      {sessionOuverte && produitsEntrepot && clients && (
+        <SessionOuverte
+          session={sessionOuverte}
+          produits={produitsEntrepot}
+          clients={clients}
+        />
       )}
     </div>
   );
