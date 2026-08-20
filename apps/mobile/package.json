@@ -1,0 +1,9 @@
+{
+  "name": "mobile",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Placeholder — app React Native (Expo) pour la caisse boutique mobile, à scaffolder quand le backend expose les premiers endpoints du module Caisses.",
+  "scripts": {
+    "typecheck": "echo \"apps/mobile: pas encore scaffoldé\" && exit 0"
+  }
+}

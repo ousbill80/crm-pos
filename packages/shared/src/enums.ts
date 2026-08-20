@@ -1,0 +1,57 @@
+// Types partagés entre apps/api, apps/web et apps/mobile.
+// Doivent rester en cohérence stricte avec apps/api/prisma/schema.prisma
+// et le cahier des charges (§6.4, §6.5).
+
+export const TypeCaisse = {
+  AUXILIAIRE: 'AUXILIAIRE',
+  CENTRALE: 'CENTRALE',
+} as const;
+export type TypeCaisse = (typeof TypeCaisse)[keyof typeof TypeCaisse];
+
+export const TypeTransaction = {
+  VENTE: 'VENTE',
+  SORTIE_FONDS: 'SORTIE_FONDS',
+} as const;
+export type TypeTransaction = (typeof TypeTransaction)[keyof typeof TypeTransaction];
+
+// Machine à états stricte — §6.4 du cahier des charges.
+// INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE
+//                                       -> LITIGE
+export const StatutTransaction = {
+  INITIEE: 'INITIEE',
+  EN_TRANSIT: 'EN_TRANSIT',
+  RECEPTIONNEE: 'RECEPTIONNEE',
+  VALIDEE: 'VALIDEE',
+  LITIGE: 'LITIGE',
+} as const;
+export type StatutTransaction = (typeof StatutTransaction)[keyof typeof StatutTransaction];
+
+// Transitions autorisées par rôle (§6.4). Utilisé côté API pour la garde
+// RBAC et côté client pour n'afficher que les actions permises —
+// l'application de la règle reste toujours faite côté serveur.
+export const TRANSITIONS_AUTORISEES: Record<StatutTransaction, StatutTransaction[]> = {
+  INITIEE: [StatutTransaction.EN_TRANSIT],
+  EN_TRANSIT: [StatutTransaction.RECEPTIONNEE],
+  RECEPTIONNEE: [StatutTransaction.VALIDEE, StatutTransaction.LITIGE],
+  VALIDEE: [],
+  LITIGE: [],
+};
+
+export const RoleLibelle = {
+  DIRECTION_GENERALE: 'DIRECTION_GENERALE',
+  DAF: 'DAF',
+  CAISSIER_CENTRAL: 'CAISSIER_CENTRAL',
+  CONTROLEUR_INTERNE: 'CONTROLEUR_INTERNE',
+  SUPERVISEUR_ZONE: 'SUPERVISEUR_ZONE',
+  RESPONSABLE_BOUTIQUE: 'RESPONSABLE_BOUTIQUE',
+  CAISSIER_BOUTIQUE: 'CAISSIER_BOUTIQUE',
+  RESPONSABLE_SI: 'RESPONSABLE_SI',
+  RESPONSABLE_CRM: 'RESPONSABLE_CRM',
+} as const;
+export type RoleLibelle = (typeof RoleLibelle)[keyof typeof RoleLibelle];
+
+// Rôles habilités à réceptionner/valider une transaction (§6.4, règle imperative).
+export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
+  RoleLibelle.CAISSIER_CENTRAL,
+  RoleLibelle.DAF,
+];
