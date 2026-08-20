@@ -1,0 +1,63 @@
+import { RoleLibelle } from '@caisse-crm/shared';
+
+// ---------------------------------------------------------------------------
+// Groupes de rôles pour le périmètre de données (§4, §6.2 du cahier des
+// charges) des modules Zone / Boutique / Caisse. Utilisés à la fois pour le
+// gating @Roles() au niveau des endpoints et pour le filtrage des résultats
+// au niveau des services (le RBAC doit être vérifié côté serveur sur chaque
+// endpoint sensible, pas seulement affiché/masqué côté UI).
+// ---------------------------------------------------------------------------
+
+// Rôles à vue consolidée réseau entier pour la trésorerie (caisses) :
+// Direction Générale, DAF, Caissier Central, Contrôleur interne.
+export const ROLES_RESEAU_TRESORERIE: RoleLibelle[] = [
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.CAISSIER_CENTRAL,
+  RoleLibelle.CONTROLEUR_INTERNE,
+];
+
+// Rôles à vue consolidée réseau entier pour la structure organisationnelle
+// (zones/boutiques) : les rôles trésorerie réseau entier + Responsable SI
+// (« Admin système — accès structure zones/boutiques », sans accès
+// trésorerie propre — voir ROLES_RESEAU_TRESORERIE qui ne le contient pas).
+export const ROLES_RESEAU_STRUCTURE: RoleLibelle[] = [
+  ...ROLES_RESEAU_TRESORERIE,
+  RoleLibelle.RESPONSABLE_SI,
+];
+
+// Rôles habilités à créer/modifier la structure organisationnelle
+// (zones/boutiques) : Responsable SI ou Direction Générale uniquement.
+export const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+// Rôle à périmètre zone.
+export const ROLE_SUPERVISEUR_ZONE = RoleLibelle.SUPERVISEUR_ZONE;
+
+// Rôles à périmètre boutique unique (vente + initiation seulement — jamais de
+// validation/réception, cf. règle de séparation des tâches).
+export const ROLES_PERIMETRE_BOUTIQUE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.CAISSIER_BOUTIQUE,
+];
+
+// Rôles autorisés à lire la structure (zones/boutiques) : tous les rôles
+// métier de la hiérarchie caisses, à l'exclusion explicite de
+// RESPONSABLE_CRM (« pas d'accès trésorerie, hors périmètre » — et par
+// extension hors périmètre structure caisses/boutiques dans ce module).
+export const ROLES_LECTURE_STRUCTURE: RoleLibelle[] = [
+  ...ROLES_RESEAU_STRUCTURE,
+  ROLE_SUPERVISEUR_ZONE,
+  ...ROLES_PERIMETRE_BOUTIQUE,
+];
+
+// Rôles autorisés à lire les caisses (trésorerie) : réseau entier trésorerie
+// + superviseur de zone + périmètre boutique. RESPONSABLE_SI et
+// RESPONSABLE_CRM en sont explicitement exclus (aucun accès trésorerie).
+export const ROLES_LECTURE_CAISSES: RoleLibelle[] = [
+  ...ROLES_RESEAU_TRESORERIE,
+  ROLE_SUPERVISEUR_ZONE,
+  ...ROLES_PERIMETRE_BOUTIQUE,
+];

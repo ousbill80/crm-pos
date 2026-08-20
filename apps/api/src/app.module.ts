@@ -9,6 +9,8 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CaissesModule } from './caisses/caisses.module';
+import { ZonesModule } from './zones/zones.module';
+import { BoutiquesModule } from './boutiques/boutiques.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { CrmModule } from './crm/crm.module';
 
@@ -18,6 +20,8 @@ import { CrmModule } from './crm/crm.module';
     PrismaModule,
     AuditModule,
     AuthModule,
+    ZonesModule,
+    BoutiquesModule,
     CaissesModule,
     TransactionsModule,
     CrmModule,
