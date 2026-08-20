@@ -71,6 +71,7 @@ model Utilisateur {
   sessionsTemoinOuverture SessionCaisse[] @relation("OuvertureTemoin")
   sessionsFermees         SessionCaisse[] @relation("ClotureSession")
   sessionsTemoinCloture   SessionCaisse[] @relation("ClotureTemoin")
+  receptionsStock         ReceptionStock[]
 
   @@map("utilisateur")
 }
@@ -172,8 +173,42 @@ model Produit {
   prixUnitaire  Decimal       @db.Decimal(14, 2)
   stock         Int           @default(0)
   lignesVente   LigneVente[]
+  receptions    ReceptionStock[]
 
   @@map("produit")
+}
+
+// ---------------------------------------------------------------------------
+// Fournisseurs & approvisionnement — extension au socle MCD (§6.5) : fiche
+// fournisseur simple + réception de stock (portée validée avec
+// l'utilisateur — pas de bon de commande ni de facturation fournisseur,
+// hors périmètre du cahier des charges qui ne mentionne pas ce rôle/flux).
+// ---------------------------------------------------------------------------
+
+model Fournisseur {
+  id         String           @id @default(uuid())
+  nom        String
+  contact    String?
+  createdAt  DateTime         @default(now())
+  receptions ReceptionStock[]
+
+  @@map("fournisseur")
+}
+
+// Réception de stock : incrémente Produit.stock de façon atomique (même
+// principe que le décrément lors d'une vente — voir ventes.service.ts).
+model ReceptionStock {
+  id             String      @id @default(uuid())
+  produit        Produit     @relation(fields: [produitId], references: [id])
+  produitId      String
+  fournisseur    Fournisseur @relation(fields: [fournisseurId], references: [id])
+  fournisseurId  String
+  quantite       Int
+  dateReception  DateTime    @default(now())
+  utilisateur    Utilisateur @relation(fields: [utilisateurId], references: [id])
+  utilisateurId  String
+
+  @@map("reception_stock")
 }
 
 enum ModePaiement {

@@ -106,3 +106,22 @@ export interface ClotureSessionResponseDto {
   releve: ReleveModePaiementDto[];
   transactionVersementId: string | null;
 }
+
+export interface FournisseurDto {
+  id: string;
+  nom: string;
+  contact: string | null;
+}
+
+export interface ReceptionStockDto {
+  id: string;
+  produitId: string;
+  fournisseurId: string;
+  quantite: number;
+  dateReception: string;
+  utilisateurId: string;
+}
+
+export interface FournisseurDetailDto extends FournisseurDto {
+  receptions: (ReceptionStockDto & { produit: ProduitDto })[];
+}

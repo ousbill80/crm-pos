@@ -15,6 +15,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { CrmModule } from './crm/crm.module';
 import { ProduitsModule } from './produits/produits.module';
 import { VentesModule } from './ventes/ventes.module';
+import { FournisseursModule } from './fournisseurs/fournisseurs.module';
 import { AlertesModule } from './alertes/alertes.module';
 import { ReportingModule } from './reporting/reporting.module';
 
@@ -31,6 +32,7 @@ import { ReportingModule } from './reporting/reporting.module';
     CrmModule,
     ProduitsModule,
     VentesModule,
+    FournisseursModule,
     AlertesModule,
     ReportingModule,
   ],

@@ -3,6 +3,7 @@ import { AlertesPage } from './routes/AlertesPage';
 import { CaissesPage } from './routes/CaissesPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
 import { DashboardPage } from './routes/DashboardPage';
+import { FournisseursPage } from './routes/FournisseursPage';
 import { LoginPage } from './routes/LoginPage';
 import { PosPage } from './routes/PosPage';
 import { ProduitsPage } from './routes/ProduitsPage';
@@ -22,6 +23,7 @@ function App() {
         <Route path="/caisses" element={<CaissesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />
         <Route path="/produits" element={<ProduitsPage />} />
+        <Route path="/fournisseurs" element={<FournisseursPage />} />
         <Route path="/pos" element={<PosPage />} />
       </Route>
     </Routes>

@@ -3,6 +3,16 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../lib/api';
 
+// Raccourcis de connexion pour les comptes de démonstration seedés
+// manuellement en local (voir prisma/seed-pos-demo.ts) — n'apparaît jamais
+// en dehors d'un build de développement (import.meta.env.DEV).
+const COMPTES_DEMO = [
+  { login: 'demo-pos-caissier', libelle: 'Caissier boutique (POS)' },
+  { login: 'demo-pos-temoin', libelle: 'Responsable boutique (témoin)' },
+  { login: 'demo-respsi', libelle: 'Responsable SI (catalogue)' },
+];
+const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
+
 export function LoginPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
@@ -37,7 +47,7 @@ export function LoginPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ maxWidth: 320, margin: '4rem auto' }}>
+    <form onSubmit={handleSubmit} className="login-form">
       <h1>Connexion</h1>
       <div>
         <label htmlFor="login">Identifiant</label>
@@ -64,6 +74,24 @@ export function LoginPage() {
       <button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Connexion...' : 'Se connecter'}
       </button>
+
+      {import.meta.env.DEV && (
+        <div className="login-demo">
+          <p>Comptes de démonstration (mot de passe {MOT_DE_PASSE_DEMO}) :</p>
+          {COMPTES_DEMO.map((compte) => (
+            <button
+              key={compte.login}
+              type="button"
+              onClick={() => {
+                setLoginValue(compte.login);
+                setPassword(MOT_DE_PASSE_DEMO);
+              }}
+            >
+              {compte.libelle} ({compte.login})
+            </button>
+          ))}
+        </div>
+      )}
     </form>
   );
 }

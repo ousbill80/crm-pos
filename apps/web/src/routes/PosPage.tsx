@@ -22,9 +22,20 @@ const ROLES_PERIMETRE_BOUTIQUE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_BOUTIQUE,
 ];
 
-interface LigneSaisie {
+interface LignePanier {
   produitId: string;
-  quantite: string;
+  designation: string;
+  prixUnitaire: string;
+  stock: number;
+  quantite: number;
+}
+
+function formatMontant(valeur: number): string {
+  return valeur.toFixed(2);
+}
+
+function calculerTotal(panier: LignePanier[]): number {
+  return panier.reduce((total, l) => total + Number(l.prixUnitaire) * l.quantite, 0);
 }
 
 function useCaisses(enabled: boolean) {
@@ -141,7 +152,172 @@ function TicketVente({ vente }: { vente: VenteDto }) {
   );
 }
 
-function EncaissementForm({
+function ProduitTuile({
+  produit,
+  quantiteAuPanier,
+  onAjouter,
+}: {
+  produit: ProduitDto;
+  quantiteAuPanier: number;
+  onAjouter: () => void;
+}) {
+  const epuise = quantiteAuPanier >= produit.stock;
+  return (
+    <button
+      type="button"
+      className="produit-tuile"
+      onClick={onAjouter}
+      disabled={epuise}
+    >
+      <span className="produit-tuile-nom">{produit.designation}</span>
+      <span className="produit-tuile-prix">{produit.prixUnitaire}</span>
+      <span className="produit-tuile-stock">
+        {epuise ? 'Stock épuisé' : `Stock ${produit.stock - quantiteAuPanier}`}
+      </span>
+    </button>
+  );
+}
+
+function PanierPanel({
+  panier,
+  onIncrementer,
+  onDecrementer,
+  onRetirer,
+  onPasserAuPaiement,
+}: {
+  panier: LignePanier[];
+  onIncrementer: (produitId: string) => void;
+  onDecrementer: (produitId: string) => void;
+  onRetirer: (produitId: string) => void;
+  onPasserAuPaiement: () => void;
+}) {
+  const total = calculerTotal(panier);
+
+  return (
+    <div className="panier">
+      <h2>Panier</h2>
+      {panier.length === 0 ? (
+        <p>Aucun article sélectionné.</p>
+      ) : (
+        <ul className="panier-lignes">
+          {panier.map((l) => (
+            <li key={l.produitId} className="panier-ligne">
+              <div className="panier-ligne-info">
+                <span>{l.designation}</span>
+                <span>{formatMontant(Number(l.prixUnitaire) * l.quantite)}</span>
+              </div>
+              <div className="panier-ligne-qty">
+                <button type="button" onClick={() => onDecrementer(l.produitId)}>
+                  −
+                </button>
+                <span>{l.quantite}</span>
+                <button
+                  type="button"
+                  onClick={() => onIncrementer(l.produitId)}
+                  disabled={l.quantite >= l.stock}
+                >
+                  +
+                </button>
+                <button type="button" onClick={() => onRetirer(l.produitId)}>
+                  Retirer
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="panier-total">Total : {formatMontant(total)}</p>
+      <button
+        type="button"
+        onClick={onPasserAuPaiement}
+        disabled={panier.length === 0}
+      >
+        Passer au paiement
+      </button>
+    </div>
+  );
+}
+
+function PaiementScreen({
+  panier,
+  session,
+  clients,
+  onAnnuler,
+  onVenteEnregistree,
+}: {
+  panier: LignePanier[];
+  session: SessionCaisseDto;
+  clients: ClientDto[];
+  onAnnuler: () => void;
+  onVenteEnregistree: (vente: VenteDto) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [modePaiement, setModePaiement] = useState<ModePaiement>(ModePaiement.ESPECES);
+  const [clientId, setClientId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const total = calculerTotal(panier);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiFetch<VenteDto>(`/ventes/sessions/${session.id}/ventes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          lignes: panier.map((l) => ({ produitId: l.produitId, quantite: l.quantite })),
+          modePaiement,
+          ...(clientId ? { clientId } : {}),
+        }),
+      }),
+    onSuccess: (vente) => {
+      setError(null);
+      onVenteEnregistree(vente);
+      void queryClient.invalidateQueries({ queryKey: ['produits'] });
+    },
+    onError: () =>
+      setError('Échec de l’encaissement : vérifiez le stock disponible et les quantités.'),
+  });
+
+  return (
+    <div className="paiement-screen">
+      <h2>Paiement</h2>
+      <p className="paiement-total">Total à encaisser : {formatMontant(total)}</p>
+
+      <div className="paiement-modes">
+        {Object.values(ModePaiement).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={m === modePaiement ? 'paiement-mode-btn actif' : 'paiement-mode-btn'}
+            onClick={() => setModePaiement(m)}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
+      <div>
+        <label htmlFor="clientId">Client (optionnel — vente anonyme possible, §6.6)</label>
+        <select id="clientId" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          <option value="">Vente anonyme</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nom} {c.prenom}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+        Confirmer l’encaissement
+      </button>
+      <button type="button" onClick={onAnnuler} disabled={mutation.isPending}>
+        Retour au panier
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function VenteScreen({
   session,
   produits,
   clients,
@@ -152,124 +328,96 @@ function EncaissementForm({
   clients: ClientDto[];
   onVenteEnregistree: (vente: VenteDto) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [lignes, setLignes] = useState<LigneSaisie[]>([
-    { produitId: produits[0]?.id ?? '', quantite: '1' },
-  ]);
-  const [modePaiement, setModePaiement] = useState<ModePaiement>(ModePaiement.ESPECES);
-  const [clientId, setClientId] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [panier, setPanier] = useState<LignePanier[]>([]);
+  const [etape, setEtape] = useState<'grille' | 'paiement'>('grille');
 
-  const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch<VenteDto>(`/ventes/sessions/${session.id}/ventes`, {
-        method: 'POST',
-        body: JSON.stringify({
-          lignes: lignes
-            .filter((l) => l.produitId)
-            .map((l) => ({ produitId: l.produitId, quantite: Number(l.quantite) })),
-          modePaiement,
-          ...(clientId ? { clientId } : {}),
-        }),
-      }),
-    onSuccess: (vente) => {
-      setLignes([{ produitId: produits[0]?.id ?? '', quantite: '1' }]);
-      setClientId('');
-      setError(null);
-      onVenteEnregistree(vente);
-      void queryClient.invalidateQueries({ queryKey: ['produits'] });
-    },
-    onError: () =>
-      setError('Échec de l’encaissement : vérifiez le stock disponible et les quantités.'),
-  });
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    mutation.mutate();
+  function ajouterAuPanier(produit: ProduitDto) {
+    setPanier((prev) => {
+      const existante = prev.find((l) => l.produitId === produit.id);
+      if (existante) {
+        if (existante.quantite >= produit.stock) return prev;
+        return prev.map((l) =>
+          l.produitId === produit.id ? { ...l, quantite: l.quantite + 1 } : l,
+        );
+      }
+      return [
+        ...prev,
+        {
+          produitId: produit.id,
+          designation: produit.designation,
+          prixUnitaire: produit.prixUnitaire,
+          stock: produit.stock,
+          quantite: 1,
+        },
+      ];
+    });
   }
 
-  function ajouterLigne() {
-    setLignes((prev) => [...prev, { produitId: produits[0]?.id ?? '', quantite: '1' }]);
+  function incrementer(produitId: string) {
+    setPanier((prev) =>
+      prev.map((l) =>
+        l.produitId === produitId && l.quantite < l.stock
+          ? { ...l, quantite: l.quantite + 1 }
+          : l,
+      ),
+    );
   }
 
-  function retirerLigne(index: number) {
-    setLignes((prev) => prev.filter((_, i) => i !== index));
+  function decrementer(produitId: string) {
+    setPanier((prev) =>
+      prev
+        .map((l) => (l.produitId === produitId ? { ...l, quantite: l.quantite - 1 } : l))
+        .filter((l) => l.quantite > 0),
+    );
   }
 
-  function modifierLigne(index: number, champ: keyof LigneSaisie, valeur: string) {
-    setLignes((prev) => prev.map((l, i) => (i === index ? { ...l, [champ]: valeur } : l)));
+  function retirer(produitId: string) {
+    setPanier((prev) => prev.filter((l) => l.produitId !== produitId));
   }
 
   if (produits.length === 0) {
     return <p>Aucun produit disponible au catalogue.</p>;
   }
 
+  if (etape === 'paiement') {
+    return (
+      <PaiementScreen
+        panier={panier}
+        session={session}
+        clients={clients}
+        onAnnuler={() => setEtape('grille')}
+        onVenteEnregistree={(vente) => {
+          setPanier([]);
+          setEtape('grille');
+          onVenteEnregistree(vente);
+        }}
+      />
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Encaisser une vente</h2>
-      {lignes.map((ligne, index) => (
-        <div key={index}>
-          <label htmlFor={`produit-${index}`}>Produit</label>
-          <select
-            id={`produit-${index}`}
-            value={ligne.produitId}
-            onChange={(e) => modifierLigne(index, 'produitId', e.target.value)}
-          >
-            {produits.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.designation} — {p.prixUnitaire} (stock {p.stock})
-              </option>
-            ))}
-          </select>
-          <label htmlFor={`quantite-${index}`}>Quantité</label>
-          <input
-            id={`quantite-${index}`}
-            type="number"
-            min="1"
-            step="1"
-            value={ligne.quantite}
-            onChange={(e) => modifierLigne(index, 'quantite', e.target.value)}
-            required
-          />
-          {lignes.length > 1 && (
-            <button type="button" onClick={() => retirerLigne(index)}>
-              Retirer
-            </button>
-          )}
-        </div>
-      ))}
-      <button type="button" onClick={ajouterLigne}>
-        Ajouter un article
-      </button>
-
-      <label htmlFor="modePaiement">Mode de paiement</label>
-      <select
-        id="modePaiement"
-        value={modePaiement}
-        onChange={(e) => setModePaiement(e.target.value as ModePaiement)}
-      >
-        {Object.values(ModePaiement).map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
-
-      <label htmlFor="clientId">Client (optionnel — vente anonyme possible, §6.6)</label>
-      <select id="clientId" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-        <option value="">Vente anonyme</option>
-        {clients.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.nom} {c.prenom}
-          </option>
-        ))}
-      </select>
-
-      <button type="submit" disabled={mutation.isPending}>
-        Encaisser
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </form>
+    <div className="pos-layout">
+      <div className="produit-tuiles">
+        {produits.map((p) => {
+          const ligne = panier.find((l) => l.produitId === p.id);
+          return (
+            <ProduitTuile
+              key={p.id}
+              produit={p}
+              quantiteAuPanier={ligne?.quantite ?? 0}
+              onAjouter={() => ajouterAuPanier(p)}
+            />
+          );
+        })}
+      </div>
+      <PanierPanel
+        panier={panier}
+        onIncrementer={incrementer}
+        onDecrementer={decrementer}
+        onRetirer={retirer}
+        onPasserAuPaiement={() => setEtape('paiement')}
+      />
+    </div>
   );
 }
 
@@ -369,28 +517,36 @@ function SessionOuverte({
   produits: ProduitDto[];
   clients: ClientDto[];
 }) {
+  const [dernierTicket, setDernierTicket] = useState<VenteDto | null>(null);
   const [ventesSession, setVentesSession] = useState<VenteDto[]>([]);
+
+  if (dernierTicket) {
+    return (
+      <div>
+        <TicketVente vente={dernierTicket} />
+        <button type="button" onClick={() => setDernierTicket(null)}>
+          Nouvelle vente
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
       <p>
         Session ouverte le {new Date(session.ouvertureDateHeure).toLocaleString()} — fond initial{' '}
-        {session.fondInitial}
+        {session.fondInitial} — {ventesSession.length} vente(s) encaissée(s)
       </p>
 
-      <EncaissementForm
+      <VenteScreen
         session={session}
         produits={produits}
         clients={clients}
-        onVenteEnregistree={(vente) => setVentesSession((prev) => [vente, ...prev])}
+        onVenteEnregistree={(vente) => {
+          setVentesSession((prev) => [vente, ...prev]);
+          setDernierTicket(vente);
+        }}
       />
-
-      <h2>Ventes de la session en cours</h2>
-      {ventesSession.length === 0 ? (
-        <p>Aucune vente encaissée pour l’instant.</p>
-      ) : (
-        ventesSession.map((v) => <TicketVente key={v.id} vente={v} />)
-      )}
 
       <ClotureSessionForm session={session} />
     </div>
