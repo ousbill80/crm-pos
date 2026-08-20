@@ -334,7 +334,9 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
     expect(body.perimetre).toBe('ZONE');
     expect(body.chiffreAffaires.total).toBe('10000.00');
     expect(
-      body.chiffreAffaires.parBoutique.every((b) => b.boutiqueId !== boutique3Id),
+      body.chiffreAffaires.parBoutique.every(
+        (b) => b.boutiqueId !== boutique3Id,
+      ),
     ).toBe(true);
   });
 });

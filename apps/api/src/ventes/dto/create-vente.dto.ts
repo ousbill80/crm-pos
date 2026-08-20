@@ -4,9 +4,11 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsPositive,
   IsUUID,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { ModePaiement } from '@caisse-crm/shared';
@@ -18,6 +20,14 @@ class LigneVenteInputDto {
   @IsInt()
   @IsPositive()
   quantite: number;
+
+  // Montant de remise sur la ligne (jamais un pourcentage — évite toute
+  // ambiguïté d'arrondi). Plafonné côté serveur à 20% du montant de la
+  // ligne, voir VentesService.encaisserVente.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  remise?: number;
 }
 
 // Encaissement d'une vente (§6.3.2). montantTotal n'est jamais fourni par le

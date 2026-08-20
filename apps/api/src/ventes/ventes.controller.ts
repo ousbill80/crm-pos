@@ -17,6 +17,7 @@ import { VentesService } from './ventes.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
+import { CreateRetourDto } from './dto/create-retour.dto';
 
 // Endpoints POS — sessions de caisse et encaissement (§6.3.2, §5.1). Toute
 // écriture est réservée au périmètre boutique (caissier/responsable
@@ -58,6 +59,16 @@ export class VentesController {
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.ventesService.encaisserVente(id, dto, utilisateur);
+  }
+
+  @Post('sessions/:id/retours')
+  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  creerRetour(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateRetourDto,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.ventesService.creerRetour(id, dto, utilisateur);
   }
 
   @Post('sessions/:id/cloture')

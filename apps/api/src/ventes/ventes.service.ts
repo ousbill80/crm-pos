@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SessionCaisse, Vente } from '@prisma/client';
+import { Prisma, RetourVente, SessionCaisse, Vente } from '@prisma/client';
 import {
   ModePaiement,
   RoleLibelle,
@@ -28,6 +28,7 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
+import { CreateRetourDto } from './dto/create-retour.dto';
 
 // Rôles éligibles au comptage contradictoire (§5.1) : caissier boutique ou
 // responsable boutique — les deux profils "périmètre boutique" du référentiel.
@@ -35,6 +36,11 @@ const ROLES_TEMOIN_ELIGIBLES: RoleLibelle[] = [
   RoleLibelle.CAISSIER_BOUTIQUE,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
+
+// Plafond de remise par ligne (fraude caissier) : 20% du montant de la
+// ligne (prixUnitaire × quantite). Non tranché par le cahier des charges,
+// décidé par défaut et signalé à l'utilisateur — voir plan de la tâche.
+const REMISE_MAX_RATIO = new Prisma.Decimal(0.2);
 
 type SessionAvecCaisse = SessionCaisse & {
   caisse: { boutiqueId: string | null };
@@ -139,6 +145,7 @@ export class VentesService {
         produitId: string;
         quantite: number;
         prixUnitaire: Prisma.Decimal;
+        remise: Prisma.Decimal;
       }[] = [];
 
       for (const ligne of dto.lignes) {
@@ -153,6 +160,16 @@ export class VentesService {
         if (produit.stock < ligne.quantite) {
           throw new BadRequestException(
             `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${produit.stock}, demandé : ${ligne.quantite}).`,
+          );
+        }
+
+        const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
+        const montantLigne = prixUnitaire.times(ligne.quantite);
+        const remise = new Prisma.Decimal(ligne.remise ?? 0);
+        const plafondRemise = montantLigne.times(REMISE_MAX_RATIO);
+        if (remise.greaterThan(plafondRemise)) {
+          throw new BadRequestException(
+            `Remise trop élevée pour le produit "${produit.designation}" : maximum ${plafondRemise.toFixed(2)} (20% du montant de la ligne).`,
           );
         }
 
@@ -171,12 +188,12 @@ export class VentesService {
           },
         });
 
-        const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
-        montantTotal = montantTotal.plus(prixUnitaire.times(ligne.quantite));
+        montantTotal = montantTotal.plus(montantLigne.minus(remise));
         lignesData.push({
           produitId: produit.id,
           quantite: ligne.quantite,
           prixUnitaire,
+          remise,
         });
       }
 
@@ -207,6 +224,104 @@ export class VentesService {
     });
 
     return vente;
+  }
+
+  // Retour/avoir (extension au-delà du cahier des charges) : limité à une
+  // vente de la session de caisse EN COURS — évite de rouvrir une
+  // trésorerie déjà versée/validée (§6.4). Recrédite le stock via le grand
+  // livre MouvementStock, jamais de retour partiel au-delà du vendu.
+  async creerRetour(
+    sessionId: string,
+    dto: CreateRetourDto,
+    utilisateur: AuthenticatedUser,
+  ): Promise<RetourVente> {
+    const session = await this.trouverSessionOuEchouer(sessionId);
+    this.verifierPerimetreBoutique(session, utilisateur);
+
+    if (session.statut !== StatutSessionCaisse.OUVERTE) {
+      throw new BadRequestException(
+        'Impossible d’enregistrer un retour : la session de caisse est fermée.',
+      );
+    }
+
+    const ligneVente = await this.prisma.ligneVente.findUnique({
+      where: { id: dto.ligneVenteId },
+      include: { vente: true, produit: true, retours: true },
+    });
+    if (!ligneVente) {
+      throw new NotFoundException('Ligne de vente introuvable.');
+    }
+    if (ligneVente.vente.sessionCaisseId !== session.id) {
+      throw new BadRequestException(
+        'Le retour ne peut porter que sur une vente de la session de caisse en cours.',
+      );
+    }
+
+    const dejaRetourne = ligneVente.retours.reduce(
+      (total, r) => total + r.quantite,
+      0,
+    );
+    if (dejaRetourne + dto.quantite > ligneVente.quantite) {
+      throw new BadRequestException(
+        `Quantité retournée excessive : ${dejaRetourne} déjà retournée(s) sur ${ligneVente.quantite} vendue(s).`,
+      );
+    }
+
+    const montantParUnite = ligneVente.prixUnitaire
+      .times(ligneVente.quantite)
+      .minus(ligneVente.remise)
+      .div(ligneVente.quantite);
+    const montantRembourse = montantParUnite
+      .times(dto.quantite)
+      .toDecimalPlaces(2);
+
+    const retour = await this.prisma.$transaction(async (tx) => {
+      const stockAvant = ligneVente.produit.stock;
+      const stockApres = stockAvant + dto.quantite;
+
+      const created = await tx.retourVente.create({
+        data: {
+          venteId: ligneVente.venteId,
+          ligneVenteId: ligneVente.id,
+          quantite: dto.quantite,
+          montantRembourse,
+          sessionCaisseId: session.id,
+          utilisateurId: utilisateur.userId,
+        },
+      });
+
+      await tx.produit.update({
+        where: { id: ligneVente.produitId },
+        data: { stock: { increment: dto.quantite } },
+      });
+
+      await tx.mouvementStock.create({
+        data: {
+          produitId: ligneVente.produitId,
+          type: 'RETOUR',
+          quantite: dto.quantite,
+          stockApres,
+          reference: created.id,
+          utilisateurId: utilisateur.userId,
+        },
+      });
+
+      return created;
+    });
+
+    await this.audit.record({
+      utilisateurId: utilisateur.userId,
+      action: 'RETOUR_VENTE_ENREGISTRE',
+      entite: 'RetourVente',
+      entiteId: retour.id,
+      details: JSON.stringify({
+        ligneVenteId: ligneVente.id,
+        quantite: dto.quantite,
+        montantRembourse: montantRembourse.toString(),
+      }),
+    });
+
+    return retour;
   }
 
   async cloturerSession(
@@ -243,15 +358,38 @@ export class VentesService {
       _count: { _all: true },
     });
 
-    const releve = totauxParMode.map((ligne) => ({
-      modePaiement: ligne.modePaiement,
-      total: (ligne._sum.montantTotal ?? new Prisma.Decimal(0)).toFixed(2),
-      nombreVentes: ligne._count._all,
-    }));
+    // Retours espèces de la session : seul le cash physique alimente le
+    // bordereau (règle déjà établie pour l'encaissement), donc seuls les
+    // retours sur ventes ESPECES en sont déduits — CARTE/MOBILE_MONEY
+    // suivent un remboursement hors caisse physique, hors périmètre ici.
+    const retoursEspeces = await this.prisma.retourVente.findMany({
+      where: {
+        sessionCaisseId: session.id,
+        vente: { modePaiement: ModePaiement.ESPECES },
+      },
+    });
+    const totalRetoursEspeces = retoursEspeces.reduce(
+      (total, r) => total.plus(r.montantRembourse),
+      new Prisma.Decimal(0),
+    );
 
-    const totalEspeces =
+    const releve = totauxParMode.map((ligne) => {
+      const totalBrut = ligne._sum.montantTotal ?? new Prisma.Decimal(0);
+      const totalNet =
+        ligne.modePaiement === ModePaiement.ESPECES
+          ? totalBrut.minus(totalRetoursEspeces)
+          : totalBrut;
+      return {
+        modePaiement: ligne.modePaiement,
+        total: totalNet.toFixed(2),
+        nombreVentes: ligne._count._all,
+      };
+    });
+
+    const totalEspecesBrut =
       totauxParMode.find((l) => l.modePaiement === ModePaiement.ESPECES)?._sum
         .montantTotal ?? new Prisma.Decimal(0);
+    const totalEspeces = totalEspecesBrut.minus(totalRetoursEspeces);
 
     let transactionVersementId: string | null = null;
     if (totalEspeces.greaterThan(0)) {

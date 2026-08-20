@@ -70,6 +70,18 @@ export interface LigneVenteDto {
   produit: ProduitDto;
   quantite: number;
   prixUnitaire: string;
+  remise: string;
+}
+
+export interface RetourVenteDto {
+  id: string;
+  venteId: string;
+  ligneVenteId: string;
+  quantite: number;
+  montantRembourse: string;
+  sessionCaisseId: string;
+  utilisateurId: string;
+  dateHeure: string;
 }
 
 export interface VenteHistoriqueDto {

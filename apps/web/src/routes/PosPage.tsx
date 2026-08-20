@@ -7,7 +7,9 @@ import type {
   CaisseDto,
   ClientDto,
   ClotureSessionResponseDto,
+  LigneVenteDto,
   ProduitDto,
+  RetourVenteDto,
   SessionCaisseDto,
   VenteDto,
 } from '../lib/types';
@@ -28,6 +30,7 @@ interface LignePanier {
   prixUnitaire: string;
   stock: number;
   quantite: number;
+  remise: number;
 }
 
 function formatMontant(valeur: number): string {
@@ -35,7 +38,36 @@ function formatMontant(valeur: number): string {
 }
 
 function calculerTotal(panier: LignePanier[]): number {
+  return panier.reduce(
+    (total, l) => total + Number(l.prixUnitaire) * l.quantite - l.remise,
+    0,
+  );
+}
+
+function calculerTotalBrut(panier: LignePanier[]): number {
   return panier.reduce((total, l) => total + Number(l.prixUnitaire) * l.quantite, 0);
+}
+
+// Un seul mécanisme de remise stocké côté serveur (LigneVente.remise) : la
+// remise saisie au niveau du panier est distribuée proportionnellement dans
+// chaque ligne avant l'envoi. Le plafond de 20% par ligne reste appliqué et
+// vérifié côté serveur (VentesService.encaisserVente) — cet aperçu client
+// n'est qu'un affichage, jamais une source de vérité.
+function distribuerRemisePanier(panier: LignePanier[], remiseTotale: number): LignePanier[] {
+  const totalBrut = calculerTotalBrut(panier);
+  if (remiseTotale <= 0 || totalBrut <= 0) {
+    return panier.map((l) => ({ ...l, remise: 0 }));
+  }
+  let cumul = 0;
+  return panier.map((l, index) => {
+    if (index === panier.length - 1) {
+      return { ...l, remise: Number((remiseTotale - cumul).toFixed(2)) };
+    }
+    const montantLigne = Number(l.prixUnitaire) * l.quantite;
+    const part = Number(((montantLigne / totalBrut) * remiseTotale).toFixed(2));
+    cumul += part;
+    return { ...l, remise: part };
+  });
 }
 
 function useCaisses(enabled: boolean) {
@@ -180,18 +212,24 @@ function ProduitTuile({
 
 function PanierPanel({
   panier,
+  remisePanier,
+  onRemisePanierChange,
   onIncrementer,
   onDecrementer,
   onRetirer,
   onPasserAuPaiement,
 }: {
   panier: LignePanier[];
+  remisePanier: string;
+  onRemisePanierChange: (valeur: string) => void;
   onIncrementer: (produitId: string) => void;
   onDecrementer: (produitId: string) => void;
   onRetirer: (produitId: string) => void;
   onPasserAuPaiement: () => void;
 }) {
-  const total = calculerTotal(panier);
+  const totalBrut = calculerTotalBrut(panier);
+  const remise = Number(remisePanier) || 0;
+  const totalNet = Math.max(0, totalBrut - remise);
 
   return (
     <div className="panier">
@@ -226,7 +264,22 @@ function PanierPanel({
           ))}
         </ul>
       )}
-      <p className="panier-total">Total : {formatMontant(total)}</p>
+      {panier.length > 0 && (
+        <div className="panier-remise">
+          <label htmlFor="remisePanier">Remise panier (montant, plafond 20% par ligne)</label>
+          <input
+            id="remisePanier"
+            type="number"
+            min="0"
+            step="0.01"
+            value={remisePanier}
+            onChange={(e) => onRemisePanierChange(e.target.value)}
+          />
+        </div>
+      )}
+      <p className="panier-total">Total brut : {formatMontant(totalBrut)}</p>
+      {remise > 0 && <p className="panier-total">Remise panier : −{formatMontant(remise)}</p>}
+      <p className="panier-total">Total net : {formatMontant(totalNet)}</p>
       <button
         type="button"
         onClick={onPasserAuPaiement}
@@ -262,7 +315,11 @@ function PaiementScreen({
       apiFetch<VenteDto>(`/ventes/sessions/${session.id}/ventes`, {
         method: 'POST',
         body: JSON.stringify({
-          lignes: panier.map((l) => ({ produitId: l.produitId, quantite: l.quantite })),
+          lignes: panier.map((l) => ({
+            produitId: l.produitId,
+            quantite: l.quantite,
+            ...(l.remise > 0 ? { remise: l.remise } : {}),
+          })),
           modePaiement,
           ...(clientId ? { clientId } : {}),
         }),
@@ -273,7 +330,9 @@ function PaiementScreen({
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
     },
     onError: () =>
-      setError('Échec de l’encaissement : vérifiez le stock disponible et les quantités.'),
+      setError(
+        'Échec de l’encaissement : vérifiez le stock disponible, les quantités et que la remise ne dépasse pas 20% par ligne.',
+      ),
   });
 
   return (
@@ -329,6 +388,7 @@ function VenteScreen({
   onVenteEnregistree: (vente: VenteDto) => void;
 }) {
   const [panier, setPanier] = useState<LignePanier[]>([]);
+  const [remisePanier, setRemisePanier] = useState('');
   const [etape, setEtape] = useState<'grille' | 'paiement'>('grille');
 
   function ajouterAuPanier(produit: ProduitDto) {
@@ -348,9 +408,15 @@ function VenteScreen({
           prixUnitaire: produit.prixUnitaire,
           stock: produit.stock,
           quantite: 1,
+          remise: 0,
         },
       ];
     });
+  }
+
+  function passerAuPaiement() {
+    setPanier((prev) => distribuerRemisePanier(prev, Number(remisePanier) || 0));
+    setEtape('paiement');
   }
 
   function incrementer(produitId: string) {
@@ -388,6 +454,7 @@ function VenteScreen({
         onAnnuler={() => setEtape('grille')}
         onVenteEnregistree={(vente) => {
           setPanier([]);
+          setRemisePanier('');
           setEtape('grille');
           onVenteEnregistree(vente);
         }}
@@ -412,10 +479,12 @@ function VenteScreen({
       </div>
       <PanierPanel
         panier={panier}
+        remisePanier={remisePanier}
+        onRemisePanierChange={setRemisePanier}
         onIncrementer={incrementer}
         onDecrementer={decrementer}
         onRetirer={retirer}
-        onPasserAuPaiement={() => setEtape('paiement')}
+        onPasserAuPaiement={passerAuPaiement}
       />
     </div>
   );
@@ -508,6 +577,123 @@ function ClotureSessionForm({ session }: { session: SessionCaisseDto }) {
   );
 }
 
+function RetourLigneForm({
+  sessionId,
+  ligne,
+  quantiteRestante,
+  onRetourEnregistre,
+}: {
+  sessionId: string;
+  ligne: LigneVenteDto;
+  quantiteRestante: number;
+  onRetourEnregistre: (retour: RetourVenteDto) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [ouvert, setOuvert] = useState(false);
+  const [quantite, setQuantite] = useState('1');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiFetch<RetourVenteDto>(`/ventes/sessions/${sessionId}/retours`, {
+        method: 'POST',
+        body: JSON.stringify({ ligneVenteId: ligne.id, quantite: Number(quantite) }),
+      }),
+    onSuccess: (retour) => {
+      setError(null);
+      setOuvert(false);
+      setQuantite('1');
+      onRetourEnregistre(retour);
+      void queryClient.invalidateQueries({ queryKey: ['produits'] });
+    },
+    onError: () =>
+      setError(
+        'Échec du retour : quantité invalide, déjà entièrement retournée, ou session non ouverte.',
+      ),
+  });
+
+  if (!ouvert) {
+    return (
+      <button type="button" onClick={() => setOuvert(true)}>
+        Retourner
+      </button>
+    );
+  }
+
+  return (
+    <span className="retour-form">
+      <input
+        type="number"
+        min="1"
+        max={quantiteRestante}
+        value={quantite}
+        onChange={(e) => setQuantite(e.target.value)}
+      />
+      <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+        Confirmer le retour
+      </button>
+      <button type="button" onClick={() => setOuvert(false)} disabled={mutation.isPending}>
+        Annuler
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </span>
+  );
+}
+
+// Retours limités à la session de caisse en cours (jamais une session déjà
+// clôturée/versée) : ces boutons ne portent donc que sur les ventes de la
+// session en cours affichée ici — extension au-delà du cahier des charges,
+// assumée (cf. plan validé).
+function VentesSessionListe({
+  sessionId,
+  ventes,
+  retoursParLigne,
+  onRetourEnregistre,
+}: {
+  sessionId: string;
+  ventes: VenteDto[];
+  retoursParLigne: Record<string, number>;
+  onRetourEnregistre: (retour: RetourVenteDto) => void;
+}) {
+  return (
+    <div className="ventes-session">
+      <h3>Ventes de la session en cours</h3>
+      <ul>
+        {ventes.map((vente) => (
+          <li key={vente.id}>
+            <p>
+              {new Date(vente.dateVente).toLocaleTimeString()} — {vente.montantTotal} (
+              {vente.modePaiement})
+            </p>
+            <ul>
+              {vente.lignes.map((ligne) => {
+                const retourne = retoursParLigne[ligne.id] ?? 0;
+                const restant = ligne.quantite - retourne;
+                return (
+                  <li key={ligne.id}>
+                    {ligne.produit.designation} x{ligne.quantite}
+                    {Number(ligne.remise) > 0 && <> (remise {ligne.remise})</>}
+                    {restant > 0 ? (
+                      <RetourLigneForm
+                        sessionId={sessionId}
+                        ligne={ligne}
+                        quantiteRestante={restant}
+                        onRetourEnregistre={onRetourEnregistre}
+                      />
+                    ) : (
+                      <span> — entièrement retourné</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function SessionOuverte({
   session,
   produits,
@@ -519,36 +705,53 @@ function SessionOuverte({
 }) {
   const [dernierTicket, setDernierTicket] = useState<VenteDto | null>(null);
   const [ventesSession, setVentesSession] = useState<VenteDto[]>([]);
+  const [retoursParLigne, setRetoursParLigne] = useState<Record<string, number>>({});
 
-  if (dernierTicket) {
-    return (
-      <div>
-        <TicketVente vente={dernierTicket} />
-        <button type="button" onClick={() => setDernierTicket(null)}>
-          Nouvelle vente
-        </button>
-      </div>
-    );
+  function enregistrerRetour(retour: RetourVenteDto) {
+    setRetoursParLigne((prev) => ({
+      ...prev,
+      [retour.ligneVenteId]: (prev[retour.ligneVenteId] ?? 0) + retour.quantite,
+    }));
   }
 
   return (
     <div>
-      <p>
-        Session ouverte le {new Date(session.ouvertureDateHeure).toLocaleString()} — fond initial{' '}
-        {session.fondInitial} — {ventesSession.length} vente(s) encaissée(s)
-      </p>
+      {dernierTicket ? (
+        <div>
+          <TicketVente vente={dernierTicket} />
+          <button type="button" onClick={() => setDernierTicket(null)}>
+            Nouvelle vente
+          </button>
+        </div>
+      ) : (
+        <>
+          <p>
+            Session ouverte le {new Date(session.ouvertureDateHeure).toLocaleString()} — fond
+            initial {session.fondInitial} — {ventesSession.length} vente(s) encaissée(s)
+          </p>
 
-      <VenteScreen
-        session={session}
-        produits={produits}
-        clients={clients}
-        onVenteEnregistree={(vente) => {
-          setVentesSession((prev) => [vente, ...prev]);
-          setDernierTicket(vente);
-        }}
-      />
+          <VenteScreen
+            session={session}
+            produits={produits}
+            clients={clients}
+            onVenteEnregistree={(vente) => {
+              setVentesSession((prev) => [vente, ...prev]);
+              setDernierTicket(vente);
+            }}
+          />
 
-      <ClotureSessionForm session={session} />
+          <ClotureSessionForm session={session} />
+        </>
+      )}
+
+      {ventesSession.length > 0 && (
+        <VentesSessionListe
+          sessionId={session.id}
+          ventes={ventesSession}
+          retoursParLigne={retoursParLigne}
+          onRetourEnregistre={enregistrerRetour}
+        />
+      )}
     </div>
   );
 }
