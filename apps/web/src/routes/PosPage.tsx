@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModePaiement, RoleLibelle } from '@caisse-crm/shared';
-import { apiFetch } from '../lib/api';
+import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import type {
   CaisseDto,
@@ -544,6 +544,17 @@ function ClotureSessionForm({ session }: { session: SessionCaisseDto }) {
         )}
         <button type="button" onClick={() => window.print()}>
           Imprimer
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void apiDownload(
+              `/ventes/sessions/${session.id}/cloture/pdf`,
+              `releve-session-${session.id}.pdf`,
+            )
+          }
+        >
+          Télécharger le relevé (PDF)
         </button>
       </div>
     );

@@ -5,7 +5,10 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import PDFDocument from 'pdfkit';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
@@ -79,5 +82,53 @@ export class VentesController {
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.ventesService.cloturerSession(id, dto, utilisateur);
+  }
+
+  @Get('sessions/:id/cloture/pdf')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  async telechargerRelevePdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const { session, releve } = await this.ventesService.genererReleveCloture(
+      id,
+      utilisateur,
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="releve-session-${session.id}.pdf"`,
+    );
+
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
+
+    doc.fontSize(16).text('Relevé de clôture de session de caisse', {
+      align: 'center',
+    });
+    doc.moveDown();
+    doc.fontSize(10);
+    doc.text(`Session : ${session.id}`);
+    doc.text(`Statut : ${session.statut}`);
+    doc.text(`Ouverture : ${session.ouvertureDateHeure.toISOString()}`);
+    if (session.clotureDateHeure) {
+      doc.text(`Clôture : ${session.clotureDateHeure.toISOString()}`);
+    }
+    doc.moveDown();
+
+    doc.fontSize(12).text('Répartition par mode de paiement', {
+      underline: true,
+    });
+    doc.moveDown(0.5);
+    doc.fontSize(10);
+    for (const ligne of releve) {
+      doc.text(
+        `${ligne.modePaiement} — ${ligne.nombreVentes} vente(s) — ${ligne.total}`,
+      );
+    }
+
+    doc.end();
   }
 }

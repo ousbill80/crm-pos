@@ -324,6 +324,78 @@ export class VentesService {
     return retour;
   }
 
+  // Relevé par mode de paiement, net des retours espèces — factorisé pour
+  // être réutilisé à la fois par la clôture et par l'export PDF (§6.3.4),
+  // qui ne doivent jamais recalculer cette règle métier différemment.
+  private async calculerReleve(sessionId: string): Promise<{
+    releve: {
+      modePaiement: ModePaiement;
+      total: string;
+      nombreVentes: number;
+    }[];
+    totalEspeces: Prisma.Decimal;
+  }> {
+    const totauxParMode = await this.prisma.vente.groupBy({
+      by: ['modePaiement'],
+      where: { sessionCaisseId: sessionId },
+      _sum: { montantTotal: true },
+      _count: { _all: true },
+    });
+
+    // Retours espèces de la session : seul le cash physique alimente le
+    // bordereau (règle déjà établie pour l'encaissement), donc seuls les
+    // retours sur ventes ESPECES en sont déduits — CARTE/MOBILE_MONEY
+    // suivent un remboursement hors caisse physique, hors périmètre ici.
+    const retoursEspeces = await this.prisma.retourVente.findMany({
+      where: {
+        sessionCaisseId: sessionId,
+        vente: { modePaiement: ModePaiement.ESPECES },
+      },
+    });
+    const totalRetoursEspeces = retoursEspeces.reduce(
+      (total, r) => total.plus(r.montantRembourse),
+      new Prisma.Decimal(0),
+    );
+
+    const releve = totauxParMode.map((ligne) => {
+      const totalBrut = ligne._sum.montantTotal ?? new Prisma.Decimal(0);
+      const totalNet =
+        ligne.modePaiement === ModePaiement.ESPECES
+          ? totalBrut.minus(totalRetoursEspeces)
+          : totalBrut;
+      return {
+        modePaiement: ligne.modePaiement,
+        total: totalNet.toFixed(2),
+        nombreVentes: ligne._count._all,
+      };
+    });
+
+    const totalEspecesBrut =
+      totauxParMode.find((l) => l.modePaiement === ModePaiement.ESPECES)?._sum
+        .montantTotal ?? new Prisma.Decimal(0);
+    const totalEspeces = totalEspecesBrut.minus(totalRetoursEspeces);
+
+    return { releve, totalEspeces };
+  }
+
+  // Relevé de clôture prêt à imprimer (§6.3.4) — réutilise la même RBAC
+  // que la consultation de session et le même calcul que la clôture.
+  async genererReleveCloture(
+    sessionId: string,
+    utilisateur: AuthenticatedUser,
+  ): Promise<{
+    session: SessionCaisse;
+    releve: {
+      modePaiement: ModePaiement;
+      total: string;
+      nombreVentes: number;
+    }[];
+  }> {
+    const session = await this.findOne(sessionId, utilisateur);
+    const { releve } = await this.calculerReleve(session.id);
+    return { session, releve };
+  }
+
   async cloturerSession(
     sessionId: string,
     dto: ClotureSessionCaisseDto,
@@ -351,45 +423,7 @@ export class VentesService {
       boutiqueId,
     );
 
-    const totauxParMode = await this.prisma.vente.groupBy({
-      by: ['modePaiement'],
-      where: { sessionCaisseId: session.id },
-      _sum: { montantTotal: true },
-      _count: { _all: true },
-    });
-
-    // Retours espèces de la session : seul le cash physique alimente le
-    // bordereau (règle déjà établie pour l'encaissement), donc seuls les
-    // retours sur ventes ESPECES en sont déduits — CARTE/MOBILE_MONEY
-    // suivent un remboursement hors caisse physique, hors périmètre ici.
-    const retoursEspeces = await this.prisma.retourVente.findMany({
-      where: {
-        sessionCaisseId: session.id,
-        vente: { modePaiement: ModePaiement.ESPECES },
-      },
-    });
-    const totalRetoursEspeces = retoursEspeces.reduce(
-      (total, r) => total.plus(r.montantRembourse),
-      new Prisma.Decimal(0),
-    );
-
-    const releve = totauxParMode.map((ligne) => {
-      const totalBrut = ligne._sum.montantTotal ?? new Prisma.Decimal(0);
-      const totalNet =
-        ligne.modePaiement === ModePaiement.ESPECES
-          ? totalBrut.minus(totalRetoursEspeces)
-          : totalBrut;
-      return {
-        modePaiement: ligne.modePaiement,
-        total: totalNet.toFixed(2),
-        nombreVentes: ligne._count._all,
-      };
-    });
-
-    const totalEspecesBrut =
-      totauxParMode.find((l) => l.modePaiement === ModePaiement.ESPECES)?._sum
-        .montantTotal ?? new Prisma.Decimal(0);
-    const totalEspeces = totalEspecesBrut.minus(totalRetoursEspeces);
+    const { releve, totalEspeces } = await this.calculerReleve(session.id);
 
     let transactionVersementId: string | null = null;
     if (totalEspeces.greaterThan(0)) {

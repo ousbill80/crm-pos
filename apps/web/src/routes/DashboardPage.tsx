@@ -1,5 +1,21 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../lib/api';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { apiDownload, apiFetch } from '../lib/api';
 
 // Dashboard Reporting §6.3.4 — source unique : GET /reporting/dashboard.
 export interface ReportingDashboard {
@@ -12,6 +28,7 @@ export interface ReportingDashboard {
       nomBoutique: string;
       montant: string;
     }>;
+    parModePaiement: Array<{ modePaiement: string; montant: string }>;
   };
   versements: {
     parStatut: Array<{ statut: string; nombre: number; montant: string }>;
@@ -36,10 +53,34 @@ export interface ReportingDashboard {
   };
 }
 
-function useReportingDashboard() {
+interface VenteQuotidienne {
+  date: string;
+  total: string;
+}
+
+const COULEURS_MODES = ['#2563eb', '#16a34a', '#d97706'];
+
+function buildQuery(dateFrom: string, dateTo: string): string {
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('dateFrom', new Date(dateFrom).toISOString());
+  if (dateTo) params.set('dateTo', new Date(dateTo).toISOString());
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+function useReportingDashboard(dateFrom: string, dateTo: string) {
   return useQuery({
-    queryKey: ['reporting', 'dashboard'],
-    queryFn: () => apiFetch<ReportingDashboard>('/reporting/dashboard'),
+    queryKey: ['reporting', 'dashboard', dateFrom, dateTo],
+    queryFn: () =>
+      apiFetch<ReportingDashboard>(`/reporting/dashboard${buildQuery(dateFrom, dateTo)}`),
+  });
+}
+
+function useVentesQuotidiennes() {
+  return useQuery({
+    queryKey: ['reporting', 'ventes-quotidiennes'],
+    queryFn: () =>
+      apiFetch<VenteQuotidienne[]>('/reporting/ventes-quotidiennes?jours=30'),
   });
 }
 
@@ -48,7 +89,10 @@ function formatFcfa(value: string) {
 }
 
 export function DashboardPage() {
-  const { data, isLoading, isError, error } = useReportingDashboard();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const { data, isLoading, isError, error } = useReportingDashboard(dateFrom, dateTo);
+  const { data: serieQuotidienne } = useVentesQuotidiennes();
 
   if (isLoading) {
     return <p>Chargement du tableau de bord...</p>;
@@ -62,6 +106,8 @@ export function DashboardPage() {
     return null;
   }
 
+  const query = buildQuery(dateFrom, dateTo);
+
   return (
     <div>
       <header className="page-header">
@@ -73,6 +119,45 @@ export function DashboardPage() {
           </p>
         </div>
       </header>
+
+      <section className="panel">
+        <h2>Période & exports</h2>
+        <div className="filtre-periode">
+          <label htmlFor="dateFrom">Du</label>
+          <input
+            id="dateFrom"
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+          <label htmlFor="dateTo">Au</label>
+          <input
+            id="dateTo"
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+          <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }}>
+            Réinitialiser
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void apiDownload(`/reporting/dashboard/export.csv${query}`, 'tableau-de-bord.csv')
+            }
+          >
+            Exporter CA par boutique (CSV)
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              void apiDownload(`/reporting/ventes/export.csv${query}`, 'ventes.csv')
+            }
+          >
+            Exporter le détail des ventes (CSV)
+          </button>
+        </div>
+      </section>
 
       <div className="kpi-grid">
         <div className="kpi-card">
@@ -122,14 +207,76 @@ export function DashboardPage() {
           {data.chiffreAffaires.parBoutique.length === 0 ? (
             <p className="lead">Aucune vente sur la période.</p>
           ) : (
-            <ul>
-              {data.chiffreAffaires.parBoutique.map((b) => (
-                <li key={b.boutiqueId}>
-                  <span>{b.nomBoutique}</span>
-                  <span className="money">{formatFcfa(b.montant)}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={data.chiffreAffaires.parBoutique}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="nomBoutique" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="montant" name="CA (FCFA)" fill="#2563eb" />
+                </BarChart>
+              </ResponsiveContainer>
+              <ul>
+                {data.chiffreAffaires.parBoutique.map((b) => (
+                  <li key={b.boutiqueId}>
+                    <span>{b.nomBoutique}</span>
+                    <span className="money">{formatFcfa(b.montant)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2>Répartition par mode de paiement</h2>
+          {data.chiffreAffaires.parModePaiement.length === 0 ? (
+            <p className="lead">Aucune vente sur la période.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={data.chiffreAffaires.parModePaiement}
+                  dataKey="montant"
+                  nameKey="modePaiement"
+                  outerRadius={80}
+                  label
+                >
+                  {data.chiffreAffaires.parModePaiement.map((entry, index) => (
+                    <Cell
+                      key={entry.modePaiement}
+                      fill={COULEURS_MODES[index % COULEURS_MODES.length]}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2>Évolution du CA (30 derniers jours)</h2>
+          {!serieQuotidienne || serieQuotidienne.length === 0 ? (
+            <p className="lead">Aucune donnée disponible.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={serieQuotidienne}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="CA (FCFA)"
+                  stroke="#16a34a"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           )}
         </section>
 
