@@ -1,6 +1,8 @@
 import type {
+  ModePaiement,
   NiveauFidelite,
   SegmentClient,
+  StatutSessionCaisse,
   StatutTransaction,
   TypeCaisse,
   TypeTransaction,
@@ -65,4 +67,42 @@ export interface VenteHistoriqueDto {
   caisse: CaisseDto;
   clientId: string | null;
   lignes: LigneVenteDto[];
+}
+
+export interface SessionCaisseDto {
+  id: string;
+  caisseId: string;
+  statut: StatutSessionCaisse;
+  ouvertureDateHeure: string;
+  fondInitial: string;
+  ouvertureUtilisateurId: string;
+  ouvertureTemoinId: string;
+  clotureDateHeure: string | null;
+  fondCompteCloture: string | null;
+  clotureUtilisateurId: string | null;
+  clotureTemoinId: string | null;
+  transactionVersementId: string | null;
+}
+
+export interface VenteDto {
+  id: string;
+  dateVente: string;
+  montantTotal: string;
+  modePaiement: ModePaiement;
+  caisseId: string;
+  sessionCaisseId: string;
+  clientId: string | null;
+  lignes: LigneVenteDto[];
+}
+
+export interface ReleveModePaiementDto {
+  modePaiement: ModePaiement;
+  total: string;
+  nombreVentes: number;
+}
+
+export interface ClotureSessionResponseDto {
+  session: SessionCaisseDto;
+  releve: ReleveModePaiementDto[];
+  transactionVersementId: string | null;
 }

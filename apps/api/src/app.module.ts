@@ -13,6 +13,8 @@ import { ZonesModule } from './zones/zones.module';
 import { BoutiquesModule } from './boutiques/boutiques.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { CrmModule } from './crm/crm.module';
+import { ProduitsModule } from './produits/produits.module';
+import { VentesModule } from './ventes/ventes.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { CrmModule } from './crm/crm.module';
     CaissesModule,
     TransactionsModule,
     CrmModule,
+    ProduitsModule,
+    VentesModule,
   ],
   controllers: [AppController],
   providers: [

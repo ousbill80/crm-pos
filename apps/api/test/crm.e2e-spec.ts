@@ -321,6 +321,7 @@ describe('CRM (e2e)', () => {
     let clientAvecAchatsId: string;
     let clientSansAchatsId: string;
     let caisseId: string;
+    let sessionCaisseId: string;
 
     beforeAll(async () => {
       const zone = await env.prisma.zone.create({
@@ -338,6 +339,46 @@ describe('CRM (e2e)', () => {
       });
       caisseId = caisse.id;
 
+      // Fixtures minimales pour la session de caisse requise par Vente
+      // (§5.1/§6.3.2) — sans rapport avec le RBAC testé ici, donc création
+      // Prisma directe plutôt que via l'API.
+      const roleCaissierBoutique = await env.prisma.role.upsert({
+        where: { libelle: 'CAISSIER_BOUTIQUE' },
+        update: {},
+        create: { libelle: 'CAISSIER_BOUTIQUE', niveauHabilitation: 4 },
+      });
+      const caissierSession = await env.prisma.utilisateur.create({
+        data: {
+          login: 'caissier-session-crm.test',
+          passwordHash: await bcrypt.hash('MotDePasse!123', 10),
+          nom: 'Test',
+          prenom: 'CaissierSession',
+          actif: true,
+          roleId: roleCaissierBoutique.id,
+          boutiqueId: boutique.id,
+        },
+      });
+      const temoinSession = await env.prisma.utilisateur.create({
+        data: {
+          login: 'temoin-session-crm.test',
+          passwordHash: await bcrypt.hash('MotDePasse!123', 10),
+          nom: 'Test',
+          prenom: 'TemoinSession',
+          actif: true,
+          roleId: roleCaissierBoutique.id,
+          boutiqueId: boutique.id,
+        },
+      });
+      const sessionCaisse = await env.prisma.sessionCaisse.create({
+        data: {
+          caisseId,
+          fondInitial: '0.00',
+          ouvertureUtilisateurId: caissierSession.id,
+          ouvertureTemoinId: temoinSession.id,
+        },
+      });
+      sessionCaisseId = sessionCaisse.id;
+
       const clientAvecAchats = await env.prisma.client.create({
         data: { nom: 'Keita', prenom: 'Seydou' },
       });
@@ -354,6 +395,8 @@ describe('CRM (e2e)', () => {
           montantTotal: '15000.00',
           caisseId,
           clientId: clientAvecAchatsId,
+          modePaiement: 'ESPECES',
+          sessionCaisseId,
         },
       });
       await env.prisma.vente.create({
@@ -361,13 +404,21 @@ describe('CRM (e2e)', () => {
           montantTotal: '5000.00',
           caisseId,
           clientId: clientAvecAchatsId,
+          modePaiement: 'ESPECES',
+          sessionCaisseId,
         },
       });
 
       // Vente anonyme (rattachement client optionnel — §6.6) : ne doit
       // apparaître dans l'historique d'aucun client et ne doit rien casser.
       await env.prisma.vente.create({
-        data: { montantTotal: '2500.00', caisseId, clientId: null },
+        data: {
+          montantTotal: '2500.00',
+          caisseId,
+          clientId: null,
+          modePaiement: 'ESPECES',
+          sessionCaisseId,
+        },
       });
     });
 
@@ -434,6 +485,8 @@ describe('CRM (e2e)', () => {
             montantTotal: '1000.00',
             caisseId,
             clientId: clientAvecAchatsId,
+            modePaiement: 'ESPECES',
+            sessionCaisseId,
           },
         });
       }

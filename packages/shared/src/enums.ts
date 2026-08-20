@@ -84,3 +84,22 @@ export const CanalInteraction = {
   CAMPAGNE: 'CAMPAGNE',
 } as const;
 export type CanalInteraction = (typeof CanalInteraction)[keyof typeof CanalInteraction];
+
+// ---------------------------------------------------------------------------
+// Ventes / Point de vente boutique (§6.3.2, §5.1).
+// Doit rester en cohérence stricte avec les enums Prisma correspondants
+// (apps/api/prisma/schema.prisma : ModePaiement, StatutSessionCaisse).
+// ---------------------------------------------------------------------------
+
+export const ModePaiement = {
+  ESPECES: 'ESPECES',
+  CARTE: 'CARTE',
+  MOBILE_MONEY: 'MOBILE_MONEY',
+} as const;
+export type ModePaiement = (typeof ModePaiement)[keyof typeof ModePaiement];
+
+export const StatutSessionCaisse = {
+  OUVERTE: 'OUVERTE',
+  FERMEE: 'FERMEE',
+} as const;
+export type StatutSessionCaisse = (typeof StatutSessionCaisse)[keyof typeof StatutSessionCaisse];

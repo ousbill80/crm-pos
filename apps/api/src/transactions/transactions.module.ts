@@ -6,5 +6,6 @@ import { TransactionStateMachineService } from './transaction-state-machine.serv
 @Module({
   providers: [TransactionsService, TransactionStateMachineService],
   controllers: [TransactionsController],
+  exports: [TransactionsService],
 })
 export class TransactionsModule {}

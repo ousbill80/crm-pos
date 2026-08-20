@@ -67,6 +67,11 @@ model Utilisateur {
   receptionsValidees     ReceptionValidation[] @relation("Validateur")
   entreesAudit           JournalAudit[]
 
+  sessionsOuvertes        SessionCaisse[] @relation("OuvertureSession")
+  sessionsTemoinOuverture SessionCaisse[] @relation("OuvertureTemoin")
+  sessionsFermees         SessionCaisse[] @relation("ClotureSession")
+  sessionsTemoinCloture   SessionCaisse[] @relation("ClotureTemoin")
+
   @@map("utilisateur")
 }
 
@@ -92,6 +97,7 @@ model Caisse {
 
   transactions TransactionCaisse[]
   ventes       Vente[]
+  sessions     SessionCaisse[]
 
   @@map("caisse")
 }
@@ -124,6 +130,7 @@ model TransactionCaisse {
   initiateurId           String
 
   bordereau             BordereauVersement?
+  sessionCaisse         SessionCaisse?
 
   @@map("transaction_caisse")
 }
@@ -156,7 +163,7 @@ model ReceptionValidation {
 }
 
 // ---------------------------------------------------------------------------
-// Ventes (§6.3.2)
+// Ventes / Point de vente boutique (§6.3.2, §5.1)
 // ---------------------------------------------------------------------------
 
 model Produit {
@@ -169,16 +176,62 @@ model Produit {
   @@map("produit")
 }
 
+enum ModePaiement {
+  ESPECES
+  CARTE
+  MOBILE_MONEY
+}
+
+// Session de caisse (§5.1) : comptage contradictoire à l'ouverture et à la
+// fermeture, période pendant laquelle les ventes s'accumulent. La clôture
+// génère automatiquement UNE TransactionCaisse de type VENTE (montant =
+// total des ventes ESPECES uniquement — seul mode de règlement qui transite
+// physiquement par la caisse auxiliaire, cf. plan de la tâche) qui entre
+// ensuite dans le circuit standard §6.4 (transit -> réception -> validation).
+enum StatutSessionCaisse {
+  OUVERTE
+  FERMEE
+}
+
+model SessionCaisse {
+  id                     String              @id @default(uuid())
+  caisse                 Caisse              @relation(fields: [caisseId], references: [id])
+  caisseId               String
+  statut                 StatutSessionCaisse @default(OUVERTE)
+  ouvertureDateHeure     DateTime            @default(now())
+  fondInitial            Decimal             @db.Decimal(14, 2)
+  ouvertureUtilisateur   Utilisateur         @relation("OuvertureSession", fields: [ouvertureUtilisateurId], references: [id])
+  ouvertureUtilisateurId String
+  // Comptage contradictoire (§5.1) : témoin résolu par login, sans
+  // ré-authentification (simplification assumée — voir plan de la tâche).
+  ouvertureTemoin        Utilisateur         @relation("OuvertureTemoin", fields: [ouvertureTemoinId], references: [id])
+  ouvertureTemoinId      String
+  clotureDateHeure       DateTime?
+  fondCompteCloture      Decimal?            @db.Decimal(14, 2)
+  clotureUtilisateur     Utilisateur?        @relation("ClotureSession", fields: [clotureUtilisateurId], references: [id])
+  clotureUtilisateurId   String?
+  clotureTemoin          Utilisateur?        @relation("ClotureTemoin", fields: [clotureTemoinId], references: [id])
+  clotureTemoinId        String?
+  transactionVersement   TransactionCaisse?  @relation(fields: [transactionVersementId], references: [id])
+  transactionVersementId String?             @unique
+  ventes                 Vente[]
+
+  @@map("session_caisse")
+}
+
 model Vente {
-  id           String       @id @default(uuid())
-  dateVente    DateTime     @default(now())
-  montantTotal Decimal      @db.Decimal(14, 2)
-  caisse       Caisse       @relation(fields: [caisseId], references: [id])
-  caisseId     String
+  id             String        @id @default(uuid())
+  dateVente      DateTime      @default(now())
+  montantTotal   Decimal       @db.Decimal(14, 2)
+  modePaiement   ModePaiement
+  caisse         Caisse        @relation(fields: [caisseId], references: [id])
+  caisseId       String
+  sessionCaisse  SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisseId String
   // Rattachement client optionnel — la vente anonyme doit rester possible (§6.6)
-  client       Client?      @relation(fields: [clientId], references: [id])
-  clientId     String?
-  lignes       LigneVente[]
+  client         Client?       @relation(fields: [clientId], references: [id])
+  clientId       String?
+  lignes         LigneVente[]
 
   @@map("vente")
 }
