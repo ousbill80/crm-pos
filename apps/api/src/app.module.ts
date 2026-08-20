@@ -16,6 +16,7 @@ import { CrmModule } from './crm/crm.module';
 import { ProduitsModule } from './produits/produits.module';
 import { VentesModule } from './ventes/ventes.module';
 import { AlertesModule } from './alertes/alertes.module';
+import { ReportingModule } from './reporting/reporting.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AlertesModule } from './alertes/alertes.module';
     ProduitsModule,
     VentesModule,
     AlertesModule,
+    ReportingModule,
   ],
   controllers: [AppController],
   providers: [

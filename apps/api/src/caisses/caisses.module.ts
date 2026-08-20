@@ -6,6 +6,6 @@ import { CaisseBalanceService } from './caisse-balance.service';
 @Module({
   providers: [CaissesService, CaisseBalanceService],
   controllers: [CaissesController],
-  exports: [CaisseBalanceService],
+  exports: [CaissesService, CaisseBalanceService],
 })
 export class CaissesModule {}
