@@ -55,3 +55,32 @@ export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
   RoleLibelle.DAF,
 ];
+
+// ---------------------------------------------------------------------------
+// CRM (§6.6) — segmentation, fidélité, interactions.
+// Doit rester en cohérence stricte avec les enums Prisma correspondants
+// (apps/api/prisma/schema.prisma : SegmentClient, NiveauFidelite, CanalInteraction).
+// ---------------------------------------------------------------------------
+
+export const SegmentClient = {
+  NOUVEAU: 'NOUVEAU',
+  REGULIER: 'REGULIER',
+  VIP: 'VIP',
+} as const;
+export type SegmentClient = (typeof SegmentClient)[keyof typeof SegmentClient];
+
+export const NiveauFidelite = {
+  BRONZE: 'BRONZE',
+  ARGENT: 'ARGENT',
+  OR: 'OR',
+} as const;
+export type NiveauFidelite = (typeof NiveauFidelite)[keyof typeof NiveauFidelite];
+
+export const CanalInteraction = {
+  APPEL: 'APPEL',
+  SMS: 'SMS',
+  WHATSAPP: 'WHATSAPP',
+  VISITE: 'VISITE',
+  CAMPAGNE: 'CAMPAGNE',
+} as const;
+export type CanalInteraction = (typeof CanalInteraction)[keyof typeof CanalInteraction];
