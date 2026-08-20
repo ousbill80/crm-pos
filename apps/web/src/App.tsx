@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { AlertesPage } from './routes/AlertesPage';
 import { CaissesPage } from './routes/CaissesPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
 import { DashboardPage } from './routes/DashboardPage';
@@ -16,6 +17,7 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/alertes" element={<AlertesPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />

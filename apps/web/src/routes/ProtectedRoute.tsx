@@ -14,6 +14,7 @@ export function ProtectedRoute() {
       <header>
         <nav>
           <NavLink to="/dashboard">Tableau de bord</NavLink>
+          <NavLink to="/alertes">Alertes</NavLink>
           <NavLink to="/transactions">Transactions</NavLink>
           <NavLink to="/caisses">Caisses</NavLink>
           <NavLink to="/clients">Clients</NavLink>
