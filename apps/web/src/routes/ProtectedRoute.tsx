@@ -16,6 +16,7 @@ export function ProtectedRoute() {
           <NavLink to="/dashboard">Tableau de bord</NavLink>
           <NavLink to="/transactions">Transactions</NavLink>
           <NavLink to="/caisses">Caisses</NavLink>
+          <NavLink to="/clients">Clients</NavLink>
         </nav>
         <span>{user?.login} — {user?.role}</span>
         <button type="button" onClick={logout}>
