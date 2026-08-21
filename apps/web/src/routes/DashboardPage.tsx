@@ -402,7 +402,7 @@ export function DashboardPage() {
           )}
 
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <Link to="/finance?tab=resultat" className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <ShoppingCart size={16} />
@@ -426,9 +426,9 @@ export function DashboardPage() {
                   </span>
                 )}
               </div>
-            </article>
+            </Link>
 
-            <article className="kpi-card dash-kpi">
+            <Link to="/tresorerie" className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Wallet size={16} />
@@ -443,9 +443,10 @@ export function DashboardPage() {
               <div className="kpi-label">Trésorerie auxiliaire</div>
               <div className="kpi-value">{formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}</div>
               <div className="kpi-hint">{data.tresorerie.caisses.length} caisse(s) · grand livre</div>
-            </article>
+            </Link>
 
-            <article
+            <Link
+              to="/alertes?type=VERSEMENT_EN_RETARD"
               className={
                 data.versements.enRetard24h > 0 ? 'kpi-card dash-kpi kpi-warning' : 'kpi-card dash-kpi'
               }
@@ -459,9 +460,10 @@ export function DashboardPage() {
               <div className="kpi-label">Versements en retard</div>
               <div className="kpi-value">{data.versements.enRetard24h}</div>
               <div className="kpi-hint">&gt; 24 h non transmis</div>
-            </article>
+            </Link>
 
-            <article
+            <Link
+              to="/litiges"
               className={
                 data.ecarts.nombreLitiges > 0 ? 'kpi-card dash-kpi kpi-danger' : 'kpi-card dash-kpi'
               }
@@ -480,9 +482,9 @@ export function DashboardPage() {
               <div className="kpi-label">Litiges / écarts</div>
               <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
               <div className="kpi-hint">{formatFcfa(data.ecarts.montantEcartsAbsolus)} cumulés</div>
-            </article>
+            </Link>
 
-            <article className="kpi-card dash-kpi">
+            <Link to="/clients" className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Users size={16} />
@@ -492,10 +494,11 @@ export function DashboardPage() {
               <div className="kpi-label">Clients CRM</div>
               <div className="kpi-value">{data.crm.nombreClients}</div>
               <div className="kpi-hint">{data.crm.parSegment.length} segment(s)</div>
-            </article>
+            </Link>
 
             {margeReseau && (
-              <article
+              <Link
+                to="/finance?tab=resultat"
                 className={
                   Number(margeReseau.taux) < 0
                     ? 'kpi-card dash-kpi kpi-danger'
@@ -515,7 +518,7 @@ export function DashboardPage() {
                 <div className="kpi-label">Marge brute réseau</div>
                 <div className="kpi-value">{formatFcfa(margeReseau.marge)}</div>
                 <div className="kpi-hint">Taux {margeReseau.taux} %</div>
-              </article>
+              </Link>
             )}
           </div>
 
@@ -809,7 +812,7 @@ export function DashboardPage() {
               <ShoppingCart size={18} />
               <span>Point de vente</span>
             </Link>
-            <Link to="/transactions" className="dash-shortcut">
+            <Link to="/transactions?enCours=1" className="dash-shortcut">
               <Banknote size={18} />
               <span>Transactions</span>
             </Link>

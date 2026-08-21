@@ -694,6 +694,151 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     });
   });
 
+  describe('Import catalogue CSV/Excel (ROLES_ADMIN_STRUCTURE)', () => {
+    it('refuse (403) l’aperçu à un Caissier boutique', () => {
+      return request(app.getHttpServer())
+        .post('/produits/import/apercu')
+        .set(auth(tokens.caissierBoutique))
+        .send({ csv: 'Désignation,Prix unitaire\nCoque,2500\n' })
+        .expect(403);
+    });
+
+    it('refuse (403) l’import au DAF (lecture, pas admin structure)', () => {
+      return request(app.getHttpServer())
+        .post('/produits/import')
+        .set(auth(tokens.daf))
+        .send({ csv: 'Désignation,Prix unitaire\nCoque,2500\n' })
+        .expect(403);
+    });
+
+    it('détecte les colonnes d’un CSV point-virgule et crée les fiches', async () => {
+      const csv = [
+        'SKU;Nom;PV;Famille;Seuil',
+        'IMP-CBL-01;Câble import;2 500,00;Câbles;4',
+        'IMP-COQ-01;Coque import;1500;Protection;2',
+      ].join('\n');
+
+      const apercu = await request(app.getHttpServer())
+        .post('/produits/import/apercu')
+        .set(auth(tokens.respsi))
+        .send({ csv, nomFichier: 'fournisseur.csv' })
+        .expect(201);
+
+      const body = apercu.body as {
+        aCreer: number;
+        aMettreAJour: number;
+        enErreur: number;
+        mapping: { reference: string; designation: string; prixUnitaire: string };
+      };
+      expect(body.aCreer).toBe(2);
+      expect(body.aMettreAJour).toBe(0);
+      expect(body.enErreur).toBe(0);
+      expect(body.mapping.reference).toBe('SKU');
+      expect(body.mapping.designation).toBe('Nom');
+      expect(body.mapping.prixUnitaire).toBe('PV');
+
+      const applique = await request(app.getHttpServer())
+        .post('/produits/import')
+        .set(auth(tokens.respsi))
+        .send({ csv, nomFichier: 'fournisseur.csv', mode: 'UPSERT' })
+        .expect(201);
+
+      expect(applique.body).toMatchObject({ crees: 2, misAJour: 0 });
+
+      const liste = await request(app.getHttpServer())
+        .get('/produits?q=IMP-CBL-01')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const cable = (liste.body as ProduitDto[]).find((p) => p.reference === 'IMP-CBL-01');
+      expect(cable).toBeDefined();
+      expect(Number(cable!.prixUnitaire)).toBe(2500);
+      expect(cable!.stock).toBe(0);
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: { action: 'PRODUIT_IMPORT' },
+        orderBy: { dateHeure: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+    });
+
+    it('mappe des en-têtes longs et importe les lignes valides malgré une erreur', async () => {
+      const csv = [
+        'Code article,Libellé produit,Prix de vente TTC',
+        'IMP-FZ-01,Coque fuzzy,3500',
+        'IMP-FZ-BAD,,0',
+        ',,',
+      ].join('\n');
+
+      const apercu = await request(app.getHttpServer())
+        .post('/produits/import/apercu')
+        .set(auth(tokens.respsi))
+        .send({ csv })
+        .expect(201);
+      const body = apercu.body as {
+        aCreer: number;
+        enErreur: number;
+        aIgnorer: number;
+        mapping: { reference: string; designation: string; prixUnitaire: string };
+      };
+      expect(body.mapping.reference).toBe('Code article');
+      expect(body.mapping.designation).toBe('Libellé produit');
+      expect(body.mapping.prixUnitaire).toBe('Prix de vente TTC');
+      expect(body.aCreer).toBe(1);
+      expect(body.enErreur).toBeGreaterThanOrEqual(1);
+
+      const applique = await request(app.getHttpServer())
+        .post('/produits/import')
+        .set(auth(tokens.respsi))
+        .send({ csv, ignorerLignesEnErreur: true })
+        .expect(201);
+      expect(applique.body).toMatchObject({ crees: 1 });
+    });
+
+    it('met à jour le prix d’une fiche existante sans toucher au stock', async () => {
+      await env.prisma.produit.create({
+        data: {
+          designation: 'Article déjà en base',
+          reference: 'IMP-UPD-01',
+          prixUnitaire: '1000.00',
+          stock: 12,
+        },
+      });
+
+      const csv =
+        'Référence,Désignation,Prix unitaire,Stock réseau\nIMP-UPD-01,Article déjà en base,1800,99\n';
+      await request(app.getHttpServer())
+        .post('/produits/import')
+        .set(auth(tokens.respsi))
+        .send({ csv, importerStockInitial: true })
+        .expect(201);
+
+      const produit = await env.prisma.produit.findUnique({
+        where: { reference: 'IMP-UPD-01' },
+      });
+      expect(Number(produit?.prixUnitaire)).toBe(1800);
+      expect(produit?.stock).toBe(12);
+    });
+
+    it('crée un stock initial uniquement pour un nouveau produit si demandé', async () => {
+      const csv =
+        'Référence,Désignation,Prix unitaire,Stock initial\nIMP-STK-01,Nouveau avec stock,3000,7\n';
+      await request(app.getHttpServer())
+        .post('/produits/import')
+        .set(auth(tokens.respsi))
+        .send({ csv, importerStockInitial: true })
+        .expect(201);
+
+      const produit = await env.prisma.produit.findUnique({
+        where: { reference: 'IMP-STK-01' },
+      });
+      expect(produit?.stock).toBe(7);
+      const mvt = await env.prisma.mouvementStock.findFirst({
+        where: { produitId: produit!.id, reference: 'STOCK_INITIAL' },
+      });
+      expect(mvt).not.toBeNull();
+    });
+  });
+
   describe('Authentification obligatoire', () => {
     it('refuse (401) toute requête sans JWT', () => {
       return request(app.getHttpServer()).get('/produits').expect(401);

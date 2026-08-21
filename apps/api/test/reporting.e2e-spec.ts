@@ -53,6 +53,7 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
   let boutique3Id: string;
   let caisseBoutique1Id: string;
   let caisseBoutique3Id: string;
+  let caissierB1Id: string;
 
   const tokens: Record<string, string> = {};
 
@@ -115,7 +116,7 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
     caisseBoutique1Id = caisse1.id;
     caisseBoutique3Id = caisse3.id;
 
-    const caissierB1Id = await creerUtilisateur(
+    caissierB1Id = await creerUtilisateur(
       'rep-caissier-b1',
       'CAISSIER_BOUTIQUE',
       boutique1Id,
@@ -395,5 +396,50 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
       expect(Number(j30.cashHaut)).toBeGreaterThanOrEqual(Number(j30.cashBase));
       expect(Number(j30.cashBase)).toBeGreaterThanOrEqual(Number(j30.cashBas));
     });
+  });
+
+  it('délai de versement configurable (Societe.delaiVersementHeures, §6.3.5) — enRetard24h reflète le seuil configuré, pas 24h en dur', async () => {
+    // Versement âgé de 10h : pas en retard avec le défaut (24h).
+    await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 90,
+        statut: StatutTransaction.INITIEE,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+        dateHeure: new Date(Date.now() - 10 * 60 * 60 * 1000),
+      },
+    });
+
+    const avant = await request(app.getHttpServer())
+      .get('/reporting/dashboard')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const enRetardAvant = (avant.body as DashboardDto).versements.enRetard24h;
+
+    const societe = await env.prisma.societe.findFirst();
+    if (societe) {
+      await env.prisma.societe.update({
+        where: { id: societe.id },
+        data: { delaiVersementHeures: 6 },
+      });
+    } else {
+      await env.prisma.societe.create({
+        data: {
+          raisonSociale: 'Test Société',
+          adresse: 'Adresse',
+          delaiVersementHeures: 6,
+        },
+      });
+    }
+
+    const apres = await request(app.getHttpServer())
+      .get('/reporting/dashboard')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const enRetardApres = (apres.body as DashboardDto).versements.enRetard24h;
+
+    // Abaisser le seuil à 6h fait basculer le versement de 10h en retard.
+    expect(enRetardApres).toBe(enRetardAvant + 1);
   });
 });

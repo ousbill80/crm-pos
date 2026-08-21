@@ -160,7 +160,11 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
       },
     });
     await env.prisma.paiementVente.create({
-      data: { venteId: venteEspeces.id, modePaiement: 'ESPECES', montant: 5000 },
+      data: {
+        venteId: venteEspeces.id,
+        modePaiement: 'ESPECES',
+        montant: 5000,
+      },
     });
     const venteCarte = await env.prisma.vente.create({
       data: {
@@ -184,7 +188,11 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
       },
     });
     await env.prisma.paiementVente.create({
-      data: { venteId: venteAncienne.id, modePaiement: 'ESPECES', montant: 1000 },
+      data: {
+        venteId: venteAncienne.id,
+        modePaiement: 'ESPECES',
+        montant: 1000,
+      },
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

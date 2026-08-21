@@ -47,7 +47,6 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
   let app: INestApplication<App>;
 
   let boutique1Id: string;
-  let caisse1Id: string;
   let tiroir1Id: string;
   let entrepot1Id: string;
   let produitId: string;
@@ -112,10 +111,9 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
     });
     entrepot1Id = entrepot1.id;
 
-    const caisse1 = await env.prisma.caisse.create({
+    await env.prisma.caisse.create({
       data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
-    caisse1Id = caisse1.id;
 
     const tiroir1 = await env.prisma.caisse.create({
       data: {

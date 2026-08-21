@@ -248,4 +248,55 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     expect(body.some((a) => a.type === 'VERSEMENT_EN_RETARD')).toBe(true);
     expect(body.every((a) => a.type !== 'ACCES_REFUSE')).toBe(true);
   });
+
+  it("délai de versement configurable (Societe.delaiVersementHeures, §6.3.5) — un versement de 10h n'est en retard que si le seuil est abaissé sous 10h", async () => {
+    const transactionRecente = await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 150,
+        statut: StatutTransaction.INITIEE,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+        dateHeure: new Date(Date.now() - 10 * 60 * 60 * 1000),
+      },
+    });
+
+    // Avec le délai par défaut (24h), ce versement de 10h n'est pas en retard.
+    const avant = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    expect(
+      (avant.body as AlerteDto[]).some(
+        (a) => a.entiteId === transactionRecente.id,
+      ),
+    ).toBe(false);
+
+    const societe = await env.prisma.societe.findFirst();
+    if (societe) {
+      await env.prisma.societe.update({
+        where: { id: societe.id },
+        data: { delaiVersementHeures: 6 },
+      });
+    } else {
+      await env.prisma.societe.create({
+        data: {
+          raisonSociale: 'Test Société',
+          adresse: 'Adresse',
+          delaiVersementHeures: 6,
+        },
+      });
+    }
+
+    // Une fois le seuil abaissé à 6h, ce même versement de 10h est en retard.
+    const apres = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const alerte = (apres.body as AlerteDto[]).find(
+      (a) => a.entiteId === transactionRecente.id,
+    );
+    expect(alerte).toBeDefined();
+    expect(alerte?.message).toContain('(6 h)');
+  });
 });

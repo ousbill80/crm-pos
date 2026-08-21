@@ -17,6 +17,7 @@ import {
   resolveZoneScopeForSuperviseur,
 } from '../boutiques/boutique-scope.util';
 import { CreateZoneDto } from './dto/create-zone.dto';
+import { UpdateZoneDto } from './dto/update-zone.dto';
 
 // Service Zone (§3, §4, §6.2 du cahier des charges) : création réservée aux
 // profils d'administration structurelle, lecture filtrée au périmètre de
@@ -71,6 +72,32 @@ export class ZonesService {
     }
 
     await this.assertZoneInScope(zone.id, user);
+    return zone;
+  }
+
+  async update(
+    id: string,
+    dto: UpdateZoneDto,
+    user: AuthenticatedUser,
+  ): Promise<Zone> {
+    const existing = await this.prisma.zone.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Zone ${id} introuvable.`);
+    }
+
+    const zone = await this.prisma.zone.update({
+      where: { id },
+      data: { nomZone: dto.nomZone },
+    });
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'ZONE_UPDATED',
+      entite: 'Zone',
+      entiteId: zone.id,
+      details: `nomZone=${existing.nomZone}→${zone.nomZone}`,
+    });
+
     return zone;
   }
 

@@ -8,6 +8,7 @@ import {
   Package,
   PackageX,
   Scale,
+  Upload,
   Wallet,
 } from 'lucide-react';
 import { RoleLibelle } from '@caisse-crm/shared';
@@ -16,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { ImportCatalogueModal } from './ImportCatalogueModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
   buildPrioritesCatalogue,
@@ -284,6 +286,7 @@ export function ProduitsPage() {
   const [actif, setActif] = useState('true');
   const [margeNegative, setMargeNegative] = useState(false);
   const [modalNouveau, setModalNouveau] = useState(false);
+  const [modalImport, setModalImport] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
     key: 'designation',
     dir: 'asc',
@@ -383,13 +386,18 @@ export function ProduitsPage() {
               <Download size={14} /> Exporter CSV
             </button>
             {peutGerer ? (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => setModalNouveau(true)}
-              >
-                Nouveau produit
-              </button>
+              <>
+                <button type="button" onClick={() => setModalImport(true)}>
+                  <Upload size={14} /> Importer
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setModalNouveau(true)}
+                >
+                  Nouveau produit
+                </button>
+              </>
             ) : null}
           </>
         }
@@ -662,13 +670,18 @@ export function ProduitsPage() {
                   }
                   action={
                     peutGerer && !recherche && !categorie ? (
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => setModalNouveau(true)}
-                      >
-                        Nouveau produit
-                      </button>
+                      <div className="table-actions">
+                        <button type="button" onClick={() => setModalImport(true)}>
+                          Importer CSV / Excel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => setModalNouveau(true)}
+                        >
+                          Nouveau produit
+                        </button>
+                      </div>
                     ) : undefined
                   }
                 />
@@ -788,6 +801,12 @@ export function ProduitsPage() {
             }}
           />
         </Modal>
+      )}
+      {peutGerer && (
+        <ImportCatalogueModal
+          open={modalImport}
+          onClose={() => setModalImport(false)}
+        />
       )}
     </div>
   );

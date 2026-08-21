@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
@@ -8,6 +8,7 @@ import {
 } from '../caisses/access-scope.constants';
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
+import { UpdateZoneDto } from './dto/update-zone.dto';
 
 // Endpoints Zone — §3, §4, §6.2 du cahier des charges.
 @Controller('zones')
@@ -30,5 +31,15 @@ export class ZonesController {
   @Roles(...ROLES_LECTURE_STRUCTURE)
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.zonesService.findOne(id, user);
+  }
+
+  @Patch(':id')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateZoneDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.zonesService.update(id, dto, user);
   }
 }

@@ -169,6 +169,7 @@ export interface ReportingDafDto {
 
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 const zero = () => new Prisma.Decimal(0);
+const DELAI_VERSEMENT_HEURES_DEFAUT = 24;
 
 @Injectable()
 export class ReportingService {
@@ -190,7 +191,10 @@ export class ReportingService {
     }
 
     const perimetre = this.resolvePerimetre(user);
-    const caisses = await this.caissesService.findAll(user);
+    const [caisses, delaiVersementHeures] = await Promise.all([
+      this.caissesService.findAll(user),
+      this.getDelaiVersementHeures(),
+    ]);
     const caisseIds = caisses.map((c) => c.id);
     const boutiqueIds = [
       ...new Set(
@@ -209,7 +213,7 @@ export class ReportingService {
       rentabiliteParBoutique,
     ] = await Promise.all([
       this.aggreguerChiffreAffaires(caisseIds, periode),
-      this.aggreguerVersements(caisseIds),
+      this.aggreguerVersements(caisseIds, delaiVersementHeures),
       this.aggreguerEcarts(caisseIds),
       this.aggreguerTresorerie(caisses),
       this.aggreguerCrm(boutiqueIds, perimetre),
@@ -370,14 +374,16 @@ export class ReportingService {
       );
     }
 
-    const [dashboard, pilotage, entrepots] = await Promise.all([
-      this.getDashboard(user, periode),
-      this.getTresoreriePilotage(user),
-      this.prisma.entrepot.findMany({
-        where: { actif: true },
-        select: { id: true },
-      }),
-    ]);
+    const [dashboard, pilotage, entrepots, delaiVersementHeures] =
+      await Promise.all([
+        this.getDashboard(user, periode),
+        this.getTresoreriePilotage(user),
+        this.prisma.entrepot.findMany({
+          where: { actif: true },
+          select: { id: true },
+        }),
+        this.getDelaiVersementHeures(),
+      ]);
     const synthese = await this.stockService.synthese(
       entrepots.map((e) => e.id),
     );
@@ -453,7 +459,7 @@ export class ReportingService {
     if (dashboard.versements.enRetard24h > 0) {
       alertes.push({
         code: 'VERSEMENTS_RETARD',
-        message: `${dashboard.versements.enRetard24h} versement(s) boutique → centrale > 24 h`,
+        message: `${dashboard.versements.enRetard24h} versement(s) boutique → centrale > ${delaiVersementHeures} h`,
         severite: 'warning',
       });
     }
@@ -763,8 +769,16 @@ export class ReportingService {
     };
   }
 
+  private async getDelaiVersementHeures(): Promise<number> {
+    const societe = await this.prisma.societe.findFirst({
+      select: { delaiVersementHeures: true },
+    });
+    return societe?.delaiVersementHeures ?? DELAI_VERSEMENT_HEURES_DEFAUT;
+  }
+
   private async aggreguerVersements(
     caisseIds: string[],
+    delaiVersementHeures: number,
   ): Promise<ReportingDashboardDto['versements']> {
     const allStatuts = Object.values(StatutTransaction);
     if (caisseIds.length === 0) {
@@ -795,8 +809,10 @@ export class ReportingService {
       ]),
     );
 
-    // Transmission ≤ 24 h (§5.1) — approximation 24 h calendaires.
-    const seuilRetard = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Transmission ≤ délai configuré (§5.1, §6.3.5) — Societe.delaiVersementHeures.
+    const seuilRetard = new Date(
+      Date.now() - delaiVersementHeures * 60 * 60 * 1000,
+    );
     const enRetard24h = await this.prisma.transactionCaisse.count({
       where: {
         caisseId: { in: caisseIds },

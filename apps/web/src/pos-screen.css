@@ -752,26 +752,6 @@
   font-weight: 600;
 }
 
-.pos-derogation {
-  border: 1px solid var(--warning);
-  background: var(--warning-bg, #fff7ed);
-  border-radius: var(--radius);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pos-derogation h2 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.pos-derogation p {
-  margin: 0;
-  font-size: 13px;
-}
-
 .pos-order-lines {
   list-style: none;
   margin: 0;
@@ -1698,4 +1678,93 @@ form.pos-gate-card {
   text-align: right;
   font-size: 1.1rem;
   color: var(--accent);
+}
+
+
+.pos-open-detail-toggle {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pos-denoms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.pos-denoms-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.pos-denoms-head .pos-btn-ghost {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.pos-denoms-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.pos-denom-row {
+  display: grid;
+  grid-template-columns: 88px 1fr 72px;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+}
+
+.pos-denom-row input {
+  margin: 0;
+  padding: 6px 8px;
+  min-height: 34px;
+}
+
+.pos-denom-row em {
+  font-style: normal;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pos-derogation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, #ca8a04 40%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #ca8a04 8%, var(--surface));
+}
+
+.pos-derogation h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.pos-derogation p {
+  margin: 0;
+  font-size: 13px;
 }

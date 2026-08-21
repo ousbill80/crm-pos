@@ -36,3 +36,72 @@ jobs:
       # via Testcontainers (Docker disponible nativement sur ubuntu-latest).
       - name: Test
         run: pnpm test
+
+  playwright-pos:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: caisse
+          POSTGRES_PASSWORD: caisse
+          POSTGRES_DB: caisse_crm
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U caisse -d caisse_crm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://caisse:caisse@127.0.0.1:5433/caisse_crm?schema=public
+      JWT_SECRET: ci-playwright-jwt-secret-not-for-production
+      VITE_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate and seed
+        run: |
+          pnpm --filter api exec prisma migrate deploy
+          pnpm --filter api prisma:seed
+
+      - name: Build API
+        run: pnpm --filter api build
+
+      - name: Start API
+        run: pnpm --filter api start:prod &
+        env:
+          PORT: 3000
+          NODE_ENV: test
+
+      - name: Wait for API
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/auth/login || true)
+            if echo "$code" | grep -qE '^[0-9]{3}$' && [ "$code" != "000" ]; then
+              echo "API HTTP $code"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not start"
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: POS E2E
+        run: pnpm --filter web test:e2e
+

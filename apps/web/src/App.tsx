@@ -2,8 +2,10 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AlertesPage } from './routes/AlertesPage';
 import { AuditPage } from './routes/AuditPage';
 import { ChangePasswordPage } from './routes/ChangePasswordPage';
+import { UtilisateurDetailPage } from './routes/UtilisateurDetailPage';
 import { UtilisateursPage } from './routes/UtilisateursPage';
 import { CaissesPage } from './routes/CaissesPage';
+import { CaisseDetailPage } from './routes/CaisseDetailPage';
 import { ClientDetailPage } from './routes/ClientDetailPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
 import { DashboardPage } from './routes/DashboardPage';
@@ -19,6 +21,7 @@ import { LitigesPage } from './routes/LitigesPage';
 import { InventairesPage } from './routes/InventairesPage';
 import { InventaireDetailPage } from './routes/InventaireDetailPage';
 import { OperationsStockPage } from './routes/OperationsStockPage';
+import { BonStockDetailPage } from './routes/BonStockDetailPage';
 import { LoginPage } from './routes/LoginPage';
 import { PosPage } from './routes/PosPage';
 import { ProduitsPage } from './routes/ProduitsPage';
@@ -28,6 +31,7 @@ import { StocksPage } from './routes/StocksPage';
 import { EntrepotDetailPage } from './routes/EntrepotDetailPage';
 import { MouvementStockDetailPage } from './routes/MouvementStockDetailPage';
 import { TransactionsPage } from './routes/TransactionsPage';
+import { TransactionDetailPage } from './routes/TransactionDetailPage';
 import { TresoreriePage } from './routes/TresoreriePage';
 import './App.css';
 import './pos-screen.css';
@@ -43,7 +47,9 @@ function App() {
         <Route path="/tresorerie" element={<TresoreriePage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
+        <Route path="/caisses/:caisseId" element={<CaisseDetailPage />} />
         <Route path="/litiges" element={<LitigesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
@@ -51,6 +57,7 @@ function App() {
         <Route path="/produits/:produitId" element={<ProduitDetailPage />} />
         <Route path="/stocks" element={<StocksPage />} />
         <Route path="/stocks/operations" element={<OperationsStockPage />} />
+        <Route path="/stocks/operations/:bonId" element={<BonStockDetailPage />} />
         <Route path="/stocks/emplacements" element={<OperationsStockPage />} />
         <Route path="/stocks/reappro" element={<OperationsStockPage />} />
         <Route path="/stocks/entrepots/:entrepotId" element={<EntrepotDetailPage />} />
@@ -65,6 +72,7 @@ function App() {
         <Route path="/achats/factures/:factureId" element={<FactureFournisseurDetailPage />} />
         <Route path="/entreprise" element={<EntreprisePage />} />
         <Route path="/utilisateurs" element={<UtilisateursPage />} />
+        <Route path="/utilisateurs/:userId" element={<UtilisateurDetailPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
         <Route path="/pos" element={<PosPage />} />

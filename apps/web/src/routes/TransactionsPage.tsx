@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Landmark, Scale, Wallet } from 'lucide-react';
 import {
-  RoleLibelle,
   ROLES_INITIATION_SORTIE_FONDS,
-  ROLES_MISE_EN_TRANSIT,
-  ROLES_VALIDATION_CAISSE_CENTRALE,
   StatutTransaction,
   TypeCaisse,
   TypeTransaction,
@@ -178,198 +175,21 @@ function NouvelleTransactionForm({
   );
 }
 
-function RapprocherForm({
-  transaction,
-  onSuccess,
-}: {
-  transaction: TransactionDto;
-  onSuccess?: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [montantRecu, setMontantRecu] = useState(transaction.montant);
-  const [error, setError] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch<TransactionDto>(`/transactions/${transaction.id}/rapprocher`, {
-        method: 'PATCH',
-        body: JSON.stringify({ montantRecu: Number(montantRecu) }),
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      onSuccess?.();
-    },
-    onError: () => setError('Échec du rapprochement.'),
-  });
-
-  return (
-    <form
-      className="stack-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        mutation.mutate();
-      }}
-    >
-      <p className="lead">
-        Montant déclaré : <strong className="money">{transaction.montant} FCFA</strong>
-      </p>
-      <label htmlFor="montantRecu">Montant reçu</label>
-      <input
-        id="montantRecu"
-        type="number"
-        min="0"
-        step="0.01"
-        value={montantRecu}
-        onChange={(e) => setMontantRecu(e.target.value)}
-        required
-      />
-      <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-        Rapprocher
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </form>
-  );
-}
-
-function TransactionDetail({ transactionId }: { transactionId: string }) {
-  const detail = useQuery({
-    queryKey: ['transactions', transactionId],
-    queryFn: () => apiFetch<TransactionDto>(`/transactions/${transactionId}`),
-  });
-
-  if (detail.isLoading) return <LoadingState label="Chargement du détail..." />;
-  if (detail.isError || !detail.data) {
-    return <p role="alert">Impossible de charger le détail.</p>;
-  }
-
-  const t = detail.data;
-  return (
-    <div className="stack-form">
-      <p>
-        <span className={badgeStatut(t.statut)}>{t.statut}</span>{' '}
-        <InfoTooltip insight={insightStatutTransaction(t.statut)} />
-      </p>
-      <p>
-        Type : <strong>{labelType(t.type)}</strong>
-      </p>
-      <p>
-        Montant : <strong className="money">{t.montant} FCFA</strong>
-      </p>
-      <p>Date : {new Date(t.dateHeure).toLocaleString()}</p>
-      <p>
-        Caisse : <code>{t.caisseId.slice(0, 8)}…</code>
-        {t.caisse?.boutique?.nom ? ` · ${t.caisse.boutique.nom}` : ''}
-      </p>
-      {t.bordereau && (
-        <>
-          <h4>Bordereau</h4>
-          <p>
-            Déclaré :{' '}
-            <strong className="money">{t.bordereau.montantDeclare} FCFA</strong>
-          </p>
-          <p>Émis : {new Date(t.bordereau.dateEmission).toLocaleString()}</p>
-          {t.bordereau.reception && (
-            <>
-              <h4>Réception / rapprochement</h4>
-              <p>
-                Reçu :{' '}
-                <strong className="money">{t.bordereau.reception.montantRecu} FCFA</strong>
-              </p>
-              <p>
-                Écart :{' '}
-                <strong className="money">{t.bordereau.reception.ecart} FCFA</strong>
-              </p>
-              <p>Statut final : {t.bordereau.reception.statutFinal}</p>
-            </>
-          )}
-        </>
-      )}
-      {t.contreparties && t.contreparties.length > 0 && (
-        <>
-          <h4>Contrepartie centrale</h4>
-          {t.contreparties.map((c) => (
-            <p key={c.id}>
-              <code>{c.id.slice(0, 8)}…</code> · {c.montant} FCFA · {c.statut}
-            </p>
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-function TransactionActions({
-  transaction,
-  onRapprocher,
-}: {
-  transaction: TransactionDto;
-  onRapprocher: (t: TransactionDto) => void;
-}) {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const transition = useMutation({
-    mutationFn: (path: string) =>
-      apiFetch<TransactionDto>(`/transactions/${transaction.id}/${path}`, {
-        method: 'PATCH',
-      }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-  });
-
-  if (!user) return null;
-
-  const actions: ReactNode[] = [];
-
-  if (
-    transaction.statut === StatutTransaction.INITIEE &&
-    ROLES_MISE_EN_TRANSIT.includes(user.role)
-  ) {
-    actions.push(
-      <button key="transit" type="button" onClick={() => transition.mutate('transit')}>
-        Passer en transit
-      </button>,
-    );
-  }
-
-  if (
-    transaction.statut === StatutTransaction.EN_TRANSIT &&
-    ROLES_VALIDATION_CAISSE_CENTRALE.includes(user.role)
-  ) {
-    actions.push(
-      <button key="receptionner" type="button" onClick={() => transition.mutate('receptionner')}>
-        Réceptionner
-      </button>,
-    );
-  }
-
-  if (
-    transaction.statut === StatutTransaction.RECEPTIONNEE &&
-    (ROLES_VALIDATION_CAISSE_CENTRALE.includes(user.role) ||
-      user.role === RoleLibelle.DIRECTION_GENERALE)
-  ) {
-    actions.push(
-      <button key="rapprocher" type="button" onClick={() => onRapprocher(transaction)}>
-        Rapprocher
-      </button>,
-    );
-  }
-
-  return <div className="table-actions">{actions}</div>;
-}
-
 export function TransactionsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const enCours = searchParams.get('enCours') === '1';
   const ageingBucket = searchParams.get('ageing');
   const caisseIdParam = searchParams.get('caisseId') ?? '';
+  const statutParam = searchParams.get('statut') ?? '';
   const peutInitier =
     user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
   useTresorerieRealtime(user !== null);
   const [pendingOffline, setPendingOffline] = useState(outboxCount());
   const [filters, setFilters] = useState({
-    statut: '',
+    statut: statutParam,
     type: '',
     caisseId: caisseIdParam,
     from: '',
@@ -377,8 +197,6 @@ export function TransactionsPage() {
   });
   const [vue, setVue] = useState<'liste' | 'colonnes'>('colonnes');
   const [modalOpen, setModalOpen] = useState(false);
-  const [rapprocherTx, setRapprocherTx] = useState<TransactionDto | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     if (caisseIdParam) {
@@ -389,10 +207,21 @@ export function TransactionsPage() {
   }, [caisseIdParam]);
 
   useEffect(() => {
+    if (statutParam) {
+      setFilters((f) =>
+        f.statut === statutParam ? f : { ...f, statut: statutParam },
+      );
+    }
+  }, [statutParam]);
+
+  useEffect(() => {
     async function sync() {
       if (!navigator.onLine) return;
-      const result = await flushOutbox((path, body) =>
-        apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+      const result = await flushOutbox((path, body, method = 'POST') =>
+        apiFetch(path, {
+          method,
+          ...(method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
+        }),
       );
       setPendingOffline(outboxCount());
       if (result.flushed > 0) {
@@ -421,6 +250,9 @@ export function TransactionsPage() {
         STATUTS_EN_COURS.includes(t.statut as StatutTransaction),
       );
     }
+    if (filters.statut) {
+      rows = rows.filter((t) => t.statut === filters.statut);
+    }
     if (ageingBucket && AGEING_HOURS[ageingBucket]) {
       const { minH, maxH } = AGEING_HOURS[ageingBucket];
       const now = Date.now();
@@ -432,7 +264,7 @@ export function TransactionsPage() {
       });
     }
     return rows;
-  }, [transactions, enCours, ageingBucket]);
+  }, [transactions, enCours, ageingBucket, filters.statut]);
 
   const colonnesStatut = useMemo(() => {
     if (enCours) return STATUTS_EN_COURS;
@@ -597,23 +429,26 @@ export function TransactionsPage() {
                     <p className="tx-kanban-empty">Aucune</p>
                   ) : (
                     cards.map((t) => (
-                      <article key={t.id} className="tx-kanban-card">
-                        <button
-                          type="button"
-                          className="link-button tx-kanban-card-title"
-                          onClick={() => setDetailId(t.id)}
-                        >
+                      <article
+                        key={t.id}
+                        className="tx-kanban-card"
+                        tabIndex={0}
+                        role="link"
+                        onClick={() => navigate(`/transactions/${t.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate(`/transactions/${t.id}`);
+                          }
+                        }}
+                      >
+                        <div className="tx-kanban-card-title">
                           {new Date(t.dateHeure).toLocaleString()}
-                        </button>
+                        </div>
                         <div className="money">{t.montant} FCFA</div>
                         <div className="tx-kanban-meta">
-                          {labelType(t.type)} ·{' '}
-                          <code>{t.caisseId.slice(0, 8)}…</code>
+                          {labelType(t.type)} · <code>{t.caisseId.slice(0, 8)}…</code>
                         </div>
-                        <TransactionActions
-                          transaction={t}
-                          onRapprocher={setRapprocherTx}
-                        />
                       </article>
                     ))
                   )}
@@ -652,20 +487,25 @@ export function TransactionsPage() {
                   <th>Montant</th>
                   <th>Statut</th>
                   <th>Caisse</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {transactionsFiltrees.map((t) => (
-                  <tr key={t.id}>
+                  <tr
+                    key={t.id}
+                    className="produit-row"
+                    tabIndex={0}
+                    role="link"
+                    onClick={() => navigate(`/transactions/${t.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(`/transactions/${t.id}`);
+                      }
+                    }}
+                  >
                     <td>
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => setDetailId(t.id)}
-                      >
-                        {new Date(t.dateHeure).toLocaleString()}
-                      </button>
+                      <strong>{new Date(t.dateHeure).toLocaleString()}</strong>
                     </td>
                     <td>{labelType(t.type)}</td>
                     <td className="money">{t.montant} FCFA</td>
@@ -675,12 +515,6 @@ export function TransactionsPage() {
                     </td>
                     <td>
                       <code>{t.caisseId.slice(0, 8)}…</code>
-                    </td>
-                    <td>
-                      <TransactionActions
-                        transaction={t}
-                        onRapprocher={setRapprocherTx}
-                      />
                     </td>
                   </tr>
                 ))}
@@ -695,27 +529,6 @@ export function TransactionsPage() {
           <NouvelleTransactionForm caisses={caisses} onSuccess={() => setModalOpen(false)} />
         </Modal>
       )}
-
-      <Modal
-        open={rapprocherTx !== null}
-        onClose={() => setRapprocherTx(null)}
-        title="Rapprochement"
-      >
-        {rapprocherTx && (
-          <RapprocherForm
-            transaction={rapprocherTx}
-            onSuccess={() => setRapprocherTx(null)}
-          />
-        )}
-      </Modal>
-
-      <Modal
-        open={detailId !== null}
-        onClose={() => setDetailId(null)}
-        title="Détail transaction"
-      >
-        {detailId && <TransactionDetail transactionId={detailId} />}
-      </Modal>
     </div>
   );
 }

@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "CaissePOS",
+    "slug": "caisse-pos",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "sn.caissepos.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "sn.caissepos.app"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000"
+    }
+  }
+}

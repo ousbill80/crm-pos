@@ -3,15 +3,21 @@ import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql';
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 // Harnais de test d'intégration : démarre un PostgreSQL éphémère réel via
 // Testcontainers, applique les migrations Prisma, et fournit un client
 // connecté. Cohérent avec la règle CLAUDE.md « zéro mock, y compris en
 // test » — aucune base en mémoire ou simulée n'est utilisée ici.
+//
+// Utilise PrismaService (pas PrismaClient brut) : les specs e2e overrident
+// le provider PrismaService de Nest avec cette instance, donc les
+// garde-fous d'immutabilité du grand livre append-only (ledger-guard.ts)
+// doivent rester actifs ici pour que les tests reflètent le comportement
+// réel de l'application.
 export class PostgresTestEnvironment {
   private container?: StartedPostgreSqlContainer;
-  prisma!: PrismaClient;
+  prisma!: PrismaService;
 
   async start(): Promise<void> {
     this.container = await new PostgreSqlContainer(
@@ -27,9 +33,7 @@ export class PostgresTestEnvironment {
       stdio: 'inherit',
     });
 
-    this.prisma = new PrismaClient({
-      datasources: { db: { url: databaseUrl } },
-    });
+    this.prisma = new PrismaService();
     await this.prisma.$connect();
   }
 

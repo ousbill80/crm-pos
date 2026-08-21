@@ -2,8 +2,22 @@
   "name": "mobile",
   "version": "0.0.1",
   "private": true,
-  "description": "Placeholder — app React Native (Expo) pour la caisse boutique mobile, à scaffolder quand le backend expose les premiers endpoints du module Caisses.",
+  "main": "index.ts",
   "scripts": {
-    "typecheck": "echo \"apps/mobile: pas encore scaffoldé\" && exit 0"
+    "start": "expo start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@caisse-crm/offline": "workspace:*",
+    "@caisse-crm/shared": "workspace:*",
+    "expo": "~53.0.27",
+    "expo-sqlite": "~15.2.14",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.6"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
   }
 }

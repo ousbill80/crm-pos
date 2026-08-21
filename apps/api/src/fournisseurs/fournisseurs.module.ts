@@ -7,6 +7,7 @@ import { CommandesAchatService } from './commandes-achat.service';
 import { CommandesAchatController } from './commandes-achat.controller';
 import { FacturesFournisseurService } from './factures-fournisseur.service';
 import { FacturesFournisseurController } from './factures-fournisseur.controller';
+import { AchatsReceptionsController } from './achats-receptions.controller';
 
 @Module({
   imports: [StocksModule],
@@ -20,6 +21,7 @@ import { FacturesFournisseurController } from './factures-fournisseur.controller
     FournisseursController,
     CommandesAchatController,
     FacturesFournisseurController,
+    AchatsReceptionsController,
   ],
   exports: [FournisseursService],
 })

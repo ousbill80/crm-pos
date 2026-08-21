@@ -57,6 +57,16 @@ export interface TransactionDto {
     boutique?: { id: string; nom: string } | null;
   };
   contreparties?: TransactionDto[];
+  regularisation?: RegularisationLitigeDto | null;
+}
+
+export interface RegularisationLitigeDto {
+  id: string;
+  transactionId: string;
+  montantRetenu: string;
+  motif: string;
+  validateurId: string;
+  dateRegularisation: string;
 }
 
 export interface BordereauDto {
@@ -317,10 +327,12 @@ export interface BonStockDto {
   dateCreation: string;
   datePret: string | null;
   dateFait: string | null;
+  initiateur?: { id: string; nom: string; prenom: string } | null;
   lignes: Array<{
     id: string;
     produitId: string;
     designation: string;
+    reference?: string | null;
     quantite: number;
     quantiteOk: number | null;
     quantiteRebut: number | null;
@@ -524,6 +536,33 @@ export interface CommandeAchatLigneDto {
   montant: string;
 }
 
+export interface CommandeAchatReceptionDto {
+  id: string;
+  produitId: string;
+  quantite: number;
+  prixAchat: string;
+  montant: string;
+  dateReception: string;
+  reference: string | null;
+  ligneCommandeId: string | null;
+  produit: { id: string; designation: string; reference: string | null };
+  entrepot: { id: string; nom: string; code: string } | null;
+  utilisateur: { id: string; nom: string; prenom: string } | null;
+  facture: {
+    id: string;
+    numero: string;
+    statut: FactureFournisseurDto['statut'];
+    montant: string;
+  } | null;
+}
+
+export interface CommandeAchatFactureLieeDto {
+  id: string;
+  numero: string;
+  statut: FactureFournisseurDto['statut'];
+  montant: string;
+}
+
 export interface CommandeAchatDto {
   id: string;
   numero: string;
@@ -543,9 +582,12 @@ export interface CommandeAchatDto {
   montant: string;
   quantite: number;
   quantiteRecue: number;
+  boutiqueId: string | null;
   boutique: { id: string; nom: string } | null;
   initiateur?: { id: string; nom: string; prenom: string } | null;
   lignes: CommandeAchatLigneDto[];
+  receptions?: CommandeAchatReceptionDto[];
+  factures?: CommandeAchatFactureLieeDto[];
 }
 
 export interface ReceptionAFacturerDto {
@@ -573,6 +615,7 @@ export interface FactureFournisseurDto {
   montant: string;
   montantPaye: string;
   resteAPayer: string;
+  createur?: { id: string; nom: string; prenom: string } | null;
   lignes: Array<{
     id: string;
     receptionId: string;
@@ -580,6 +623,9 @@ export interface FactureFournisseurDto {
     quantite: number;
     prixUnitaire: string;
     montant: string;
+    dateReception?: string;
+    reference?: string | null;
+    commande?: { id: string; numero: string } | null;
   }>;
   paiements: Array<{
     id: string;
@@ -587,6 +633,7 @@ export interface FactureFournisseurDto {
     mode: 'VIREMENT' | 'ESPECES' | 'MOBILE_MONEY';
     reference: string | null;
     datePaiement: string;
+    utilisateur?: { id: string; nom: string; prenom: string } | null;
   }>;
 }
 
@@ -599,6 +646,7 @@ export interface SocieteDto {
   email: string | null;
   devise: string;
   logoUrl: string | null;
+  delaiVersementHeures: number;
 }
 
 export interface ZoneDto {

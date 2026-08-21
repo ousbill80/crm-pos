@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, ShieldAlert, UserPlus } from 'lucide-react';
+import { ShieldAlert, UserPlus } from 'lucide-react';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -63,6 +64,7 @@ function useBoutiques() {
 }
 
 export function UtilisateursPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
@@ -75,7 +77,6 @@ export function UtilisateursPage() {
     login: string;
     password: string;
   } | null>(null);
-  const [utilisateurEdite, setUtilisateurEdite] = useState<UtilisateurDto | null>(null);
 
   const { data: boutiques } = useBoutiques();
   const liste = useQuery({
@@ -109,39 +110,9 @@ export function UtilisateursPage() {
       setFormErr(null);
       setMotDePasseTemporaire({ login: created.login, password: created.temporaryPassword });
       invalider();
+      navigate(`/utilisateurs/${created.id}`);
     },
     onError: (err) => setFormErr(messageDepuisApi(err, "Échec de la création de l'utilisateur.")),
-  });
-
-  const modifier = useMutation({
-    mutationFn: (payload: { id: string; actif?: boolean; role?: RoleLibelle; boutiqueId?: string | null }) =>
-      apiFetch<UtilisateurDto>(`/users/${payload.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          ...(payload.actif !== undefined ? { actif: payload.actif } : {}),
-          ...(payload.role !== undefined ? { role: payload.role } : {}),
-          ...(payload.boutiqueId !== undefined ? { boutiqueId: payload.boutiqueId } : {}),
-        }),
-      }),
-    onSuccess: () => {
-      setUtilisateurEdite(null);
-      invalider();
-    },
-    onError: (err) => setFormErr(messageDepuisApi(err, "Échec de la modification.")),
-  });
-
-  const resetMdp = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ temporaryPassword: string }>(`/users/${id}/reset-password`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      }),
-    onSuccess: (res, id) => {
-      const cible = liste.data?.find((u) => u.id === id);
-      setMotDePasseTemporaire({ login: cible?.login ?? id, password: res.temporaryPassword });
-      invalider();
-    },
-    onError: (err) => setFormErr(messageDepuisApi(err, 'Échec de la réinitialisation.')),
   });
 
   const boutiqueRequisePourFiche = ROLES_BOUTIQUE_REQUISE.includes(fiche.role);
@@ -207,12 +178,24 @@ export function UtilisateursPage() {
                     <th>Boutique</th>
                     <th>Statut</th>
                     <th>Créé le</th>
-                    {peutAdmin && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {lignes.map((u) => (
-                    <tr key={u.id}>
+                    <tr
+                      key={u.id}
+                      className="produit-row"
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Ouvrir ${u.prenom} ${u.nom}`}
+                      onClick={() => navigate(`/utilisateurs/${u.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/utilisateurs/${u.id}`);
+                        }
+                      }}
+                    >
                       <td>
                         <strong>
                           {u.prenom} {u.nom}
@@ -237,41 +220,6 @@ export function UtilisateursPage() {
                         )}
                       </td>
                       <td>{fmtDate(u.createdAt)}</td>
-                      {peutAdmin && (
-                        <td>
-                          <div className="table-actions">
-                            <button type="button" onClick={() => setUtilisateurEdite(u)}>
-                              Modifier
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => resetMdp.mutate(u.id)}
-                              disabled={resetMdp.isPending}
-                              title="Générer un nouveau mot de passe temporaire"
-                            >
-                              <KeyRound size={14} /> Réinitialiser
-                            </button>
-                            {u.actif && u.id !== user?.userId && (
-                              <button
-                                type="button"
-                                onClick={() => modifier.mutate({ id: u.id, actif: false })}
-                                disabled={modifier.isPending}
-                              >
-                                Désactiver
-                              </button>
-                            )}
-                            {!u.actif && (
-                              <button
-                                type="button"
-                                onClick={() => modifier.mutate({ id: u.id, actif: true })}
-                                disabled={modifier.isPending}
-                              >
-                                Réactiver
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -371,68 +319,6 @@ export function UtilisateursPage() {
         </Modal>
       )}
 
-      {peutAdmin && utilisateurEdite && (
-        <Modal
-          open={utilisateurEdite !== null}
-          onClose={() => setUtilisateurEdite(null)}
-          title={`Modifier ${utilisateurEdite.prenom} ${utilisateurEdite.nom}`}
-        >
-          <form
-            onSubmit={(e: FormEvent<HTMLFormElement>) => {
-              e.preventDefault();
-              modifier.mutate({
-                id: utilisateurEdite.id,
-                role: utilisateurEdite.role.libelle,
-                boutiqueId: utilisateurEdite.boutiqueId,
-              });
-            }}
-          >
-            <div>
-              <label htmlFor="edit-role">Rôle</label>
-              <select
-                id="edit-role"
-                value={utilisateurEdite.role.libelle}
-                onChange={(e) =>
-                  setUtilisateurEdite({
-                    ...utilisateurEdite,
-                    role: { ...utilisateurEdite.role, libelle: e.target.value as RoleLibelle },
-                  })
-                }
-              >
-                {TOUS_LES_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {ROLES_BOUTIQUE_REQUISE.includes(utilisateurEdite.role.libelle) && (
-              <div>
-                <label htmlFor="edit-boutique">Boutique</label>
-                <select
-                  id="edit-boutique"
-                  value={utilisateurEdite.boutiqueId ?? ''}
-                  onChange={(e) =>
-                    setUtilisateurEdite({ ...utilisateurEdite, boutiqueId: e.target.value || null })
-                  }
-                  required
-                >
-                  <option value="">— Choisir —</option>
-                  {(boutiques ?? []).map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.nom}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <button type="submit" className="btn-primary" disabled={modifier.isPending}>
-              Enregistrer
-            </button>
-            {formErr && <p role="alert">{formErr}</p>}
-          </form>
-        </Modal>
-      )}
     </div>
   );
 }

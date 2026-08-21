@@ -20,6 +20,10 @@ import { ProduitsService } from './produits.service';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
+import {
+  ApercuImportProduitsDto,
+  AppliquerImportProduitsDto,
+} from './dto/import-produits.dto';
 
 // Endpoints Produit — catalogue du POS (§6.3.2). RBAC identique aux
 // modules zones/boutiques : administration système en écriture, périmètre
@@ -71,6 +75,33 @@ export class ProduitsController {
   @Roles(...ROLES_LECTURE_STRUCTURE)
   categories() {
     return this.produitsService.categories();
+  }
+
+  @Get('import/modele.csv')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  modeleImportCsv(@Res() res: Response) {
+    const csv = this.produitsService.modeleImportCsv();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="modele-catalogue-produits.csv"',
+    );
+    res.send(csv);
+  }
+
+  @Post('import/apercu')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  apercuImport(@Body() dto: ApercuImportProduitsDto) {
+    return this.produitsService.apercuImport(dto);
+  }
+
+  @Post('import')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  appliquerImport(
+    @Body() dto: AppliquerImportProduitsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.produitsService.appliquerImport(dto, user);
   }
 
   @Get(':id')

@@ -351,6 +351,17 @@
   width: min(640px, 100%);
 }
 
+.modal-panel.modal-panel-xl {
+  width: min(920px, 100%);
+  max-height: min(92vh, 800px);
+}
+
+.modal-panel.modal-panel-doc {
+  width: min(1080px, calc(100vw - 24px));
+  max-height: calc(100vh - 20px);
+  padding: 16px 16px 0;
+}
+
 .modal-panel form,
 .modal-panel .modal-form {
   box-shadow: none;
@@ -809,6 +820,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  cursor: pointer;
 }
 
 .tx-kanban-card-title {

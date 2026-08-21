@@ -1,13 +1,28 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, FileText, Package, ShoppingBag } from 'lucide-react';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
-import type { CommandeAchatDto, FournisseurDto, ProduitDto } from '../lib/types';
+import { BonCommandeComposer, type LigneBonCommande } from '../components/BonCommandeComposer';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { badgeCommande, fmtFcfa, STATUT_COMMANDE } from '../lib/achats-ui';
+import {
+  insightCommandesBrouillon,
+  insightCommandesOuvertes,
+  insightCommandesPartielles,
+  insightCommandesReceptionnees,
+} from '../lib/insights/fournisseurs';
+import type {
+  CommandeAchatDto,
+  FournisseurDetailDto,
+  FournisseurDto,
+  ProduitDto,
+} from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
@@ -26,42 +41,26 @@ const ROLES_COMMANDE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
-const STATUT: Record<CommandeAchatDto['statut'], string> = {
-  BROUILLON: 'Brouillon',
-  CONFIRMEE: 'Confirmée',
-  PARTIELLEMENT_RECEPTIONNEE: 'Réception partielle',
-  RECEPTIONNEE: 'Réceptionnée',
-  CLOTUREE: 'Clôturée',
-  ANNULEE: 'Annulée',
-};
-
-function badge(statut: CommandeAchatDto['statut']) {
-  if (statut === 'ANNULEE') return 'badge badge-neutral';
-  if (statut === 'CLOTUREE' || statut === 'RECEPTIONNEE') return 'badge badge-ok';
-  if (statut === 'PARTIELLEMENT_RECEPTIONNEE') return 'badge badge-warning';
-  return 'badge';
-}
-
-function fmt(n: string | number) {
-  return Math.round(Number(n)).toLocaleString('fr-FR');
-}
-
-type LigneForm = { produitId: string; quantite: string; prixUnitaire: string };
+type FiltreKpi = 'all' | 'brouillon' | 'ouvertes' | 'partielles' | 'receptionnees';
 
 export function CommandesAchatsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
+
+  const fournisseurQuery = searchParams.get('fournisseurId') ?? '';
+  const ouvrirQuery = searchParams.get('ouvrir') === '1';
+  const filtreKpi = (searchParams.get('vue') as FiltreKpi | null) ?? 'all';
+  const ouvertDepuisUrl = useRef(false);
 
   const [filtreStatut, setFiltreStatut] = useState<CommandeAchatDto['statut'] | ''>('');
   const [modalNouveau, setModalNouveau] = useState(false);
   const [fournisseurId, setFournisseurId] = useState('');
   const [notes, setNotes] = useState('');
-  const [lignes, setLignes] = useState<LigneForm[]>([
-    { produitId: '', quantite: '1', prixUnitaire: '' },
-  ]);
+  const [lignes, setLignes] = useState<LigneBonCommande[]>([]);
   const [formErr, setFormErr] = useState<string | null>(null);
 
   const commandes = useQuery({
@@ -79,6 +78,11 @@ export function CommandesAchatsPage() {
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
     enabled: peutCommander,
   });
+  const ficheFournisseur = useQuery({
+    queryKey: ['fournisseurs', fournisseurId],
+    queryFn: () => apiFetch<FournisseurDetailDto>(`/fournisseurs/${fournisseurId}`),
+    enabled: peutCommander && modalNouveau && Boolean(fournisseurId),
+  });
 
   const actifs = useMemo(
     () => (produits.data ?? []).filter((p) => p.actif),
@@ -88,13 +92,69 @@ export function CommandesAchatsPage() {
     () => (fournisseurs.data ?? []).filter((f) => f.actif),
     [fournisseurs.data],
   );
+  const kpis = useMemo(() => {
+    const rows = (commandes.data ?? []).filter(
+      (c) => !fournisseurQuery || c.fournisseurId === fournisseurQuery,
+    );
+    let brouillons = 0;
+    let ouvertes = 0;
+    let unitesOuvertes = 0;
+    let partielles = 0;
+    let receptionnees = 0;
+    for (const c of rows) {
+      const reste = Math.max(0, c.quantite - c.quantiteRecue);
+      if (c.statut === 'BROUILLON') brouillons += 1;
+      if (c.statut === 'CONFIRMEE') {
+        ouvertes += 1;
+        unitesOuvertes += reste;
+      }
+      if (c.statut === 'PARTIELLEMENT_RECEPTIONNEE') partielles += 1;
+      if (c.statut === 'RECEPTIONNEE') receptionnees += 1;
+    }
+    return {
+      brouillons,
+      ouvertes,
+      unitesOuvertes,
+      partielles,
+      receptionnees,
+    };
+  }, [commandes.data, fournisseurQuery]);
+
   const liste = useMemo(
     () =>
-      (commandes.data ?? []).filter((c) =>
-        filtreStatut ? c.statut === filtreStatut : true,
-      ),
-    [commandes.data, filtreStatut],
+      (commandes.data ?? []).filter((c) => {
+        if (fournisseurQuery && c.fournisseurId !== fournisseurQuery) return false;
+        if (filtreStatut && c.statut !== filtreStatut) return false;
+        if (filtreKpi === 'brouillon') return c.statut === 'BROUILLON';
+        if (filtreKpi === 'ouvertes') return c.statut === 'CONFIRMEE';
+        if (filtreKpi === 'partielles') return c.statut === 'PARTIELLEMENT_RECEPTIONNEE';
+        if (filtreKpi === 'receptionnees') return c.statut === 'RECEPTIONNEE';
+        return true;
+      }),
+    [commandes.data, filtreStatut, fournisseurQuery, filtreKpi],
   );
+
+  function setVue(vue: FiltreKpi) {
+    const next = new URLSearchParams(searchParams);
+    if (vue === 'all') next.delete('vue');
+    else next.set('vue', vue);
+    setSearchParams(next, { replace: true });
+  }
+
+  useEffect(() => {
+    if (fournisseurQuery) setFournisseurId(fournisseurQuery);
+  }, [fournisseurQuery]);
+
+  useEffect(() => {
+    if (!ouvrirQuery || !peutCommander || ouvertDepuisUrl.current) return;
+    if (!produits.isSuccess) return;
+    if (fournisseurQuery) setFournisseurId(fournisseurQuery);
+    setLignes([]);
+    setNotes('');
+    setFormErr(null);
+    setModalNouveau(true);
+    ouvertDepuisUrl.current = true;
+  }, [ouvrirQuery, peutCommander, fournisseurQuery, produits.isSuccess]);
 
   const creer = useMutation({
     mutationFn: () =>
@@ -124,33 +184,37 @@ export function CommandesAchatsPage() {
 
   if (!peutLire) return <p>Vous n’avez pas accès aux commandes d’achat.</p>;
 
+  const insightBrouillon = insightCommandesBrouillon(kpis.brouillons);
+  const insightOuvertes = insightCommandesOuvertes(kpis.ouvertes, kpis.unitesOuvertes);
+  const insightPartielles = insightCommandesPartielles(kpis.partielles);
+  const insightReceptionnees = insightCommandesReceptionnees(kpis.receptionnees);
+
   return (
     <div>
       <PageHeader
         title="Bons de commande"
         subtitle="Cycle Achats : brouillon → confirmée → réception (plafonnée à la quantité commandée) → clôture. Pas d’écriture de caisse."
         actions={
-          peutCommander ? (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                setFournisseurId(fournActifs[0]?.id ?? '');
-                setLignes([
-                  {
-                    produitId: actifs[0]?.id ?? '',
-                    quantite: '1',
-                    prixUnitaire: '',
-                  },
-                ]);
-                setNotes('');
-                setFormErr(null);
-                setModalNouveau(true);
-              }}
-            >
-              Nouvelle commande
-            </button>
-          ) : undefined
+          <div className="page-header-actions-row">
+            <Link className="btn btn-secondary" to="/achats/factures">
+              Factures
+            </Link>
+            {peutCommander ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setFournisseurId(fournisseurQuery || (fournActifs[0]?.id ?? ''));
+                  setLignes([]);
+                  setNotes('');
+                  setFormErr(null);
+                  setModalNouveau(true);
+                }}
+              >
+                Nouvelle commande
+              </button>
+            ) : null}
+          </div>
         }
       />
 
@@ -159,6 +223,72 @@ export function CommandesAchatsPage() {
 
       {commandes.data && (
         <>
+          <section className="kpi-grid dash-kpi-grid" aria-label="Pilotage commandes">
+            <button
+              type="button"
+              className={`kpi-card dash-kpi${filtreKpi === 'brouillon' ? ' kpi-actif' : ''}`}
+              onClick={() => setVue(filtreKpi === 'brouillon' ? 'all' : 'brouillon')}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <FileText size={16} />
+                </span>
+                <InfoTooltip insight={insightBrouillon} />
+              </div>
+              <div className="kpi-label">Brouillons</div>
+              <div className="kpi-value">{kpis.brouillons}</div>
+              <div className="kpi-hint">À confirmer</div>
+            </button>
+
+            <button
+              type="button"
+              className={`kpi-card dash-kpi${filtreKpi === 'ouvertes' ? ' kpi-actif' : ''}${kpis.ouvertes > 0 ? ' kpi-warning' : ''}`}
+              onClick={() => setVue(filtreKpi === 'ouvertes' ? 'all' : 'ouvertes')}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <ShoppingBag size={16} />
+                </span>
+                <InfoTooltip insight={insightOuvertes} />
+              </div>
+              <div className="kpi-label">Ouvertes</div>
+              <div className="kpi-value">{kpis.ouvertes}</div>
+              <div className="kpi-hint">{kpis.unitesOuvertes} unité(s) à recevoir</div>
+            </button>
+
+            <button
+              type="button"
+              className={`kpi-card dash-kpi${filtreKpi === 'partielles' ? ' kpi-actif' : ''}${kpis.partielles > 0 ? ' kpi-warning' : ''}`}
+              onClick={() => setVue(filtreKpi === 'partielles' ? 'all' : 'partielles')}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Package size={16} />
+                </span>
+                <InfoTooltip insight={insightPartielles} />
+              </div>
+              <div className="kpi-label">Partielles</div>
+              <div className="kpi-value">{kpis.partielles}</div>
+              <div className="kpi-hint">Réception incomplète</div>
+            </button>
+
+            <button
+              type="button"
+              className={`kpi-card dash-kpi${filtreKpi === 'receptionnees' ? ' kpi-actif' : ''}`}
+              onClick={() => setVue(filtreKpi === 'receptionnees' ? 'all' : 'receptionnees')}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <CheckCircle2 size={16} />
+                </span>
+                <InfoTooltip insight={insightReceptionnees} />
+              </div>
+              <div className="kpi-label">Réceptionnées</div>
+              <div className="kpi-value">{kpis.receptionnees}</div>
+              <div className="kpi-hint">À clôturer</div>
+            </button>
+          </section>
+
           <div className="toolbar">
             <div>
               <label htmlFor="filtre-bc-statut">Statut</label>
@@ -170,16 +300,28 @@ export function CommandesAchatsPage() {
                 }
               >
                 <option value="">Tous</option>
-                {(Object.keys(STATUT) as CommandeAchatDto['statut'][]).map((s) => (
+                {(Object.keys(STATUT_COMMANDE) as CommandeAchatDto['statut'][]).map((s) => (
                   <option key={s} value={s}>
-                    {STATUT[s]}
+                    {STATUT_COMMANDE[s]}
                   </option>
                 ))}
               </select>
             </div>
+            {filtreKpi !== 'all' && (
+              <button type="button" className="btn btn-ghost" onClick={() => setVue('all')}>
+                Effacer le filtre vue
+              </button>
+            )}
             <p className="lead">
               {liste.length} commande(s)
-              {filtreStatut ? ` · ${STATUT[filtreStatut]}` : ''}
+              {filtreKpi !== 'all' ? ` · filtre ${filtreKpi}` : ''}
+              {filtreStatut ? ` · ${STATUT_COMMANDE[filtreStatut]}` : ''}
+              {fournisseurQuery
+                ? ` · ${
+                    commandes.data?.find((c) => c.fournisseurId === fournisseurQuery)
+                      ?.fournisseur.nom ?? 'ce fournisseur'
+                  }`
+                : ''}
             </p>
           </div>
           <ListPanel title="Commandes">
@@ -227,10 +369,12 @@ export function CommandesAchatsPage() {
                         </td>
                         <td>{row.fournisseur.nom}</td>
                         <td>
-                          <span className={badge(row.statut)}>{STATUT[row.statut]}</span>
+                          <span className={badgeCommande(row.statut)}>
+                            {STATUT_COMMANDE[row.statut]}
+                          </span>
                         </td>
                         <td>{new Date(row.dateCommande).toLocaleDateString('fr-FR')}</td>
-                        <td className="money">{fmt(row.montant)} FCFA</td>
+                        <td className="money">{fmtFcfa(row.montant)}</td>
                         <td>
                           {row.quantiteRecue}/{row.quantite}
                         </td>
@@ -249,103 +393,24 @@ export function CommandesAchatsPage() {
           open={modalNouveau}
           onClose={() => setModalNouveau(false)}
           title="Nouveau bon de commande"
-          size="lg"
+          size="doc"
         >
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              creer.mutate();
-            }}
-          >
-            <div>
-              <label htmlFor="bc-fourn">Fournisseur</label>
-              <select
-                id="bc-fourn"
-                value={fournisseurId}
-                onChange={(e) => setFournisseurId(e.target.value)}
-                required
-              >
-                {fournActifs.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.nom}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {lignes.map((l, i) => (
-              <div key={i} className="table-actions" style={{ alignItems: 'end' }}>
-                <div>
-                  <label>Article</label>
-                  <select
-                    value={l.produitId}
-                    onChange={(e) => {
-                      const next = [...lignes];
-                      next[i] = { ...next[i], produitId: e.target.value };
-                      setLignes(next);
-                    }}
-                  >
-                    {actifs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.designation}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label>Qté</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={l.quantite}
-                    onChange={(e) => {
-                      const next = [...lignes];
-                      next[i] = { ...next[i], quantite: e.target.value };
-                      setLignes(next);
-                    }}
-                  />
-                </div>
-                <div>
-                  <label>Prix achat</label>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={l.prixUnitaire}
-                    onChange={(e) => {
-                      const next = [...lignes];
-                      next[i] = { ...next[i], prixUnitaire: e.target.value };
-                      setLignes(next);
-                    }}
-                    required
-                  />
-                </div>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setLignes([
-                  ...lignes,
-                  { produitId: actifs[0]?.id ?? '', quantite: '1', prixUnitaire: '' },
-                ])
-              }
-            >
-              Ajouter une ligne
-            </button>
-            <div>
-              <label htmlFor="bc-notes">Notes</label>
-              <textarea
-                id="bc-notes"
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-            <button type="submit" className="btn-primary" disabled={creer.isPending}>
-              Enregistrer le brouillon
-            </button>
-            {formErr && <p role="alert">{formErr}</p>}
-          </form>
+          <BonCommandeComposer
+            fournisseurs={fournActifs}
+            produits={actifs}
+            statsFournisseur={ficheFournisseur.data?.produits ?? []}
+            statsLoading={ficheFournisseur.isFetching}
+            fournisseurId={fournisseurId}
+            onFournisseurId={setFournisseurId}
+            lignes={lignes}
+            onLignes={setLignes}
+            notes={notes}
+            onNotes={setNotes}
+            formErr={formErr}
+            submitting={creer.isPending}
+            onSubmit={() => creer.mutate()}
+            onCancel={() => setModalNouveau(false)}
+          />
         </Modal>
       )}
     </div>

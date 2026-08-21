@@ -14,6 +14,7 @@ import {
   ROLES_BON_STOCK_FAIT,
   ROLES_BON_STOCK_PILOTE,
   ROLES_LECTURE_STRUCTURE,
+  ROLES_REPARTITION_STOCK,
 } from '../caisses/access-scope.constants';
 import { BonsStockService } from './bons-stock.service';
 import {
@@ -22,6 +23,7 @@ import {
   CreateLotDto,
   CreateRegleReapproDto,
 } from './dto/create-bon-stock.dto';
+import { RepartirStockBodyDto } from './dto/repartir-reception.dto';
 
 @Controller('stocks')
 export class BonsStockController {
@@ -55,6 +57,16 @@ export class BonsStockController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.bons.creer(dto, user);
+  }
+
+  @Post('bons/repartition')
+  @Roles(...ROLES_REPARTITION_STOCK)
+  repartir(
+    @Body() dto: RepartirStockBodyDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const { receptionId, ...rest } = dto;
+    return this.bons.repartirDepuisReception(receptionId, rest, user);
   }
 
   @Post('bons/:id/pret')

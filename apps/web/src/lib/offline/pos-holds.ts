@@ -1,3 +1,5 @@
+import { getOfflineStore, hydrateOffline } from '@caisse-crm/offline';
+
 // Panier POS mis en attente — pas une vente serveur : aucun stock décrémenté,
 // aucun ticket encaissé. Pratique de surface (client suivant / file de caisse).
 
@@ -36,6 +38,7 @@ export interface CommandeEnAttente {
 }
 
 const prefix = 'caisse-crm.pos.holds.';
+const holdsMem = new Map<string, CommandeEnAttente[]>();
 
 function key(sessionId: string): string {
   return `${prefix}${sessionId}`;
@@ -66,7 +69,25 @@ function normalizeHold(raw: unknown): CommandeEnAttente | null {
   };
 }
 
+export async function hydrateHolds(sessionId: string): Promise<CommandeEnAttente[]> {
+  await hydrateOffline();
+  const raw = await getOfflineStore().getHolds(sessionId);
+  const list = Array.isArray(raw)
+    ? raw.map(normalizeHold).filter((h): h is CommandeEnAttente => h !== null)
+    : [];
+  let max = Math.max(0, ...list.map((h) => h.numero));
+  const numbered = list.map((h) => {
+    if (h.numero > 0) return h;
+    max += 1;
+    return { ...h, numero: max };
+  });
+  holdsMem.set(sessionId, numbered);
+  return numbered;
+}
+
 export function loadHolds(sessionId: string): CommandeEnAttente[] {
+  const mem = holdsMem.get(sessionId);
+  if (mem) return mem;
   try {
     const raw = localStorage.getItem(key(sessionId));
     if (!raw) return [];
@@ -85,19 +106,13 @@ export function loadHolds(sessionId: string): CommandeEnAttente[] {
 }
 
 export function saveHolds(sessionId: string, holds: CommandeEnAttente[]): void {
-  try {
-    if (holds.length === 0) {
-      localStorage.removeItem(key(sessionId));
-      return;
-    }
-    localStorage.setItem(key(sessionId), JSON.stringify(holds));
-  } catch {
-    // quota
-  }
+  holdsMem.set(sessionId, holds);
+  void getOfflineStore().setHolds(sessionId, holds);
 }
 
 export function clearHolds(sessionId: string): void {
-  localStorage.removeItem(key(sessionId));
+  holdsMem.set(sessionId, []);
+  void getOfflineStore().setHolds(sessionId, []);
 }
 
 export function quantiteParquee(

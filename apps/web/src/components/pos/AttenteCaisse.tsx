@@ -73,6 +73,7 @@ export function PosConfirm({
           <button
             type="button"
             className={danger ? 'pos-btn-danger' : 'pos-btn-primary'}
+            data-testid="pos-confirm-ok"
             onClick={onConfirmer}
           >
             {confirmer}
@@ -107,7 +108,12 @@ export function ParkDialog({
   onAnnuler: () => void;
 }) {
   return (
-    <div className="pos-modal-backdrop" onClick={onAnnuler} role="presentation">
+    <div
+      className="pos-modal-backdrop"
+      data-testid="pos-park-dialog"
+      onClick={onAnnuler}
+      role="presentation"
+    >
       <div
         className="pos-modal pos-modal-wide"
         onClick={(e) => e.stopPropagation()}
@@ -147,6 +153,7 @@ export function ParkDialog({
         <label className="pos-park-print">
           <input
             type="checkbox"
+            data-testid="pos-park-print"
             checked={imprimerCoupon}
             onChange={(e) => onImprimerCoupon(e.target.checked)}
           />
@@ -156,7 +163,12 @@ export function ParkDialog({
           <button type="button" onClick={onAnnuler}>
             Annuler
           </button>
-          <button type="button" className="pos-btn-primary" onClick={onConfirmer}>
+          <button
+            type="button"
+            className="pos-btn-primary"
+            data-testid="pos-park-confirm"
+            onClick={onConfirmer}
+          >
             <Pause size={16} />
             Parquer et client suivant
           </button>
@@ -186,7 +198,12 @@ export function FileAttenteCaisse({
   const file = holdsFifo(holds);
 
   return (
-    <div className="pos-modal-backdrop" onClick={onFermer} role="presentation">
+    <div
+      className="pos-modal-backdrop"
+      data-testid="pos-file-dialog"
+      onClick={onFermer}
+      role="presentation"
+    >
       <div
         className="pos-modal pos-modal-wide pos-file-attente"
         onClick={(e) => e.stopPropagation()}
@@ -218,6 +235,7 @@ export function FileAttenteCaisse({
                   <button
                     type="button"
                     className="pos-file-card"
+                    data-testid={`pos-file-reprendre-${h.numero}`}
                     onClick={() => onReprendre(h.id)}
                   >
                     <span className="pos-file-num">{formatNumeroAttente(h.numero)}</span>
@@ -238,6 +256,7 @@ export function FileAttenteCaisse({
                     <button
                       type="button"
                       className="pos-hold-drop"
+                      data-testid={`pos-file-abandon-${h.numero}`}
                       onClick={() => onAbandonner(h.id)}
                       aria-label={`Abandonner n° ${formatNumeroAttente(h.numero)}`}
                     >

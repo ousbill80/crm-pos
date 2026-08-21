@@ -151,7 +151,7 @@ describe('Utilisateurs (e2e)', () => {
       update: {},
       create: { libelle: 'CAISSIER_BOUTIQUE', niveauHabilitation: 4 },
     });
-    const utilisateur = await env.prisma.utilisateur.create({
+    await env.prisma.utilisateur.create({
       data: {
         login: 'force_changement',
         passwordHash: await bcrypt.hash('TempMdp!789', 10),

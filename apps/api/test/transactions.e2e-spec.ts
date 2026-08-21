@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { TypeCaisse } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { TransactionsService } from '../src/transactions/transactions.service';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
 
 const MOT_DE_PASSE = 'MotDePasse!123';
@@ -759,6 +760,79 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         },
       });
       expect(audit).not.toBeNull();
+
+      // Grand livre append-only : le montant déclaré/constaté ne doit jamais
+      // être écrasé rétroactivement — seule une écriture compensatoire
+      // (RegularisationLitige + contrepartie CENTRALE ci-dessus) enregistre
+      // l'arbitrage.
+      const detail = await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      const detailBody = detail.body as {
+        montant: string;
+        bordereau?: {
+          reception?: { montantRecu: string; ecart: string };
+        };
+        regularisation?: {
+          montantRetenu: string;
+          motif: string;
+          validateurId: string;
+        };
+      };
+      expect(Number(detailBody.montant)).toBe(400);
+      expect(Number(detailBody.bordereau?.reception?.montantRecu)).toBe(350);
+      expect(Number(detailBody.bordereau?.reception?.ecart)).toBe(-50);
+      expect(detailBody.regularisation).toBeDefined();
+      expect(Number(detailBody.regularisation!.montantRetenu)).toBe(380);
+      expect(detailBody.regularisation!.motif).toBe(
+        'Écart partiel accepté après inventaire',
+      );
+    });
+
+    it('régularise un TRANSFERT_INTERNE en LITIGE sans écraser le montant d’origine', async () => {
+      const tiroir = await env.prisma.caisse.create({
+        data: { type: TypeCaisse.TIROIR, boutiqueId: boutique1Id },
+      });
+      const respB1 = await env.prisma.utilisateur.findUniqueOrThrow({
+        where: { login: 'resp-b1' },
+      });
+
+      const transaction = await app
+        .get(TransactionsService)
+        .creerTransfertInterne({
+          caisseSourceId: tiroir.id,
+          caisseDestinationId: caisseBoutique1Id,
+          montant: 300,
+          initiateurId: respB1.id,
+          statut: 'LITIGE',
+        });
+      expect(transaction.statut).toBe('LITIGE');
+
+      const regularisee = await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/regulariser`)
+        .set('Authorization', `Bearer ${tokens.respB1}`)
+        .send({ montantRetenu: 250, motif: 'Comptage tiroir corrigé' })
+        .expect(200);
+      expect((regularisee.body as TransactionDto).statut).toBe('VALIDEE');
+
+      const miroir = await env.prisma.transactionCaisse.findFirst({
+        where: { transactionSourceId: transaction.id },
+      });
+      expect(miroir).not.toBeNull();
+      expect(Number(miroir!.montant)).toBe(250);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      const detailBody = detail.body as {
+        montant: string;
+        regularisation?: { montantRetenu: string; motif: string };
+      };
+      expect(Number(detailBody.montant)).toBe(300);
+      expect(detailBody.regularisation).toBeDefined();
+      expect(Number(detailBody.regularisation!.montantRetenu)).toBe(250);
     });
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE ou CAISSIER_CENTRAL régularise un litige', async () => {
@@ -956,6 +1030,69 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         where: { clientOperationId },
       });
       expect(count).toBe(1);
+    });
+  });
+
+  // Grand livre append-only (§6.7 + CLAUDE.md) : journalAudit et
+  // transactionCaisse ne doivent jamais être modifiables/supprimables
+  // rétroactivement, y compris par un appel Prisma direct qui bypasserait
+  // les services applicatifs (AuditService, TransactionStateMachineService).
+  describe('garde-fou Prisma d’immutabilité du grand livre', () => {
+    it('refuse un update direct sur journalAudit', async () => {
+      const entry = await env.prisma.journalAudit.findFirst();
+      expect(entry).not.toBeNull();
+      await expect(
+        env.prisma.journalAudit.update({
+          where: { id: entry!.id },
+          data: { action: 'MODIFIE' },
+        }),
+      ).rejects.toThrow(/append-only/);
+    });
+
+    it('refuse un delete direct sur journalAudit', async () => {
+      const entry = await env.prisma.journalAudit.findFirst();
+      expect(entry).not.toBeNull();
+      await expect(
+        env.prisma.journalAudit.delete({ where: { id: entry!.id } }),
+      ).rejects.toThrow(/append-only/);
+    });
+
+    it('refuse un update (n’importe quel champ) sur une transactionCaisse VALIDEE', async () => {
+      const validee = await env.prisma.transactionCaisse.findFirst({
+        where: { statut: 'VALIDEE' },
+      });
+      expect(validee).not.toBeNull();
+      await expect(
+        env.prisma.transactionCaisse.update({
+          where: { id: validee!.id },
+          data: { clientOperationId: 'tentative-mutation' },
+        }),
+      ).rejects.toThrow(/état terminal/);
+    });
+
+    it('refuse un update contenant "montant" sur une transactionCaisse, quel que soit son statut', async () => {
+      const transaction = await initierTransaction(
+        tokens.respB1,
+        caisseBoutique1Id,
+        123,
+      );
+      await expect(
+        env.prisma.transactionCaisse.update({
+          where: { id: transaction.id },
+          data: { montant: 999 },
+        }),
+      ).rejects.toThrow(/immuable/);
+    });
+
+    it('refuse un delete direct sur transactionCaisse', async () => {
+      const transaction = await initierTransaction(
+        tokens.respB1,
+        caisseBoutique1Id,
+        55,
+      );
+      await expect(
+        env.prisma.transactionCaisse.delete({ where: { id: transaction.id } }),
+      ).rejects.toThrow(/append-only/);
     });
   });
 });

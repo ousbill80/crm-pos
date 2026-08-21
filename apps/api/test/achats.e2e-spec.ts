@@ -76,6 +76,37 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     });
     entrepotId = entrepot.id;
 
+    const hub = await env.prisma.boutique.create({
+      data: {
+        nom: 'Entrepôt Central Achats',
+        adresse: 'Siège',
+        code: 'WH-CENTRAL',
+        zoneId: zone.id,
+      },
+    });
+    await env.prisma.entrepot.create({
+      data: {
+        nom: 'Stock central',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        usage: 'STOCK',
+        reseau: true,
+        boutiqueId: hub.id,
+      },
+    });
+    const quai = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Quai réception',
+        code: 'ENTREE',
+        type: 'SECONDAIRE',
+        usage: 'ENTREE',
+        reseau: true,
+        boutiqueId: hub.id,
+      },
+    });
+    // Réceptions commande groupe (boutiqueId null) ciblent le quai hub.
+    entrepotId = quai.id;
+
     await creerUtilisateur('respsi-achats', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('daf-achats', 'DAF', null, 1);
     await creerUtilisateur('central-achats', 'CAISSIER_CENTRAL', null, 1);
@@ -134,7 +165,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
     await env.stop();
   });
 
@@ -292,6 +323,38 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     expect(Number((brouillon.body as { montant: string }).montant)).toBe(
       4 * 900 + 6 * 950,
     );
+
+    const ficheCommande = await request(app.getHttpServer())
+      .get(`/achats/commandes/${commande.id}`)
+      .set(auth(tokens.daf))
+      .expect(200);
+    const ficheBody = ficheCommande.body as {
+      receptions: Array<{ id: string; facture: { id: string } | null }>;
+      factures: Array<{ id: string; numero: string }>;
+    };
+    expect(ficheBody.receptions).toHaveLength(2);
+    expect(ficheBody.receptions.every((r) => r.facture?.id === factureId)).toBe(
+      true,
+    );
+    expect(ficheBody.factures.map((f) => f.id)).toEqual([factureId]);
+
+    const ficheFacture = await request(app.getHttpServer())
+      .get(`/achats/factures/${factureId}`)
+      .set(auth(tokens.daf))
+      .expect(200);
+    const lignesFacture = (
+      ficheFacture.body as {
+        lignes: Array<{
+          commande: { id: string; numero: string } | null;
+          dateReception: string;
+        }>;
+      }
+    ).lignes;
+    expect(lignesFacture).toHaveLength(2);
+    expect(lignesFacture.every((l) => l.commande?.id === commande.id)).toBe(
+      true,
+    );
+    expect(lignesFacture.every((l) => Boolean(l.dateReception))).toBe(true);
 
     await request(app.getHttpServer())
       .post('/achats/factures')

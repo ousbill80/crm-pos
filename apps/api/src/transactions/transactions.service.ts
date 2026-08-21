@@ -44,6 +44,7 @@ const DETAIL_INCLUDE = {
   bordereau: { include: { reception: true } },
   caisse: { include: { boutique: { select: { id: true, nom: true } } } },
   contreparties: true,
+  regularisation: true,
 } as const;
 
 // Orchestre le cycle de vie d'une TransactionCaisse (§6.4). Toute évolution
@@ -459,10 +460,7 @@ export class TransactionsService {
       const misAJour = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.transactionCaisse.update({
           where: { id },
-          data: {
-            statut: StatutTransaction.VALIDEE,
-            montant: montantRetenu,
-          },
+          data: { statut: StatutTransaction.VALIDEE },
         });
         if (montantRetenu.greaterThan(0)) {
           await this.creerContrepartieTransfert(
@@ -472,6 +470,14 @@ export class TransactionsService {
             montantRetenu,
           );
         }
+        await tx.regularisationLitige.create({
+          data: {
+            transactionId: id,
+            montantRetenu,
+            motif: dto.motif,
+            validateurId: utilisateur.userId,
+          },
+        });
         return updated;
       });
 
@@ -507,22 +513,9 @@ export class TransactionsService {
     const ecart = montantRetenu.minus(montantDeclare);
 
     const misAJour = await this.prisma.$transaction(async (tx) => {
-      await tx.receptionValidation.update({
-        where: { id: transaction.bordereau!.reception!.id },
-        data: {
-          montantRecu: montantRetenu,
-          ecart,
-          statutFinal: StatutTransaction.VALIDEE,
-          validateurId: utilisateur.userId,
-        },
-      });
-
       const updated = await tx.transactionCaisse.update({
         where: { id },
-        data: {
-          statut: StatutTransaction.VALIDEE,
-          montant: montantRetenu,
-        },
+        data: { statut: StatutTransaction.VALIDEE },
       });
 
       if (montantRetenu.greaterThan(0)) {
@@ -533,6 +526,15 @@ export class TransactionsService {
           utilisateur.userId,
         );
       }
+
+      await tx.regularisationLitige.create({
+        data: {
+          transactionId: id,
+          montantRetenu,
+          motif: dto.motif,
+          validateurId: utilisateur.userId,
+        },
+      });
 
       return updated;
     });

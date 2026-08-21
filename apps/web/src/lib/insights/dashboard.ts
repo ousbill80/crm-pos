@@ -33,8 +33,8 @@ export function buildPrioritesDashboard(input: {
       severity: 'critical',
       title: `${input.nombreLitiges} litige(s) de caisse`,
       detail: `${input.montantEcartsAbsolus} FCFA d'écart — bloqués jusqu'à régularisation (§6.4).`,
-      href: '/transactions',
-      cta: 'Voir les transactions',
+      href: '/litiges',
+      cta: 'Voir les litiges',
     });
   }
 
@@ -44,7 +44,7 @@ export function buildPrioritesDashboard(input: {
       severity: 'warning',
       title: `${input.versementsEnRetard24h} versement(s) en retard`,
       detail: 'Bordereaux non transmis dans le délai de 24 h (§6.7).',
-      href: '/alertes',
+      href: '/alertes?type=VERSEMENT_EN_RETARD',
       cta: 'Ouvrir les alertes',
     });
   }

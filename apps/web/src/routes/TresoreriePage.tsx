@@ -1,10 +1,11 @@
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowRight,
   ArrowRightLeft,
   Banknote,
+  ChevronRight,
   Clock,
   Landmark,
   Scale,
@@ -17,6 +18,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -77,6 +79,27 @@ const AGEING_LABELS: Record<string, string> = {
   plus_72h: '+72 h',
 };
 
+const AGEING_COLORS: Record<string, string> = {
+  '0_24h': '#1e8449',
+  '24_48h': '#017E84',
+  '48_72h': '#d68910',
+  plus_72h: '#c0392b',
+};
+
+const STATUT_LABEL: Record<string, string> = {
+  INITIEE: 'Initiée',
+  EN_TRANSIT: 'En transit',
+  RECEPTIONNEE: 'Réceptionnée',
+  VALIDEE: 'Validée',
+  LITIGE: 'Litige',
+};
+
+const ALERTE_TYPE_LABEL: Record<string, string> = {
+  ECART_CAISSE: 'Écart de caisse',
+  VERSEMENT_EN_RETARD: 'Versement en retard',
+  ACCES_REFUSE: 'Accès refusé',
+};
+
 function formatFcfa(value: string | number): string {
   const n = typeof value === 'string' ? Number(value) : value;
   if (Number.isNaN(n)) return String(value);
@@ -103,8 +126,43 @@ function insightRunway(jours: number | null, moyenneCa: string): Insight {
   };
 }
 
+function insightCentrale(solde: string): Insight {
+  return {
+    title: 'Caisse centrale',
+    interpretation: `Solde recalculé depuis le grand livre : ${formatFcfa(solde)} (contreparties validées magasin → centrale).`,
+    recommendation: 'Ouvrir le détail des caisses pour le journal append-only.',
+    severity: 'info',
+  };
+}
+
+function insightPipelineStatut(statut: string, nombre: number, montant: string): Insight {
+  const label = STATUT_LABEL[statut] ?? statut;
+  if (statut === 'LITIGE' && nombre > 0) {
+    return {
+      title: label,
+      interpretation: `${nombre} transaction(s) en litige · ${formatFcfa(montant)}.`,
+      recommendation: 'Arbitrage Contrôle interne / DAF — ouvrir les litiges.',
+      severity: 'critical',
+    };
+  }
+  if ((statut === 'INITIEE' || statut === 'EN_TRANSIT') && nombre > 0) {
+    return {
+      title: label,
+      interpretation: `${nombre} versement(s) · ${formatFcfa(montant)} dans le circuit §6.4.`,
+      recommendation: 'Accélérer transit / réception centrale selon le statut.',
+      severity: 'warning',
+    };
+  }
+  return {
+    title: label,
+    interpretation: `${nombre} transaction(s) · ${formatFcfa(montant)}.`,
+    severity: nombre > 0 ? 'info' : 'ok',
+  };
+}
+
 export function TresoreriePage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   useTresorerieRealtime(user !== null);
   const pendingOffline = outboxCount();
 
@@ -158,6 +216,26 @@ export function TresoreriePage() {
   const nbRetards = data?.versements.enRetard24h ?? 0;
   const santeOk = nbLitiges === 0 && nbRetards === 0 && alertesTreso.length === 0;
 
+  function goAgeing(bucket: string) {
+    navigate(`/transactions?enCours=1&ageing=${bucket}`);
+  }
+
+  function goStatut(statut: string) {
+    if (statut === 'LITIGE') {
+      navigate('/litiges');
+      return;
+    }
+    if (statut === 'VALIDEE') {
+      navigate('/transactions?statut=VALIDEE');
+      return;
+    }
+    navigate(`/transactions?enCours=1&statut=${statut}`);
+  }
+
+  function goAlerte(type: string) {
+    navigate(`/alertes?type=${type}`);
+  }
+
   return (
     <div className="treso-module">
       <PageHeader
@@ -203,7 +281,7 @@ export function TresoreriePage() {
           <div className="dash-sante-meta treso-sante-links">
             {!santeOk && nbLitiges > 0 ? <Link to="/litiges">Traiter litiges</Link> : null}
             {nbRetards > 0 ? (
-              <Link to="/transactions?enCours=1">Circuit en cours</Link>
+              <Link to="/transactions?enCours=1&ageing=plus_72h">Circuit en retard</Link>
             ) : null}
             <Link to="/caisses">Voir caisses</Link>
           </div>
@@ -216,7 +294,11 @@ export function TresoreriePage() {
       {pilot && data && (
         <>
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <button
+              type="button"
+              className="kpi-card dash-kpi"
+              onClick={() => navigate('/caisses')}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Wallet size={16} />
@@ -227,10 +309,14 @@ export function TresoreriePage() {
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.cashConseille)}
               </div>
-              <div className="kpi-hint">Magasins / tiroirs + centrale</div>
-            </article>
+              <div className="kpi-hint">Magasins / tiroirs + centrale · cliquer</div>
+            </button>
 
-            <article className="kpi-card dash-kpi">
+            <button
+              type="button"
+              className="kpi-card dash-kpi"
+              onClick={() => navigate('/caisses?type=MAGASIN')}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Banknote size={16} />
@@ -247,36 +333,51 @@ export function TresoreriePage() {
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.soldeAuxiliaires)}
               </div>
-              <div className="kpi-hint">Cash boutiques</div>
-            </article>
+              <div className="kpi-hint">Cash boutiques · cliquer</div>
+            </button>
 
-            <article className="kpi-card dash-kpi">
+            <button
+              type="button"
+              className="kpi-card dash-kpi"
+              onClick={() => navigate('/caisses?type=CENTRALE')}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Landmark size={16} />
                 </span>
+                <InfoTooltip insight={insightCentrale(pilot.position.soldeCentrale)} />
               </div>
               <div className="kpi-label">Centrale</div>
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.soldeCentrale)}
               </div>
-              <div className="kpi-hint">Contreparties validées</div>
-            </article>
+              <div className="kpi-hint">Contreparties validées · cliquer</div>
+            </button>
 
-            <article className="kpi-card dash-kpi">
+            <button
+              type="button"
+              className="kpi-card dash-kpi"
+              onClick={() => navigate('/transactions?enCours=1')}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <TrendingUp size={16} />
                 </span>
+                <InfoTooltip
+                  insight={{
+                    title: 'Versements en cours',
+                    interpretation: `${formatFcfa(pilot.position.versementsEnCours)} dans le circuit Initiée → En transit → Réceptionnée.`,
+                    recommendation: 'Ouvrir le pipeline pour avancer chaque statut §6.4.',
+                    severity: Number(pilot.position.versementsEnCours) > 0 ? 'warning' : 'ok',
+                  }}
+                />
               </div>
               <div className="kpi-label">En cours</div>
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.versementsEnCours)}
               </div>
-              <div className="kpi-hint">
-                <Link to="/transactions?enCours=1">Voir le circuit</Link>
-              </div>
-            </article>
+              <div className="kpi-hint">Circuit §6.4 · cliquer</div>
+            </button>
           </div>
 
           <div className="kpi-grid dash-kpi-grid">
@@ -338,12 +439,14 @@ export function TresoreriePage() {
                 </div>
               </article>
             )}
-            <article
+            <button
+              type="button"
               className={
                 data.ecarts.nombreLitiges > 0
                   ? 'kpi-card dash-kpi kpi-danger'
                   : 'kpi-card dash-kpi'
               }
+              onClick={() => navigate('/litiges')}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -359,19 +462,17 @@ export function TresoreriePage() {
               <div className="kpi-label">Litiges</div>
               <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
               <div className="kpi-hint">
-                <Link to="/litiges">Traiter les litiges</Link>
-                {' · '}
-                <span className="money">
-                  Écarts abs. {data.ecarts.montantEcartsAbsolus} FCFA
-                </span>
+                Écarts abs. {formatFcfa(data.ecarts.montantEcartsAbsolus)} · cliquer
               </div>
-            </article>
-            <article
+            </button>
+            <button
+              type="button"
               className={
                 data.versements.enRetard24h > 0
                   ? 'kpi-card dash-kpi kpi-warning'
                   : 'kpi-card dash-kpi'
               }
+              onClick={() => navigate('/transactions?enCours=1&ageing=plus_72h')}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -383,51 +484,81 @@ export function TresoreriePage() {
               </div>
               <div className="kpi-label">Retards &gt; 24h</div>
               <div className="kpi-value">{data.versements.enRetard24h}</div>
-              <div className="kpi-hint">
-                <Link to="/transactions?enCours=1">Voir le circuit</Link>
-              </div>
-            </article>
+              <div className="kpi-hint">Circuit en cours · cliquer</div>
+            </button>
           </div>
 
           <div className="panel-grid-2">
-            <ListPanel title="Courbe de liquidité 30 j">
+            <ListPanel
+              title="Courbe de liquidité 30 j"
+              toolbar={
+                <InfoTooltip
+                  insight={{
+                    title: 'Projection indicative',
+                    interpretation:
+                      'Cash consolidé + moyenne CA 30 j × horizon. Ce n’est pas un solde comptable ni une écriture du grand livre.',
+                    recommendation:
+                      'Comparer avec les versements en cours et accélérer le cash boutique → centrale.',
+                    severity: 'info',
+                  }}
+                />
+              }
+            >
               <p className="lead">
                 Projection indicative = cash consolidé + moyenne CA 30 j × horizon.
                 Pas un solde comptable.
               </p>
-              <div style={{ width: '100%', height: 280 }}>
-                <ResponsiveContainer>
-                  <AreaChart data={courbeChart}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
-                    <XAxis dataKey="jour" tick={{ fontSize: 11 }} interval={4} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v: number) =>
-                        `${(v / 1000).toFixed(0)}k`
-                      }
-                    />
-                    <Tooltip
-                      formatter={(value) =>
-                        formatFcfa(typeof value === 'number' ? value : Number(value))
-                      }
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Projection"
-                      stroke="#0f766e"
-                      fill="#0f766e"
-                      fillOpacity={0.25}
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <button
+                type="button"
+                className="treso-chart-hit"
+                onClick={() => navigate('/transactions?enCours=1')}
+                aria-label="Voir les versements en cours"
+              >
+                <div style={{ width: '100%', height: 280 }}>
+                  <ResponsiveContainer>
+                    <AreaChart data={courbeChart}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
+                      <XAxis dataKey="jour" tick={{ fontSize: 11 }} interval={4} />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v: number) =>
+                          `${(v / 1000).toFixed(0)}k`
+                        }
+                      />
+                      <Tooltip
+                        formatter={(value) =>
+                          formatFcfa(typeof value === 'number' ? value : Number(value))
+                        }
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="Projection"
+                        stroke="#0f766e"
+                        fill="#0f766e"
+                        fillOpacity={0.25}
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <span className="treso-chart-cta">
+                  Ouvrir le circuit des versements <ArrowRight size={14} />
+                </span>
+              </button>
             </ListPanel>
 
             <ListPanel title="Ageing des versements en cours">
-              <div style={{ width: '100%', height: 220 }}>
+              <div style={{ width: '100%', height: 200 }}>
                 <ResponsiveContainer>
-                  <BarChart data={ageingChart}>
+                  <BarChart
+                    data={ageingChart}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(state) => {
+                      const key = (state as { activePayload?: Array<{ payload: { key: string } }> })
+                        ?.activePayload?.[0]?.payload?.key;
+                      if (key) goAgeing(key);
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
                     <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
@@ -438,22 +569,42 @@ export function TresoreriePage() {
                           : value
                       }
                     />
-                    <Bar dataKey="nombre" name="Nombre" fill="#017E84" radius={4} />
+                    <Bar dataKey="nombre" name="Nombre" radius={4}>
+                      {ageingChart.map((row) => (
+                        <Cell
+                          key={row.key}
+                          fill={AGEING_COLORS[row.key] ?? '#017E84'}
+                        />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <table>
+              <table className="treso-click-table">
                 <thead>
                   <tr>
                     <th>Bucket</th>
                     <th>Nb</th>
                     <th>Montant</th>
-                    <th />
+                    <th aria-label="Ouvrir" />
                   </tr>
                 </thead>
                 <tbody>
                   {pilot.ageing.map((a) => (
-                    <tr key={a.bucket}>
+                    <tr
+                      key={a.bucket}
+                      className="produit-row"
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Voir versements ${AGEING_LABELS[a.bucket]}`}
+                      onClick={() => goAgeing(a.bucket)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          goAgeing(a.bucket);
+                        }
+                      }}
+                    >
                       <td>
                         {AGEING_LABELS[a.bucket]}{' '}
                         <InfoTooltip
@@ -462,10 +613,8 @@ export function TresoreriePage() {
                       </td>
                       <td>{a.nombre}</td>
                       <td className="money">{formatFcfa(a.montant)}</td>
-                      <td>
-                        <Link to={`/transactions?enCours=1&ageing=${a.bucket}`}>
-                          Voir
-                        </Link>
+                      <td className="produit-row-chevron">
+                        <ChevronRight size={16} />
                       </td>
                     </tr>
                   ))}
@@ -480,42 +629,111 @@ export function TresoreriePage() {
           </div>
 
           <div className="panel-grid-2">
-            <ListPanel title="Pipeline des versements">
-              <table>
+            <ListPanel
+              title="Pipeline des versements"
+              toolbar={
+                <InfoTooltip
+                  insight={{
+                    title: 'Machine à états §6.4',
+                    interpretation:
+                      'Initiée → En transit → Réceptionnée → Validée (ou Litige). Cliquez une ligne pour filtrer le circuit.',
+                    severity: 'info',
+                  }}
+                />
+              }
+            >
+              <table className="treso-click-table">
                 <thead>
                   <tr>
                     <th>Statut</th>
                     <th>Nombre</th>
                     <th>Montant</th>
+                    <th aria-label="Ouvrir" />
                   </tr>
                 </thead>
                 <tbody>
                   {data.versements.parStatut.map((row) => (
-                    <tr key={row.statut}>
+                    <tr
+                      key={row.statut}
+                      className={`produit-row${row.statut === 'LITIGE' && row.nombre > 0 ? ' facture-row-retard' : ''}`}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Voir ${STATUT_LABEL[row.statut] ?? row.statut}`}
+                      onClick={() => goStatut(row.statut)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          goStatut(row.statut);
+                        }
+                      }}
+                    >
                       <td>
-                        <span className="badge badge-neutral">{row.statut}</span>
+                        <span
+                          className={
+                            row.statut === 'LITIGE'
+                              ? 'badge badge-danger'
+                              : row.statut === 'VALIDEE'
+                                ? 'badge badge-ok'
+                                : 'badge badge-warning'
+                          }
+                        >
+                          {STATUT_LABEL[row.statut] ?? row.statut}
+                        </span>{' '}
+                        <InfoTooltip
+                          insight={insightPipelineStatut(
+                            row.statut,
+                            row.nombre,
+                            row.montant,
+                          )}
+                        />
                       </td>
                       <td>{row.nombre}</td>
-                      <td className="money">{row.montant} FCFA</td>
+                      <td className="money">{formatFcfa(row.montant)}</td>
+                      <td className="produit-row-chevron">
+                        <ChevronRight size={16} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </ListPanel>
 
-            <ListPanel title="Alertes trésorerie">
+            <ListPanel
+              title="Alertes trésorerie"
+              toolbar={
+                <Link className="btn btn-secondary" to="/alertes">
+                  Toutes
+                </Link>
+              }
+            >
               {alertes.isLoading && <LoadingState label="Chargement des alertes..." />}
               {!alertes.isLoading && alertesTreso.length === 0 && (
                 <p className="lead">Aucune alerte trésorerie active.</p>
               )}
               {alertesTreso.length > 0 && (
-                <ul>
-                  {alertesTreso.map((a, i) => (
+                <ul className="treso-alerte-list">
+                  {alertesTreso.slice(0, 8).map((a, i) => (
                     <li key={`${a.type}-${i}`}>
-                      <span className="badge badge-warning">{a.type}</span> {a.message}
+                      <button
+                        type="button"
+                        className="treso-alerte-item"
+                        onClick={() => goAlerte(a.type)}
+                      >
+                        <span className="badge badge-warning">
+                          {ALERTE_TYPE_LABEL[a.type] ?? a.type}
+                        </span>
+                        <span className="treso-alerte-msg">{a.message}</span>
+                        <ChevronRight size={14} />
+                      </button>
                     </li>
                   ))}
                 </ul>
+              )}
+              {alertesTreso.length > 8 && (
+                <p className="lead">
+                  +{alertesTreso.length - 8} autre(s) —{' '}
+                  <Link to="/alertes">voir tout</Link>
+                </p>
               )}
               <p className="lead">
                 <Link to="/alertes">

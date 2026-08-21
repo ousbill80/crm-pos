@@ -271,16 +271,13 @@ export class FournisseursService {
       );
     }
 
-    const entrepotId = await this.resolveEntrepotReception(
-      dto.entrepotId,
-      user,
-    );
     const reference = dto.reference?.trim() || null;
 
     let commandeId: string | null = null;
     let ligneCommandeId: string | null = null;
     let produitId = dto.produitId;
     let prixAchatNum = dto.prixAchat;
+    let commandeBoutiqueId: string | null | undefined;
 
     if (dto.ligneCommandeId) {
       const ligne = await this.prisma.ligneCommandeAchat.findUnique({
@@ -320,10 +317,20 @@ export class FournisseursService {
       produitId = ligne.produitId;
       commandeId = ligne.commandeId;
       ligneCommandeId = ligne.id;
+      commandeBoutiqueId = ligne.commande.boutiqueId;
       if (prixAchatNum === undefined || prixAchatNum === null) {
         prixAchatNum = ligne.prixUnitaire.toNumber();
       }
     }
+
+    const entrepotId = await this.resolveEntrepotReception(
+      dto.entrepotId,
+      user,
+      {
+        hasCommande: Boolean(ligneCommandeId),
+        commandeBoutiqueId,
+      },
+    );
 
     const produitCible =
       produitId !== dto.produitId
@@ -448,7 +455,33 @@ export class FournisseursService {
   private async resolveEntrepotReception(
     entrepotId: string | undefined,
     user: AuthenticatedUser,
+    options?: {
+      hasCommande?: boolean;
+      commandeBoutiqueId?: string | null;
+    },
   ): Promise<string> {
+    // Commande groupe (boutiqueId null) : quai ENTREE hub uniquement — pas de
+    // fallback PRINCIPAL boutique (§ Achats mutualisés / hub réseau).
+    const commandeGroupe =
+      options?.hasCommande === true && options.commandeBoutiqueId === null;
+
+    if (commandeGroupe) {
+      const quai = await this.prisma.entrepot.findFirst({
+        where: { reseau: true, usage: 'ENTREE', actif: true },
+      });
+      if (!quai) {
+        throw new BadRequestException(
+          'Commande groupe : aucun quai ENTREE réseau. Semez l’entrepôt central (WH-CENTRAL).',
+        );
+      }
+      if (entrepotId && entrepotId !== quai.id) {
+        throw new BadRequestException(
+          'Commande groupe : la réception doit cibler le quai ENTREE du hub réseau.',
+        );
+      }
+      return quai.id;
+    }
+
     if (entrepotId) {
       const e = await this.prisma.entrepot.findUnique({
         where: { id: entrepotId },
@@ -466,6 +499,13 @@ export class FournisseursService {
       this.assertEntrepotPerimetre(e.boutiqueId, user);
       return e.id;
     }
+
+    if (options?.commandeBoutiqueId) {
+      return this.stockService.trouverEntrepotPrincipalBoutique(
+        options.commandeBoutiqueId,
+      );
+    }
+
     const quai = await this.prisma.entrepot.findFirst({
       where: { reseau: true, usage: 'ENTREE', actif: true },
     });

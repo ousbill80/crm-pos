@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -33,6 +33,7 @@ import {
 import type {
   BoutiqueDto,
   CaisseDto,
+  MouvementCaisseDto,
   EntrepotDto,
   SocieteDto,
   ZoneDto,
@@ -81,6 +82,45 @@ function boutiqueHasPrincipal(boutiqueId: string, entrepots: EntrepotDto[]) {
   );
 }
 
+function formatSolde(valeur: string | number): string {
+  const n = typeof valeur === 'string' ? Number(valeur) : valeur;
+  if (!Number.isFinite(n)) return String(valeur);
+  return Math.round(n).toLocaleString('fr-FR');
+}
+
+/** Solde recalculé depuis le grand livre (jamais soldeCourant stocké). */
+function SoldeCaisseCell({ caisseId }: { caisseId: string }) {
+  const solde = useQuery({
+    queryKey: ['caisses', caisseId, 'solde'],
+    queryFn: () =>
+      apiFetch<{ caisseId: string; solde: string }>(
+        `/caisses/${caisseId}/solde`,
+      ),
+  });
+  if (solde.isLoading) return <span className="money">…</span>;
+  if (solde.isError) return <span className="money">—</span>;
+  return (
+    <span className="money">{formatSolde(solde.data?.solde ?? 0)} FCFA</span>
+  );
+}
+
+function libelleCaisse(c: CaisseDto): string {
+  if (c.code && c.libelle) return `${c.code} — ${c.libelle}`;
+  if (c.code) return c.code;
+  if (c.libelle) return c.libelle;
+  if (c.type === 'CENTRALE') return 'Caisse centrale';
+  if (c.type === 'MAGASIN') return 'Caisse magasin';
+  if (c.type === 'TIROIR') return 'Tiroir POS';
+  return c.id.slice(0, 8);
+}
+
+function libelleTypeCaisse(type: CaisseDto['type']): string {
+  if (type === 'CENTRALE') return 'Centrale';
+  if (type === 'MAGASIN') return 'Magasin';
+  if (type === 'TIROIR') return 'Tiroir';
+  return type;
+}
+
 export function EntreprisePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -89,9 +129,20 @@ export function EntreprisePage() {
 
   const [onglet, setOnglet] = useState<Onglet>('overview');
   const [modalZone, setModalZone] = useState(false);
+  const [zoneEditee, setZoneEditee] = useState<ZoneDto | null>(null);
+  const [nomZoneEdit, setNomZoneEdit] = useState('');
+  const [createZoneErr, setCreateZoneErr] = useState<string | null>(null);
+  const [editSociete, setEditSociete] = useState(false);
+  const formSocieteRef = useRef<HTMLFormElement | null>(null);
   const [modalBoutique, setModalBoutique] = useState(false);
+  const [boutiqueEditee, setBoutiqueEditee] = useState<BoutiqueDto | null>(null);
+  const [filtreZoneMagasin, setFiltreZoneMagasin] = useState('');
+  const [createBoutiqueErr, setCreateBoutiqueErr] = useState<string | null>(null);
   const [modalEntrepot, setModalEntrepot] = useState(false);
+  const [entrepotEdite, setEntrepotEdite] = useState<EntrepotDto | null>(null);
   const [modalCaisse, setModalCaisse] = useState(false);
+  const [caisseDetaillee, setCaisseDetaillee] = useState<CaisseDto | null>(null);
+  const [createCaisseErr, setCreateCaisseErr] = useState<string | null>(null);
   const [searchMagasin, setSearchMagasin] = useState('');
   const [filtreEntrepotBoutique, setFiltreEntrepotBoutique] = useState('');
 
@@ -127,6 +178,7 @@ export function EntreprisePage() {
   const [email, setEmail] = useState('');
   const [devise, setDevise] = useState('XOF');
   const [logoUrl, setLogoUrl] = useState('');
+  const [delaiVersementHeures, setDelaiVersementHeures] = useState('24');
   const [msg, setMsg] = useState<string | null>(null);
   const [formHydrated, setFormHydrated] = useState(false);
 
@@ -138,6 +190,7 @@ export function EntreprisePage() {
     setEmail(societe.data.email ?? '');
     setDevise(societe.data.devise);
     setLogoUrl(societe.data.logoUrl ?? '');
+    setDelaiVersementHeures(String(societe.data.delaiVersementHeures));
     setFormHydrated(true);
   }, [societe.data, formHydrated]);
 
@@ -152,10 +205,14 @@ export function EntreprisePage() {
           email: email || undefined,
           devise: devise || undefined,
           logoUrl: logoUrl || undefined,
+          delaiVersementHeures: delaiVersementHeures
+            ? Number(delaiVersementHeures)
+            : undefined,
         }),
       }),
     onSuccess: () => {
       setMsg('Société mise à jour.');
+      setFormHydrated(false);
       void queryClient.invalidateQueries({ queryKey: ['entreprise'] });
     },
     onError: () => setMsg('Échec de la mise à jour.'),
@@ -166,11 +223,25 @@ export function EntreprisePage() {
     mutationFn: () =>
       apiFetch<ZoneDto>('/zones', {
         method: 'POST',
-        body: JSON.stringify({ nomZone }),
+        body: JSON.stringify({ nomZone: nomZone.trim() }),
       }),
     onSuccess: () => {
       setNomZone('');
+      setCreateZoneErr(null);
       setModalZone(false);
+      void queryClient.invalidateQueries({ queryKey: ['zones'] });
+    },
+    onError: () => setCreateZoneErr('Échec de la création de la zone.'),
+  });
+
+  const updateZone = useMutation({
+    mutationFn: () =>
+      apiFetch<ZoneDto>(`/zones/${zoneEditee!.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ nomZone: nomZoneEdit.trim() }),
+      }),
+    onSuccess: () => {
+      setZoneEditee(null);
       void queryClient.invalidateQueries({ queryKey: ['zones'] });
     },
   });
@@ -183,27 +254,45 @@ export function EntreprisePage() {
       apiFetch<BoutiqueDto>('/boutiques', {
         method: 'POST',
         body: JSON.stringify({
-          nom: nomBoutique,
-          adresse: adresseBoutique,
+          nom: nomBoutique.trim(),
+          adresse: adresseBoutique.trim(),
           zoneId: zoneId || zones.data?.[0]?.id || '',
         }),
       }),
     onSuccess: () => {
       setNomBoutique('');
       setAdresseBoutique('');
+      setCreateBoutiqueErr(null);
       setModalBoutique(false);
       void queryClient.invalidateQueries({ queryKey: ['boutiques'] });
       void queryClient.invalidateQueries({ queryKey: ['entrepots'] });
+      setOnglet('magasins');
     },
+    onError: () =>
+      setCreateBoutiqueErr(
+        'Échec de la création — vérifiez le nom, l’adresse et la zone.',
+      ),
   });
 
-  const toggleBoutique = useMutation({
-    mutationFn: ({ id, actif }: { id: string; actif: boolean }) =>
-      apiFetch<BoutiqueDto>(`/boutiques/${id}`, {
+  const updateBoutique = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      nom: string;
+      adresse: string;
+      code: string;
+      actif: boolean;
+    }) =>
+      apiFetch<BoutiqueDto>(`/boutiques/${payload.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ actif }),
+        body: JSON.stringify({
+          nom: payload.nom.trim(),
+          adresse: payload.adresse.trim(),
+          code: payload.code.trim() || undefined,
+          actif: payload.actif,
+        }),
       }),
     onSuccess: () => {
+      setBoutiqueEditee(null);
       void queryClient.invalidateQueries({ queryKey: ['boutiques'] });
     },
   });
@@ -230,31 +319,66 @@ export function EntreprisePage() {
     },
   });
 
-  const toggleEntrepot = useMutation({
-    mutationFn: ({ id, actif }: { id: string; actif: boolean }) =>
-      apiFetch<EntrepotDto>(`/entrepots/${id}`, {
+  const updateEntrepot = useMutation({
+    mutationFn: (payload: { id: string; nom: string; actif: boolean }) =>
+      apiFetch<EntrepotDto>(`/entrepots/${payload.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ actif }),
+        body: JSON.stringify({ nom: payload.nom.trim(), actif: payload.actif }),
       }),
     onSuccess: () => {
+      setEntrepotEdite(null);
       void queryClient.invalidateQueries({ queryKey: ['entrepots'] });
     },
   });
 
   const [caisseBoutiqueId, setCaisseBoutiqueId] = useState('');
   const createCaisse = useMutation({
-    mutationFn: () =>
-      apiFetch<CaisseDto>('/caisses', {
+    mutationFn: () => {
+      const bid =
+        caisseBoutiqueId ||
+        (boutiques.data ?? []).find(
+          (b) =>
+            b.actif &&
+            !(caisses.data ?? []).some(
+              (c) => c.type === 'MAGASIN' && c.boutiqueId === b.id,
+            ),
+        )?.id ||
+        '';
+      return apiFetch<CaisseDto>('/caisses', {
         method: 'POST',
         body: JSON.stringify({
           type: 'MAGASIN',
-          boutiqueId: caisseBoutiqueId || boutiques.data?.[0]?.id || '',
+          boutiqueId: bid,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
+      setCreateCaisseErr(null);
       setModalCaisse(false);
       void queryClient.invalidateQueries({ queryKey: ['caisses'] });
     },
+    onError: () =>
+      setCreateCaisseErr(
+        'Échec — le magasin a peut-être déjà une caisse, ou la boutique est invalide.',
+      ),
+  });
+
+  const mouvementsCaisse = useQuery({
+    queryKey: ['caisse-mouvements', caisseDetaillee?.id],
+    queryFn: () =>
+      apiFetch<MouvementCaisseDto[]>(
+        `/caisses/${caisseDetaillee!.id}/mouvements`,
+      ),
+    enabled: caisseDetaillee !== null,
+  });
+
+  const soldeCaisseDetail = useQuery({
+    queryKey: ['caisses', caisseDetaillee?.id, 'solde'],
+    queryFn: () =>
+      apiFetch<{ caisseId: string; solde: string }>(
+        `/caisses/${caisseDetaillee!.id}/solde`,
+      ),
+    enabled: caisseDetaillee !== null,
   });
 
   const zonesList = zones.data ?? [];
@@ -266,6 +390,7 @@ export function EntreprisePage() {
   const magasinsInactifs = boutiquesList.filter((b) => !b.actif);
   const caissesCentrale = caissesList.filter((c) => c.type === 'CENTRALE');
   const caissesMagasin = caissesList.filter((c) => c.type === 'MAGASIN');
+  const caissesTiroir = caissesList.filter((c) => c.type === 'TIROIR');
 
   const boutiquesSansCaisse = boutiquesList.filter(
     (b) => b.actif && !boutiqueHasMagasin(b.id, caissesList),
@@ -376,6 +501,7 @@ export function EntreprisePage() {
   );
 
   const magasinsFiltres = boutiquesList.filter((b) => {
+    if (filtreZoneMagasin && b.zoneId !== filtreZoneMagasin) return false;
     const q = searchMagasin.trim().toLowerCase();
     if (!q) return true;
     const zoneNom = zonesList.find((z) => z.id === b.zoneId)?.nomZone ?? '';
@@ -581,7 +707,22 @@ export function EntreprisePage() {
 
                     <ListPanel title="Identité société">
                       {societe.data ? (
-                        <div className="cfg-identity">
+                        <div
+                          className="cfg-identity cfg-identity-clickable"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            setOnglet('societe');
+                            setEditSociete(peutAdmin);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setOnglet('societe');
+                              setEditSociete(peutAdmin);
+                            }
+                          }}
+                        >
                           {societe.data.logoUrl ? (
                             <img
                               src={societe.data.logoUrl}
@@ -611,15 +752,11 @@ export function EntreprisePage() {
                                 : ''}
                               {societe.data.email ? ` · ${societe.data.email}` : ''}
                             </p>
-                            {peutAdmin && (
-                              <button
-                                type="button"
-                                className="btn-secondary"
-                                onClick={() => setOnglet('societe')}
-                              >
-                                Modifier la fiche
-                              </button>
-                            )}
+                            <p className="lead">
+                              {peutAdmin
+                                ? 'Cliquer pour modifier la fiche société'
+                                : 'Cliquer pour voir la fiche société'}
+                            </p>
                           </div>
                         </div>
                       ) : (
@@ -645,7 +782,23 @@ export function EntreprisePage() {
               )}
               {societe.data && (
                 <>
-                  <div className="cfg-identity cfg-identity-hero">
+                  <div
+                    className={`cfg-identity cfg-identity-hero${peutAdmin ? ' cfg-identity-clickable' : ''}`}
+                    role={peutAdmin ? 'button' : undefined}
+                    tabIndex={peutAdmin ? 0 : undefined}
+                    onClick={() => {
+                      if (!peutAdmin) return;
+                      setEditSociete(true);
+                      window.setTimeout(() => formSocieteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!peutAdmin) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setEditSociete(true);
+                      }
+                    }}
+                  >
                     {societe.data.logoUrl ? (
                       <img
                         src={societe.data.logoUrl}
@@ -678,13 +831,24 @@ export function EntreprisePage() {
                         {societe.data.email && (
                           <span className="cfg-badge muted">{societe.data.email}</span>
                         )}
+                        <span className="cfg-badge muted">
+                          Versement &lt; {societe.data.delaiVersementHeures} h
+                        </span>
                       </div>
+                      {peutAdmin && (
+                        <p className="lead" style={{ marginTop: 8 }}>
+                          {editSociete
+                            ? 'Modification en cours ci-dessous'
+                            : 'Cliquer pour éditer'}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {peutAdmin && (
+                  {peutAdmin && editSociete && (
                     <ListPanel title="Modifier la fiche société">
                       <form
+                        ref={formSocieteRef}
                         className="cfg-form"
                         onSubmit={(e: FormEvent) => {
                           e.preventDefault();
@@ -699,6 +863,7 @@ export function EntreprisePage() {
                               value={raisonSociale}
                               onChange={(e) => setRaisonSociale(e.target.value)}
                               required
+                              autoFocus
                             />
                           </div>
                           <div>
@@ -745,19 +910,52 @@ export function EntreprisePage() {
                               placeholder="https://…"
                             />
                           </div>
+                          <div>
+                            <label htmlFor="delai-versement">
+                              Délai versement avant alerte (heures)
+                            </label>
+                            <input
+                              id="delai-versement"
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={delaiVersementHeures}
+                              onChange={(e) =>
+                                setDelaiVersementHeures(e.target.value)
+                              }
+                              required
+                            />
+                          </div>
                         </div>
                         <div className="cfg-form-actions">
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setEditSociete(false)}
+                          >
+                            Annuler
+                          </button>
                           <button
                             type="submit"
                             className="btn-primary"
                             disabled={patchSociete.isPending}
                           >
-                            Enregistrer
+                            {patchSociete.isPending ? 'Enregistrement…' : 'Enregistrer'}
                           </button>
                           {msg && <p className="cfg-form-msg">{msg}</p>}
                         </div>
                       </form>
                     </ListPanel>
+                  )}
+
+                  {peutAdmin && !editSociete && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => setEditSociete(true)}
+                    >
+                      Modifier la fiche
+                    </button>
                   )}
                 </>
               )}
@@ -772,7 +970,11 @@ export function EntreprisePage() {
                   <button
                     type="button"
                     className="btn-primary"
-                    onClick={() => setModalZone(true)}
+                    onClick={() => {
+                      setCreateZoneErr(null);
+                      setNomZone('');
+                      setModalZone(true);
+                    }}
                   >
                     <Plus size={14} /> Nouvelle zone
                   </button>
@@ -801,29 +1003,50 @@ export function EntreprisePage() {
                 />
               )}
               {zones.data && zones.data.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Magasins</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {zones.data.map((z) => {
-                      const count = boutiquesList.filter(
-                        (b) => b.zoneId === z.id,
-                      ).length;
-                      return (
-                        <tr key={z.id}>
-                          <td>{z.nomZone}</td>
-                          <td>
-                            <span className="cfg-badge">{count}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="clients-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Zone</th>
+                        <th>Magasins</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zones.data.map((z) => {
+                        const magasinsZone = boutiquesList.filter(
+                          (b) => b.zoneId === z.id,
+                        );
+                        return (
+                          <tr
+                            key={z.id}
+                            className="produit-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Ouvrir ${z.nomZone}`}
+                            onClick={() => {
+                              setZoneEditee(z);
+                              setNomZoneEdit(z.nomZone);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setZoneEditee(z);
+                                setNomZoneEdit(z.nomZone);
+                              }
+                            }}
+                          >
+                            <td>
+                              <strong>{z.nomZone}</strong>
+                            </td>
+                            <td>
+                              <span className="cfg-badge">{magasinsZone.length}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </ListPanel>
           )}
@@ -837,7 +1060,7 @@ export function EntreprisePage() {
                     <Search size={14} />
                     <input
                       type="search"
-                      placeholder="Rechercher…"
+                      placeholder="Rechercher un magasin…"
                       value={searchMagasin}
                       onChange={(e) => setSearchMagasin(e.target.value)}
                       aria-label="Rechercher un magasin"
@@ -847,7 +1070,19 @@ export function EntreprisePage() {
                     <button
                       type="button"
                       className="btn-primary"
-                      onClick={() => setModalBoutique(true)}
+                      onClick={() => {
+                        setCreateBoutiqueErr(null);
+                        setNomBoutique('');
+                        setAdresseBoutique('');
+                        setZoneId(zones.data?.[0]?.id ?? '');
+                        setModalBoutique(true);
+                      }}
+                      disabled={(zones.data?.length ?? 0) === 0}
+                      title={
+                        (zones.data?.length ?? 0) === 0
+                          ? 'Créez d’abord une zone'
+                          : undefined
+                      }
                     >
                       <Plus size={14} /> Nouveau magasin
                     </button>
@@ -855,24 +1090,83 @@ export function EntreprisePage() {
                 </div>
               }
             >
+              {zonesList.length > 0 && (
+                <div className="cfg-chip-row cfg-filter-chips">
+                  <button
+                    type="button"
+                    className={`cfg-badge${filtreZoneMagasin === '' ? ' ok' : ' muted'}`}
+                    onClick={() => setFiltreZoneMagasin('')}
+                  >
+                    Toutes ({boutiquesList.length})
+                  </button>
+                  {zonesList.map((z) => {
+                    const n = boutiquesList.filter((b) => b.zoneId === z.id).length;
+                    return (
+                      <button
+                        key={z.id}
+                        type="button"
+                        className={`cfg-badge${filtreZoneMagasin === z.id ? ' ok' : ' muted'}`}
+                        onClick={() => setFiltreZoneMagasin(z.id)}
+                      >
+                        {z.nomZone} ({n})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="cfg-mag-stats">
+                <span>
+                  <strong>{magasinsActifs.length}</strong> actif(s)
+                </span>
+                <span>
+                  <strong>{boutiquesSansCaisse.length}</strong> sans caisse
+                </span>
+                <span>
+                  <strong>{boutiquesSansPrincipal.length}</strong> sans entrepôt
+                </span>
+              </div>
+
               {boutiques.isLoading && (
                 <LoadingState label="Chargement des magasins..." />
               )}
               {boutiques.isError && (
                 <p role="alert">Erreur lors du chargement des magasins.</p>
               )}
-              {boutiques.data && boutiques.data.length === 0 && (
+              {(zones.data?.length ?? 0) === 0 && peutAdmin && (
+                <EmptyState
+                  title="Aucune zone"
+                  description="Créez une zone avant d’ajouter un magasin."
+                  action={
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setOnglet('zones');
+                        setModalZone(true);
+                      }}
+                    >
+                      Créer une zone
+                    </button>
+                  }
+                />
+              )}
+              {boutiques.data && boutiques.data.length === 0 && (zones.data?.length ?? 0) > 0 && (
                 <EmptyState
                   title="Aucun magasin"
-                  description="Aucun magasin enregistré."
+                  description="Ajoutez le premier magasin du réseau. Un entrepôt PRINCIPAL est créé automatiquement."
                   action={
                     peutAdmin ? (
                       <button
                         type="button"
                         className="btn-primary"
-                        onClick={() => setModalBoutique(true)}
+                        onClick={() => {
+                          setCreateBoutiqueErr(null);
+                          setZoneId(zones.data?.[0]?.id ?? '');
+                          setModalBoutique(true);
+                        }}
                       >
-                        Nouveau magasin
+                        <Plus size={14} /> Nouveau magasin
                       </button>
                     ) : undefined
                   }
@@ -881,86 +1175,91 @@ export function EntreprisePage() {
               {boutiques.data && boutiques.data.length > 0 && magasinsFiltres.length === 0 && (
                 <EmptyState
                   title="Aucun résultat"
-                  description="Aucun magasin ne correspond à la recherche."
+                  description="Aucun magasin ne correspond aux filtres."
                 />
               )}
               {magasinsFiltres.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Adresse</th>
-                      <th>Zone</th>
-                      <th>
-                        Santé <InfoTooltip insight={insightSanteColonne()} />
-                      </th>
-                      <th>Statut</th>
-                      {peutAdmin && <th>Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {magasinsFiltres.map((b) => {
-                      const hasCaisse = boutiqueHasMagasin(b.id, caissesList);
-                      const hasPrincipal = boutiqueHasPrincipal(b.id, entrepotsList);
-                      return (
-                        <tr key={b.id}>
-                          <td>
-                            <strong>{b.nom}</strong>
-                            {b.code ? (
-                              <span className="cfg-code"> {b.code}</span>
-                            ) : null}
-                          </td>
-                          <td>{b.adresse}</td>
-                          <td>
-                            {zonesList.find((z) => z.id === b.zoneId)?.nomZone ??
-                              '—'}
-                          </td>
-                          <td>
-                            <div className="cfg-chip-row">
-                              <span
-                                className={`cfg-badge ${hasCaisse ? 'ok' : 'warn'}`}
-                              >
-                                {hasCaisse ? 'Caisse OK' : 'Sans caisse'}
-                              </span>
-                              <span
-                                className={`cfg-badge ${hasPrincipal ? 'ok' : 'warn'}`}
-                              >
-                                {hasPrincipal ? 'Entrepôt OK' : 'Sans PRINCIPAL'}
-                              </span>
-                              <InfoTooltip
-                                insight={insightSanteMagasin(hasCaisse, hasPrincipal)}
-                              />
-                            </div>
-                          </td>
-                          <td>
-                            <span
-                              className={`cfg-badge ${b.actif ? 'ok' : 'muted'}`}
-                            >
-                              {b.actif ? 'Actif' : 'Inactif'}
-                            </span>
-                          </td>
-                          {peutAdmin && (
+                <div className="clients-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Magasin</th>
+                        <th>Zone</th>
+                        <th>
+                          Santé <InfoTooltip insight={insightSanteColonne()} />
+                        </th>
+                        <th>Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {magasinsFiltres.map((b) => {
+                        const hasCaisse = boutiqueHasMagasin(b.id, caissesList);
+                        const hasPrincipal = boutiqueHasPrincipal(
+                          b.id,
+                          entrepotsList,
+                        );
+                        const zoneNom =
+                          zonesList.find((z) => z.id === b.zoneId)?.nomZone ??
+                          '—';
+                        return (
+                          <tr
+                            key={b.id}
+                            className="produit-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Ouvrir ${b.nom}`}
+                            onClick={() => setBoutiqueEditee({ ...b })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setBoutiqueEditee({ ...b });
+                              }
+                            }}
+                          >
                             <td>
-                              <button
-                                type="button"
-                                className="btn-secondary"
-                                disabled={toggleBoutique.isPending}
-                                onClick={() =>
-                                  toggleBoutique.mutate({
-                                    id: b.id,
-                                    actif: !b.actif,
-                                  })
-                                }
-                              >
-                                {b.actif ? 'Désactiver' : 'Activer'}
-                              </button>
+                              <strong>{b.nom}</strong>
+                              {b.code ? (
+                                <span className="cfg-code"> {b.code}</span>
+                              ) : null}
+                              <br />
+                              <span className="lead">{b.adresse}</span>
                             </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            <td>{zoneNom}</td>
+                            <td>
+                              <div className="cfg-chip-row">
+                                <span
+                                  className={`cfg-badge ${hasCaisse ? 'ok' : 'warn'}`}
+                                >
+                                  {hasCaisse ? 'Caisse OK' : 'Sans caisse'}
+                                </span>
+                                <span
+                                  className={`cfg-badge ${hasPrincipal ? 'ok' : 'warn'}`}
+                                >
+                                  {hasPrincipal
+                                    ? 'Entrepôt OK'
+                                    : 'Sans PRINCIPAL'}
+                                </span>
+                                <InfoTooltip
+                                  insight={insightSanteMagasin(
+                                    hasCaisse,
+                                    hasPrincipal,
+                                  )}
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <span
+                                className={`cfg-badge ${b.actif ? 'ok' : 'muted'}`}
+                              >
+                                {b.actif ? 'Actif' : 'Inactif'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </ListPanel>
           )}
@@ -988,7 +1287,11 @@ export function EntreprisePage() {
                     <button
                       type="button"
                       className="btn-primary"
-                      onClick={() => setModalEntrepot(true)}
+                      onClick={() => {
+                        setEntrepotBoutiqueId(boutiquesList[0]?.id ?? '');
+                        setModalEntrepot(true);
+                      }}
+                      disabled={boutiquesList.length === 0}
                     >
                       <Plus size={14} /> Entrepôt secondaire
                     </button>
@@ -1005,194 +1308,321 @@ export function EntreprisePage() {
               {entrepots.data && entrepots.data.length === 0 && (
                 <EmptyState
                   title="Aucun entrepôt"
-                  description="Aucun entrepôt enregistré."
+                  description="Les entrepôts PRINCIPAL sont créés avec chaque magasin."
                   action={
                     peutAdmin ? (
                       <button
                         type="button"
                         className="btn-primary"
-                        onClick={() => setModalEntrepot(true)}
+                        onClick={() => setOnglet('magasins')}
                       >
-                        Nouvel entrepôt
+                        Aller aux magasins
                       </button>
                     ) : undefined
                   }
                 />
               )}
               {entrepotsFiltres.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Code</th>
-                      <th>Type</th>
-                      <th>Boutique</th>
-                      <th>Statut</th>
-                      {peutAdmin && <th>Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entrepotsFiltres.map((e) => (
-                      <tr key={e.id}>
-                        <td>{e.nom}</td>
-                        <td>
-                          <code>{e.code}</code>
-                        </td>
-                        <td>
-                          <span
-                            className={`cfg-badge ${
-                              e.type === 'PRINCIPAL' ? 'accent' : 'muted'
-                            }`}
-                          >
-                            {e.type}
-                          </span>{' '}
-                          <InfoTooltip
-                            insight={insightTypeEntrepot(
-                              e.type === 'PRINCIPAL' ? 'PRINCIPAL' : 'SECONDAIRE',
-                            )}
-                          />
-                        </td>
-                        <td>
-                          {boutiquesList.find((b) => b.id === e.boutiqueId)?.nom ??
-                            e.boutique?.nom ??
-                            '—'}
-                        </td>
-                        <td>
-                          <span
-                            className={`cfg-badge ${e.actif ? 'ok' : 'muted'}`}
-                          >
-                            {e.actif ? 'Actif' : 'Inactif'}
-                          </span>
-                        </td>
-                        {peutAdmin && (
-                          <td>
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              disabled={toggleEntrepot.isPending}
-                              onClick={() =>
-                                toggleEntrepot.mutate({
-                                  id: e.id,
-                                  actif: !e.actif,
-                                })
-                              }
-                            >
-                              {e.actif ? 'Désactiver' : 'Activer'}
-                            </button>
-                          </td>
-                        )}
+                <div className="clients-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Entrepôt</th>
+                        <th>Type</th>
+                        <th>Boutique</th>
+                        <th>Statut</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {entrepotsFiltres.map((e) => (
+                        <tr
+                          key={e.id}
+                          className="produit-row"
+                          tabIndex={0}
+                          role="button"
+                          aria-label={`Ouvrir ${e.nom}`}
+                          onClick={() => setEntrepotEdite({ ...e })}
+                          onKeyDown={(ev) => {
+                            if (ev.key === 'Enter' || ev.key === ' ') {
+                              ev.preventDefault();
+                              setEntrepotEdite({ ...e });
+                            }
+                          }}
+                        >
+                          <td>
+                            <strong>{e.nom}</strong>
+                            <br />
+                            <code className="cfg-code">{e.code}</code>
+                          </td>
+                          <td>
+                            <span
+                              className={`cfg-badge ${
+                                e.type === 'PRINCIPAL' ? 'accent' : 'muted'
+                              }`}
+                            >
+                              {e.type}
+                            </span>{' '}
+                            <InfoTooltip
+                              insight={insightTypeEntrepot(
+                                e.type === 'PRINCIPAL' ? 'PRINCIPAL' : 'SECONDAIRE',
+                              )}
+                            />
+                          </td>
+                          <td>
+                            {boutiquesList.find((b) => b.id === e.boutiqueId)?.nom ??
+                              e.boutique?.nom ??
+                              '—'}
+                          </td>
+                          <td>
+                            <span
+                              className={`cfg-badge ${e.actif ? 'ok' : 'muted'}`}
+                            >
+                              {e.actif ? 'Actif' : 'Inactif'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </ListPanel>
           )}
 
           {onglet === 'caisses' && (
             <>
+              <div className="cfg-mag-stats">
+                <span>
+                  <strong>{caissesCentrale.length}</strong> centrale
+                </span>
+                <span>
+                  <strong>{caissesMagasin.length}</strong> magasin
+                </span>
+                <span>
+                  <strong>{caissesTiroir.length}</strong> tiroir POS
+                </span>
+                <span>
+                  <strong>{boutiquesSansCaisse.length}</strong> magasin(s) sans
+                  caisse
+                </span>
+              </div>
+
+              {caisses.isLoading && (
+                <LoadingState label="Chargement des caisses..." />
+              )}
+              {caisses.isError && (
+                <p role="alert">Erreur lors du chargement des caisses.</p>
+              )}
+
               {caissesCentrale.length > 0 && (
                 <ListPanel title="Caisse centrale">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Référence</th>
-                        <th>
-                          Type{' '}
-                          <InfoTooltip insight={insightTypeCaisseConfig('CENTRALE')} />
-                        </th>
-                        <th>Solde courant</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {caissesCentrale.map((c) => (
-                        <tr key={c.id}>
-                          <td>
-                            <code>{c.id.slice(0, 8)}…</code>
-                          </td>
-                          <td>
-                            <span className="cfg-badge accent">CENTRALE</span>{' '}
-                            <InfoTooltip insight={insightTypeCaisseConfig(c.type)} />
-                          </td>
-                          <td className="money">{c.soldeCourant} FCFA</td>
+                  <div className="clients-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Caisse</th>
+                          <th>
+                            Type{' '}
+                            <InfoTooltip
+                              insight={insightTypeCaisseConfig('CENTRALE')}
+                            />
+                          </th>
+                          <th>Solde courant</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {caissesCentrale.map((c) => (
+                          <tr
+                            key={c.id}
+                            className="produit-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Ouvrir ${libelleCaisse(c)}`}
+                            onClick={() => setCaisseDetaillee(c)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setCaisseDetaillee(c);
+                              }
+                            }}
+                          >
+                            <td>
+                              <strong>{libelleCaisse(c)}</strong>
+                              <br />
+                              <span className="lead">{c.id.slice(0, 8)}…</span>
+                            </td>
+                            <td>
+                              <span className="cfg-badge accent">
+                                {libelleTypeCaisse(c.type)}
+                              </span>
+                            </td>
+                            <td>
+                              <SoldeCaisseCell caisseId={c.id} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </ListPanel>
               )}
 
               <ListPanel
-                title="Caisses auxiliaires"
+                title="Caisses magasin"
                 toolbar={
                   peutAdmin ? (
                     <button
                       type="button"
                       className="btn-primary"
-                      onClick={() => setModalCaisse(true)}
+                      onClick={() => {
+                        setCreateCaisseErr(null);
+                        setCaisseBoutiqueId(boutiquesSansCaisse[0]?.id ?? '');
+                        setModalCaisse(true);
+                      }}
+                      disabled={boutiquesSansCaisse.length === 0}
+                      title={
+                        boutiquesSansCaisse.length === 0
+                          ? 'Tous les magasins actifs ont déjà une caisse'
+                          : undefined
+                      }
                     >
                       <Plus size={14} /> Nouvelle caisse
                     </button>
                   ) : undefined
                 }
               >
-                {caisses.isLoading && (
-                  <LoadingState label="Chargement des caisses..." />
-                )}
-                {caisses.isError && (
-                  <p role="alert">Erreur lors du chargement des caisses.</p>
-                )}
                 {caissesMagasin.length === 0 && !caisses.isLoading && (
                   <EmptyState
                     title="Aucune caisse magasin"
-                    description="Provisionnez une caisse pour chaque magasin actif."
+                    description="Provisionnez une caisse pour chaque magasin actif (séparation des tâches §6.2)."
                     action={
-                      peutAdmin ? (
+                      peutAdmin && boutiquesSansCaisse.length > 0 ? (
                         <button
                           type="button"
                           className="btn-primary"
-                          onClick={() => setModalCaisse(true)}
+                          onClick={() => {
+                            setCreateCaisseErr(null);
+                            setCaisseBoutiqueId(boutiquesSansCaisse[0]?.id ?? '');
+                            setModalCaisse(true);
+                          }}
                         >
-                          Nouvelle caisse
+                          <Plus size={14} /> Nouvelle caisse
                         </button>
                       ) : undefined
                     }
                   />
                 )}
                 {caissesMagasin.length > 0 && (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Référence</th>
-                        <th>
-                          Type{' '}
-                          <InfoTooltip insight={insightTypeCaisseConfig('MAGASIN')} />
-                        </th>
-                        <th>Boutique</th>
-                        <th>Solde courant</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {caissesMagasin.map((c) => (
-                        <tr key={c.id}>
-                          <td>
-                            <code>{c.id.slice(0, 8)}…</code>
-                          </td>
-                          <td>
-                            <span className="cfg-badge">MAGASIN</span>{' '}
-                            <InfoTooltip insight={insightTypeCaisseConfig(c.type)} />
-                          </td>
-                          <td>
-                            {boutiquesList.find((b) => b.id === c.boutiqueId)
-                              ?.nom ?? '—'}
-                          </td>
-                          <td className="money">{c.soldeCourant} FCFA</td>
+                  <div className="clients-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Caisse</th>
+                          <th>Boutique</th>
+                          <th>
+                            Type{' '}
+                            <InfoTooltip
+                              insight={insightTypeCaisseConfig('MAGASIN')}
+                            />
+                          </th>
+                          <th>Solde courant</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {caissesMagasin.map((c) => {
+                          const boutiqueNom =
+                            boutiquesList.find((b) => b.id === c.boutiqueId)
+                              ?.nom ?? '—';
+                          return (
+                            <tr
+                              key={c.id}
+                              className="produit-row"
+                              tabIndex={0}
+                              role="button"
+                              aria-label={`Ouvrir ${libelleCaisse(c)}`}
+                              onClick={() => setCaisseDetaillee(c)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setCaisseDetaillee(c);
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong>{libelleCaisse(c)}</strong>
+                                <br />
+                                <span className="lead">{c.id.slice(0, 8)}…</span>
+                              </td>
+                              <td>{boutiqueNom}</td>
+                              <td>
+                                <span className="cfg-badge">
+                                  {libelleTypeCaisse(c.type)}
+                                </span>
+                              </td>
+                              <td>
+                                <SoldeCaisseCell caisseId={c.id} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </ListPanel>
+
+              {caissesTiroir.length > 0 && (
+                <ListPanel title="Tiroirs POS">
+                  <div className="clients-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Tiroir</th>
+                          <th>Boutique</th>
+                          <th>Statut</th>
+                          <th>Solde courant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {caissesTiroir.map((c) => (
+                          <tr
+                            key={c.id}
+                            className="produit-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Ouvrir ${libelleCaisse(c)}`}
+                            onClick={() => setCaisseDetaillee(c)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setCaisseDetaillee(c);
+                              }
+                            }}
+                          >
+                            <td>
+                              <strong>{libelleCaisse(c)}</strong>
+                            </td>
+                            <td>
+                              {boutiquesList.find((b) => b.id === c.boutiqueId)
+                                ?.nom ?? '—'}
+                            </td>
+                            <td>
+                              <span
+                                className={`cfg-badge ${c.actif === false ? 'muted' : 'ok'}`}
+                              >
+                                {c.actif === false ? 'Inactif' : 'Actif'}
+                              </span>
+                            </td>
+                            <td>
+                              <SoldeCaisseCell caisseId={c.id} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </ListPanel>
+              )}
             </>
           )}
         </div>
@@ -1206,26 +1636,221 @@ export function EntreprisePage() {
             title="Nouvelle zone"
           >
             <form
+              className="cfg-form"
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!nomZone.trim()) {
+                  setCreateZoneErr('Indiquez un nom de zone.');
+                  return;
+                }
                 createZone.mutate();
               }}
             >
-              <label htmlFor="nz">Nom de la zone</label>
-              <input
-                id="nz"
-                value={nomZone}
-                onChange={(e) => setNomZone(e.target.value)}
-                required
-              />
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={createZone.isPending}
-              >
-                Créer la zone
-              </button>
+              <div>
+                <label htmlFor="nz">Nom de la zone</label>
+                <input
+                  id="nz"
+                  value={nomZone}
+                  onChange={(e) => setNomZone(e.target.value)}
+                  placeholder="ex. Zone Dakar Centre"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="cfg-form-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setModalZone(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={createZone.isPending || !nomZone.trim()}
+                >
+                  {createZone.isPending ? 'Création…' : 'Créer la zone'}
+                </button>
+              </div>
+              {createZoneErr && <p role="alert">{createZoneErr}</p>}
             </form>
+          </Modal>
+
+          <Modal
+            open={zoneEditee !== null}
+            onClose={() => setZoneEditee(null)}
+            title={zoneEditee ? `Zone — ${zoneEditee.nomZone}` : 'Zone'}
+          >
+            {zoneEditee && (
+              <div className="cfg-form">
+                {peutAdmin ? (
+                  <div>
+                    <label htmlFor="ze-nom">Nom</label>
+                    <input
+                      id="ze-nom"
+                      value={nomZoneEdit}
+                      onChange={(e) => setNomZoneEdit(e.target.value)}
+                      required
+                    />
+                  </div>
+                ) : (
+                  <h3>{zoneEditee.nomZone}</h3>
+                )}
+                <h3 className="cfg-section-title">Magasins rattachés</h3>
+                {boutiquesList.filter((b) => b.zoneId === zoneEditee.id).length ===
+                0 ? (
+                  <EmptyState
+                    title="Aucun magasin"
+                    description="Aucun magasin dans cette zone."
+                  />
+                ) : (
+                  <ul className="cfg-checklist">
+                    {boutiquesList
+                      .filter((b) => b.zoneId === zoneEditee.id)
+                      .map((b) => (
+                        <li key={b.id}>
+                          <button
+                            type="button"
+                            className="cfg-check-item ok"
+                            onClick={() => {
+                              setFiltreZoneMagasin(zoneEditee.id);
+                              setZoneEditee(null);
+                              setOnglet('magasins');
+                            }}
+                          >
+                            <Store size={15} />
+                            {b.nom}
+                            {!b.actif ? ' (inactif)' : ''}
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+                <div className="cfg-form-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setFiltreZoneMagasin(zoneEditee.id);
+                      setZoneEditee(null);
+                      setOnglet('magasins');
+                    }}
+                  >
+                    Voir les magasins
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setZoneEditee(null)}
+                  >
+                    Fermer
+                  </button>
+                  {peutAdmin && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={updateZone.isPending || !nomZoneEdit.trim()}
+                      onClick={() => updateZone.mutate()}
+                    >
+                      {updateZone.isPending ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </Modal>
+
+          <Modal
+            open={entrepotEdite !== null}
+            onClose={() => setEntrepotEdite(null)}
+            title={
+              entrepotEdite
+                ? `${entrepotEdite.nom} — détail`
+                : 'Entrepôt'
+            }
+          >
+            {entrepotEdite && (
+              <form
+                className="cfg-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!peutAdmin) return;
+                  updateEntrepot.mutate({
+                    id: entrepotEdite.id,
+                    nom: entrepotEdite.nom,
+                    actif: entrepotEdite.actif,
+                  });
+                }}
+              >
+                <div className="cfg-mag-detail-meta">
+                  <span
+                    className={`cfg-badge ${
+                      entrepotEdite.type === 'PRINCIPAL' ? 'accent' : 'muted'
+                    }`}
+                  >
+                    {entrepotEdite.type}
+                  </span>
+                  <span className="cfg-badge muted">
+                    {boutiquesList.find((b) => b.id === entrepotEdite.boutiqueId)
+                      ?.nom ?? '—'}
+                  </span>
+                  <span className="cfg-badge muted">
+                    Code {entrepotEdite.code}
+                  </span>
+                </div>
+                <div>
+                  <label htmlFor="ee-nom">Nom</label>
+                  <input
+                    id="ee-nom"
+                    value={entrepotEdite.nom}
+                    disabled={!peutAdmin}
+                    onChange={(e) =>
+                      setEntrepotEdite({
+                        ...entrepotEdite,
+                        nom: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
+                {peutAdmin && (
+                  <label className="cfg-check-inline">
+                    <input
+                      type="checkbox"
+                      checked={entrepotEdite.actif}
+                      onChange={(e) =>
+                        setEntrepotEdite({
+                          ...entrepotEdite,
+                          actif: e.target.checked,
+                        })
+                      }
+                    />
+                    Entrepôt actif
+                  </label>
+                )}
+                <div className="cfg-form-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setEntrepotEdite(null)}
+                  >
+                    Fermer
+                  </button>
+                  {peutAdmin && (
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={updateEntrepot.isPending}
+                    >
+                      {updateEntrepot.isPending
+                        ? 'Enregistrement…'
+                        : 'Enregistrer'}
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </Modal>
 
           <Modal
@@ -1234,46 +1859,229 @@ export function EntreprisePage() {
             title="Nouveau magasin"
           >
             <form
+              className="cfg-form"
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!zoneId && !zones.data?.[0]?.id) {
+                  setCreateBoutiqueErr('Choisissez une zone.');
+                  return;
+                }
                 createBoutique.mutate();
               }}
             >
-              <label htmlFor="nb">Nom</label>
-              <input
-                id="nb"
-                value={nomBoutique}
-                onChange={(e) => setNomBoutique(e.target.value)}
-                required
-              />
-              <label htmlFor="ab">Adresse</label>
-              <input
-                id="ab"
-                value={adresseBoutique}
-                onChange={(e) => setAdresseBoutique(e.target.value)}
-                required
-              />
-              <label htmlFor="zb">Zone</label>
-              <select
-                id="zb"
-                value={zoneId || zones.data?.[0]?.id || ''}
-                onChange={(e) => setZoneId(e.target.value)}
-                required
-              >
-                {(zones.data ?? []).map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.nomZone}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={createBoutique.isPending}
-              >
-                Créer le magasin
-              </button>
+              <p className="lead">
+                Un entrepôt PRINCIPAL est créé automatiquement. Pensez ensuite à
+                ajouter une caisse magasin dans l’onglet Caisses.
+              </p>
+              <div>
+                <label htmlFor="nb">Nom du magasin</label>
+                <input
+                  id="nb"
+                  value={nomBoutique}
+                  onChange={(e) => setNomBoutique(e.target.value)}
+                  placeholder="ex. Boutique Plateau"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label htmlFor="ab">Adresse</label>
+                <input
+                  id="ab"
+                  value={adresseBoutique}
+                  onChange={(e) => setAdresseBoutique(e.target.value)}
+                  placeholder="Adresse complète"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="zb">Zone</label>
+                <select
+                  id="zb"
+                  value={zoneId || zones.data?.[0]?.id || ''}
+                  onChange={(e) => setZoneId(e.target.value)}
+                  required
+                >
+                  {(zones.data ?? []).length === 0 && (
+                    <option value="">Aucune zone — créez-en une</option>
+                  )}
+                  {(zones.data ?? []).map((z) => (
+                    <option key={z.id} value={z.id}>
+                      {z.nomZone}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="cfg-form-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setModalBoutique(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={
+                    createBoutique.isPending || (zones.data?.length ?? 0) === 0
+                  }
+                >
+                  {createBoutique.isPending ? 'Création…' : 'Créer le magasin'}
+                </button>
+              </div>
+              {createBoutiqueErr && <p role="alert">{createBoutiqueErr}</p>}
             </form>
+          </Modal>
+
+          <Modal
+            open={boutiqueEditee !== null}
+            onClose={() => setBoutiqueEditee(null)}
+            title={
+              boutiqueEditee
+                ? `${boutiqueEditee.nom}${peutAdmin ? ' — modifier' : ''}`
+                : 'Magasin'
+            }
+          >
+            {boutiqueEditee && (
+              <form
+                className="cfg-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!peutAdmin) return;
+                  updateBoutique.mutate({
+                    id: boutiqueEditee.id,
+                    nom: boutiqueEditee.nom,
+                    adresse: boutiqueEditee.adresse,
+                    code: boutiqueEditee.code ?? '',
+                    actif: boutiqueEditee.actif,
+                  });
+                }}
+              >
+                <div className="cfg-mag-detail-meta">
+                  <span className="cfg-badge muted">
+                    Zone{' '}
+                    {zonesList.find((z) => z.id === boutiqueEditee.zoneId)
+                      ?.nomZone ?? '—'}
+                  </span>
+                  <span
+                    className={`cfg-badge ${
+                      boutiqueHasMagasin(boutiqueEditee.id, caissesList)
+                        ? 'ok'
+                        : 'warn'
+                    }`}
+                  >
+                    {boutiqueHasMagasin(boutiqueEditee.id, caissesList)
+                      ? 'Caisse OK'
+                      : 'Sans caisse'}
+                  </span>
+                  <span
+                    className={`cfg-badge ${
+                      boutiqueHasPrincipal(boutiqueEditee.id, entrepotsList)
+                        ? 'ok'
+                        : 'warn'
+                    }`}
+                  >
+                    {boutiqueHasPrincipal(boutiqueEditee.id, entrepotsList)
+                      ? 'Entrepôt OK'
+                      : 'Sans PRINCIPAL'}
+                  </span>
+                </div>
+                <div>
+                  <label htmlFor="edit-bn">Nom</label>
+                  <input
+                    id="edit-bn"
+                    value={boutiqueEditee.nom}
+                    disabled={!peutAdmin}
+                    onChange={(e) =>
+                      setBoutiqueEditee({
+                        ...boutiqueEditee,
+                        nom: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-ba">Adresse</label>
+                  <input
+                    id="edit-ba"
+                    value={boutiqueEditee.adresse}
+                    disabled={!peutAdmin}
+                    onChange={(e) =>
+                      setBoutiqueEditee({
+                        ...boutiqueEditee,
+                        adresse: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-bc">Code (optionnel)</label>
+                  <input
+                    id="edit-bc"
+                    value={boutiqueEditee.code ?? ''}
+                    disabled={!peutAdmin}
+                    onChange={(e) =>
+                      setBoutiqueEditee({
+                        ...boutiqueEditee,
+                        code: e.target.value || null,
+                      })
+                    }
+                    placeholder="ex. DEMO-01"
+                  />
+                </div>
+                {peutAdmin && (
+                  <label className="cfg-check-inline">
+                    <input
+                      type="checkbox"
+                      checked={boutiqueEditee.actif}
+                      onChange={(e) =>
+                        setBoutiqueEditee({
+                          ...boutiqueEditee,
+                          actif: e.target.checked,
+                        })
+                      }
+                    />
+                    Magasin actif
+                  </label>
+                )}
+                <div className="cfg-form-actions">
+                  {!boutiqueHasMagasin(boutiqueEditee.id, caissesList) &&
+                    peutAdmin && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setCaisseBoutiqueId(boutiqueEditee.id);
+                          setBoutiqueEditee(null);
+                          setOnglet('caisses');
+                          setModalCaisse(true);
+                        }}
+                      >
+                        Ajouter une caisse
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setBoutiqueEditee(null)}
+                  >
+                    Fermer
+                  </button>
+                  {peutAdmin && (
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={updateBoutique.isPending}
+                    >
+                      {updateBoutique.isPending ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </Modal>
 
           <Modal
@@ -1327,38 +2135,167 @@ export function EntreprisePage() {
           <Modal
             open={modalCaisse}
             onClose={() => setModalCaisse(false)}
-            title="Provisionner une caisse magasin"
+            title="Nouvelle caisse magasin"
           >
             <form
+              className="cfg-form"
               onSubmit={(e) => {
                 e.preventDefault();
                 createCaisse.mutate();
               }}
             >
-              <label htmlFor="cb">Boutique</label>
-              <select
-                id="cb"
-                value={caisseBoutiqueId || boutiques.data?.[0]?.id || ''}
-                onChange={(e) => setCaisseBoutiqueId(e.target.value)}
-                required
-              >
-                {(boutiques.data ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nom}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={createCaisse.isPending}
-              >
-                Créer la caisse
-              </button>
+              <p className="lead">
+                Une caisse magasin par boutique — elle reçoit les versements des
+                tiroirs POS (séparation des tâches).
+              </p>
+              <div>
+                <label htmlFor="cb">Magasin</label>
+                <select
+                  id="cb"
+                  value={caisseBoutiqueId || boutiquesSansCaisse[0]?.id || ''}
+                  onChange={(e) => setCaisseBoutiqueId(e.target.value)}
+                  required
+                >
+                  {boutiquesSansCaisse.length === 0 && (
+                    <option value="">Tous les magasins ont déjà une caisse</option>
+                  )}
+                  {boutiquesSansCaisse.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nom}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="cfg-form-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setModalCaisse(false)}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={
+                    createCaisse.isPending || boutiquesSansCaisse.length === 0
+                  }
+                >
+                  {createCaisse.isPending ? 'Création…' : 'Créer la caisse'}
+                </button>
+              </div>
+              {createCaisseErr && <p role="alert">{createCaisseErr}</p>}
             </form>
           </Modal>
         </>
       )}
+
+      <Modal
+        open={caisseDetaillee !== null}
+        onClose={() => setCaisseDetaillee(null)}
+        title={
+          caisseDetaillee
+            ? `${libelleCaisse(caisseDetaillee)} — détail`
+            : 'Caisse'
+        }
+      >
+        {caisseDetaillee && (
+          <div className="cfg-form">
+            <div className="cfg-mag-detail-meta">
+              <span className="cfg-badge accent">
+                {libelleTypeCaisse(caisseDetaillee.type)}
+              </span>
+              {caisseDetaillee.boutiqueId && (
+                <span className="cfg-badge muted">
+                  {boutiquesList.find((b) => b.id === caisseDetaillee.boutiqueId)
+                    ?.nom ?? 'Boutique'}
+                </span>
+              )}
+              <span
+                className={`cfg-badge ${caisseDetaillee.actif === false ? 'muted' : 'ok'}`}
+              >
+                {caisseDetaillee.actif === false ? 'Inactive' : 'Active'}
+              </span>
+            </div>
+            <div className="cfg-caisse-solde">
+              <span>Solde courant</span>
+              <strong className="money">
+                {soldeCaisseDetail.isLoading
+                  ? '…'
+                  : soldeCaisseDetail.isError
+                    ? '—'
+                    : `${formatSolde(soldeCaisseDetail.data?.solde ?? 0)} FCFA`}
+              </strong>
+            </div>
+            <p className="lead">
+              Réf. <code>{caisseDetaillee.id}</code>
+              {caisseDetaillee.code ? ` · Code ${caisseDetaillee.code}` : ''}
+            </p>
+            <h3 className="cfg-section-title">Derniers mouvements</h3>
+            {mouvementsCaisse.isLoading && (
+              <LoadingState label="Chargement du grand livre…" />
+            )}
+            {mouvementsCaisse.isError && (
+              <p role="alert">Impossible de charger les mouvements.</p>
+            )}
+            {mouvementsCaisse.data && mouvementsCaisse.data.length === 0 && (
+              <EmptyState
+                title="Aucun mouvement"
+                description="Le grand livre de cette caisse est encore vide."
+              />
+            )}
+            {mouvementsCaisse.data && mouvementsCaisse.data.length > 0 && (
+              <div className="clients-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Libellé</th>
+                      <th>Débit</th>
+                      <th>Crédit</th>
+                      <th>Solde</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mouvementsCaisse.data.slice(0, 20).map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          {new Date(m.dateHeure).toLocaleString('fr-FR')}
+                        </td>
+                        <td>
+                          {m.libelle}
+                          <br />
+                          <span className="lead">{m.statut}</span>
+                        </td>
+                        <td className="money">
+                          {Number(m.debit) > 0
+                            ? `${formatSolde(m.debit)}`
+                            : '—'}
+                        </td>
+                        <td className="money">
+                          {Number(m.credit) > 0
+                            ? `${formatSolde(m.credit)}`
+                            : '—'}
+                        </td>
+                        <td className="money">{formatSolde(m.soldeApres)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="cfg-form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setCaisseDetaillee(null)}
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

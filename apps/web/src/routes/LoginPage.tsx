@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
@@ -28,7 +28,7 @@ function homeForRole(role: RoleLibelle): string {
 }
 
 export function LoginPage() {
-  const { isAuthenticated, user, login } = useAuth();
+  const { isAuthenticated, user, login, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -37,7 +37,20 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (isAuthenticated && user) {
+  const forceSwitch =
+    new URLSearchParams(location.search).get('switch') === '1' ||
+    Boolean(
+      (location.state as { switchAccount?: boolean } | null)?.switchAccount,
+    );
+
+  useEffect(() => {
+    if (forceSwitch && isAuthenticated) {
+      logout();
+      navigate('/login', { replace: true, state: { from: '/pos' } });
+    }
+  }, [forceSwitch, isAuthenticated, logout, navigate]);
+
+  if (isAuthenticated && user && !forceSwitch) {
     const from = (location.state as { from?: string } | null)?.from;
     return <Navigate to={from ?? homeForRole(user.role)} replace />;
   }
@@ -74,6 +87,7 @@ export function LoginPage() {
           <label htmlFor="login">Identifiant</label>
           <input
             id="login"
+            data-testid="login-identifiant"
             value={loginValue}
             onChange={(e) => setLoginValue(e.target.value)}
             autoComplete="username"
@@ -84,6 +98,7 @@ export function LoginPage() {
           <label htmlFor="password">Mot de passe</label>
           <input
             id="password"
+            data-testid="login-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -92,7 +107,12 @@ export function LoginPage() {
           />
         </div>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" className="btn-primary" disabled={isSubmitting}>
+        <button
+          type="submit"
+          className="btn-primary"
+          data-testid="login-submit"
+          disabled={isSubmitting}
+        >
           {isSubmitting ? 'Connexion...' : 'Se connecter'}
         </button>
 
@@ -103,9 +123,24 @@ export function LoginPage() {
               <button
                 key={compte.login}
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => {
                   setLoginValue(compte.login);
                   setPassword(MOT_DE_PASSE_DEMO);
+                  setError(null);
+                  setIsSubmitting(true);
+                  void login(compte.login, MOT_DE_PASSE_DEMO)
+                    .then((next) => {
+                      navigate(homeForRole(next.role), { replace: true });
+                    })
+                    .catch((err) => {
+                      setError(
+                        err instanceof ApiError
+                          ? 'Identifiants invalides.'
+                          : 'Impossible de contacter le serveur.',
+                      );
+                    })
+                    .finally(() => setIsSubmitting(false));
                 }}
               >
                 {compte.libelle}

@@ -250,6 +250,7 @@ export function StocksPage() {
   const [trSource, setTrSource] = useState('');
   const [trDest, setTrDest] = useState('');
   const [trQty, setTrQty] = useState('');
+  const [trRecherche, setTrRecherche] = useState('');
   const [trErr, setTrErr] = useState<string | null>(null);
 
   function invaliderStocks() {
@@ -367,6 +368,12 @@ export function StocksPage() {
     return qtyAt(ligne, trSource)?.quantite ?? 0;
   }, [synthese.data, trProduit, trSource]);
 
+  const qtyDestTransfert = useMemo(() => {
+    const ligne = synthese.data?.lignes.find((l) => l.produitId === trProduit);
+    if (!ligne || !trDest) return null;
+    return qtyAt(ligne, trDest)?.quantite ?? 0;
+  }, [synthese.data, trProduit, trDest]);
+
   const produitsSelect = useMemo(() => {
     const byId = new Map<string, string>();
     for (const p of produits.data ?? []) {
@@ -418,6 +425,7 @@ export function StocksPage() {
         '',
     );
     setTrQty(prefill ? String(prefill.quantite) : '');
+    setTrRecherche('');
     setTrErr(null);
     setModalTransferer(true);
   }
@@ -1532,13 +1540,30 @@ export function StocksPage() {
             open={modalTransferer}
             onClose={() => setModalTransferer(false)}
             title="Transférer entre entrepôts"
+            description="Écriture immédiate TRANSFERT_OUT + TRANSFERT_IN. Pour un circuit journalisé (brouillon → prêt → fait), utiliser Opérations."
+            size="lg"
           >
             <form
               onSubmit={(e: FormEvent) => {
                 e.preventDefault();
+                const qty = Number(trQty);
+                if (qtySourceTransfert !== null && qty > qtySourceTransfert) {
+                  setTrErr(
+                    `Stock insuffisant à la source (disponible : ${qtySourceTransfert}).`,
+                  );
+                  return;
+                }
                 transferer.mutate();
               }}
             >
+              <label htmlFor="tr-rech">Rechercher un article</label>
+              <input
+                id="tr-rech"
+                type="search"
+                placeholder="Désignation ou SKU…"
+                value={trRecherche}
+                onChange={(e) => setTrRecherche(e.target.value)}
+              />
               <label htmlFor="trp">Produit</label>
               <select
                 id="trp"
@@ -1546,56 +1571,124 @@ export function StocksPage() {
                 onChange={(e) => setTrProduit(e.target.value)}
                 required
               >
-                {produitsSelect.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.designation}
-                  </option>
-                ))}
+                {produitsSelect
+                  .filter((p) => {
+                    const q = trRecherche.trim().toLowerCase();
+                    if (!q) return true;
+                    return p.designation.toLowerCase().includes(q);
+                  })
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.designation}
+                    </option>
+                  ))}
               </select>
-              <label htmlFor="trs">Source</label>
-              <select
-                id="trs"
-                value={trSource}
-                onChange={(e) => setTrSource(e.target.value)}
-                required
+              <div className="form-grid-2">
+                <div className="form-field">
+                  <label htmlFor="trs">Source</label>
+                  <select
+                    id="trs"
+                    value={trSource}
+                    onChange={(e) => setTrSource(e.target.value)}
+                    required
+                  >
+                    {entrepotsSelect.map((e) => {
+                      const ligne = synthese.data?.lignes.find((l) => l.produitId === trProduit);
+                      const q = ligne ? qtyAt(ligne, e.id)?.quantite ?? 0 : null;
+                      return (
+                        <option key={e.id} value={e.id}>
+                          {e.label}
+                          {q !== null ? ` · ${q} u.` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {qtySourceTransfert !== null && (
+                    <p className="lead">
+                      Disponible : <strong>{qtySourceTransfert}</strong>
+                    </p>
+                  )}
+                </div>
+                <div className="form-field">
+                  <label htmlFor="trd">Destination</label>
+                  <select
+                    id="trd"
+                    value={trDest}
+                    onChange={(e) => setTrDest(e.target.value)}
+                    required
+                  >
+                    {entrepotsSelect.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.label}
+                      </option>
+                    ))}
+                  </select>
+                  {qtyDestTransfert !== null && (
+                    <p className="lead">
+                      Actuel : <strong>{qtyDestTransfert}</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  const s = trSource;
+                  setTrSource(trDest);
+                  setTrDest(s);
+                }}
               >
-                {entrepotsSelect.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.label}
-                  </option>
-                ))}
-              </select>
-              {qtySourceTransfert !== null && (
-                <p className="lead">
-                  Disponible à la source : <strong>{qtySourceTransfert}</strong>
-                </p>
-              )}
-              <label htmlFor="trd">Destination</label>
-              <select
-                id="trd"
-                value={trDest}
-                onChange={(e) => setTrDest(e.target.value)}
-                required
-              >
-                {entrepotsSelect.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.label}
-                  </option>
-                ))}
-              </select>
+                <ArrowLeftRight size={14} /> Inverser source / destination
+              </button>
               <label htmlFor="trq">Quantité</label>
               <input
                 id="trq"
                 type="number"
                 min="1"
+                max={qtySourceTransfert ?? undefined}
                 value={trQty}
                 onChange={(e) => setTrQty(e.target.value)}
                 required
               />
+              <div className="table-actions">
+                {qtySourceTransfert !== null && qtySourceTransfert > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setTrQty(String(Math.max(1, Math.floor(qtySourceTransfert / 2))))}
+                    >
+                      Moitié ({Math.floor(qtySourceTransfert / 2)})
+                    </button>
+                    <button type="button" onClick={() => setTrQty(String(qtySourceTransfert))}>
+                      Tout ({qtySourceTransfert})
+                    </button>
+                  </>
+                )}
+              </div>
+              {trQty !== '' &&
+                qtySourceTransfert !== null &&
+                qtyDestTransfert !== null &&
+                Number(trQty) > 0 && (
+                  <p className="lead">
+                    Après transfert : source {qtySourceTransfert} →{' '}
+                    <strong>{qtySourceTransfert - Number(trQty)}</strong> · dest {qtyDestTransfert}{' '}
+                    → <strong>{qtyDestTransfert + Number(trQty)}</strong>
+                  </p>
+                )}
+              {Number(trQty) > 0 &&
+                qtySourceTransfert !== null &&
+                Number(trQty) > qtySourceTransfert && (
+                  <p role="alert">Quantité supérieure au disponible.</p>
+                )}
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={transferer.isPending || trSource === trDest}
+                disabled={
+                  transferer.isPending ||
+                  trSource === trDest ||
+                  (qtySourceTransfert !== null && Number(trQty) > qtySourceTransfert)
+                }
               >
                 {transferer.isPending ? 'Transfert…' : 'Confirmer le transfert'}
               </button>

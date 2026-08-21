@@ -7,7 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModePaiement, RoleLibelle } from '@caisse-crm/shared';
 import {
@@ -58,8 +58,11 @@ import {
   insightTemoinOuverture,
 } from '../lib/insights/pos';
 import {
+  enqueueLiberation,
+  enqueueReservation,
   enqueueVente,
   flushOutbox,
+  hydrateOutbox,
   outboxVentesCount,
   quantiteReserveeOutbox,
   venteEnAttenteSync,
@@ -73,11 +76,12 @@ import {
   RailAttente,
   nomClientPos,
 } from '../components/pos/AttenteCaisse';
-import { loadPosCache, savePosCache } from '../lib/offline/pos-cache';
+import { loadPosCache, savePosCache, hydratePosCache } from '../lib/offline/pos-cache';
 import {
   clearHolds,
   formatNumeroAttente,
   loadHolds,
+  hydrateHolds,
   holdsDepuisApi,
   payloadReservation,
   prochainNumero,
@@ -495,6 +499,7 @@ function TemoinsPicker({
             type="button"
             role="option"
             aria-selected={actif}
+            data-testid={`pos-temoin-${t.login}`}
             className={actif ? 'actif' : ''}
             onClick={() => onChange(t.login)}
           >
@@ -601,7 +606,11 @@ function OuvertureSessionForm({
   }
 
   return (
-    <form className="pos-gate-card pos-open-card" onSubmit={onSubmit}>
+    <form
+      className="pos-gate-card pos-open-card"
+      data-testid="pos-open"
+      onSubmit={onSubmit}
+    >
       <div className="pos-open-top">
         <div className="pos-gate-brand">CaissePOS</div>
         <div className="pos-open-steps" aria-label="Étapes">
@@ -713,6 +722,7 @@ function OuvertureSessionForm({
               </label>
               <input
                 id="temoinPassword"
+                data-testid="pos-temoin-password"
                 type="password"
                 autoComplete="current-password"
                 value={temoinPassword}
@@ -741,6 +751,7 @@ function OuvertureSessionForm({
         <button
           type="submit"
           className="pos-btn-primary"
+          data-testid="pos-open-submit"
           disabled={
             mutation.isPending ||
             (etape === 1 && !fondOk) ||
@@ -791,7 +802,7 @@ function TicketVente({
   const parts = paiementsEffectifs(vente);
 
   return (
-    <div className="pos-receipt">
+    <div className="pos-receipt" data-testid="pos-receipt">
       <div className="pos-receipt-card ticket">
         <div className="pos-receipt-brand">CaissePOS</div>
         {boutiqueNom && <p className="pos-receipt-shop">{boutiqueNom}</p>}
@@ -823,7 +834,7 @@ function TicketVente({
           </p>
         )}
         {parts.length > 1 ? (
-          <ul className="pos-receipt-paiements">
+          <ul className="pos-receipt-paiements" data-testid="pos-receipt-paiements">
             {parts.map((p) => (
               <li key={p.modePaiement}>
                 <span>{MODE_META[p.modePaiement]?.label ?? p.modePaiement}</span>
@@ -961,7 +972,12 @@ function CloturePanel({
             ))}
           </ul>
           {resultat.transactionVersementId ? (
-            <p>Bordereau espèces initié : {idCourt(resultat.transactionVersementId)}</p>
+            <p>
+              Bordereau espèces initié :{' '}
+              <Link to={`/transactions/${resultat.transactionVersementId}`}>
+                {idCourt(resultat.transactionVersementId)} — ouvrir la fiche
+              </Link>
+            </p>
           ) : (
             <p>Pas de bordereau espèces (aucune vente cash nette).</p>
           )}
@@ -1620,6 +1636,7 @@ function PaiementScreen({
               <button
                 key={m}
                 type="button"
+                data-testid={`pos-pay-mode-${m}`}
                 className={actif ? 'pos-pay-method is-active' : 'pos-pay-method'}
                 onClick={() => toggleMode(m)}
               >
@@ -1689,7 +1706,11 @@ function PaiementScreen({
               </div>
             </div>
             <div className="pos-cash-rapide">
-              <button type="button" onClick={() => setRecu(String(Math.round(cashPart)))}>
+              <button
+                type="button"
+                data-testid="pos-cash-exact"
+                onClick={() => setRecu(String(Math.round(cashPart)))}
+              >
                 Exact
               </button>
               {RAPIDE_ESPECES.map((n) => (
@@ -1809,6 +1830,7 @@ function PaiementScreen({
         <button
           type="button"
           className="pos-pay-btn"
+          data-testid="pos-pay-validate"
           disabled={
             !especeOk ||
             !mixteOk ||
@@ -1848,6 +1870,7 @@ function PosCaisse({
   const [qteSaisie, setQteSaisie] = useState(1);
   const [lastProduitId, setLastProduitId] = useState<string | null>(null);
   const [holds, setHolds] = useState<CommandeEnAttente[]>(() => loadHolds(session.id));
+  const [holdsReady, setHoldsReady] = useState(false);
   const [parkOpen, setParkOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [parkLibelle, setParkLibelle] = useState('');
@@ -1877,6 +1900,23 @@ function PosCaisse({
   }, [online, session.id, clients]);
 
   useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      hydrateOutbox(),
+      hydrateHolds(session.id),
+      hydratePosCache(session.id),
+    ]).then(([, loaded]) => {
+      if (cancelled) return;
+      setHolds(loaded);
+      setHoldsReady(true);
+      setPending(outboxVentesCount(session.id));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id]);
+
+  useEffect(() => {
     if (online) savePosCache(session.id, produits, clients);
   }, [online, session.id, produits, clients]);
   const { data: ventesChargees } = useVentesSession(session.id, online);
@@ -1887,8 +1927,9 @@ function PosCaisse({
   );
 
   useEffect(() => {
+    if (!holdsReady) return;
     saveHolds(session.id, holds);
-  }, [holds, session.id]);
+  }, [holds, session.id, holdsReady]);
 
   useEffect(() => {
     if (!online) return;
@@ -1939,8 +1980,11 @@ function PosCaisse({
     async function sync() {
       setPending(outboxVentesCount(session.id));
       if (!navigator.onLine) return;
-      const result = await flushOutbox((path, body) =>
-        apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+      const result = await flushOutbox((path, body, method = 'POST') =>
+        apiFetch(path, {
+          method,
+          ...(method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
+        }),
       );
       setPending(outboxVentesCount(session.id));
       if (result.flushed > 0) {
@@ -2078,6 +2122,8 @@ function PosCaisse({
       })
         .then(() => queryClient.invalidateQueries({ queryKey: ['stocks'] }))
         .catch(() => undefined);
+    } else {
+      enqueueReservation(session.id, payloadReservation(hold));
     }
     if (parkPrint) setCoupon(hold);
   }
@@ -2129,6 +2175,8 @@ function PosCaisse({
           method: 'PUT',
           body: JSON.stringify(payloadReservation(courant)),
         }).catch(() => undefined);
+      } else {
+        enqueueReservation(session.id, payloadReservation(courant));
       }
     } else {
       setHolds(autres);
@@ -2350,6 +2398,8 @@ function PosCaisse({
                 `/ventes/sessions/${session.id}/reservations/${hold}`,
                 { method: 'DELETE' },
               ).catch(() => undefined);
+            } else if (hold) {
+              enqueueLiberation(session.id, hold);
             }
           }}
         />
@@ -2374,6 +2424,8 @@ function PosCaisse({
                   queryClient.invalidateQueries({ queryKey: ['stocks'] }),
                 )
                 .catch(() => undefined);
+            } else {
+              enqueueLiberation(session.id, id);
             }
           }}
         />
@@ -2390,6 +2442,7 @@ function PosCaisse({
           clients={clientsDisponibles}
           clientId={clientId}
           holdId={holdIdEnCours}
+          besoinDerogationRemise={remiseDepasse}
           onClientChange={setClientId}
           onAnnuler={() => setEtape('caisse')}
           onMettreEnAttente={ouvrirPark}
@@ -2411,7 +2464,7 @@ function PosCaisse({
   }
 
   return (
-    <div className="pos-shell">
+    <div className="pos-shell" data-testid="pos-shell">
       <header className="pos-topbar">
         <Link to="/dashboard" className="pos-topbar-back" title="Quitter la caisse">
           <ArrowLeft size={18} />
@@ -2445,6 +2498,7 @@ function PosCaisse({
           </span>
           <button
             type="button"
+            data-testid="pos-file-btn"
             title={
               holds.length > 0
                 ? 'File d’attente — reprendre un ticket (F8)'
@@ -2462,13 +2516,14 @@ function PosCaisse({
             File
             {holds.length > 0 && <span className="pos-topbar-count">{holds.length}</span>}
           </button>
-          <button type="button" onClick={() => setDrawer((d) => !d)}>
+          <button type="button" data-testid="pos-orders-btn" onClick={() => setDrawer((d) => !d)}>
             <ShoppingCart size={15} />
             Commandes
             {ventes.length > 0 && <span className="pos-topbar-count">{ventes.length}</span>}
           </button>
           <button
             type="button"
+            data-testid="pos-cloture-btn"
             disabled={pending > 0 || holds.length > 0}
             title={
               pending > 0
@@ -2576,6 +2631,7 @@ function PosCaisse({
                 <div key={p.id} className="pos-tile-wrap">
                   <button
                     type="button"
+                    data-testid={`pos-tile-${p.reference ?? p.id}`}
                     className={
                       epuise
                         ? 'pos-tile is-empty'
@@ -2757,6 +2813,7 @@ function PosCaisse({
               <button
                 type="button"
                 className="pos-hold-btn"
+                data-testid="pos-park-btn"
                 onClick={ouvrirPark}
               >
                 <Pause size={16} />
@@ -2767,6 +2824,7 @@ function PosCaisse({
               <button
                 type="button"
                 className="pos-btn-ghost pos-clear"
+                data-testid="pos-clear-btn"
                 onClick={() => setConfirm({ kind: 'vider' })}
               >
                 Vider le panier
@@ -2775,6 +2833,7 @@ function PosCaisse({
             <button
               type="button"
               className="pos-pay-btn"
+              data-testid="pos-go-pay"
               disabled={panier.length === 0}
               onClick={allerPaiement}
             >
@@ -2797,7 +2856,7 @@ function PosCaisse({
             {ventes.length === 0 ? (
               <p className="pos-empty">Aucune vente pour l’instant.</p>
             ) : (
-              <ul className="pos-orders-list">
+              <ul className="pos-orders-list" data-testid="pos-orders-list">
                 {ventes.map((vente) => (
                   <li key={vente.id}>
                     <div className="pos-orders-list-head">
@@ -2867,10 +2926,15 @@ function PosCaisse({
 }
 
 export function PosPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const peut = user !== null && ROLES_PERIMETRE_BOUTIQUE.includes(user.role);
   const [tiroirId, setTiroirId] = useState<string>('');
 
+  function allerChangerCompte() {
+    logout();
+    navigate('/login', { replace: true, state: { from: '/pos' } });
+  }
   const {
     data: caisses,
     isLoading: loadingCaisses,
@@ -2933,12 +2997,25 @@ export function PosPage() {
         <div className="pos-gate-brand">CaissePOS</div>
         <h1>Point de vente</h1>
         <p>Réservé Caissier / Responsable boutique.</p>
-        <p className="lead">
-          Compte démo : <strong>demo-pos-caissier</strong> / MotDePasse!123
-        </p>
-        <Link to="/login" className="pos-back-link">
-          ← Connexion
-        </Link>
+        {user ? (
+          <p className="lead">
+            Connecté en <strong>{user.login}</strong> ({user.role}) — ce rôle
+            n’ouvre pas le POS. Déconnectez-vous puis utilisez le compte
+            caissier.
+          </p>
+        ) : (
+          <p className="lead">
+            Compte démo : <strong>demo-pos-caissier</strong> / MotDePasse!123
+          </p>
+        )}
+        <button type="button" className="btn-primary" onClick={allerChangerCompte}>
+          {user ? 'Changer de compte' : 'Se connecter'}
+        </button>
+        {user ? (
+          <p className="pos-gate-hint">
+            Démo POS : <strong>demo-pos-caissier</strong> / MotDePasse!123
+          </p>
+        ) : null}
       </PosGateCard>
     );
   }
@@ -2986,9 +3063,9 @@ export function PosPage() {
         <p className="lead">
           Compte démo : <strong>demo-pos-caissier</strong> / MotDePasse!123
         </p>
-        <Link to="/login" className="pos-back-link">
-          ← Changer de compte
-        </Link>
+        <button type="button" className="btn-primary" onClick={allerChangerCompte}>
+          Changer de compte
+        </button>
       </PosGateCard>
     );
   }
@@ -3008,9 +3085,9 @@ export function PosPage() {
           Démo seedée : reconnectez-vous en <strong>demo-pos-caissier</strong>{' '}
           (tiroir T01).
         </p>
-        <Link to="/login" className="pos-back-link">
-          ← Connexion
-        </Link>
+        <button type="button" className="btn-primary" onClick={allerChangerCompte}>
+          Changer de compte
+        </button>
       </PosGateCard>
     );
   }

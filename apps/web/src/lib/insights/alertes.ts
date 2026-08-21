@@ -32,6 +32,14 @@ export function insightAlerte(type: string, severite: string): Insight {
           "Vérifier s'il s'agit d'une erreur de manipulation ou d'une tentative d'accès à investiguer.",
         severity: sev,
       };
+    case 'STOCK_BAS':
+      return {
+        title: 'Stock bas',
+        interpretation:
+          "Le stock vendable d'un article est à zéro ou sous le seuil de réapprovisionnement paramétré.",
+        recommendation: 'Ouvrir la fiche produit, puis lancer un réappro ou un transfert interne.',
+        severity: sev,
+      };
     default:
       return {
         title: type,

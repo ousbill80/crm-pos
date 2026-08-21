@@ -378,6 +378,9 @@ export function FournisseursPage() {
 
   const [recherche, setRecherche] = useState('');
   const [masquerInactifs, setMasquerInactifs] = useState(true);
+  const [filtreAnnuaire, setFiltreAnnuaire] = useState<'tous' | 'jamais' | 'incomplets'>(
+    'tous',
+  );
   const [modalNouveau, setModalNouveau] = useState(false);
   const [fiche, setFiche] = useState<FicheForm>(FICHE_VIDE);
   const [formErr, setFormErr] = useState<string | null>(null);
@@ -415,12 +418,26 @@ export function FournisseursPage() {
     const q = recherche.trim().toLowerCase();
     return (synthese.data?.fournisseurs ?? []).filter((f) => {
       if (masquerInactifs && !f.actif) return false;
+      if (filtreAnnuaire === 'jamais' && f.nombreReceptions > 0) return false;
+      if (filtreAnnuaire === 'incomplets') {
+        const incomplet = !f.contact || (!f.telephone && !f.email) || !f.adresse;
+        if (!incomplet) return false;
+      }
       if (!q) return true;
       return [f.nom, f.contact, f.telephone, f.email, f.adresse]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [synthese.data, recherche, masquerInactifs]);
+  }, [synthese.data, recherche, masquerInactifs, filtreAnnuaire]);
+
+  function aller(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function toggleFiltre(next: 'jamais' | 'incomplets') {
+    setFiltreAnnuaire((prev) => (prev === next ? 'tous' : next));
+    aller('annuaire-fournisseurs');
+  }
 
   if (!peutLire) {
     return <p>Vous n’avez pas accès aux fournisseurs.</p>;
@@ -481,7 +498,19 @@ export function FournisseursPage() {
       {kpis && (
         <>
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <article
+              className={`kpi-card dash-kpi${filtreAnnuaire === 'jamais' ? ' kpi-actif' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={filtreAnnuaire === 'jamais'}
+              onClick={() => toggleFiltre('jamais')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  toggleFiltre('jamais');
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Truck size={16} />
@@ -496,7 +525,18 @@ export function FournisseursPage() {
                 {kpis.fournisseurs} fiche(s) · {kpis.jamaisLivres} jamais livré(s)
               </div>
             </article>
-            <article className="kpi-card dash-kpi">
+            <article
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => aller('journal-receptions')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  aller('journal-receptions');
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Package size={16} />
@@ -507,9 +547,16 @@ export function FournisseursPage() {
               <div className="kpi-hint">{kpis.unites30j} unité(s) entrée(s)</div>
             </article>
             <article
-              className={
-                Number(kpis.montant30j) > 0 ? 'kpi-card dash-kpi' : 'kpi-card dash-kpi'
-              }
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => aller('journal-receptions')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  aller('journal-receptions');
+                }
+              }}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -524,11 +571,18 @@ export function FournisseursPage() {
               <div className="kpi-hint">FCFA — qty × prix d’achat</div>
             </article>
             <article
-              className={
-                (synthese.data?.haussesPrix.length ?? 0) > 0
-                  ? 'kpi-card dash-kpi kpi-warning'
-                  : 'kpi-card dash-kpi'
-              }
+              className={`kpi-card dash-kpi${
+                (synthese.data?.haussesPrix.length ?? 0) > 0 ? ' kpi-warning' : ''
+              }`}
+              role="button"
+              tabIndex={0}
+              onClick={() => aller('hausses-prix')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  aller('hausses-prix');
+                }
+              }}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -542,7 +596,18 @@ export function FournisseursPage() {
               <div className="kpi-value">{synthese.data?.haussesPrix.length ?? 0}</div>
               <div className="kpi-hint">vs livraison précédente</div>
             </article>
-            <article className="kpi-card dash-kpi">
+            <article
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate('/achats/commandes')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigate('/achats/commandes');
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Package size={16} />
@@ -551,16 +616,22 @@ export function FournisseursPage() {
               <div className="kpi-label">Commandes ouvertes</div>
               <div className="kpi-value">{kpis.commandesOuvertes ?? 0}</div>
               <div className="kpi-hint">
-                {kpis.unitesARecevoir ?? 0} unité(s) à réceptionner ·{' '}
-                <Link to="/achats/commandes">Ouvrir</Link>
+                {kpis.unitesARecevoir ?? 0} unité(s) à réceptionner
               </div>
             </article>
             <article
-              className={
-                Number(kpis.encours ?? 0) > 0
-                  ? 'kpi-card dash-kpi kpi-warning'
-                  : 'kpi-card dash-kpi'
-              }
+              className={`kpi-card dash-kpi${
+                Number(kpis.encours ?? 0) > 0 ? ' kpi-warning' : ''
+              }`}
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate('/achats/factures')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigate('/achats/factures');
+                }
+              }}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -569,14 +640,12 @@ export function FournisseursPage() {
               </div>
               <div className="kpi-label">Encours factures</div>
               <div className="kpi-value">{fmtMoney(kpis.encours ?? 0)}</div>
-              <div className="kpi-hint">
-                {kpis.facturesImpayees ?? 0} facture(s) ·{' '}
-                <Link to="/achats/factures">Factures</Link>
-              </div>
+              <div className="kpi-hint">{kpis.facturesImpayees ?? 0} facture(s) à régler</div>
             </article>
           </div>
 
           {(synthese.data?.haussesPrix.length ?? 0) > 0 && (
+            <div id="hausses-prix">
             <ListPanel title="Hausses de prix d’achat">
               <table>
                 <thead>
@@ -595,11 +664,13 @@ export function FournisseursPage() {
                       className="produit-row"
                       tabIndex={0}
                       role="link"
-                      onClick={() => navigate(`/fournisseurs/${h.fournisseurId}`)}
+                      onClick={() =>
+                        navigate(`/fournisseurs/${h.fournisseurId}?onglet=articles`)
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          navigate(`/fournisseurs/${h.fournisseurId}`);
+                          navigate(`/fournisseurs/${h.fournisseurId}?onglet=articles`);
                         }
                       }}
                     >
@@ -621,9 +692,10 @@ export function FournisseursPage() {
                 </tbody>
               </table>
             </ListPanel>
+            </div>
           )}
 
-          <div className="toolbar">
+          <div className="toolbar" id="annuaire-fournisseurs">
             <div>
               <label htmlFor="filtre-fournisseur">Rechercher</label>
               <div className="table-actions">
@@ -636,6 +708,29 @@ export function FournisseursPage() {
                   onChange={(e) => setRecherche(e.target.value)}
                 />
               </div>
+            </div>
+            <div className="fiche-filters">
+              <button
+                type="button"
+                className={filtreAnnuaire === 'tous' ? 'actif' : undefined}
+                onClick={() => setFiltreAnnuaire('tous')}
+              >
+                Tous
+              </button>
+              <button
+                type="button"
+                className={filtreAnnuaire === 'jamais' ? 'actif' : undefined}
+                onClick={() => toggleFiltre('jamais')}
+              >
+                Jamais livrés
+              </button>
+              <button
+                type="button"
+                className={filtreAnnuaire === 'incomplets' ? 'actif' : undefined}
+                onClick={() => toggleFiltre('incomplets')}
+              >
+                Fiches incomplètes
+              </button>
             </div>
             <label>
               <input
@@ -728,6 +823,7 @@ export function FournisseursPage() {
             )}
           </ListPanel>
 
+          <div id="journal-receptions">
           <ListPanel title="Journal des réceptions (récentes)">
             {(synthese.data?.receptionsRecentes.length ?? 0) === 0 ? (
               <p>Aucune réception enregistrée.</p>
@@ -750,11 +846,13 @@ export function FournisseursPage() {
                       className="produit-row"
                       tabIndex={0}
                       role="link"
-                      onClick={() => navigate(`/fournisseurs/${r.fournisseurId}`)}
+                      onClick={() =>
+                        navigate(`/fournisseurs/${r.fournisseurId}?onglet=receptions`)
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          navigate(`/fournisseurs/${r.fournisseurId}`);
+                          navigate(`/fournisseurs/${r.fournisseurId}?onglet=receptions`);
                         }
                       }}
                     >
@@ -794,6 +892,7 @@ export function FournisseursPage() {
               </table>
             )}
           </ListPanel>
+          </div>
         </>
       )}
 

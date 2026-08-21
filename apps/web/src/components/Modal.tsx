@@ -7,8 +7,8 @@ interface ModalProps {
   title: string;
   /** Sous-titre sous le titre (contexte métier). */
   description?: string;
-  /** Largeur du panneau — `lg` pour les formulaires riches. */
-  size?: 'md' | 'lg';
+  /** Largeur du panneau — `lg` formulaires, `xl` grilles (bon de commande). */
+  size?: 'md' | 'lg' | 'xl' | 'doc';
   children: ReactNode;
 }
 
@@ -34,7 +34,7 @@ export function Modal({
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className={`modal-panel${size === 'lg' ? ' modal-panel-lg' : ''}`}
+        className={`modal-panel${size === 'lg' ? ' modal-panel-lg' : ''}${size === 'xl' ? ' modal-panel-xl' : ''}${size === 'doc' ? ' modal-panel-doc' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -1,11 +1,27 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Banknote,
+  FileText,
+  History,
+  LayoutDashboard,
+  Warehouse,
+} from 'lucide-react';
 import { ModePaiementFournisseur, RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  badgeFacture,
+  fmtDate,
+  fmtDateHeure,
+  fmtFcfa,
+  MODE_PAIEMENT_FOURN,
+  STATUT_FACTURE,
+} from '../lib/achats-ui';
 import type { FactureFournisseurDto } from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = [
@@ -30,36 +46,25 @@ const ROLES_PAIEMENT: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
 ];
 
-const STATUT: Record<FactureFournisseurDto['statut'], string> = {
-  BROUILLON: 'Brouillon',
-  COMPTABILISEE: 'Comptabilisée',
-  PARTIELLEMENT_PAYEE: 'Partiellement payée',
-  PAYEE: 'Payée',
-  ANNULEE: 'Annulée',
-};
+type Onglet = 'apercu' | 'lignes' | 'receptions' | 'reglements' | 'historique';
 
-function badge(statut: FactureFournisseurDto['statut']) {
-  if (statut === 'PAYEE') return 'badge badge-ok';
-  if (statut === 'PARTIELLEMENT_PAYEE' || statut === 'COMPTABILISEE') {
-    return 'badge badge-warning';
-  }
-  if (statut === 'ANNULEE') return 'badge badge-neutral';
-  return 'badge';
-}
+const ONGLET_IDS: Onglet[] = ['apercu', 'lignes', 'receptions', 'reglements', 'historique'];
 
-function fmt(n: string | number) {
-  return Math.round(Number(n)).toLocaleString('fr-FR');
+function parseOnglet(value: string | null): Onglet {
+  return ONGLET_IDS.includes(value as Onglet) ? (value as Onglet) : 'apercu';
 }
 
 export function FactureFournisseurDetailPage() {
   const { factureId } = useParams<{ factureId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutFacturer = user !== null && ROLES_FACTURE.includes(user.role);
   const peutPayer = user !== null && ROLES_PAIEMENT.includes(user.role);
 
+  const onglet = parseOnglet(searchParams.get('onglet'));
   const [modalPaiement, setModalPaiement] = useState(false);
   const [montantPaye, setMontantPaye] = useState('');
   const [mode, setMode] = useState<ModePaiementFournisseur>('VIREMENT');
@@ -75,7 +80,24 @@ export function FactureFournisseurDetailPage() {
   function invalider() {
     void queryClient.invalidateQueries({ queryKey: ['achats-factures'] });
     void queryClient.invalidateQueries({ queryKey: ['achats-a-facturer'] });
+    void queryClient.invalidateQueries({ queryKey: ['achats-commandes'] });
     void queryClient.invalidateQueries({ queryKey: ['fournisseurs-synthese'] });
+  }
+
+  function aller(id: Onglet) {
+    const next = new URLSearchParams(searchParams);
+    if (id === 'apercu') next.delete('onglet');
+    else next.set('onglet', id);
+    setSearchParams(next, { replace: true });
+  }
+
+  function ouvrirPaiement() {
+    if (!detail.data) return;
+    setMontantPaye(detail.data.resteAPayer);
+    setMode('VIREMENT');
+    setRefPaiement('');
+    setFormErr(null);
+    setModalPaiement(true);
   }
 
   const comptabiliser = useMutation({
@@ -128,6 +150,52 @@ export function FactureFournisseurDetailPage() {
   }
 
   const f = detail.data;
+  const encours =
+    f.statut === 'COMPTABILISEE' || f.statut === 'PARTIELLEMENT_PAYEE';
+  const montantNum = Number(f.montant);
+  const payeNum = Number(f.montantPaye);
+  const pctPaye =
+    montantNum > 0 ? Math.min(100, Math.round((payeNum / montantNum) * 100)) : 0;
+
+  const tabs: Array<{ id: Onglet; label: string; icon: typeof LayoutDashboard; count?: number }> = [
+    { id: 'apercu', label: 'Vue d’ensemble', icon: LayoutDashboard },
+    { id: 'lignes', label: 'Lignes', icon: FileText, count: f.lignes.length },
+    { id: 'receptions', label: 'Réceptions', icon: Warehouse, count: f.lignes.length },
+    { id: 'reglements', label: 'Règlements', icon: Banknote, count: f.paiements.length },
+    { id: 'historique', label: 'Historique', icon: History },
+  ];
+
+  const historique: Array<{ at: string; label: string; detail?: string }> = [
+    {
+      at: f.dateFacture,
+      label: 'Facture créée (brouillon Achats)',
+      detail: f.createur ? `${f.createur.prenom} ${f.createur.nom}` : undefined,
+    },
+  ];
+  if (f.statut !== 'BROUILLON' && f.statut !== 'ANNULEE') {
+    historique.push({
+      at: f.dateFacture,
+      label: 'Comptabilisée (DAF / SI)',
+      detail: 'Ouverture du reste à payer — grand livre Achats',
+    });
+  }
+  for (const p of f.paiements) {
+    historique.push({
+      at: p.datePaiement,
+      label: `Règlement ${fmtFcfa(p.montant)}`,
+      detail: `${MODE_PAIEMENT_FOURN[p.mode] ?? p.mode}${p.reference ? ` · ${p.reference}` : ''}`,
+    });
+  }
+  if (f.statut === 'PAYEE') {
+    historique.push({
+      at: f.paiements.at(-1)?.datePaiement ?? f.dateFacture,
+      label: 'Soldée',
+      detail: '100 % payé',
+    });
+  }
+  if (f.statut === 'ANNULEE') {
+    historique.push({ at: f.dateFacture, label: 'Facture annulée' });
+  }
 
   return (
     <div className="client-workspace">
@@ -142,29 +210,18 @@ export function FactureFournisseurDetailPage() {
           {peutFacturer && f.statut === 'BROUILLON' && (
             <>
               <button type="button" className="btn-primary" onClick={() => comptabiliser.mutate()}>
-                Comptabiliser
+                Comptabiliser (DAF)
               </button>
               <button type="button" onClick={() => annuler.mutate()}>
                 Annuler le brouillon
               </button>
             </>
           )}
-          {peutPayer &&
-            (f.statut === 'COMPTABILISEE' || f.statut === 'PARTIELLEMENT_PAYEE') && (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  setMontantPaye(f.resteAPayer);
-                  setMode('VIREMENT');
-                  setRefPaiement('');
-                  setFormErr(null);
-                  setModalPaiement(true);
-                }}
-              >
-                Enregistrer un paiement
-              </button>
-            )}
+          {peutPayer && encours && (
+            <button type="button" className="btn-primary" onClick={ouvrirPaiement}>
+              Enregistrer un paiement
+            </button>
+          )}
         </div>
       </div>
 
@@ -173,23 +230,34 @@ export function FactureFournisseurDetailPage() {
           FA
         </div>
         <div className="client-workspace-hero-main">
-          <h1>{f.numero}</h1>
+          <h1>
+            {f.numero}{' '}
+            <InfoTooltip
+              insight={{
+                title: 'Circuit Achats',
+                interpretation:
+                  'Réceptions → facture → comptabilisation DAF → paiements (DAF / Caissier Central). Aucun débit de caisse boutique.',
+                severity: 'info',
+              }}
+            />
+          </h1>
           <p className="client-workspace-hero-sub">
-            {f.fournisseur.nom}
+            <Link to={`/fournisseurs/${f.fournisseurId}`}>{f.fournisseur.nom}</Link>
             {f.referenceFournisseur ? ` · n° fournisseur ${f.referenceFournisseur}` : ''}
           </p>
           <div className="client-workspace-chips">
-            <span className={badge(f.statut)}>{STATUT[f.statut]}</span>
+            <span className={badgeFacture(f.statut)}>{STATUT_FACTURE[f.statut]}</span>
+            <span className="badge">{pctPaye} % payé</span>
+          </div>
+          <div className="inventaire-progress" aria-label={`Paiement ${pctPaye} %`} style={{ maxWidth: 280, marginTop: 8 }}>
+            <span style={{ width: `${pctPaye}%` }} />
           </div>
           <div className="client-workspace-meta">
             <span>
-              <strong>Date</strong> {new Date(f.dateFacture).toLocaleDateString('fr-FR')}
+              <strong>Date</strong> {fmtDate(f.dateFacture)}
             </span>
             <span>
-              <strong>Échéance</strong>{' '}
-              {f.dateEcheance
-                ? new Date(f.dateEcheance).toLocaleDateString('fr-FR')
-                : '—'}
+              <strong>Échéance</strong> {fmtDate(f.dateEcheance)}
             </span>
           </div>
         </div>
@@ -198,93 +266,246 @@ export function FactureFournisseurDetailPage() {
       {f.notes && <p>{f.notes}</p>}
       {formErr && <p role="alert">{formErr}</p>}
       <p className="lead">
-        Le paiement est un grand livre Achats (DAF / Caissier Central) — il ne
-        débite pas une caisse boutique.
+        Le paiement est un grand livre Achats (DAF / Caissier Central) — il ne débite pas une
+        caisse boutique.
       </p>
 
-      <div className="client-kpi-grid">
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">Montant</div>
-          <div className="client-kpi-value client-kpi-value-sm money">
-            {fmt(f.montant)} FCFA
-          </div>
-        </article>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">Payé</div>
-          <div className="client-kpi-value client-kpi-value-sm money">
-            {fmt(f.montantPaye)} FCFA
-          </div>
-        </article>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">Reste à payer</div>
-          <div className="client-kpi-value client-kpi-value-sm money">
-            {fmt(f.resteAPayer)} FCFA
-          </div>
-        </article>
-      </div>
+      <nav className="client-workspace-tabs" aria-label="Sections facture fournisseur">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={onglet === tab.id ? 'actif' : undefined}
+            onClick={() => aller(tab.id)}
+          >
+            <tab.icon size={14} aria-hidden />
+            {tab.label}
+            {tab.count !== undefined ? <span className="fiche-tab-count">{tab.count}</span> : null}
+          </button>
+        ))}
+      </nav>
 
-      <section className="client-workspace-section">
-        <h2>Lignes</h2>
-        <div className="clients-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Article</th>
-                <th>Qté</th>
-                <th>Prix</th>
-                <th>Montant</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.lignes.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <Link className="link-button" to={`/produits/${l.produit.id}`}>
-                      {l.produit.designation}
-                    </Link>
-                    {l.produit.reference ? (
-                      <div className="kpi-hint" style={{ margin: 0 }}>
-                        {l.produit.reference}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>{l.quantite}</td>
-                  <td className="money">{fmt(l.prixUnitaire)}</td>
-                  <td className="money">{fmt(l.montant)} FCFA</td>
-                </tr>
+      <section className="client-workspace-panel">
+        {onglet === 'apercu' && (
+          <div className="client-workspace-section">
+            <div className="client-kpi-grid">
+              <button type="button" className="client-kpi-card" onClick={() => aller('lignes')}>
+                <div className="client-kpi-label">
+                  Montant <InfoTooltip insight={{ title: 'TTC facture', interpretation: 'Somme des réceptions rattachées.', severity: 'info' }} />
+                </div>
+                <div className="client-kpi-value client-kpi-value-sm money">
+                  {fmtFcfa(f.montant)}
+                </div>
+                <div className="client-kpi-hint">{f.lignes.length} ligne(s)</div>
+              </button>
+              <button
+                type="button"
+                className="client-kpi-card"
+                onClick={() => aller('reglements')}
+              >
+                <div className="client-kpi-label">Payé ({pctPaye} %)</div>
+                <div className="client-kpi-value client-kpi-value-sm money">
+                  {fmtFcfa(f.montantPaye)}
+                </div>
+                <div className="client-kpi-hint">{f.paiements.length} règlement(s)</div>
+              </button>
+              <button
+                type="button"
+                className={`client-kpi-card${Number(f.resteAPayer) > 0 ? ' kpi-actif' : ''}`}
+                onClick={() => {
+                  aller('reglements');
+                  if (peutPayer && encours) ouvrirPaiement();
+                }}
+              >
+                <div className="client-kpi-label">Reste à payer</div>
+                <div className="client-kpi-value client-kpi-value-sm money">
+                  {fmtFcfa(f.resteAPayer)}
+                </div>
+                <div className="client-kpi-hint">
+                  {peutPayer && encours ? 'Cliquer pour enregistrer un paiement' : 'Grand livre Achats'}
+                </div>
+              </button>
+            </div>
+
+            <h2 style={{ marginTop: '1.5rem' }}>Circuit</h2>
+            <ol className="lead" style={{ paddingLeft: '1.25rem' }}>
+              <li>Création brouillon à partir des réceptions</li>
+              <li>Comptabilisation (DAF / SI / DG)</li>
+              <li>Paiements partiels ou solde (DAF / Caissier Central)</li>
+            </ol>
+
+            <h2>Timeline</h2>
+            <dl className="clients-dl">
+              {historique.map((evt, i) => (
+                <div key={`${evt.label}-${i}`}>
+                  <dt>{fmtDateHeure(evt.at)}</dt>
+                  <dd>
+                    {evt.label}
+                    {evt.detail ? ` · ${evt.detail}` : ''}
+                  </dd>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {f.paiements.length > 0 && (
-        <section className="client-workspace-section">
-          <h2>Règlements</h2>
-          <div className="clients-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Mode</th>
-                  <th>Montant</th>
-                  <th>Réf.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {f.paiements.map((p) => (
-                  <tr key={p.id}>
-                    <td>{new Date(p.datePaiement).toLocaleString('fr-FR')}</td>
-                    <td>{p.mode}</td>
-                    <td className="money">{fmt(p.montant)} FCFA</td>
-                    <td>{p.reference ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            </dl>
           </div>
-        </section>
-      )}
+        )}
+
+        {onglet === 'lignes' && (
+          <div className="client-workspace-section">
+            <h2>Lignes</h2>
+            <div className="clients-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Article</th>
+                    <th>Qté</th>
+                    <th>Prix</th>
+                    <th>Montant</th>
+                    <th>BC</th>
+                    <th>BL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {f.lignes.map((l) => (
+                    <tr key={l.id}>
+                      <td>
+                        <Link className="link-button" to={`/produits/${l.produit.id}`}>
+                          {l.produit.designation}
+                        </Link>
+                        {l.produit.reference ? (
+                          <div className="kpi-hint" style={{ margin: 0 }}>
+                            {l.produit.reference}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>{l.quantite}</td>
+                      <td className="money">{fmtFcfa(l.prixUnitaire)}</td>
+                      <td className="money">{fmtFcfa(l.montant)}</td>
+                      <td>
+                        {l.commande ? (
+                          <Link to={`/achats/commandes/${l.commande.id}`}>{l.commande.numero}</Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>{l.reference ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {onglet === 'receptions' && (
+          <div className="client-workspace-section">
+            <h2>Réceptions facturées</h2>
+            <div className="clients-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Article</th>
+                    <th>Qté</th>
+                    <th>BL</th>
+                    <th>Commande</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {f.lignes.map((l) => (
+                    <tr key={l.receptionId}>
+                      <td>{fmtDateHeure(l.dateReception)}</td>
+                      <td>
+                        <Link className="link-button" to={`/produits/${l.produit.id}`}>
+                          {l.produit.designation}
+                        </Link>
+                      </td>
+                      <td>{l.quantite}</td>
+                      <td>{l.reference ?? '—'}</td>
+                      <td>
+                        {l.commande ? (
+                          <Link to={`/achats/commandes/${l.commande.id}`}>{l.commande.numero}</Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {onglet === 'reglements' && (
+          <div className="client-workspace-section">
+            <h2>Règlements</h2>
+            {peutPayer && encours && (
+              <p className="table-actions">
+                <button type="button" className="btn-primary" onClick={ouvrirPaiement}>
+                  Enregistrer un paiement
+                </button>
+              </p>
+            )}
+            {f.paiements.length === 0 ? (
+              <p className="lead">
+                Aucun règlement.{' '}
+                {encours
+                  ? 'DAF / Caissier Central enregistrent le paiement sur le grand livre Achats.'
+                  : f.statut === 'BROUILLON'
+                    ? 'Comptabiliser la facture avant de payer.'
+                    : null}
+              </p>
+            ) : (
+              <div className="clients-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Mode</th>
+                      <th>Montant</th>
+                      <th>Réf.</th>
+                      <th>Opérateur</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {f.paiements.map((p) => (
+                      <tr key={p.id}>
+                        <td>{fmtDateHeure(p.datePaiement)}</td>
+                        <td>{MODE_PAIEMENT_FOURN[p.mode] ?? p.mode}</td>
+                        <td className="money">{fmtFcfa(p.montant)}</td>
+                        <td>{p.reference ?? '—'}</td>
+                        <td>
+                          {p.utilisateur
+                            ? `${p.utilisateur.prenom} ${p.utilisateur.nom}`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {onglet === 'historique' && (
+          <div className="client-workspace-section">
+            <h2>Historique</h2>
+            <p className="lead">Création et règlements append-only — pas le journal d’audit.</p>
+            <dl className="clients-dl">
+              {historique.map((evt, i) => (
+                <div key={`${evt.label}-${i}`}>
+                  <dt>{fmtDateHeure(evt.at)}</dt>
+                  <dd>
+                    {evt.label}
+                    {evt.detail ? ` · ${evt.detail}` : ''}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+      </section>
 
       {peutPayer && (
         <Modal

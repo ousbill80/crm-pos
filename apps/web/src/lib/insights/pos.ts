@@ -26,10 +26,10 @@ export function insightRemisePos(remise: number, brut: number): Insight {
   if (remise > plafond) {
     return {
       title: 'Remise au-dessus du plafond',
-      interpretation: `${fmt(remise)} FCFA dépasse le plafond de 20 % (${fmt(plafond)} FCFA). Sans dérogation, l'API refuse l'encaissement.`,
+      interpretation: `${fmt(remise)} FCFA dépasse le plafond de 20 % (${fmt(plafond)} FCFA).`,
       recommendation:
-        'Réduire la remise, ou faire saisir login et mot de passe du Responsable boutique (pas le caissier) pour une dérogation journalisée.',
-      severity: 'critical',
+        'Au paiement, le Responsable boutique autorise la dérogation (login + mot de passe). L’opération est journalisée.',
+      severity: 'warning',
     };
   }
   const ratio = remise / brut;

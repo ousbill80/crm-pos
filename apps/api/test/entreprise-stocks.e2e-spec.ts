@@ -184,6 +184,24 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
       expect(body.raisonSociale).toBe('CaissePOS Demo');
       expect(body.telephone).toBe('+221770000000');
     });
+
+    it('autorise RESPONSABLE_SI à configurer delaiVersementHeures (§6.3.5)', async () => {
+      const response = await request(app.getHttpServer())
+        .patch('/entreprise')
+        .set(auth(tokens.respsi))
+        .send({ delaiVersementHeures: 12 })
+        .expect(200);
+      const body = response.body as { delaiVersementHeures: number };
+      expect(body.delaiVersementHeures).toBe(12);
+    });
+
+    it('refuse delaiVersementHeures < 1', async () => {
+      await request(app.getHttpServer())
+        .patch('/entreprise')
+        .set(auth(tokens.respsi))
+        .send({ delaiVersementHeures: 0 })
+        .expect(400);
+    });
   });
 
   describe('Entrepôts', () => {

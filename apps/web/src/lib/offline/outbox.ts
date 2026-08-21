@@ -1,31 +1,41 @@
 // File d'attente hors-ligne (§6.7) — opérations idempotentes
 // (clientOperationId). Sync à la reconnexion = append serveur.
+// Persistance IndexedDB (Dexie) via @caisse-crm/offline.
 
-const STORAGE_KEY = 'caisse-crm.offline.outbox';
+import {
+  flushOutbox as flushStore,
+  getOfflineStore,
+  hydrateOffline,
+  type OutboxMethod,
+  type OutboxOp,
+} from '@caisse-crm/offline';
 
-export interface OutboxOp {
-  id: string;
-  path: string;
-  method: 'POST';
-  body: Record<string, unknown>;
-  createdAt: string;
-}
-
+export type { OutboxOp };
 /** @deprecated alias — les initiations de transaction restent des OutboxOp. */
 export type OutboxTransactionOp = OutboxOp;
 
-function readQueue(): OutboxOp[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as OutboxOp[];
-  } catch {
-    return [];
-  }
+let cached: OutboxOp[] = [];
+
+function persist(next: OutboxOp[]): void {
+  cached = next;
+  void getOfflineStore().replaceOutbox(next);
 }
 
-function writeQueue(ops: OutboxOp[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ops));
+export async function hydrateOutbox(): Promise<void> {
+  await hydrateOffline();
+  cached = await getOfflineStore().listOutbox();
+}
+
+function append(partial: Omit<OutboxOp, 'id' | 'createdAt'> & { id?: string }): OutboxOp {
+  const op: OutboxOp = {
+    id: partial.id ?? crypto.randomUUID(),
+    path: partial.path,
+    method: partial.method,
+    body: partial.body,
+    createdAt: new Date().toISOString(),
+  };
+  persist([...cached, op]);
+  return op;
 }
 
 export function enqueueTransactionInit(body: {
@@ -33,20 +43,14 @@ export function enqueueTransactionInit(body: {
   type: string;
   montant: number;
 }): OutboxOp {
-  const op: OutboxOp = {
-    id: crypto.randomUUID(),
+  return append({
     path: '/transactions',
     method: 'POST',
     body: {
       ...body,
       clientOperationId: crypto.randomUUID(),
     },
-    createdAt: new Date().toISOString(),
-  };
-  const queue = readQueue();
-  queue.push(op);
-  writeQueue(queue);
-  return op;
+  });
 }
 
 export function enqueueVente(
@@ -65,30 +69,46 @@ export function enqueueVente(
     clientOperationId: string;
   },
 ): OutboxOp {
-  const op: OutboxOp = {
-    id: crypto.randomUUID(),
+  return append({
     path: `/ventes/sessions/${sessionId}/ventes`,
     method: 'POST',
     body: { ...body },
-    createdAt: new Date().toISOString(),
-  };
-  const queue = readQueue();
-  queue.push(op);
-  writeQueue(queue);
-  return op;
+  });
+}
+
+export function enqueueReservation(
+  sessionId: string,
+  body: Record<string, unknown>,
+): OutboxOp {
+  return append({
+    path: `/ventes/sessions/${sessionId}/reservations`,
+    method: 'PUT',
+    body,
+  });
+}
+
+export function enqueueLiberation(
+  sessionId: string,
+  holdId: string,
+): OutboxOp {
+  return append({
+    path: `/ventes/sessions/${sessionId}/reservations/${holdId}`,
+    method: 'DELETE',
+    body: {},
+  });
 }
 
 export function peekOutbox(): OutboxOp[] {
-  return readQueue();
+  return cached;
 }
 
 export function outboxCount(): number {
-  return readQueue().length;
+  return cached.length;
 }
 
 export function outboxVentesCount(sessionId: string): number {
   const suffix = `/ventes/sessions/${sessionId}/ventes`;
-  return readQueue().filter((op) => op.path === suffix).length;
+  return cached.filter((op) => op.path === suffix).length;
 }
 
 export function quantiteReserveeOutbox(
@@ -96,7 +116,7 @@ export function quantiteReserveeOutbox(
   produitId: string,
 ): number {
   const suffix = `/ventes/sessions/${sessionId}/ventes`;
-  return readQueue()
+  return cached
     .filter((op) => op.path === suffix)
     .reduce((total, op) => {
       const lignes = op.body.lignes as
@@ -113,27 +133,20 @@ export function quantiteReserveeOutbox(
 }
 
 export function venteEnAttenteSync(clientOperationId: string): boolean {
-  return readQueue().some(
-    (op) => op.body.clientOperationId === clientOperationId,
-  );
+  return cached.some((op) => op.body.clientOperationId === clientOperationId);
 }
 
 export async function flushOutbox(
-  post: (path: string, body: unknown) => Promise<unknown>,
+  send: (
+    path: string,
+    body: unknown,
+    method?: OutboxMethod,
+  ) => Promise<unknown>,
 ): Promise<{ flushed: number; remaining: number }> {
-  const queue = readQueue();
-  if (queue.length === 0) return { flushed: 0, remaining: 0 };
-
-  const remaining: OutboxOp[] = [];
-  let flushed = 0;
-  for (const op of queue) {
-    try {
-      await post(op.path, op.body);
-      flushed += 1;
-    } catch {
-      remaining.push(op);
-    }
-  }
-  writeQueue(remaining);
-  return { flushed, remaining: remaining.length };
+  await hydrateOutbox();
+  const result = await flushStore(getOfflineStore(), (op) =>
+    send(op.path, op.body, op.method),
+  );
+  cached = await getOfflineStore().listOutbox();
+  return result;
 }

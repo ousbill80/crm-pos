@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -13,6 +14,20 @@ import { toCsv } from '../common/csv.util';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
+import {
+  ApercuImportProduitsDto,
+  AppliquerImportProduitsDto,
+  MappingImportProduitsDto,
+} from './dto/import-produits.dto';
+import { tableDepuisFichier } from './produits-import.fichier';
+import {
+  CHAMPS_IMPORT,
+  MAX_LIGNES_IMPORT,
+  estLigneImportVide,
+  parserLigneCatalogue,
+  proposerMapping,
+  type MappingImport,
+} from './produits-import.mapper';
 import {
   enrichirProduit,
   money,
@@ -575,4 +590,273 @@ export class ProduitsService {
       take: 200,
     });
   }
+
+  modeleImportCsv(): string {
+    return toCsv(
+      [
+        {
+          reference: 'CBL-USB-C',
+          designation: 'Câble USB-C 1 m',
+          categorie: 'Câbles',
+          prixUnitaire: '2500',
+          seuilReappro: '5',
+          codeBarres: '3660000000001',
+          actif: 'oui',
+          stock: '0',
+        },
+      ],
+      [
+        { key: 'reference', header: 'Référence' },
+        { key: 'designation', header: 'Désignation' },
+        { key: 'categorie', header: 'Catégorie' },
+        { key: 'prixUnitaire', header: 'Prix unitaire' },
+        { key: 'seuilReappro', header: 'Seuil réappro' },
+        { key: 'codeBarres', header: 'Code-barres' },
+        { key: 'actif', header: 'Actif' },
+        { key: 'stock', header: 'Stock initial' },
+      ],
+    );
+  }
+
+  async apercuImport(dto: ApercuImportProduitsDto) {
+    const prep = await this.preparerImport(dto, dto.mode ?? 'UPSERT');
+    const mapped = new Set(
+      Object.values(prep.mapping).filter((v): v is string => Boolean(v)),
+    );
+    const colonnesIgnorees = prep.enTetes.filter((h) => !mapped.has(h));
+    return {
+      source: prep.source,
+      enTetes: prep.enTetes,
+      mapping: prep.mapping,
+      colonnesIgnorees,
+      totalLignes: prep.lignes.length,
+      aCreer: prep.decisions.filter((d) => d.action === 'CREATE').length,
+      aMettreAJour: prep.decisions.filter((d) => d.action === 'UPDATE').length,
+      aIgnorer: prep.decisions.filter((d) => d.action === 'SKIP').length,
+      enErreur: prep.decisions.filter((d) => d.action === 'ERROR').length,
+      avertissementsGlobaux: prep.avertissementsGlobaux,
+      apercu: prep.decisions.slice(0, 200).map((d) => ({
+        index: d.parsed.index,
+        action: d.action,
+        designation: d.parsed.designation ?? d.existant?.designation ?? null,
+        reference: d.parsed.reference ?? d.existant?.reference ?? null,
+        prixUnitaire: d.parsed.prixUnitaire ?? null,
+        erreurs: d.parsed.erreurs,
+        avertissements: d.parsed.avertissements,
+      })),
+    };
+  }
+
+  async appliquerImport(dto: AppliquerImportProduitsDto, user: AuthenticatedUser) {
+    const mode = dto.mode ?? 'UPSERT';
+    const importerStockInitial = dto.importerStockInitial === true;
+    const prep = await this.preparerImport(dto, mode);
+    const bloquantes = prep.decisions.filter((d) => d.action === 'ERROR');
+    if (bloquantes.length > 0 && dto.ignorerLignesEnErreur !== true) {
+      throw new BadRequestException({
+        message: `${bloquantes.length} ligne(s) en erreur — corrigez le mapping, ou importez uniquement les lignes valides.`,
+        apercu: await this.apercuImport(dto),
+      });
+    }
+
+    let crees = 0;
+    let misAJour = 0;
+    let ignores = 0;
+    const ids: string[] = [];
+
+    for (const d of prep.decisions) {
+      if (d.action === 'SKIP' || d.action === 'ERROR') {
+        ignores += 1;
+        continue;
+      }
+      if (d.action === 'CREATE') {
+        const created = await this.create(
+          {
+            designation: d.parsed.designation!,
+            prixUnitaire: d.parsed.prixUnitaire!,
+            stock: importerStockInitial ? (d.parsed.stock ?? 0) : 0,
+            ...(d.parsed.reference ? { reference: d.parsed.reference } : {}),
+            ...(d.parsed.codeBarres ? { codeBarres: d.parsed.codeBarres } : {}),
+            ...(d.parsed.categorie ? { categorie: d.parsed.categorie } : {}),
+            ...(d.parsed.description ? { description: d.parsed.description } : {}),
+            ...(d.parsed.seuilReappro !== undefined
+              ? { seuilReappro: d.parsed.seuilReappro ?? undefined }
+              : {}),
+            ...(d.parsed.uniteMesure ? { uniteMesure: d.parsed.uniteMesure } : {}),
+            ...(d.parsed.methodeCout ? { methodeCout: d.parsed.methodeCout } : {}),
+            ...(d.parsed.strategieSortie
+              ? { strategieSortie: d.parsed.strategieSortie }
+              : {}),
+            ...(d.parsed.attributs ? { attributs: d.parsed.attributs } : {}),
+          },
+          user,
+        );
+        if (d.parsed.actif === false) {
+          await this.update(created.id, { actif: false }, user);
+        }
+        crees += 1;
+        ids.push(created.id);
+        continue;
+      }
+      if (d.action === 'UPDATE' && d.existant) {
+        const patch: UpdateProduitDto = {};
+        if (d.parsed.designation) patch.designation = d.parsed.designation;
+        if (d.parsed.reference !== undefined) patch.reference = d.parsed.reference;
+        if (d.parsed.codeBarres !== undefined) patch.codeBarres = d.parsed.codeBarres;
+        if (d.parsed.categorie !== undefined) patch.categorie = d.parsed.categorie;
+        if (d.parsed.description !== undefined) patch.description = d.parsed.description;
+        if (d.parsed.prixUnitaire !== undefined) patch.prixUnitaire = d.parsed.prixUnitaire;
+        if (d.parsed.seuilReappro !== undefined) patch.seuilReappro = d.parsed.seuilReappro;
+        if (d.parsed.actif !== undefined) patch.actif = d.parsed.actif;
+        if (d.parsed.uniteMesure) patch.uniteMesure = d.parsed.uniteMesure;
+        if (d.parsed.methodeCout) patch.methodeCout = d.parsed.methodeCout;
+        if (d.parsed.strategieSortie) patch.strategieSortie = d.parsed.strategieSortie;
+        await this.update(d.existant.id, patch, user);
+        misAJour += 1;
+        ids.push(d.existant.id);
+      }
+    }
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'PRODUIT_IMPORT',
+      entite: 'Produit',
+      entiteId: ids[0] ?? 'catalogue',
+      details: JSON.stringify({
+        source: prep.source,
+        mode,
+        importerStockInitial,
+        ignorerLignesEnErreur: dto.ignorerLignesEnErreur === true,
+        crees,
+        misAJour,
+        ignores,
+        total: prep.lignes.length,
+      }),
+    });
+
+    return { crees, misAJour, ignores, ids };
+  }
+
+  private async preparerImport(
+    dto: ApercuImportProduitsDto,
+    mode: 'UPSERT' | 'CREATE_ONLY' = 'UPSERT',
+  ) {
+    const table = await tableDepuisFichier(dto);
+    if (table.enTetes.length === 0) {
+      throw new BadRequestException('Le fichier n’a pas d’en-tête de colonnes.');
+    }
+    if (table.lignes.length > MAX_LIGNES_IMPORT) {
+      throw new BadRequestException(
+        `Import limité à ${MAX_LIGNES_IMPORT} lignes (fichier : ${table.lignes.length}).`,
+      );
+    }
+
+    const auto = proposerMapping(table.enTetes);
+    const mapping = fusionnerMapping(auto, dto.mapping);
+    if (!mapping.designation && !mapping.reference && !mapping.codeBarres) {
+      throw new BadRequestException(
+        'Impossible d’identifier les colonnes : au moins Désignation, Référence ou Code-barres.',
+      );
+    }
+
+    const parsed = table.lignes.map((ligne, i) =>
+      parserLigneCatalogue(table.enTetes, ligne, mapping, i + 2),
+    );
+
+    const refs = parsed.map((p) => p.reference).filter((v): v is string => Boolean(v));
+    const codes = parsed.map((p) => p.codeBarres).filter((v): v is string => Boolean(v));
+    const existants = await this.prisma.produit.findMany({
+      where: {
+        OR: [
+          ...(refs.length ? [{ reference: { in: refs } }] : []),
+          ...(codes.length ? [{ codeBarres: { in: codes } }] : []),
+        ],
+      },
+    });
+    const byRef = new Map(
+      existants.filter((p) => p.reference).map((p) => [p.reference as string, p]),
+    );
+    const byCode = new Map(
+      existants.filter((p) => p.codeBarres).map((p) => [p.codeBarres as string, p]),
+    );
+
+    const seenRef = new Set<string>();
+    const seenCode = new Set<string>();
+    const avertissementsGlobaux = [
+      'CMP, marge et valeur stock sont calculés — ils ne sont jamais importés.',
+      'Le stock d’une fiche existante n’est jamais modifié (grand livre append-only).',
+    ];
+    if (mapping.stock) {
+      avertissementsGlobaux.push(
+        'Colonne stock : appliquée uniquement aux nouveaux produits, si vous cochez « stock initial ».',
+      );
+    }
+
+    const decisions = parsed.map((p) => {
+      if (estLigneImportVide(p)) {
+        return { parsed: p, existant: null, action: 'SKIP' as const };
+      }
+
+      const existant =
+        (p.reference ? byRef.get(p.reference) : undefined) ??
+        (p.codeBarres ? byCode.get(p.codeBarres) : undefined);
+
+      if (p.reference) {
+        if (seenRef.has(p.reference)) {
+          p.erreurs.push(`Référence « ${p.reference} » en double dans le fichier.`);
+        }
+        seenRef.add(p.reference);
+      }
+      if (p.codeBarres) {
+        if (seenCode.has(p.codeBarres)) {
+          p.erreurs.push(`Code-barres « ${p.codeBarres} » en double dans le fichier.`);
+        }
+        seenCode.add(p.codeBarres);
+      }
+
+      if (existant) {
+        if (mode === 'CREATE_ONLY') {
+          p.avertissements.push('Déjà au catalogue — ignoré (mode création seulement).');
+          return { parsed: p, existant, action: 'SKIP' as const };
+        }
+        if (p.erreurs.length > 0) {
+          return { parsed: p, existant, action: 'ERROR' as const };
+        }
+        return { parsed: p, existant, action: 'UPDATE' as const };
+      }
+
+      if (!p.designation) p.erreurs.push('Désignation obligatoire pour créer une fiche.');
+      if (p.prixUnitaire === undefined) {
+        p.erreurs.push('Prix unitaire obligatoire pour créer une fiche.');
+      }
+      if (p.erreurs.length > 0) {
+        return { parsed: p, existant: null, action: 'ERROR' as const };
+      }
+      return { parsed: p, existant: null, action: 'CREATE' as const };
+    });
+
+    return {
+      source: table.source,
+      enTetes: table.enTetes,
+      mapping,
+      lignes: table.lignes,
+      decisions,
+      avertissementsGlobaux,
+    };
+  }
+}
+
+function fusionnerMapping(
+  auto: MappingImport,
+  override?: MappingImportProduitsDto,
+): MappingImport {
+  if (!override) return auto;
+  const out: MappingImport = { ...auto };
+  for (const champ of CHAMPS_IMPORT) {
+    if (Object.prototype.hasOwnProperty.call(override, champ)) {
+      const v = override[champ as keyof MappingImportProduitsDto];
+      out[champ] = v === '' || v === undefined ? null : v;
+    }
+  }
+  return out;
 }

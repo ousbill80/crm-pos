@@ -64,77 +64,86 @@ async function ensureUser(params: {
   });
 }
 
-async function main() {
-  for (const role of ROLES) {
-    await ensureRole(role.libelle, role.niveauHabilitation);
-  }
-
-  const existingSociete = await prisma.societe.findFirst();
-  if (!existingSociete) {
-    await prisma.societe.create({
-      data: {
-        raisonSociale: 'CaissePOS',
-        adresse: 'Siège — Dakar',
-        telephone: '+221 33 000 00 00',
-        email: 'contact@caissepos.local',
-        devise: 'XOF',
-      },
-    });
-  }
-
-  let zone = await prisma.zone.findFirst({ where: { nomZone: 'Zone Démo' } });
-  if (!zone) {
-    zone = await prisma.zone.create({ data: { nomZone: 'Zone Démo' } });
-  }
-
+async function ensureBoutiquePointDeVente(params: {
+  code: string;
+  nom: string;
+  adresse: string;
+  zoneId: string;
+  avecReserve?: boolean;
+}) {
   let boutique = await prisma.boutique.findFirst({
-    where: { nom: 'Boutique Démo Plateau' },
+    where: { code: params.code },
   });
   if (!boutique) {
     boutique = await prisma.boutique.create({
       data: {
-        nom: 'Boutique Démo Plateau',
-        adresse: 'Avenue Léopold Sédar Senghor, Dakar',
-        code: 'DEMO-01',
-        zoneId: zone.id,
+        nom: params.nom,
+        adresse: params.adresse,
+        code: params.code,
+        zoneId: params.zoneId,
+        actif: true,
+      },
+    });
+  } else {
+    boutique = await prisma.boutique.update({
+      where: { id: boutique.id },
+      data: {
+        nom: params.nom,
+        adresse: params.adresse,
+        zoneId: params.zoneId,
+        actif: true,
       },
     });
   }
 
-  let entrepot = await prisma.entrepot.findUnique({
+  const principal = await prisma.entrepot.upsert({
     where: {
       boutiqueId_code: { boutiqueId: boutique.id, code: 'PRINCIPAL' },
     },
+    update: { nom: `Principal — ${params.nom}`, usage: 'STOCK', actif: true },
+    create: {
+      nom: `Principal — ${params.nom}`,
+      code: 'PRINCIPAL',
+      type: 'PRINCIPAL',
+      usage: 'STOCK',
+      boutiqueId: boutique.id,
+    },
   });
-  if (!entrepot) {
-    entrepot = await prisma.entrepot.create({
-      data: {
-        nom: `Principal — ${boutique.nom}`,
-        code: 'PRINCIPAL',
-        type: 'PRINCIPAL',
+
+  if (params.avecReserve) {
+    await prisma.entrepot.upsert({
+      where: {
+        boutiqueId_code: { boutiqueId: boutique.id, code: 'RESERVE' },
+      },
+      update: { nom: `Réserve — ${params.nom}`, usage: 'STOCK', actif: true },
+      create: {
+        nom: `Réserve — ${params.nom}`,
+        code: 'RESERVE',
+        type: 'SECONDAIRE',
+        usage: 'STOCK',
         boutiqueId: boutique.id,
       },
     });
   }
 
-  let caisse = await prisma.caisse.findFirst({
+  const magasin = await prisma.caisse.findFirst({
     where: { boutiqueId: boutique.id, type: 'MAGASIN' },
   });
-  if (!caisse) {
-    caisse = await prisma.caisse.create({
+  if (!magasin) {
+    await prisma.caisse.create({
       data: {
         type: 'MAGASIN',
         boutiqueId: boutique.id,
-        libelle: `Caisse magasin — ${boutique.nom}`,
+        libelle: `Caisse magasin — ${params.nom}`,
       },
     });
   }
 
-  let tiroir = await prisma.caisse.findFirst({
-    where: { boutiqueId: boutique.id, type: 'TIROIR' },
+  const tiroir = await prisma.caisse.findFirst({
+    where: { boutiqueId: boutique.id, type: 'TIROIR', code: 'T01' },
   });
   if (!tiroir) {
-    tiroir = await prisma.caisse.create({
+    await prisma.caisse.create({
       data: {
         type: 'TIROIR',
         boutiqueId: boutique.id,
@@ -146,24 +155,151 @@ async function main() {
     });
   }
 
+  return { boutique, principal };
+}
+
+async function main() {
+  for (const role of ROLES) {
+    await ensureRole(role.libelle, role.niveauHabilitation);
+  }
+
+  const existingSociete = await prisma.societe.findFirst();
+  if (!existingSociete) {
+    await prisma.societe.create({
+      data: {
+        raisonSociale: 'Marché des Accessoires',
+        adresse: 'Abidjan — Plateau',
+        telephone: '+225 27 00 00 00 00',
+        email: 'contact@marche-accessoires.local',
+        devise: 'XOF',
+      },
+    });
+  } else {
+    await prisma.societe.update({
+      where: { id: existingSociete.id },
+      data: { raisonSociale: 'Marché des Accessoires' },
+    });
+  }
+
+  let zone =
+    (await prisma.zone.findFirst({
+      where: { nomZone: 'Marché des Accessoires' },
+    })) ??
+    (await prisma.zone.findFirst({ where: { nomZone: 'Zone Démo' } }));
+  if (!zone) {
+    zone = await prisma.zone.create({
+      data: { nomZone: 'Marché des Accessoires' },
+    });
+  } else if (zone.nomZone !== 'Marché des Accessoires') {
+    zone = await prisma.zone.update({
+      where: { id: zone.id },
+      data: { nomZone: 'Marché des Accessoires' },
+    });
+  }
+
+  const pointsDeVente = [
+    {
+      code: 'EXT',
+      nom: 'Extérieur',
+      adresse: 'Allée Extérieur — Marché des Accessoires',
+      avecReserve: true,
+    },
+    {
+      code: 'INT',
+      nom: 'Intérieur',
+      adresse: 'Hall Intérieur — Marché des Accessoires',
+      avecReserve: true,
+    },
+    {
+      code: 'AUTO',
+      nom: 'Pièces auto',
+      adresse: 'Stand Pièces auto',
+    },
+    {
+      code: 'HUILE',
+      nom: 'Huiles & fluides',
+      adresse: 'Stand Huiles & fluides',
+    },
+    {
+      code: 'ELEC',
+      nom: 'Électronique',
+      adresse: 'Stand Électronique',
+      avecReserve: true,
+    },
+    {
+      code: 'GSM',
+      nom: 'Accessoires GSM',
+      adresse: 'Stand Accessoires GSM',
+    },
+    {
+      code: 'QUINC',
+      nom: 'Quincaillerie',
+      adresse: 'Stand Quincaillerie',
+    },
+    {
+      code: 'MODE',
+      nom: 'Mode & bagagerie',
+      adresse: 'Stand Mode & bagagerie',
+    },
+    {
+      code: 'COSM',
+      nom: 'Cosmétiques',
+      adresse: 'Stand Cosmétiques',
+    },
+    {
+      code: 'MAIS',
+      nom: 'Maison',
+      adresse: 'Stand Maison',
+    },
+    {
+      code: 'CAFE',
+      nom: 'Café-Market',
+      adresse: 'Café-Market — Marché des Accessoires',
+    },
+  ] as const;
+
+  // Migre l’ancienne boutique démo vers Extérieur si présente sans code Marché.
+  const ancienneDemo = await prisma.boutique.findFirst({
+    where: { OR: [{ code: 'DEMO-01' }, { nom: 'Boutique Démo Plateau' }] },
+  });
+  if (ancienneDemo && ancienneDemo.code !== 'EXT') {
+    await prisma.boutique.update({
+      where: { id: ancienneDemo.id },
+      data: {
+        code: 'EXT',
+        nom: 'Extérieur',
+        adresse: 'Allée Extérieur — Marché des Accessoires',
+        zoneId: zone.id,
+      },
+    });
+  }
+
+  const pdv: Array<{
+    code: string;
+    boutique: { id: string; nom: string };
+    principal: { id: string };
+  }> = [];
+  for (const p of pointsDeVente) {
+    const created = await ensureBoutiquePointDeVente({
+      ...p,
+      zoneId: zone.id,
+    });
+    pdv.push({
+      code: p.code,
+      boutique: created.boutique,
+      principal: created.principal,
+    });
+  }
+
+  const boutiqueExt = pdv.find((p) => p.code === 'EXT')!;
+  const boutiqueGsm = pdv.find((p) => p.code === 'GSM')!;
+  const boutiqueCafe = pdv.find((p) => p.code === 'CAFE')!;
+  const boutique = boutiqueExt.boutique;
+  const entrepot = boutiqueExt.principal;
+
   const centrale = await prisma.caisse.findFirst({ where: { type: 'CENTRALE' } });
   if (!centrale) {
     await prisma.caisse.create({ data: { type: 'CENTRALE', boutiqueId: null } });
-  }
-
-  // Entrepôts PRINCIPAL pour toute boutique existante
-  const boutiques = await prisma.boutique.findMany();
-  for (const b of boutiques) {
-    await prisma.entrepot.upsert({
-      where: { boutiqueId_code: { boutiqueId: b.id, code: 'PRINCIPAL' } },
-      update: {},
-      create: {
-        nom: `Principal — ${b.nom}`,
-        code: 'PRINCIPAL',
-        type: 'PRINCIPAL',
-        boutiqueId: b.id,
-      },
-    });
   }
 
   let hub = await prisma.boutique.findFirst({ where: { code: 'WH-CENTRAL' } });
@@ -175,6 +311,11 @@ async function main() {
         code: 'WH-CENTRAL',
         zoneId: zone.id,
       },
+    });
+  } else {
+    hub = await prisma.boutique.update({
+      where: { id: hub.id },
+      data: { zoneId: zone.id, nom: 'Entrepôt Central', actif: true },
     });
   }
   const emplacementsHub: Array<{
@@ -194,7 +335,7 @@ async function main() {
   for (const e of emplacementsHub) {
     await prisma.entrepot.upsert({
       where: { boutiqueId_code: { boutiqueId: hub.id, code: e.code } },
-      update: { usage: e.usage, reseau: true, virtuel: e.virtuel, type: e.type },
+      update: { usage: e.usage, reseau: true, virtuel: e.virtuel, type: e.type, nom: e.nom },
       create: {
         nom: e.nom,
         code: e.code,
@@ -207,24 +348,56 @@ async function main() {
     });
   }
 
+  const hubStock = await prisma.entrepot.findUniqueOrThrow({
+    where: { boutiqueId_code: { boutiqueId: hub.id, code: 'PRINCIPAL' } },
+  });
+
   await ensureUser({
     login: 'demo-pos-caissier',
     roleLibelle: 'CAISSIER_BOUTIQUE',
-    boutiqueId: boutique.id,
+    boutiqueId: boutiqueExt.boutique.id,
     nom: 'Diallo',
     prenom: 'Aïssatou',
   });
   await ensureUser({
     login: 'demo-pos-temoin',
     roleLibelle: 'RESPONSABLE_BOUTIQUE',
-    boutiqueId: boutique.id,
+    boutiqueId: boutiqueExt.boutique.id,
     nom: 'Ndiaye',
     prenom: 'Moussa',
   });
   await ensureUser({
+    login: 'demo-caissier-gsm',
+    roleLibelle: 'CAISSIER_BOUTIQUE',
+    boutiqueId: boutiqueGsm.boutique.id,
+    nom: 'Koné',
+    prenom: 'Fatou',
+  });
+  await ensureUser({
+    login: 'demo-resp-gsm',
+    roleLibelle: 'RESPONSABLE_BOUTIQUE',
+    boutiqueId: boutiqueGsm.boutique.id,
+    nom: 'Ouattara',
+    prenom: 'Yves',
+  });
+  await ensureUser({
+    login: 'demo-caissier-cafe',
+    roleLibelle: 'CAISSIER_BOUTIQUE',
+    boutiqueId: boutiqueCafe.boutique.id,
+    nom: 'Bamba',
+    prenom: 'Sarah',
+  });
+  await ensureUser({
+    login: 'demo-resp-cafe',
+    roleLibelle: 'RESPONSABLE_BOUTIQUE',
+    boutiqueId: boutiqueCafe.boutique.id,
+    nom: 'Coulibaly',
+    prenom: 'Issa',
+  });
+  await ensureUser({
     login: 'demo-convoyeur',
     roleLibelle: 'CONVOYEUR',
-    boutiqueId: boutique.id,
+    boutiqueId: boutiqueExt.boutique.id,
     nom: 'Fall',
     prenom: 'Ibrahima',
   });
@@ -268,6 +441,7 @@ async function main() {
         nom: `Réserve — ${boutique.nom}`,
         code: 'RESERVE',
         type: 'SECONDAIRE',
+        usage: 'STOCK',
         boutiqueId: boutique.id,
       },
     });
@@ -391,11 +565,11 @@ async function main() {
           entrepotId: entrepot.id,
         },
       },
-      update: { quantite: article.principal },
+      update: { quantite: Math.min(article.principal, 15) },
       create: {
         produitId: produit.id,
         entrepotId: entrepot.id,
-        quantite: article.principal,
+        quantite: Math.min(article.principal, 15),
       },
     });
     await prisma.stockQuant.upsert({
@@ -405,13 +579,46 @@ async function main() {
           entrepotId: reserve.id,
         },
       },
-      update: { quantite: article.reserve },
+      update: { quantite: Math.min(article.reserve, 5) },
       create: {
         produitId: produit.id,
         entrepotId: reserve.id,
-        quantite: article.reserve,
+        quantite: Math.min(article.reserve, 5),
       },
     });
+    // Gros du stock sur hub STOCK (démo répartition Achats → boutiques).
+    const qtyHub = Math.max(article.principal, article.reserve, 10);
+    await prisma.stockQuant.upsert({
+      where: {
+        produitId_entrepotId: {
+          produitId: produit.id,
+          entrepotId: hubStock.id,
+        },
+      },
+      update: { quantite: qtyHub },
+      create: {
+        produitId: produit.id,
+        entrepotId: hubStock.id,
+        quantite: qtyHub,
+      },
+    });
+    // Petites quantités POS sur GSM et Café-Market.
+    for (const dest of [boutiqueGsm.principal, boutiqueCafe.principal]) {
+      await prisma.stockQuant.upsert({
+        where: {
+          produitId_entrepotId: {
+            produitId: produit.id,
+            entrepotId: dest.id,
+          },
+        },
+        update: { quantite: article.actif ? 3 : 0 },
+        create: {
+          produitId: produit.id,
+          entrepotId: dest.id,
+          quantite: article.actif ? 3 : 0,
+        },
+      });
+    }
     const somme = await prisma.stockQuant.aggregate({
       where: { produitId: produit.id },
       _sum: { quantite: true },
@@ -476,11 +683,15 @@ async function main() {
 
   console.log(
     [
-      'Seed CaissePOS terminé.',
-      `Boutique: ${boutique.nom}`,
-      `Caisse auxiliaire: ${caisse.id}`,
+      'Seed Marché des Accessoires terminé.',
+      `Zone: ${zone.nomZone}`,
+      `Points de vente: ${pdv.map((p) => p.boutique.nom).join(', ')}`,
+      `Hub: ${hub.nom} (${hub.code})`,
       'Comptes (mdp MotDePasse!123):',
-      '  demo-pos-caissier / demo-pos-temoin / demo-convoyeur / demo-dg / demo-respsi / demo-central / demo-daf',
+      '  Réseau: demo-dg / demo-respsi / demo-central / demo-daf',
+      '  Extérieur: demo-pos-caissier / demo-pos-temoin / demo-convoyeur',
+      '  GSM: demo-caissier-gsm / demo-resp-gsm',
+      '  Café-Market: demo-caissier-cafe / demo-resp-cafe',
     ].join('\n'),
   );
 }

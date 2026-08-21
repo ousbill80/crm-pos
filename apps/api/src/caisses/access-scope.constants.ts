@@ -115,6 +115,17 @@ export const ROLES_BON_STOCK_PILOTE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
 ];
 
+/**
+ * Répartition hub → boutiques après réception groupe.
+ * SI / DG / DAF : multi-sites. RESPONSABLE_BOUTIQUE : uniquement son PRINCIPAL.
+ */
+export const ROLES_REPARTITION_STOCK: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
 /** Valider FAIT un bon : pilote réseau + responsable boutique (destination dans son magasin). */
 export const ROLES_BON_STOCK_FAIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,

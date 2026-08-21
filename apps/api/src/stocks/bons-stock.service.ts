@@ -21,6 +21,7 @@ import {
   CreateLotDto,
   CreateRegleReapproDto,
 } from './dto/create-bon-stock.dto';
+import type { RepartirReceptionDto } from './dto/repartir-reception.dto';
 
 const INCLUDE_BON = {
   entrepotSource: {
@@ -233,6 +234,244 @@ export class BonsStockService {
       },
     });
     return bon;
+  }
+
+  /**
+   * Répartit le stock hub (après réception groupe) vers des PRINCIPAL boutiques
+   * via bons TRANSFERT_INTERNE. Putaway ENTREE→STOCK si besoin.
+   */
+  async repartirDepuisReception(
+    receptionId: string,
+    dto: RepartirReceptionDto,
+    user: AuthenticatedUser,
+  ) {
+    const reception = await this.prisma.receptionStock.findUnique({
+      where: { id: receptionId },
+      include: {
+        commande: { select: { id: true, boutiqueId: true, numero: true } },
+        produit: { select: { id: true, designation: true } },
+      },
+    });
+    if (!reception) {
+      throw new NotFoundException(`Réception ${receptionId} introuvable.`);
+    }
+
+    const hubStock = await this.stocks.trouverEntrepotCentralStock();
+    const hubEntree = await this.stocks.trouverEmplacementUsage('ENTREE', true);
+
+    // Destinations + RBAC d’abord (403 périmètre avant erreur de stock).
+    type DestKey = string;
+    const parDest = new Map<
+      DestKey,
+      { destId: string; lignes: Array<{ produitId: string; quantite: number }> }
+    >();
+
+    for (const l of dto.lignes) {
+      const destId = await this.resolveDestRepartition(l, user);
+      const acc = parDest.get(destId) ?? { destId, lignes: [] };
+      const existante = acc.lignes.find((x) => x.produitId === l.produitId);
+      if (existante) existante.quantite += l.quantite;
+      else acc.lignes.push({ produitId: l.produitId, quantite: l.quantite });
+      parDest.set(destId, acc);
+    }
+
+    const besoinParProduit = new Map<string, number>();
+    for (const l of dto.lignes) {
+      besoinParProduit.set(
+        l.produitId,
+        (besoinParProduit.get(l.produitId) ?? 0) + l.quantite,
+      );
+    }
+
+    for (const [produitId, besoin] of besoinParProduit) {
+      let dispoStock = await this.stocks.getQuantite(produitId, hubStock.id);
+      if (dispoStock < besoin) {
+        const dispoEntree = await this.stocks.getQuantite(
+          produitId,
+          hubEntree.id,
+        );
+        const manque = besoin - dispoStock;
+        if (dispoEntree < manque) {
+          await this.finaliserReceptionHubSiPossible(receptionId, user);
+          const apresEntree = await this.stocks.getQuantite(
+            produitId,
+            hubEntree.id,
+          );
+          dispoStock = await this.stocks.getQuantite(produitId, hubStock.id);
+          const encoreManque = besoin - dispoStock;
+          if (apresEntree < encoreManque) {
+            throw new BadRequestException(
+              `Stock hub insuffisant pour ${produitId} : besoin ${besoin}, STOCK ${dispoStock}, ENTREE ${apresEntree}.`,
+            );
+          }
+        }
+        const aMettre =
+          besoin - (await this.stocks.getQuantite(produitId, hubStock.id));
+        if (aMettre > 0) {
+          await this.stocks.transferer({
+            produitId,
+            entrepotSourceId: hubEntree.id,
+            entrepotDestId: hubStock.id,
+            quantite: aMettre,
+            utilisateurId: user.userId,
+          });
+        }
+      }
+    }
+
+    const bonsCrees: Array<{ id: string; numero: string; statut: string }> = [];
+    for (const { destId, lignes } of parDest.values()) {
+      if (destId === hubStock.id) {
+        throw new BadRequestException(
+          'Destination identique au stock hub : choisissez un PRINCIPAL boutique.',
+        );
+      }
+      const bon = await this.creer(
+        {
+          type: TypeOperationStock.TRANSFERT_INTERNE,
+          entrepotSourceId: hubStock.id,
+          entrepotDestId: destId,
+          notes: `Répartition depuis réception ${receptionId}${
+            reception.commande ? ` / ${reception.commande.numero}` : ''
+          }`,
+          lignes,
+        },
+        user,
+      );
+      let statut = bon.statut;
+      let numero = bon.numero;
+      let id = bon.id;
+      if (dto.pret) {
+        const misEnPret = await this.mettreEnPretRepartition(bon.id, user);
+        id = misEnPret.id;
+        numero = misEnPret.numero;
+        statut = misEnPret.statut;
+      }
+      bonsCrees.push({ id, numero, statut });
+    }
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'REPARTITION_HUB_CREATED',
+      entite: 'ReceptionStock',
+      entiteId: receptionId,
+      details: JSON.stringify({
+        lignes: dto.lignes,
+        bons: bonsCrees.map((b) => b.id),
+        pret: Boolean(dto.pret),
+      }),
+    });
+
+    return { receptionId, bons: bonsCrees };
+  }
+
+  private async finaliserReceptionHubSiPossible(
+    receptionId: string,
+    user: AuthenticatedUser,
+  ) {
+    const bon = await this.prisma.bonStock.findFirst({
+      where: {
+        receptionId,
+        type: TypeOperationStock.RECEPTION,
+        statut: { in: [StatutBonStock.BROUILLON, StatutBonStock.PRET] },
+      },
+      include: INCLUDE_BON,
+    });
+    if (!bon) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (bon.statut === StatutBonStock.BROUILLON) {
+        await tx.bonStock.update({
+          where: { id: bon.id },
+          data: { statut: StatutBonStock.PRET, datePret: new Date() },
+        });
+      }
+      for (const ligne of bon.lignes) {
+        const lot = await this.resoudreLot(tx, ligne, user.userId);
+        await this.executerReception(tx, bon, ligne, lot?.id, user.userId);
+      }
+      await tx.bonStock.update({
+        where: { id: bon.id },
+        data: { statut: StatutBonStock.FAIT, dateFait: new Date() },
+      });
+    });
+  }
+
+  private async mettreEnPretRepartition(
+    bonId: string,
+    user: AuthenticatedUser,
+  ) {
+    if (
+      user.role === RoleLibelle.RESPONSABLE_SI ||
+      user.role === RoleLibelle.DIRECTION_GENERALE
+    ) {
+      return this.pret(bonId, user);
+    }
+    const bon = await this.charger(bonId);
+    this.machine.assert(bon.statut, StatutBonStock.PRET);
+    const updated = await this.prisma.bonStock.update({
+      where: { id: bonId },
+      data: { statut: StatutBonStock.PRET, datePret: new Date() },
+      include: INCLUDE_BON,
+    });
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'BON_STOCK_PRET',
+      entite: 'BonStock',
+      entiteId: bonId,
+      details: JSON.stringify({ via: 'repartition' }),
+    });
+    return this.serialiser(updated);
+  }
+
+  private async resolveDestRepartition(
+    ligne: {
+      produitId: string;
+      quantite: number;
+      entrepotDestId?: string;
+      boutiqueId?: string;
+    },
+    user: AuthenticatedUser,
+  ): Promise<string> {
+    if (!ligne.entrepotDestId && !ligne.boutiqueId) {
+      throw new BadRequestException(
+        'Chaque ligne de répartition exige entrepotDestId ou boutiqueId.',
+      );
+    }
+    let destId = ligne.entrepotDestId;
+    if (!destId && ligne.boutiqueId) {
+      destId = await this.stocks.trouverEntrepotPrincipalBoutique(
+        ligne.boutiqueId,
+      );
+    }
+    const dest = await this.prisma.entrepot.findUnique({
+      where: { id: destId! },
+    });
+    if (!dest || !dest.actif) {
+      throw new BadRequestException(
+        `Entrepôt destination ${destId} introuvable ou inactif.`,
+      );
+    }
+    if (dest.usage !== 'STOCK' || dest.virtuel) {
+      throw new BadRequestException(
+        'Répartition : destination STOCK physique uniquement (PRINCIPAL boutique).',
+      );
+    }
+    if (dest.reseau) {
+      throw new BadRequestException(
+        'Répartition : destination doit être un magasin boutique, pas le hub.',
+      );
+    }
+
+    if (user.role === RoleLibelle.RESPONSABLE_BOUTIQUE) {
+      if (!user.boutiqueId || dest.boutiqueId !== user.boutiqueId) {
+        throw new ForbiddenException(
+          'Répartition hors périmètre : uniquement vers votre magasin.',
+        );
+      }
+    }
+
+    return dest.id;
   }
 
   async listerRegles() {

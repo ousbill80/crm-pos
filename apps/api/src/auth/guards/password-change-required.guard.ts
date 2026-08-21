@@ -56,7 +56,8 @@ export class PasswordChangeRequiredGuard implements CanActivate {
 
     if (utilisateur?.mustChangePassword) {
       throw new ForbiddenException({
-        message: 'Changement de mot de passe obligatoire avant tout autre accès.',
+        message:
+          'Changement de mot de passe obligatoire avant tout autre accès.',
         code: 'MUST_CHANGE_PASSWORD',
       });
     }

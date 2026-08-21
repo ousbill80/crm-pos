@@ -20,6 +20,7 @@ const INCLUDE_FACTURE = {
       reception: {
         include: {
           produit: { select: { id: true, designation: true, reference: true } },
+          commande: { select: { id: true, numero: true } },
         },
       },
     },
@@ -314,6 +315,9 @@ export class FacturesFournisseurService {
         quantite: l.quantite,
         prixUnitaire: l.prixUnitaire.toFixed(2),
         montant: l.prixUnitaire.mul(l.quantite).toFixed(2),
+        dateReception: l.reception.dateReception.toISOString(),
+        reference: l.reception.reference,
+        commande: l.reception.commande,
       })),
       paiements: f.paiements.map((p) => ({
         id: p.id,

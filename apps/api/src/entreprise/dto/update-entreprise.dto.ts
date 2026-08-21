@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -39,4 +40,9 @@ export class UpdateEntrepriseDto {
   @IsNumber()
   @Min(0)
   seuilValidationDg?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  delaiVersementHeures?: number;
 }

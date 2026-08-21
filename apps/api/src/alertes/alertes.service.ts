@@ -29,7 +29,7 @@ export interface AlerteDto {
   details?: Record<string, unknown>;
 }
 
-const DELAI_VERSEMENT_MS = 24 * 60 * 60 * 1000;
+const DELAI_VERSEMENT_HEURES_DEFAUT = 24;
 
 @Injectable()
 export class AlertesService {
@@ -43,9 +43,15 @@ export class AlertesService {
     }
 
     const caisseFilter = await this.resolveCaisseFilter(user);
+    const societe = await this.prisma.societe.findFirst({
+      select: { delaiVersementHeures: true },
+    });
+    const delaiVersementHeures =
+      societe?.delaiVersementHeures ?? DELAI_VERSEMENT_HEURES_DEFAUT;
+
     const [ecarts, retards, acces, stocksBas] = await Promise.all([
       this.alertesEcarts(caisseFilter),
-      this.alertesRetards(caisseFilter),
+      this.alertesRetards(caisseFilter, delaiVersementHeures),
       this.alertesAccesRefuses(user),
       this.alertesStockBas(),
     ]);
@@ -121,8 +127,9 @@ export class AlertesService {
 
   private async alertesRetards(
     caisseFilter: Prisma.CaisseWhereInput | undefined,
+    delaiVersementHeures: number,
   ): Promise<AlerteDto[]> {
-    const seuil = new Date(Date.now() - DELAI_VERSEMENT_MS);
+    const seuil = new Date(Date.now() - delaiVersementHeures * 60 * 60 * 1000);
     const retards = await this.prisma.transactionCaisse.findMany({
       where: {
         type: TypeTransaction.SORTIE_FONDS,
@@ -147,7 +154,7 @@ export class AlertesService {
       return {
         type: 'VERSEMENT_EN_RETARD' as const,
         severite: 'WARNING' as const,
-        message: `Versement non transmis dans le délai (24 h) — ${boutique}, statut ${t.statut}, âgé de ${ageH} h`,
+        message: `Versement non transmis dans le délai (${delaiVersementHeures} h) — ${boutique}, statut ${t.statut}, âgé de ${ageH} h`,
         dateHeure: t.dateHeure.toISOString(),
         entite: 'TransactionCaisse',
         entiteId: t.id,

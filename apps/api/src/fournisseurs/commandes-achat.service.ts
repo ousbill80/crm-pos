@@ -26,8 +26,33 @@ const INCLUDE_COMMANDE = {
   },
 } as const;
 
+const INCLUDE_RECEPTION_DETAIL = {
+  produit: { select: { id: true, designation: true, reference: true } },
+  entrepot: { select: { id: true, nom: true, code: true } },
+  utilisateur: { select: { id: true, nom: true, prenom: true } },
+  ligneFacture: {
+    include: {
+      facture: {
+        select: { id: true, numero: true, statut: true, montant: true },
+      },
+    },
+  },
+} as const;
+
+const INCLUDE_COMMANDE_DETAIL = {
+  ...INCLUDE_COMMANDE,
+  receptions: {
+    include: INCLUDE_RECEPTION_DETAIL,
+    orderBy: { dateReception: 'asc' as const },
+  },
+} as const;
+
 type CommandeChargee = Prisma.CommandeAchatGetPayload<{
   include: typeof INCLUDE_COMMANDE;
+}>;
+
+type CommandeDetailChargee = Prisma.CommandeAchatGetPayload<{
+  include: typeof INCLUDE_COMMANDE_DETAIL;
 }>;
 
 @Injectable()
@@ -102,9 +127,9 @@ export class CommandesAchatService {
   }
 
   async detail(id: string, user: AuthenticatedUser) {
-    const commande = await this.charger(id);
+    const commande = await this.chargerDetail(id);
     this.assertLecture(commande, user);
-    return this.serialiser(commande);
+    return this.serialiserDetail(commande);
   }
 
   async confirmer(id: string, user: AuthenticatedUser) {
@@ -235,6 +260,17 @@ export class CommandesAchatService {
     return commande;
   }
 
+  private async chargerDetail(id: string): Promise<CommandeDetailChargee> {
+    const commande = await this.prisma.commandeAchat.findUnique({
+      where: { id },
+      include: INCLUDE_COMMANDE_DETAIL,
+    });
+    if (!commande) {
+      throw new NotFoundException(`Commande ${id} introuvable.`);
+    }
+    return commande;
+  }
+
   private async chargerProduitsActifs(ids: string[]) {
     const uniques = [...new Set(ids)];
     const produits = await this.prisma.produit.findMany({
@@ -286,7 +322,10 @@ export class CommandesAchatService {
     return {};
   }
 
-  private assertLecture(commande: CommandeChargee, user: AuthenticatedUser) {
+  private assertLecture(
+    commande: { boutiqueId: string | null },
+    user: AuthenticatedUser,
+  ) {
     if (user.role !== RoleLibelle.RESPONSABLE_BOUTIQUE) return;
     if (commande.boutiqueId && commande.boutiqueId !== user.boutiqueId) {
       throw new ForbiddenException(
@@ -350,6 +389,43 @@ export class CommandesAchatService {
       quantite,
       quantiteRecue,
       lignes,
+    };
+  }
+
+  private serialiserDetail(c: CommandeDetailChargee) {
+    const base = this.serialiser(c);
+    const receptions = c.receptions.map((r) => ({
+      id: r.id,
+      produitId: r.produitId,
+      quantite: r.quantite,
+      prixAchat: r.prixAchat.toFixed(2),
+      montant: r.prixAchat.mul(r.quantite).toFixed(2),
+      dateReception: r.dateReception.toISOString(),
+      reference: r.reference,
+      ligneCommandeId: r.ligneCommandeId,
+      produit: r.produit,
+      entrepot: r.entrepot,
+      utilisateur: r.utilisateur,
+      facture: r.ligneFacture
+        ? {
+            id: r.ligneFacture.facture.id,
+            numero: r.ligneFacture.facture.numero,
+            statut: r.ligneFacture.facture.statut,
+            montant: r.ligneFacture.facture.montant.toFixed(2),
+          }
+        : null,
+    }));
+    const facturesMap = new Map<
+      string,
+      { id: string; numero: string; statut: string; montant: string }
+    >();
+    for (const r of receptions) {
+      if (r.facture) facturesMap.set(r.facture.id, r.facture);
+    }
+    return {
+      ...base,
+      receptions,
+      factures: [...facturesMap.values()],
     };
   }
 }

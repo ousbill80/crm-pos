@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRightLeft,
@@ -95,11 +95,18 @@ function SoldeValue({ caisseId }: { caisseId: string }) {
   return <span className="money">{formatFcfa(data?.solde)}</span>;
 }
 
-function MouvementsCaisse({ caisseId }: { caisseId: string }) {
+function MouvementsCaisse({
+  caisseId,
+  typeCaisse,
+}: {
+  caisseId: string;
+  typeCaisse: string;
+}) {
   const [filtreType, setFiltreType] = useState('');
   const [q, setQ] = useState('');
   const [ligneId, setLigneId] = useState<string | null>(null);
 
+  const solde = useSolde(caisseId);
   const mouvements = useQuery({
     queryKey: ['caisses', caisseId, 'mouvements'],
     queryFn: () =>
@@ -112,13 +119,20 @@ function MouvementsCaisse({ caisseId }: { caisseId: string }) {
       apiFetch<TransactionDto[]>(`/transactions?caisseId=${caisseId}`),
   });
 
+  useEffect(() => {
+    setLigneId(null);
+    setFiltreType('');
+    setQ('');
+  }, [caisseId]);
+
   const rows = useMemo(() => {
     let list = mouvements.data ?? [];
     if (filtreType) list = list.filter((m) => m.type === filtreType);
     const needle = q.trim().toLowerCase();
     if (needle) {
       list = list.filter((m) => {
-        const hay = `${m.libelle} ${m.type} ${m.initiateur.login} ${m.montant}`.toLowerCase();
+        const hay =
+          `${m.libelle} ${m.type} ${m.initiateur.login} ${m.montant}`.toLowerCase();
         return hay.includes(needle);
       });
     }
@@ -151,174 +165,310 @@ function MouvementsCaisse({ caisseId }: { caisseId: string }) {
     return <p role="alert">Impossible de charger les mouvements.</p>;
   }
 
+  const hintVide =
+    typeCaisse === TypeCaisse.TIROIR
+      ? 'Les ventes ESPECES et le transfert de clôture vers le magasin apparaîtront ici une fois VALIDÉS.'
+      : typeCaisse === TypeCaisse.MAGASIN
+        ? 'Les transferts reçus des tiroirs et les SORTIE_FONDS validées vers la centrale alimentent ce livre.'
+        : 'Les contreparties des versements magasin validés (§6.4) alimentent le livre centrale.';
+
   return (
     <div className="caisses-ledger-view">
+      <header className="caisses-ledger-head">
+        <div>
+          <h3>Grand livre</h3>
+          <p>
+            Écritures <strong>VALIDÉES</strong> uniquement — solde recalculé
+            append-only, jamais stocké.
+          </p>
+        </div>
+        <div className="caisses-ledger-head-solde">
+          <span className="caisses-kpi-label">Solde actuel</span>
+          <strong className="money">
+            {solde.isLoading ? '…' : formatFcfa(solde.data?.solde)}
+          </strong>
+        </div>
+      </header>
+
       <div className="caisses-ledger-kpis">
         <article>
-          <div className="caisses-kpi-label">Écritures</div>
-          <div className="caisses-kpi-value">{totaux.n}</div>
-        </article>
-        <article>
-          <div className="caisses-kpi-label">Crédits</div>
-          <div className="caisses-kpi-value money caisses-credit">
-            {formatFcfa(totaux.credits)}
+          <span className="caisses-ledger-kpi-ico">
+            <BookOpen size={15} />
+          </span>
+          <div>
+            <div className="caisses-kpi-label">Écritures</div>
+            <div className="caisses-kpi-value">{totaux.n}</div>
           </div>
         </article>
         <article>
-          <div className="caisses-kpi-label">Débits</div>
-          <div className="caisses-kpi-value money caisses-debit">
-            {formatFcfa(totaux.debits)}
+          <span className="caisses-ledger-kpi-ico caisses-ledger-kpi-credit">
+            +
+          </span>
+          <div>
+            <div className="caisses-kpi-label">Crédits</div>
+            <div className="caisses-kpi-value money caisses-credit">
+              {formatFcfa(totaux.credits)}
+            </div>
+          </div>
+        </article>
+        <article>
+          <span className="caisses-ledger-kpi-ico caisses-ledger-kpi-debit">
+            −
+          </span>
+          <div>
+            <div className="caisses-kpi-label">Débits</div>
+            <div className="caisses-kpi-value money caisses-debit">
+              {formatFcfa(totaux.debits)}
+            </div>
+          </div>
+        </article>
+        <article>
+          <span className="caisses-ledger-kpi-ico">
+            <ArrowRightLeft size={15} />
+          </span>
+          <div>
+            <div className="caisses-kpi-label">En cours</div>
+            <div className="caisses-kpi-value">{pipeline.length}</div>
           </div>
         </article>
       </div>
 
-      <div className="filters-row caisses-ledger-toolbar">
-        <label>
-          Type
-          <select
-            value={filtreType}
-            onChange={(e) => setFiltreType(e.target.value)}
-          >
-            <option value="">Tous</option>
-            <option value="VENTE">Vente</option>
-            <option value="TRANSFERT_INTERNE">Transfert interne</option>
-            <option value="SORTIE_FONDS">Sortie fonds</option>
-          </select>
-        </label>
-        <label>
-          Recherche
+      <div className="caisses-ledger-toolbar">
+        <div className="dash-presets" role="group" aria-label="Type d’écriture">
+          {(
+            [
+              ['', 'Tous'],
+              ['VENTE', 'Ventes'],
+              ['TRANSFERT_INTERNE', 'Transferts'],
+              ['SORTIE_FONDS', 'Sorties'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id || 'all'}
+              type="button"
+              className={filtreType === id ? 'dash-preset actif' : 'dash-preset'}
+              onClick={() => setFiltreType(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="caisses-search caisses-ledger-search">
+          <Search size={14} />
           <input
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Libellé, initiateur…"
+            placeholder="Libellé, initiateur, montant…"
           />
         </label>
       </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          title="Grand livre vide"
-          description="Aucun mouvement VALIDÉ sur cette caisse pour l’instant."
-        />
-      ) : (
-        <table className="caisses-ledger">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Libellé</th>
-              <th>Initiateur</th>
-              <th>Débit</th>
-              <th>Crédit</th>
-              <th>Solde après</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((m) => (
-              <tr
-                key={m.id}
-                className={
-                  ligneId === m.id ? 'caisses-ledger-row-active' : undefined
-                }
-                onClick={() => setLigneId(m.id === ligneId ? null : m.id)}
-              >
-                <td>{new Date(m.dateHeure).toLocaleString('fr-FR')}</td>
-                <td>
-                  <span className="badge badge-neutral">{m.type}</span>
-                  <div className="caisses-ledger-libelle">{m.libelle}</div>
-                </td>
-                <td>
-                  {m.initiateur.prenom} {m.initiateur.nom}
-                  <div className="caisses-muted">{m.initiateur.login}</div>
-                </td>
-                <td className="money caisses-debit">
-                  {Number(m.debit) > 0 ? formatFcfa(m.debit) : '—'}
-                </td>
-                <td className="money caisses-credit">
-                  {Number(m.credit) > 0 ? formatFcfa(m.credit) : '—'}
-                </td>
-                <td className="money caisses-ledger-solde">
-                  {formatFcfa(m.soldeApres)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {detail && (
-        <aside className="caisses-ledger-detail">
-          <h4>Détail écriture</h4>
-          <dl className="caisses-dl">
-            <div>
-              <dt>Libellé</dt>
-              <dd>{detail.libelle}</dd>
+      <div
+        className={
+          detail
+            ? 'caisses-ledger-split caisses-ledger-split-open'
+            : 'caisses-ledger-split'
+        }
+      >
+        <div className="caisses-ledger-main">
+          {rows.length === 0 ? (
+            <div className="caisses-ledger-empty">
+              <div className="caisses-ledger-empty-icon">
+                <BookOpen size={28} />
+              </div>
+              <h4>Aucune écriture validée</h4>
+              <p>{hintVide}</p>
+              <div className="caisses-ledger-empty-actions">
+                {typeCaisse === TypeCaisse.TIROIR ? (
+                  <Link className="btn-primary" to="/pos">
+                    <Monitor size={14} /> Ouvrir le POS
+                  </Link>
+                ) : null}
+                {typeCaisse === TypeCaisse.MAGASIN ? (
+                  <Link
+                    className="btn-primary"
+                    to={`/transactions?caisseId=${caisseId}`}
+                  >
+                    <ArrowRightLeft size={14} /> Versements
+                  </Link>
+                ) : null}
+                <Link className="btn-secondary" to="/tresorerie">
+                  Pilotage trésorerie
+                </Link>
+              </div>
             </div>
-            <div>
-              <dt>Sens</dt>
-              <dd>{detail.sens}</dd>
-            </div>
-            <div>
-              <dt>Montant</dt>
-              <dd className="money">{formatFcfa(detail.montant)}</dd>
-            </div>
-            <div>
-              <dt>Solde après</dt>
-              <dd className="money">{formatFcfa(detail.soldeApres)}</dd>
-            </div>
-            <div>
-              <dt>Réf.</dt>
-              <dd>
-                <code>{detail.id}</code>
-              </dd>
-            </div>
-          </dl>
-          <Link
-            className="btn-ghost"
-            to={`/transactions?caisseId=${caisseId}`}
-          >
-            Voir transactions de la caisse
-          </Link>
-        </aside>
-      )}
-
-      <section className="caisses-ledger-pipeline">
-        <h4>Hors grand livre — en cours / litige</h4>
-        {enCours.isLoading && <LoadingState label="…" />}
-        {!enCours.isLoading && pipeline.length === 0 && (
-          <p className="lead">Aucune transaction non validée sur cette caisse.</p>
-        )}
-        {pipeline.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Montant</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pipeline.map((t) => (
-                <tr key={t.id}>
-                  <td>{new Date(t.dateHeure).toLocaleString('fr-FR')}</td>
-                  <td>{t.type}</td>
-                  <td className="money">{formatFcfa(t.montant)}</td>
-                  <td>
-                    <span
+          ) : (
+            <div className="caisses-ledger-scroll">
+              <table className="caisses-ledger">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Écriture</th>
+                    <th>Débit</th>
+                    <th>Crédit</th>
+                    <th>Solde</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((m) => (
+                    <tr
+                      key={m.id}
                       className={
-                        t.statut === StatutTransaction.LITIGE
-                          ? 'badge badge-critical'
-                          : 'badge badge-warning'
+                        ligneId === m.id ? 'caisses-ledger-row-active' : undefined
+                      }
+                      onClick={() =>
+                        setLigneId(m.id === ligneId ? null : m.id)
                       }
                     >
-                      {t.statut}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <td className="caisses-ledger-date">
+                        <time dateTime={m.dateHeure}>
+                          {new Date(m.dateHeure).toLocaleDateString('fr-FR')}
+                        </time>
+                        <span>
+                          {new Date(m.dateHeure).toLocaleTimeString('fr-FR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="caisses-ledger-ecriture">
+                          <span
+                            className={
+                              m.sens === 'CREDIT'
+                                ? 'caisses-ledger-dot credit'
+                                : 'caisses-ledger-dot debit'
+                            }
+                            aria-hidden
+                          />
+                          <div>
+                            <strong>{m.libelle}</strong>
+                            <span className="caisses-ledger-meta">
+                              <span className="badge badge-neutral">{m.type}</span>
+                              {m.initiateur.prenom} {m.initiateur.nom}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="money caisses-debit">
+                        {Number(m.debit) > 0 ? formatFcfa(m.debit) : '—'}
+                      </td>
+                      <td className="money caisses-credit">
+                        {Number(m.credit) > 0 ? formatFcfa(m.credit) : '—'}
+                      </td>
+                      <td className="money caisses-ledger-solde">
+                        {formatFcfa(m.soldeApres)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {detail && (
+          <aside className="caisses-ledger-detail" aria-label="Détail écriture">
+            <div className="caisses-ledger-detail-top">
+              <h4>Détail écriture</h4>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setLigneId(null)}
+              >
+                Fermer
+              </button>
+            </div>
+            <div
+              className={
+                detail.sens === 'CREDIT'
+                  ? 'caisses-ledger-sens credit'
+                  : 'caisses-ledger-sens debit'
+              }
+            >
+              {detail.sens === 'CREDIT' ? 'Crédit' : 'Débit'} ·{' '}
+              {formatFcfa(detail.montant)}
+            </div>
+            <dl className="caisses-dl">
+              <div>
+                <dt>Libellé</dt>
+                <dd>{detail.libelle}</dd>
+              </div>
+              <div>
+                <dt>Type</dt>
+                <dd>
+                  <span className="badge badge-neutral">{detail.type}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Date</dt>
+                <dd>{new Date(detail.dateHeure).toLocaleString('fr-FR')}</dd>
+              </div>
+              <div>
+                <dt>Initiateur</dt>
+                <dd>
+                  {detail.initiateur.prenom} {detail.initiateur.nom}
+                  <div className="caisses-muted">{detail.initiateur.login}</div>
+                </dd>
+              </div>
+              <div>
+                <dt>Solde après</dt>
+                <dd className="money">{formatFcfa(detail.soldeApres)}</dd>
+              </div>
+              <div>
+                <dt>Référence</dt>
+                <dd>
+                  <code>{detail.id}</code>
+                </dd>
+              </div>
+            </dl>
+            <Link
+              className="btn-secondary"
+              to={`/transactions?caisseId=${caisseId}`}
+            >
+              Transactions de la caisse
+            </Link>
+          </aside>
+        )}
+      </div>
+
+      <section className="caisses-ledger-pipeline">
+        <div className="caisses-ledger-pipeline-head">
+          <h4>Pipeline — hors grand livre</h4>
+          <span className="caisses-muted">
+            INITIÉE / EN_TRANSIT / RÉCEPTIONNÉE / LITIGE
+          </span>
+        </div>
+        {enCours.isLoading && <LoadingState label="Chargement…" />}
+        {!enCours.isLoading && pipeline.length === 0 && (
+          <div className="caisses-ledger-pipeline-empty">
+            Aucune transaction non validée sur cette caisse.
+          </div>
+        )}
+        {pipeline.length > 0 && (
+          <ul className="caisses-ledger-pipeline-list">
+            {pipeline.map((t) => (
+              <li key={t.id}>
+                <div>
+                  <strong>{t.type}</strong>
+                  <span className="caisses-muted">
+                    {new Date(t.dateHeure).toLocaleString('fr-FR')}
+                  </span>
+                </div>
+                <span className="money">{formatFcfa(t.montant)}</span>
+                <span
+                  className={
+                    t.statut === StatutTransaction.LITIGE
+                      ? 'badge badge-critical'
+                      : 'badge badge-warning'
+                  }
+                >
+                  {t.statut}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
     </div>
@@ -746,18 +896,51 @@ interface NoeudBoutique {
 
 export function CaissesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: caisses, isLoading, isError } = useCaisses();
   const { data: boutiques } = useBoutiques();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => searchParams.get('caisseId'),
+  );
   const [filtreBoutique, setFiltreBoutique] = useState('');
-  const [filtreType, setFiltreType] = useState<FiltreType>('');
+  const typeParam = searchParams.get('type');
+  const [filtreType, setFiltreType] = useState<FiltreType>(
+    typeParam === TypeCaisse.MAGASIN ||
+      typeParam === TypeCaisse.TIROIR ||
+      typeParam === TypeCaisse.CENTRALE
+      ? typeParam
+      : '',
+  );
   const [q, setQ] = useState('');
   const [masquerInactifs, setMasquerInactifs] = useState(true);
-  const [onglet, setOnglet] = useState<'apercu' | 'livre'>('apercu');
-  const [vue, setVue] = useState<'structure' | 'gestion'>('structure');
+  const [vue, setVue] = useState<'structure' | 'gestion' | 'livre'>(() => {
+    const v = searchParams.get('vue');
+    if (v === 'livre' || v === 'gestion' || v === 'structure') return v;
+    return 'structure';
+  });
   const [groupesOuverts, setGroupesOuverts] = useState<Record<string, boolean>>(
     {},
   );
+
+  useEffect(() => {
+    const vueParam = searchParams.get('vue');
+    if (vueParam === 'livre' || vueParam === 'gestion' || vueParam === 'structure') {
+      setVue(vueParam);
+    }
+    const caisseParam = searchParams.get('caisseId');
+    if (caisseParam) setSelectedId(caisseParam);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (
+      typeParam === TypeCaisse.MAGASIN ||
+      typeParam === TypeCaisse.TIROIR ||
+      typeParam === TypeCaisse.CENTRALE
+    ) {
+      setFiltreType(typeParam);
+    }
+  }, [typeParam]);
 
   const peutConfigTiroirs =
     user !== null && ROLES_CONFIG_TIROIRS.includes(user.role as RoleLibelle);
@@ -884,14 +1067,43 @@ export function CaissesPage() {
               <button
                 type="button"
                 className={vue === 'structure' ? 'dash-preset actif' : 'dash-preset'}
-                onClick={() => setVue('structure')}
+                onClick={() => {
+                  setVue('structure');
+                  setSearchParams((p) => {
+                    const n = new URLSearchParams(p);
+                    n.set('vue', 'structure');
+                    return n;
+                  });
+                }}
               >
                 Structure
               </button>
               <button
                 type="button"
+                className={vue === 'livre' ? 'dash-preset actif' : 'dash-preset'}
+                onClick={() => {
+                  setVue('livre');
+                  setSearchParams((p) => {
+                    const n = new URLSearchParams(p);
+                    n.set('vue', 'livre');
+                    if (selectedId) n.set('caisseId', selectedId);
+                    return n;
+                  });
+                }}
+              >
+                <BookOpen size={13} /> Grand livre
+              </button>
+              <button
+                type="button"
                 className={vue === 'gestion' ? 'dash-preset actif' : 'dash-preset'}
-                onClick={() => setVue('gestion')}
+                onClick={() => {
+                  setVue('gestion');
+                  setSearchParams((p) => {
+                    const n = new URLSearchParams(p);
+                    n.set('vue', 'gestion');
+                    return n;
+                  });
+                }}
               >
                 Gestion
               </button>
@@ -927,9 +1139,149 @@ export function CaissesPage() {
           onSelectCaisse={(id) => {
             setSelectedId(id);
             setVue('structure');
-            setOnglet('apercu');
           }}
         />
+      )}
+
+      {caisses && vue === 'livre' && selected && (
+        <section className="caisses-livre-special panel" aria-label="Grand livre">
+          <header className="caisses-livre-special-head">
+            <div className="caisses-livre-special-title">
+              <span className={`caisses-detail-avatar caisses-node-${selected.type.toLowerCase()}`}>
+                <TypeIcon type={selected.type} size={20} />
+              </span>
+              <div>
+                <h2>Grand livre · {labelCaisse(selected)}</h2>
+                <p>
+                  {selected.type === TypeCaisse.CENTRALE
+                    ? 'Trésorerie réseau'
+                    : nomBoutique(selected.boutiqueId)}
+                  {' · '}
+                  solde{' '}
+                  <strong className="money">
+                    {selectedSolde.isLoading
+                      ? '…'
+                      : formatFcfa(selectedSolde.data?.solde)}
+                  </strong>
+                </p>
+              </div>
+            </div>
+            <div className="caisses-livre-special-filters">
+              <label>
+                Caisse
+                <select
+                  value={selected.id}
+                  onChange={(e) => {
+                    setSelectedId(e.target.value);
+                    setSearchParams((p) => {
+                      const n = new URLSearchParams(p);
+                      n.set('vue', 'livre');
+                      n.set('caisseId', e.target.value);
+                      return n;
+                    });
+                  }}
+                >
+                  {(caisses ?? [])
+                    .slice()
+                    .sort((a, b) => {
+                      const o = {
+                        CENTRALE: 0,
+                        MAGASIN: 1,
+                        TIROIR: 2,
+                      } as Record<string, number>;
+                      return (o[a.type] ?? 9) - (o[b.type] ?? 9);
+                    })
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {typeLabel(c.type)} · {labelCaisse(c)}
+                        {c.boutiqueId
+                          ? ` (${nomBoutique(c.boutiqueId)})`
+                          : ''}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Filtrer la liste
+                <select
+                  value={filtreType}
+                  onChange={(e) => setFiltreType(e.target.value as FiltreType)}
+                >
+                  <option value="">Tous les types</option>
+                  <option value={TypeCaisse.CENTRALE}>Centrale</option>
+                  <option value={TypeCaisse.MAGASIN}>Magasin</option>
+                  <option value={TypeCaisse.TIROIR}>Tiroir</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setVue('structure');
+                  setSearchParams((p) => {
+                    const n = new URLSearchParams(p);
+                    n.set('vue', 'structure');
+                    return n;
+                  });
+                }}
+              >
+                ← Structure
+              </button>
+            </div>
+          </header>
+          <div className="caisses-livre-special-body">
+            <aside className="caisses-livre-rail">
+              <div className="caisses-livre-rail-label">Périmètre</div>
+              {(caisses ?? [])
+                .filter((c) => !filtreType || c.type === filtreType)
+                .filter((c) => !(masquerInactifs && c.actif === false))
+                .sort((a, b) => {
+                  const o = {
+                    CENTRALE: 0,
+                    MAGASIN: 1,
+                    TIROIR: 2,
+                  } as Record<string, number>;
+                  return (o[a.type] ?? 9) - (o[b.type] ?? 9);
+                })
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={
+                      selected.id === c.id
+                        ? 'caisses-livre-rail-item actif'
+                        : 'caisses-livre-rail-item'
+                    }
+                    onClick={() => {
+                      setSelectedId(c.id);
+                      setSearchParams((p) => {
+                        const n = new URLSearchParams(p);
+                        n.set('vue', 'livre');
+                        n.set('caisseId', c.id);
+                        return n;
+                      });
+                    }}
+                  >
+                    <span className={typeBadgeClass(c.type)}>
+                      {typeLabel(c.type)}
+                    </span>
+                    <span className="caisses-livre-rail-name">
+                      {labelCaisse(c)}
+                    </span>
+                    <span className="caisses-livre-rail-solde">
+                      <SoldeValue caisseId={c.id} />
+                    </span>
+                  </button>
+                ))}
+            </aside>
+            <div className="caisses-livre-special-ledger">
+              <MouvementsCaisse
+                caisseId={selected.id}
+                typeCaisse={selected.type}
+              />
+            </div>
+          </div>
+        </section>
       )}
 
       {caisses && vue === 'structure' && (
@@ -980,56 +1332,102 @@ export function CaissesPage() {
             </article>
           </section>
 
-          <div className="toolbar caisses-toolbar">
-            <label className="caisses-search">
-              <Search size={14} />
-              <input
-                type="search"
-                placeholder="Rechercher code, libellé…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </label>
-            <label>
-              Boutique
-              <select
-                value={filtreBoutique}
-                onChange={(e) => setFiltreBoutique(e.target.value)}
-              >
-                <option value="">Toutes</option>
-                <option value="__centrale">Centrale (réseau)</option>
-                {(boutiques ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nom}
-                  </option>
+          <section className="caisses-structure-filters panel" aria-label="Filtres structure">
+            <div className="caisses-structure-filters-head">
+              <div>
+                <h3>Structure du circuit</h3>
+                <p>
+                  Filtrez par boutique, type ou recherche — {filtered.length}{' '}
+                  caisse(s) visible(s)
+                </p>
+              </div>
+              <div className="caisses-structure-chips" role="group" aria-label="Type rapide">
+                {(
+                  [
+                    ['', 'Tous'],
+                    [TypeCaisse.CENTRALE, 'Centrale'],
+                    [TypeCaisse.MAGASIN, 'Magasins'],
+                    [TypeCaisse.TIROIR, 'Tiroirs'],
+                  ] as const
+                ).map(([val, lab]) => (
+                  <button
+                    key={lab}
+                    type="button"
+                    className={
+                      filtreType === val
+                        ? 'caisses-structure-chip actif'
+                        : 'caisses-structure-chip'
+                    }
+                    onClick={() => setFiltreType(val)}
+                  >
+                    {lab}
+                  </button>
                 ))}
-              </select>
-            </label>
-            <label>
-              Type
-              <select
-                value={filtreType}
-                onChange={(e) => setFiltreType(e.target.value as FiltreType)}
-              >
-                <option value="">Tous</option>
-                <option value={TypeCaisse.CENTRALE}>Centrale</option>
-                <option value={TypeCaisse.MAGASIN}>Magasin</option>
-                <option value={TypeCaisse.TIROIR}>Tiroir</option>
-              </select>
-            </label>
-            <label className="caisses-check">
-              <input
-                type="checkbox"
-                checked={masquerInactifs}
-                onChange={(e) => setMasquerInactifs(e.target.checked)}
-              />
-              Masquer inactifs
-            </label>
-          </div>
+              </div>
+            </div>
+            <div className="toolbar caisses-toolbar">
+              <label className="caisses-search">
+                <Search size={14} />
+                <input
+                  type="search"
+                  placeholder="Rechercher code, libellé…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </label>
+              <label>
+                Boutique
+                <select
+                  value={filtreBoutique}
+                  onChange={(e) => setFiltreBoutique(e.target.value)}
+                >
+                  <option value="">Toutes</option>
+                  <option value="__centrale">Centrale (réseau)</option>
+                  {(boutiques ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.nom}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="caisses-check">
+                <input
+                  type="checkbox"
+                  checked={masquerInactifs}
+                  onChange={(e) => setMasquerInactifs(e.target.checked)}
+                />
+                Masquer inactifs
+              </label>
+              <div className="caisses-structure-expand">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    const next: Record<string, boolean> = {};
+                    for (const n of arbres) next[n.boutiqueId ?? n.nom] = true;
+                    setGroupesOuverts(next);
+                  }}
+                >
+                  Tout ouvrir
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    const next: Record<string, boolean> = {};
+                    for (const n of arbres) next[n.boutiqueId ?? n.nom] = false;
+                    setGroupesOuverts(next);
+                  }}
+                >
+                  Tout plier
+                </button>
+              </div>
+            </div>
+          </section>
 
           <div className="caisses-layout">
             <ListPanel
-              title="Structure du circuit"
+              title="Arborescence"
               toolbar={
                 <span className="dash-panel-meta">
                   {filtered.length} caisse(s) · {arbres.length} boutique(s)
@@ -1056,8 +1454,7 @@ export function CaissesPage() {
                             : 'caisses-node'
                         }
                         onClick={() => {
-                          setSelectedId(centrale.id);
-                          setOnglet('apercu');
+                          navigate(`/caisses/${centrale.id}`);
                         }}
                       >
                         <span className="caisses-node-icon caisses-node-centrale">
@@ -1120,8 +1517,7 @@ export function CaissesPage() {
                                     : 'caisses-node'
                                 }
                                 onClick={() => {
-                                  setSelectedId(m.id);
-                                  setOnglet('apercu');
+                                  navigate(`/caisses/${m.id}`);
                                 }}
                               >
                                 <span className="caisses-node-icon caisses-node-magasin">
@@ -1162,8 +1558,7 @@ export function CaissesPage() {
                                   .filter(Boolean)
                                   .join(' ')}
                                 onClick={() => {
-                                  setSelectedId(t.id);
-                                  setOnglet('apercu');
+                                  navigate(`/caisses/${t.id}`);
                                 }}
                               >
                                 <span className="caisses-node-rail" aria-hidden />
@@ -1259,25 +1654,30 @@ export function CaissesPage() {
                     <button
                       type="button"
                       role="tab"
-                      aria-selected={onglet === 'apercu'}
-                      className={onglet === 'apercu' ? 'actif' : undefined}
-                      onClick={() => setOnglet('apercu')}
+                      aria-selected
+                      className="actif"
                     >
                       Aperçu
                     </button>
                     <button
                       type="button"
                       role="tab"
-                      aria-selected={onglet === 'livre'}
-                      className={onglet === 'livre' ? 'actif' : undefined}
-                      onClick={() => setOnglet('livre')}
+                      aria-selected={false}
+                      onClick={() => {
+                        setVue('livre');
+                        setSearchParams((p) => {
+                          const n = new URLSearchParams(p);
+                          n.set('vue', 'livre');
+                          n.set('caisseId', selected.id);
+                          return n;
+                        });
+                      }}
                     >
-                      Grand livre
+                      <BookOpen size={13} /> Grand livre
                     </button>
                   </div>
 
-                  {onglet === 'apercu' && (
-                    <div className="caisses-detail-panel">
+                  <div className="caisses-detail-panel">
                       <dl className="caisses-dl">
                         <div>
                           <dt>Rôle dans le circuit</dt>
@@ -1308,6 +1708,9 @@ export function CaissesPage() {
                       </dl>
 
                       <div className="caisses-detail-actions">
+                        <Link className="btn-primary" to={`/caisses/${selected.id}`}>
+                          Ouvrir la fiche
+                        </Link>
                         {selected.type === TypeCaisse.MAGASIN ? (
                           <Link
                             className="btn-primary"
@@ -1324,7 +1727,15 @@ export function CaissesPage() {
                         <button
                           type="button"
                           className="btn-secondary"
-                          onClick={() => setOnglet('livre')}
+                          onClick={() => {
+                            setVue('livre');
+                            setSearchParams((p) => {
+                              const n = new URLSearchParams(p);
+                              n.set('vue', 'livre');
+                              n.set('caisseId', selected.id);
+                              return n;
+                            });
+                          }}
                         >
                           <BookOpen size={14} /> Voir le grand livre
                         </button>
@@ -1339,13 +1750,6 @@ export function CaissesPage() {
                         ) : null}
                       </div>
                     </div>
-                  )}
-
-                  {onglet === 'livre' && (
-                    <div className="caisses-detail-panel">
-                      <MouvementsCaisse caisseId={selected.id} />
-                    </div>
-                  )}
                 </>
               )}
             </section>
