@@ -78,13 +78,37 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     token: string,
     caisseId: string,
     montant: number,
+    type: 'VENTE' | 'SORTIE_FONDS' = 'VENTE',
   ): Promise<TransactionDto> {
     const response = await request(app.getHttpServer())
       .post('/transactions')
       .set('Authorization', `Bearer ${token}`)
-      .send({ caisseId, type: 'VENTE', montant })
+      .send({ caisseId, type, montant })
       .expect(201);
     return response.body as TransactionDto;
+  }
+
+  async function cycleJusquaReceptionnee(
+    tokenInit: string,
+    caisseId: string,
+    montant: number,
+    type: 'VENTE' | 'SORTIE_FONDS' = 'VENTE',
+  ): Promise<TransactionDto> {
+    const transaction = await initierTransaction(
+      tokenInit,
+      caisseId,
+      montant,
+      type,
+    );
+    await request(app.getHttpServer())
+      .patch(`/transactions/${transaction.id}/transit`)
+      .set('Authorization', `Bearer ${tokens.respB1}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/transactions/${transaction.id}/receptionner`)
+      .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+      .expect(200);
+    return transaction;
   }
 
   beforeAll(async () => {
@@ -587,6 +611,232 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         .get('/transactions/00000000-0000-0000-0000-000000000000')
         .set('Authorization', `Bearer ${tokens.daf}`)
         .expect(404);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Contrepartie CENTRALE + régularisation LITIGE (règles validées)
+  // ---------------------------------------------------------------------
+  describe('contrepartie CENTRALE et régularisation litige', () => {
+    it('crédite la CENTRALE et débite l’auxiliaire quand une SORTIE_FONDS est VALIDEE sans écart', async () => {
+      const soldeAuxAvant = await request(app.getHttpServer())
+        .get(`/caisses/${caisseBoutique1Id}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      const soldeCenAvant = await request(app.getHttpServer())
+        .get(`/caisses/${caisseCentraleId}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        800,
+        'SORTIE_FONDS',
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 800 })
+        .expect(200);
+
+      const miroir = await env.prisma.transactionCaisse.findFirst({
+        where: { transactionSourceId: transaction.id },
+      });
+      expect(miroir).not.toBeNull();
+      expect(miroir!.caisseId).toBe(caisseCentraleId);
+      expect(miroir!.type).toBe('VENTE');
+      expect(miroir!.statut).toBe('VALIDEE');
+      expect(Number(miroir!.montant)).toBe(800);
+
+      const soldeAuxApres = await request(app.getHttpServer())
+        .get(`/caisses/${caisseBoutique1Id}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      const soldeCenApres = await request(app.getHttpServer())
+        .get(`/caisses/${caisseCentraleId}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+
+      expect(Number((soldeAuxApres.body as { solde: string }).solde)).toBe(
+        Number((soldeAuxAvant.body as { solde: string }).solde) - 800,
+      );
+      expect(Number((soldeCenApres.body as { solde: string }).solde)).toBe(
+        Number((soldeCenAvant.body as { solde: string }).solde) + 800,
+      );
+
+      // Idempotence : un second rapprochement est refusé, pas de double miroir.
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 800 })
+        .expect(400);
+      const miroirs = await env.prisma.transactionCaisse.count({
+        where: { transactionSourceId: transaction.id },
+      });
+      expect(miroirs).toBe(1);
+    });
+
+    it('ne crée pas de miroir CENTRALE quand le rapprochement aboutit en LITIGE', async () => {
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        600,
+        'SORTIE_FONDS',
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 550 })
+        .expect(200);
+
+      const miroir = await env.prisma.transactionCaisse.findFirst({
+        where: { transactionSourceId: transaction.id },
+      });
+      expect(miroir).toBeNull();
+    });
+
+    it('régularise LITIGE → VALIDEE (Contrôle interne) et crédite la CENTRALE du montant retenu', async () => {
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        400,
+        'SORTIE_FONDS',
+      );
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 350 })
+        .expect(200);
+
+      const soldeCenAvant = await request(app.getHttpServer())
+        .get(`/caisses/${caisseCentraleId}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+
+      const regularisee = await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/regulariser`)
+        .set('Authorization', `Bearer ${tokens.controle}`)
+        .send({ montantRetenu: 380, motif: 'Écart partiel accepté après inventaire' })
+        .expect(200);
+      expect((regularisee.body as TransactionDto).statut).toBe('VALIDEE');
+
+      const miroir = await env.prisma.transactionCaisse.findFirst({
+        where: { transactionSourceId: transaction.id },
+      });
+      expect(miroir).not.toBeNull();
+      expect(Number(miroir!.montant)).toBe(380);
+
+      const soldeCenApres = await request(app.getHttpServer())
+        .get(`/caisses/${caisseCentraleId}/solde`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      expect(Number((soldeCenApres.body as { solde: string }).solde)).toBe(
+        Number((soldeCenAvant.body as { solde: string }).solde) + 380,
+      );
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: {
+          entiteId: transaction.id,
+          action: 'TRANSACTION_REGULARISEE',
+        },
+      });
+      expect(audit).not.toBeNull();
+    });
+
+    it('refuse (403) qu’un CAISSIER_BOUTIQUE ou CAISSIER_CENTRAL régularise un litige', async () => {
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        250,
+        'SORTIE_FONDS',
+      );
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 200 })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/regulariser`)
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .send({ montantRetenu: 250, motif: 'Tentative boutique' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/regulariser`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRetenu: 250, motif: 'Tentative central' })
+        .expect(403);
+    });
+
+    it('autorise le DAF à régulariser un litige', async () => {
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        180,
+        'SORTIE_FONDS',
+      );
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 100 })
+        .expect(200);
+
+      const regularisee = await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/regulariser`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .send({ montantRetenu: 180, motif: 'Validation DAF niveau 2' })
+        .expect(200);
+      expect((regularisee.body as TransactionDto).statut).toBe('VALIDEE');
+    });
+
+    it('GET /transactions filtre par statut et type', async () => {
+      await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        99,
+        'SORTIE_FONDS',
+      );
+
+      const litiges = await request(app.getHttpServer())
+        .get('/transactions?statut=LITIGE')
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      expect(
+        (litiges.body as TransactionDto[]).every((t) => t.statut === 'LITIGE'),
+      ).toBe(true);
+
+      const sorties = await request(app.getHttpServer())
+        .get('/transactions?type=SORTIE_FONDS')
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      expect(
+        (sorties.body as TransactionDto[]).every(
+          (t) => t.type === 'SORTIE_FONDS',
+        ),
+      ).toBe(true);
+    });
+
+    it('GET /transactions/:id inclut bordereau et caisse', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        42,
+      );
+      const detail = await request(app.getHttpServer())
+        .get(`/transactions/${transaction.id}`)
+        .set('Authorization', `Bearer ${tokens.daf}`)
+        .expect(200);
+      const body = detail.body as {
+        bordereau?: { montantDeclare: string };
+        caisse?: { id: string };
+      };
+      expect(body.bordereau).toBeDefined();
+      expect(Number(body.bordereau!.montantDeclare)).toBe(42);
+      expect(body.caisse?.id).toBe(caisseBoutique1Id);
     });
   });
 });

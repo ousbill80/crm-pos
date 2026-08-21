@@ -39,4 +39,13 @@ export class CaissesController {
   getSolde(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.caissesService.getSolde(id, user);
   }
+
+  @Get(':id/mouvements')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  getMouvements(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.caissesService.getMouvements(id, user);
+  }
 }

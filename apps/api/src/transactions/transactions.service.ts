@@ -4,8 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, TransactionCaisse } from '@prisma/client';
-import { StatutTransaction, TypeCaisse } from '@caisse-crm/shared';
+import { Prisma, TransactionCaisse, TypeCaisse as PrismaTypeCaisse } from '@prisma/client';
+import {
+  StatutTransaction,
+  TypeCaisse,
+  TypeTransaction,
+} from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/types';
@@ -21,7 +25,16 @@ import {
 import { TransactionStateMachineService } from './transaction-state-machine.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
+import { RegulariserTransactionDto } from './dto/regulariser-transaction.dto';
 import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
+
+type TxClient = Prisma.TransactionClient;
+
+const DETAIL_INCLUDE = {
+  bordereau: { include: { reception: true } },
+  caisse: { include: { boutique: { select: { id: true, nom: true } } } },
+  contreparties: true,
+} as const;
 
 // Orchestre le cycle de vie d'une TransactionCaisse (§6.4). Toute évolution
 // de statut passe par TransactionStateMachineService (objet de domaine
@@ -38,8 +51,6 @@ export class TransactionsService {
   ) {}
 
   // INITIEE — Caissier boutique / Responsable boutique (§6.4).
-  // Initie à la fois la TransactionCaisse et son bordereau de versement
-  // (le montant déclaré sur le bordereau est celui de la transaction).
   async initier(
     dto: CreateTransactionDto,
     utilisateur: AuthenticatedUser,
@@ -53,16 +64,11 @@ export class TransactionsService {
     }
 
     if (caisse.type !== TypeCaisse.AUXILIAIRE) {
-      // §6.4 : seule une caisse auxiliaire (boutique) initie un versement /
-      // une sortie de fonds à destination de la caisse centrale.
       throw new BadRequestException(
         'Seule une caisse auxiliaire (boutique) peut initier une transaction de versement / sortie de fonds.',
       );
     }
 
-    // Périmètre de données (§6.2) : un utilisateur rattaché à une boutique
-    // ne peut initier une transaction que depuis une caisse de sa propre
-    // boutique — appliqué côté serveur, jamais seulement côté UI.
     if (
       utilisateur.boutiqueId &&
       caisse.boutiqueId !== utilisateur.boutiqueId
@@ -109,10 +115,6 @@ export class TransactionsService {
     return transaction;
   }
 
-  // EN_TRANSIT — Responsable boutique (§6.4). Le cahier des charges
-  // mentionne également un "convoyeur", mais aucun rôle correspondant
-  // n'existe dans le référentiel RoleLibelle : implémenté avec
-  // RESPONSABLE_BOUTIQUE uniquement (voir rapport de fin de tâche).
   async passerEnTransit(
     id: string,
     utilisateur: AuthenticatedUser,
@@ -140,9 +142,6 @@ export class TransactionsService {
     return misAJour;
   }
 
-  // RECEPTIONNEE — Caissier Central / DAF uniquement (§6.4). Ne fait
-  // qu'acter la réception physique ; le rapprochement (comparaison avec le
-  // montant déclaré) est une étape distincte (cf. rapprocher()).
   async receptionner(
     id: string,
     utilisateur: AuthenticatedUser,
@@ -169,12 +168,8 @@ export class TransactionsService {
     return misAJour;
   }
 
-  // VALIDEE ou LITIGE — Caissier Central / DAF uniquement (§6.4), à l'issue
-  // du rapprochement entre le montant déclaré (bordereau) et le montant
-  // effectivement reçu. Écart nul => VALIDEE ; écart non nul => LITIGE.
-  // L'arbitrage d'un LITIGE par le Contrôle interne est mentionné par le
-  // cahier des charges sans workflow de résolution concret : non implémenté
-  // ici (voir rapport de fin de tâche).
+  // VALIDEE ou LITIGE — Caissier Central / DAF (§6.4). Écart nul => VALIDEE
+  // (+ miroir CENTRALE si SORTIE_FONDS) ; écart non nul => LITIGE (pas de miroir).
   async rapprocher(
     id: string,
     dto: RapprocherTransactionDto,
@@ -190,8 +185,6 @@ export class TransactionsService {
     }
 
     if (!transaction.bordereau) {
-      // Ne devrait jamais se produire : le bordereau est créé en même temps
-      // que la transaction lors de l'initiation.
       throw new BadRequestException(
         'Aucun bordereau de versement associé à cette transaction.',
       );
@@ -228,10 +221,24 @@ export class TransactionsService {
         },
       });
 
-      return tx.transactionCaisse.update({
+      const updated = await tx.transactionCaisse.update({
         where: { id },
         data: { statut: statutFinal },
       });
+
+      if (
+        statutFinal === StatutTransaction.VALIDEE &&
+        transaction.type === TypeTransaction.SORTIE_FONDS
+      ) {
+        await this.creerContrepartieCentrale(
+          tx,
+          updated,
+          montantDeclare,
+          utilisateur.userId,
+        );
+      }
+
+      return updated;
     });
 
     await this.audit.record({
@@ -252,19 +259,102 @@ export class TransactionsService {
     return misAJour;
   }
 
-  // Lecture (§6.2) : périmètre de données identique à celui des caisses —
-  // réseau entier pour la trésorerie réseau, zone pour le superviseur, et
-  // boutique propre pour le périmètre boutique. Filtrage appliqué côté
-  // serveur via la relation caisse -> boutique -> zone.
+  // LITIGE → VALIDEE — Contrôle interne / DAF (§6.4 régularisation).
+  async regulariser(
+    id: string,
+    dto: RegulariserTransactionDto,
+    utilisateur: AuthenticatedUser,
+  ): Promise<TransactionCaisse> {
+    const transaction = await this.prisma.transactionCaisse.findUnique({
+      where: { id },
+      include: { bordereau: { include: { reception: true } } },
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction introuvable.');
+    }
+
+    if (transaction.statut !== StatutTransaction.LITIGE) {
+      throw new BadRequestException(
+        'Seule une transaction en LITIGE peut être régularisée.',
+      );
+    }
+
+    if (!transaction.bordereau?.reception) {
+      throw new BadRequestException(
+        'Aucun rapprochement associé à cette transaction en litige.',
+      );
+    }
+
+    this.stateMachine.assertTransitionAutorisee(
+      StatutTransaction.LITIGE,
+      StatutTransaction.VALIDEE,
+    );
+
+    const montantDeclare = new Prisma.Decimal(
+      transaction.bordereau.montantDeclare,
+    );
+    const montantRetenu = new Prisma.Decimal(dto.montantRetenu);
+    const ecart = montantRetenu.minus(montantDeclare);
+
+    const misAJour = await this.prisma.$transaction(async (tx) => {
+      await tx.receptionValidation.update({
+        where: { id: transaction.bordereau!.reception!.id },
+        data: {
+          montantRecu: montantRetenu,
+          ecart,
+          statutFinal: StatutTransaction.VALIDEE,
+          validateurId: utilisateur.userId,
+        },
+      });
+
+      const updated = await tx.transactionCaisse.update({
+        where: { id },
+        data: { statut: StatutTransaction.VALIDEE },
+      });
+
+      if (
+        transaction.type === TypeTransaction.SORTIE_FONDS &&
+        montantRetenu.greaterThan(0)
+      ) {
+        await this.creerContrepartieCentrale(
+          tx,
+          updated,
+          montantRetenu,
+          utilisateur.userId,
+        );
+      }
+
+      return updated;
+    });
+
+    await this.audit.record({
+      utilisateurId: utilisateur.userId,
+      action: 'TRANSACTION_REGULARISEE',
+      entite: 'TransactionCaisse',
+      entiteId: id,
+      details: JSON.stringify({
+        motif: dto.motif,
+        montantDeclare: montantDeclare.toString(),
+        montantRetenu: montantRetenu.toString(),
+        ecart: ecart.toString(),
+      }),
+    });
+
+    return misAJour;
+  }
+
   async findAll(
     utilisateur: AuthenticatedUser,
     query: ListTransactionsQueryDto,
   ): Promise<TransactionCaisse[]> {
-    const statutFiltre = query.statut ? { statut: query.statut } : {};
+    const where: Prisma.TransactionCaisseWhereInput = {
+      ...this.buildFiltres(query),
+    };
 
     if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
       return this.prisma.transactionCaisse.findMany({
-        where: statutFiltre,
+        where,
         orderBy: { dateHeure: 'desc' },
       });
     }
@@ -275,7 +365,7 @@ export class TransactionsService {
         utilisateur,
       );
       return this.prisma.transactionCaisse.findMany({
-        where: { ...statutFiltre, caisse: { boutique: { zoneId } } },
+        where: { ...where, caisse: { boutique: { zoneId } } },
         orderBy: { dateHeure: 'desc' },
       });
     }
@@ -283,7 +373,7 @@ export class TransactionsService {
     if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
       const boutiqueId = requireOwnBoutiqueId(utilisateur);
       return this.prisma.transactionCaisse.findMany({
-        where: { ...statutFiltre, caisse: { boutiqueId } },
+        where: { ...where, caisse: { boutiqueId } },
         orderBy: { dateHeure: 'desc' },
       });
     }
@@ -293,41 +383,69 @@ export class TransactionsService {
     );
   }
 
-  async findOne(
-    id: string,
-    utilisateur: AuthenticatedUser,
-  ): Promise<TransactionCaisse> {
-    const transaction = await this.trouverOuEchouer(id);
+  async findOne(id: string, utilisateur: AuthenticatedUser) {
+    const transaction = await this.prisma.transactionCaisse.findUnique({
+      where: { id },
+      include: DETAIL_INCLUDE,
+    });
 
-    if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
-      return transaction;
+    if (!transaction) {
+      throw new NotFoundException('Transaction introuvable.');
     }
 
-    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
-      const zoneId = await resolveZoneScopeForSuperviseur(
-        this.prisma,
-        utilisateur,
+    await this.assertLectureAutorisee(transaction, utilisateur);
+    return transaction;
+  }
+
+  private buildFiltres(
+    query: ListTransactionsQueryDto,
+  ): Prisma.TransactionCaisseWhereInput {
+    const where: Prisma.TransactionCaisseWhereInput = {};
+    if (query.statut) where.statut = query.statut;
+    if (query.type) where.type = query.type;
+    if (query.caisseId) where.caisseId = query.caisseId;
+    if (query.from || query.to) {
+      where.dateHeure = {};
+      if (query.from) where.dateHeure.gte = query.from;
+      if (query.to) where.dateHeure.lte = query.to;
+    }
+    return where;
+  }
+
+  // Écriture miroir append-only sur la caisse CENTRALE unique.
+  // Idempotente : une seule contrepartie par transaction source.
+  private async creerContrepartieCentrale(
+    tx: TxClient,
+    source: TransactionCaisse,
+    montant: Prisma.Decimal,
+    initiateurId: string,
+  ): Promise<void> {
+    const existante = await tx.transactionCaisse.findFirst({
+      where: { transactionSourceId: source.id },
+    });
+    if (existante) {
+      return;
+    }
+
+    const centrale = await tx.caisse.findFirst({
+      where: { type: PrismaTypeCaisse.CENTRALE },
+    });
+    if (!centrale) {
+      throw new BadRequestException(
+        'Aucune caisse CENTRALE configurée pour enregistrer la contrepartie.',
       );
-      const boutiqueId = transaction.caisse.boutiqueId;
-      const boutique = boutiqueId
-        ? await this.prisma.boutique.findUnique({ where: { id: boutiqueId } })
-        : null;
-      if (!boutique || boutique.zoneId !== zoneId) {
-        throw new ForbiddenException(
-          'Vous ne pouvez consulter que les transactions de votre propre zone.',
-        );
-      }
-      return transaction;
     }
 
-    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
-      this.verifierPerimetreBoutique(transaction, utilisateur);
-      return transaction;
-    }
-
-    throw new ForbiddenException(
-      `Rôle "${utilisateur.role}" non habilité à consulter les transactions.`,
-    );
+    await tx.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.VENTE,
+        montant,
+        statut: StatutTransaction.VALIDEE,
+        caisseId: centrale.id,
+        initiateurId,
+        transactionSourceId: source.id,
+      },
+    });
   }
 
   private async trouverOuEchouer(
@@ -345,8 +463,43 @@ export class TransactionsService {
     return transaction;
   }
 
-  // Périmètre de données (§6.2) : un utilisateur rattaché à une boutique ne
-  // peut agir que sur les transactions de sa propre boutique.
+  private async assertLectureAutorisee(
+    transaction: TransactionCaisse & {
+      caisse: { boutiqueId: string | null; boutique?: { id: string; nom: string } | null };
+    },
+    utilisateur: AuthenticatedUser,
+  ): Promise<void> {
+    if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
+      return;
+    }
+
+    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
+      const zoneId = await resolveZoneScopeForSuperviseur(
+        this.prisma,
+        utilisateur,
+      );
+      const boutiqueId = transaction.caisse.boutiqueId;
+      const boutique = boutiqueId
+        ? await this.prisma.boutique.findUnique({ where: { id: boutiqueId } })
+        : null;
+      if (!boutique || boutique.zoneId !== zoneId) {
+        throw new ForbiddenException(
+          'Vous ne pouvez consulter que les transactions de votre propre zone.',
+        );
+      }
+      return;
+    }
+
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
+      this.verifierPerimetreBoutique(transaction, utilisateur);
+      return;
+    }
+
+    throw new ForbiddenException(
+      `Rôle "${utilisateur.role}" non habilité à consulter les transactions.`,
+    );
+  }
+
   private verifierPerimetreBoutique(
     transaction: TransactionCaisse & { caisse?: { boutiqueId: string | null } },
     utilisateur: AuthenticatedUser,

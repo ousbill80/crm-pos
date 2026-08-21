@@ -69,7 +69,7 @@ type Statut = StatutTransactionType;
 
 // Test unitaire pur (aucune DB nécessaire) de la machine à états §6.4 :
 //   INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE
-//                                          -> LITIGE
+//                                          -> LITIGE -> VALIDEE (régularisation)
 describe('TransactionStateMachineService', () => {
   let service: TransactionStateMachineService;
 
@@ -83,6 +83,7 @@ describe('TransactionStateMachineService', () => {
       [StatutTransaction.EN_TRANSIT, StatutTransaction.RECEPTIONNEE],
       [StatutTransaction.RECEPTIONNEE, StatutTransaction.VALIDEE],
       [StatutTransaction.RECEPTIONNEE, StatutTransaction.LITIGE],
+      [StatutTransaction.LITIGE, StatutTransaction.VALIDEE],
     ])('autorise %s -> %s', (depuis: Statut, vers: Statut) => {
       expect(() =>
         service.assertTransitionAutorisee(depuis, vers),
@@ -102,8 +103,9 @@ describe('TransactionStateMachineService', () => {
       [StatutTransaction.RECEPTIONNEE, StatutTransaction.INITIEE],
       [StatutTransaction.VALIDEE, StatutTransaction.LITIGE],
       [StatutTransaction.VALIDEE, StatutTransaction.RECEPTIONNEE],
-      [StatutTransaction.LITIGE, StatutTransaction.VALIDEE],
       [StatutTransaction.LITIGE, StatutTransaction.RECEPTIONNEE],
+      [StatutTransaction.LITIGE, StatutTransaction.EN_TRANSIT],
+      [StatutTransaction.LITIGE, StatutTransaction.INITIEE],
     ])('rejette %s -> %s', (depuis: Statut, vers: Statut) => {
       expect(() => service.assertTransitionAutorisee(depuis, vers)).toThrow(
         BadRequestException,
@@ -111,8 +113,10 @@ describe('TransactionStateMachineService', () => {
     });
   });
 
-  it('VALIDEE et LITIGE sont des états terminaux (aucune transition sortante)', () => {
+  it('VALIDEE est terminal ; LITIGE n’autorise que VALIDEE (régularisation)', () => {
     expect(service.transitionsPermises(StatutTransaction.VALIDEE)).toEqual([]);
-    expect(service.transitionsPermises(StatutTransaction.LITIGE)).toEqual([]);
+    expect(service.transitionsPermises(StatutTransaction.LITIGE)).toEqual([
+      StatutTransaction.VALIDEE,
+    ]);
   });
 });

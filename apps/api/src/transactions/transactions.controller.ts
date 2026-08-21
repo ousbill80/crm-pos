@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   RoleLibelle,
+  ROLES_REGULARISATION_LITIGE,
   ROLES_VALIDATION_CAISSE_CENTRALE,
 } from '@caisse-crm/shared';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -21,6 +22,7 @@ import { ROLES_LECTURE_CAISSES } from '../caisses/access-scope.constants';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
+import { RegulariserTransactionDto } from './dto/regulariser-transaction.dto';
 import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
 
 // Endpoints de la machine à états des transactions de caisse (§6.4). Chaque
@@ -98,5 +100,17 @@ export class TransactionsController {
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.transactionsService.rapprocher(id, dto, utilisateur);
+  }
+
+  // LITIGE → VALIDEE — §6.4 : Contrôle interne / DAF uniquement.
+  @Patch(':id/regulariser')
+  @Roles(...ROLES_REGULARISATION_LITIGE)
+  @HttpCode(HttpStatus.OK)
+  regulariser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RegulariserTransactionDto,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.transactionsService.regulariser(id, dto, utilisateur);
   }
 }

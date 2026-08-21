@@ -17,6 +17,31 @@ export interface TransactionDto {
   statut: StatutTransaction;
   caisseId: string;
   initiateurId: string;
+  transactionSourceId?: string | null;
+  bordereau?: BordereauDto | null;
+  caisse?: CaisseDto & {
+    boutique?: { id: string; nom: string } | null;
+  };
+  contreparties?: TransactionDto[];
+}
+
+export interface BordereauDto {
+  id: string;
+  transactionId: string;
+  montantDeclare: string;
+  dateEmission: string;
+  pieceJointe: string | null;
+  reception?: ReceptionValidationDto | null;
+}
+
+export interface ReceptionValidationDto {
+  id: string;
+  bordereauId: string;
+  montantRecu: string;
+  ecart: string;
+  statutFinal: StatutTransaction;
+  validateurId: string;
+  dateReception: string;
 }
 
 export interface CaisseDto {
@@ -71,13 +96,56 @@ export interface TableauDeBordClientDto {
   niveauFidelite: NiveauFidelite;
 }
 
+export type StatutStock = 'RUPTURE' | 'SOUS_SEUIL' | 'OK';
+
 export interface ProduitDto {
   id: string;
   designation: string;
+  reference: string | null;
+  categorie: string | null;
+  description: string | null;
+  actif: boolean;
   prixUnitaire: string;
   stock: number;
   seuilReappro: number | null;
   coutMoyenPondere: string;
+  statutStock: StatutStock;
+  margeUnitaire: string;
+  tauxMarge: string;
+  valeurStock: string;
+}
+
+export interface ProduitsSyntheseDto {
+  nombreProduits: number;
+  actifs: number;
+  inactifs: number;
+  ruptures: number;
+  sousSeuil: number;
+  sansSeuil: number;
+  margesNegatives: number;
+  valeurStock: string;
+}
+
+export interface ProduitAnalyseDto {
+  produit: ProduitDto;
+  repartitionStock: Array<{
+    entrepotId: string;
+    nom: string;
+    code: string;
+    quantite: number;
+  }>;
+  performance30j: {
+    quantiteVendue: number;
+    chiffreAffaires: string;
+    coutDesVentes: string;
+    margeBrute: string;
+    joursCouverture: number | null;
+  };
+  suggestionReappro: {
+    necessaire: boolean;
+    quantiteSuggeree: number;
+    motif: string;
+  };
 }
 
 export interface MouvementStockDto {
@@ -90,6 +158,9 @@ export interface MouvementStockDto {
   reference: string | null;
   dateHeure: string;
   utilisateurId: string;
+  produit?: { designation: string };
+  entrepot?: { code: string; nom: string } | null;
+  utilisateur?: { prenom: string; nom: string };
 }
 
 export interface LigneVenteDto {
@@ -213,6 +284,7 @@ export interface EntrepotDto {
   boutiqueId: string;
   type: 'PRINCIPAL' | 'SECONDAIRE';
   actif: boolean;
+  boutique?: { id: string; nom: string };
 }
 
 export interface StockQuantDto {
@@ -220,6 +292,84 @@ export interface StockQuantDto {
   produitId: string;
   entrepotId: string;
   quantite: number;
-  produit: { designation: string; seuilReappro: number | null };
-  entrepot: { nom: string; code: string; boutiqueId: string };
+  produit: {
+    designation: string;
+    seuilReappro: number | null;
+    coutMoyenPondere?: string;
+    prixUnitaire?: string;
+    stock?: number;
+  };
+  entrepot: {
+    nom: string;
+    code: string;
+    boutiqueId: string;
+    boutique?: { nom: string };
+  };
+}
+
+export type StatutStockLigne = 'RUPTURE' | 'SOUS_SEUIL' | 'OK';
+export type SanteStock = 'OK' | 'VIGILANCE' | 'CRITIQUE';
+
+export interface StockSyntheseDto {
+  genereAt: string;
+  fenetreVentesJours: number;
+  sante: SanteStock;
+  kpis: {
+    skuDistincts: number;
+    unitesTotales: number;
+    valeurStock: string;
+    ruptures: number;
+    sousSeuil: number;
+    couvertureJoursMediane: number | null;
+  };
+  parEntrepot: Array<{
+    entrepotId: string;
+    code: string;
+    nom: string;
+    boutiqueId: string;
+    nomBoutique: string;
+    unites: number;
+    valeur: string;
+    ruptures: number;
+    sousSeuil: number;
+  }>;
+  lignes: Array<{
+    produitId: string;
+    designation: string;
+    reference: string | null;
+    categorie: string | null;
+    actif: boolean;
+    seuilReappro: number | null;
+    coutMoyenPondere: string;
+    stockReseau: number;
+    valeur: string;
+    ventesUnites14j: number;
+    couvertureJours: number | null;
+    statut: StatutStockLigne;
+    parEntrepot: Array<{
+      entrepotId: string;
+      quantite: number;
+      statut: StatutStockLigne;
+    }>;
+  }>;
+  suggestionsTransfert: Array<{
+    produitId: string;
+    designation: string;
+    entrepotSourceId: string;
+    sourceCode: string;
+    sourceQuantite: number;
+    entrepotDestId: string;
+    destCode: string;
+    destQuantite: number;
+    destStatut: StatutStockLigne;
+    quantiteSuggeree: number;
+    motif: string;
+  }>;
+  suggestionsReappro: Array<{
+    produitId: string;
+    designation: string;
+    reference: string | null;
+    deficit: number;
+    motif: string;
+  }>;
 }

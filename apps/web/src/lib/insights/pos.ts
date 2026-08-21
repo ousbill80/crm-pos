@@ -1,0 +1,153 @@
+import { NiveauFidelite } from '@caisse-crm/shared';
+import type { ClientDto } from '../types';
+import type { Insight } from './types';
+
+// Insights POS ancrés sur des règles déjà en vigueur (plafond remise 20 %
+// serveur, caisse auxiliaire, vente anonyme §6.6, litige = Caissier Central).
+// Aucun seuil monétaire inventé.
+
+export function insightRemisePos(remise: number, brut: number): Insight {
+  const plafond = brut * 0.2;
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (brut <= 0) {
+    return {
+      title: 'Remise',
+      interpretation: "Aucune ligne au panier : la remise n'a pas d'effet.",
+      severity: 'neutral',
+    };
+  }
+  if (remise <= 0) {
+    return {
+      title: 'Remise',
+      interpretation: `Plafond serveur : 20 % du montant brut, soit ${fmt(plafond)} FCFA. Au-delà, l'encaissement est refusé.`,
+      severity: 'info',
+    };
+  }
+  if (remise > plafond) {
+    return {
+      title: 'Remise au-dessus du plafond',
+      interpretation: `${fmt(remise)} FCFA dépasse le plafond de 20 % (${fmt(plafond)} FCFA). L'API refusera l'encaissement.`,
+      recommendation: 'Réduire la remise au plus au plafond avant d’encaisser.',
+      severity: 'critical',
+    };
+  }
+  const ratio = remise / brut;
+  const proche = ratio >= 0.16;
+  return {
+    title: 'Remise',
+    interpretation: `${fmt(remise)} FCFA, soit ${Math.round(ratio * 100)} % du brut (plafond 20 % = ${fmt(plafond)} FCFA).`,
+    recommendation: proche
+      ? 'Vous approchez du plafond de 20 % appliqué après répartition sur les lignes.'
+      : undefined,
+    severity: proche ? 'warning' : 'info',
+  };
+}
+
+export function insightSessionPos(input: {
+  nombreVentes: number;
+  chiffreAffaires: number;
+  dureeMinutes: number;
+}): Insight {
+  const ca = Math.round(input.chiffreAffaires).toLocaleString('fr-FR');
+  return {
+    title: 'Session de caisse',
+    interpretation: `${input.nombreVentes} vente(s) pour ${ca} FCFA, ouverte depuis ${input.dureeMinutes} min. La clôture génère un bordereau d'espèces au statut Initiée.`,
+    recommendation:
+      'Clôturer en fin de service. La boutique initie le versement ; elle ne peut ni réceptionner ni valider (§1, §6.4).',
+    severity: 'info',
+  };
+}
+
+export function insightCaisseAuxiliairePos(): Insight {
+  return {
+    title: 'Caisse auxiliaire',
+    interpretation:
+      'Cette caisse boutique encaisse les ventes et initie le bordereau de versement à la clôture. Elle ne peut jamais valider, réceptionner ni solder une transaction.',
+    severity: 'info',
+  };
+}
+
+export function insightClientPos(client: ClientDto | null): Insight {
+  if (!client) {
+    return {
+      title: 'Vente anonyme',
+      interpretation:
+        "Aucun client rattaché — la vente anonyme reste toujours possible (§6.6). L'historique d'achats et la fidélité ne seront pas mis à jour.",
+      recommendation:
+        'Rattacher la fiche si le client est identifié, pour consolider son historique réseau.',
+      severity: 'neutral',
+    };
+  }
+  const points = client.fidelite?.pointsCumules ?? 0;
+  const niveau = client.fidelite?.niveau ?? NiveauFidelite.BRONZE;
+  return {
+    title: `${client.prenom} ${client.nom}`,
+    interpretation: `Segment ${client.segment}, palier ${niveau}, ${points} point(s). Fiche unique réseau — l'achat sera visible depuis n'importe quelle boutique.`,
+    severity: 'info',
+  };
+}
+
+export function insightMonnaiePos(recu: number, total: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (recu <= 0) {
+    return {
+      title: 'Espèces',
+      interpretation: `Total à encaisser : ${fmt(total)} FCFA. Saisir le montant reçu pour calculer la monnaie.`,
+      severity: 'info',
+    };
+  }
+  const rendu = recu - total;
+  if (rendu < 0) {
+    return {
+      title: 'Montant insuffisant',
+      interpretation: `Reçu ${fmt(recu)} FCFA pour un total de ${fmt(total)} FCFA.`,
+      recommendation: 'Le reçu doit être au moins égal au total avant validation.',
+      severity: 'warning',
+    };
+  }
+  return {
+    title: 'Monnaie à rendre',
+    interpretation: `Reçu ${fmt(recu)} FCFA — monnaie ${fmt(rendu)} FCFA. Calcul d'interface uniquement : l'API n'enregistre que le mode ESPECES et le total.`,
+    severity: 'ok',
+  };
+}
+
+export function insightEcartCloture(
+  fondTheorique: number,
+  fondCompte: number | null,
+): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (fondCompte === null) {
+    return {
+      title: 'Fond théorique',
+      interpretation: `Fond initial + ventes espèces − retours espèces = ${fmt(fondTheorique)} FCFA. Aide au comptage, calculée côté caisse.`,
+      recommendation:
+        "Un écart au comptage n'ouvre pas un litige ici. Le litige naît au rapprochement par le Caissier Central (§6.4).",
+      severity: 'info',
+    };
+  }
+  const ecart = fondCompte - fondTheorique;
+  if (Math.abs(ecart) < 0.5) {
+    return {
+      title: 'Comptage aligné',
+      interpretation: `Fond compté égal au fond théorique (${fmt(fondTheorique)} FCFA).`,
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Écart de comptage',
+    interpretation: `Fond compté ${fmt(fondCompte)} FCFA vs théorique ${fmt(fondTheorique)} FCFA (écart ${ecart > 0 ? '+' : ''}${fmt(ecart)} FCFA).`,
+    recommendation:
+      "Cet écart est informatif. Un litige n'est déclenché que par le Caissier Central lors du rapprochement (§6.4) — la boutique ne valide jamais.",
+    severity: 'warning',
+  };
+}
+
+export function insightTemoinOuverture(): Insight {
+  return {
+    title: 'Témoin',
+    interpretation:
+      'Comptage contradictoire obligatoire (§5.1) : le témoin est un Caissier ou Responsable de la même boutique, distinct de vous. Son login suffit — pas de re-saisie du mot de passe.',
+    severity: 'info',
+  };
+}

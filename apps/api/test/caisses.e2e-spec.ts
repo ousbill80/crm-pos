@@ -274,6 +274,26 @@ describe('Caisses / Zones / Boutiques (e2e)', () => {
     });
   });
 
+  describe('GET /caisses/:id/mouvements — grand livre lecture', () => {
+    it('liste les mouvements VALIDEE de la caisse', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/caisses/${caisse1Id}/mouvements`)
+        .set(auth(tokens.direction))
+        .expect(200);
+      const body = response.body as Array<{ statut: string; caisseId: string }>;
+      expect(body.length).toBeGreaterThan(0);
+      expect(body.every((m) => m.statut === 'VALIDEE')).toBe(true);
+      expect(body.every((m) => m.caisseId === caisse1Id)).toBe(true);
+    });
+
+    it('refuse (403) les mouvements hors périmètre boutique', () => {
+      return request(app.getHttpServer())
+        .get(`/caisses/${caisse2Id}/mouvements`)
+        .set(auth(tokens.respBoutique1))
+        .expect(403);
+    });
+  });
+
   // ---------------------------------------------------------------------
   // 2) Périmètre boutique : accès direct par id refusé (403), listes filtrées.
   // ---------------------------------------------------------------------

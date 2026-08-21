@@ -5,7 +5,7 @@ import { StatutTransaction, TRANSITIONS_AUTORISEES } from '@caisse-crm/shared';
 // caisse (§6.4 du cahier des charges) :
 //
 //   INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE
-//                                          -> LITIGE
+//                                          -> LITIGE -> VALIDEE (régularisation)
 //
 // Toute action de TransactionsService qui fait évoluer le statut d'une
 // TransactionCaisse DOIT passer par ce service — aucune logique de

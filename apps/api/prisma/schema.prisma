@@ -154,7 +154,7 @@ enum TypeTransaction {
 
 // Machine à états stricte — §6.4 du cahier des charges.
 // INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE
-//                                       -> LITIGE
+//                                       -> LITIGE -> VALIDEE (régularisation)
 enum StatutTransaction {
   INITIEE
   EN_TRANSIT
@@ -174,9 +174,19 @@ model TransactionCaisse {
   initiateur   Utilisateur       @relation("Initiateur", fields: [initiateurId], references: [id])
   initiateurId String
 
+  // Contrepartie CENTRALE : écriture miroir d'une SORTIE_FONDS auxiliaire
+  // validée (ou régularisée). La transaction source pointe vers null ;
+  // le miroir porte transactionSourceId = id de la transaction boutique.
+  transactionSource   TransactionCaisse?  @relation("ContrepartieCentrale", fields: [transactionSourceId], references: [id])
+  transactionSourceId String?
+  contreparties       TransactionCaisse[] @relation("ContrepartieCentrale")
+
   bordereau     BordereauVersement?
   sessionCaisse SessionCaisse?
 
+  @@index([caisseId])
+  @@index([statut])
+  @@index([transactionSourceId])
   @@map("transaction_caisse")
 }
 
@@ -214,6 +224,17 @@ model ReceptionValidation {
 model Produit {
   id               String           @id @default(uuid())
   designation      String
+  // Référence interne / SKU — unique si renseignée (NULL autorisé plusieurs
+  // fois). Sert au POS et à la recherche catalogue (§6.3.2).
+  reference        String?          @unique
+  // Classification libre (Protection, Charge, Audio…) — pas d'enum figé :
+  // le cahier des charges ne prescrit pas de nomenclature.
+  categorie        String?
+  description      String?
+  // Désactivation sans suppression : l'historique des ventes reste intact
+  // (cohérent avec le grand livre append-only). Un produit inactif ne peut
+  // plus être encaissé et n'alimente plus l'alerte STOCK_BAS.
+  actif            Boolean          @default(true)
   prixUnitaire     Decimal          @db.Decimal(14, 2)
   // Cache réseau = somme(StockQuant.quantite). Ne jamais écrire à la
   // main — passer par StockService.
@@ -230,6 +251,8 @@ model Produit {
   mouvements       MouvementStock[]
   quants           StockQuant[]
 
+  @@index([categorie])
+  @@index([actif])
   @@map("produit")
 }
 
@@ -392,6 +415,12 @@ model LigneVente {
   // contrôle serveur dans ventes.service.ts (extension au-delà du cahier
   // des charges, assumée — voir plan de la tâche).
   remise       Decimal       @default(0) @db.Decimal(14, 2)
+  // Snapshot immuable du CMP (Produit.coutMoyenPondere) au moment de la
+  // vente — sert de base à la rentabilité par boutique (reporting.service.ts).
+  // Jamais recalculé rétroactivement, même si le CMP évolue ensuite (cohérence
+  // grand livre). Nullable : les ventes antérieures à l'introduction de ce
+  // suivi n'ont pas de coût connu — on ne fabrique pas de valeur a posteriori.
+  coutUnitaire Decimal?      @db.Decimal(14, 2)
   retours      RetourVente[]
 
   @@map("ligne_vente")

@@ -4,7 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Caisse } from '@prisma/client';
+import type { Caisse, TransactionCaisse } from '@prisma/client';
+import { StatutTransaction } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthenticatedUser } from '../auth/types';
 import {
@@ -114,6 +115,20 @@ export class CaissesService {
     await this.findOne(id, user);
     const solde = await this.caisseBalanceService.calculerSolde(id);
     return { caisseId: id, solde: solde.toFixed(2) };
+  }
+
+  // Grand livre lecture seule : mouvements VALIDEE de la caisse (jamais
+  // le cache soldeCourant).
+  async getMouvements(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<TransactionCaisse[]> {
+    await this.findOne(id, user);
+    return this.prisma.transactionCaisse.findMany({
+      where: { caisseId: id, statut: StatutTransaction.VALIDEE },
+      orderBy: { dateHeure: 'desc' },
+      take: 200,
+    });
   }
 
   private async assertCaisseInScope(

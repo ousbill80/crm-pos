@@ -16,7 +16,7 @@ export type TypeTransaction = (typeof TypeTransaction)[keyof typeof TypeTransact
 
 // Machine à états stricte — §6.4 du cahier des charges.
 // INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE
-//                                       -> LITIGE
+//                                       -> LITIGE -> VALIDEE (régularisation)
 export const StatutTransaction = {
   INITIEE: 'INITIEE',
   EN_TRANSIT: 'EN_TRANSIT',
@@ -26,15 +26,16 @@ export const StatutTransaction = {
 } as const;
 export type StatutTransaction = (typeof StatutTransaction)[keyof typeof StatutTransaction];
 
-// Transitions autorisées par rôle (§6.4). Utilisé côté API pour la garde
-// RBAC et côté client pour n'afficher que les actions permises —
-// l'application de la règle reste toujours faite côté serveur.
+// Transitions autorisées (§6.4). Utilisé côté API pour la garde RBAC et côté
+// client pour n'afficher que les actions permises — l'application de la
+// règle reste toujours faite côté serveur. LITIGE -> VALIDEE = régularisation
+// Contrôle interne / DAF uniquement (voir ROLES_REGULARISATION_LITIGE).
 export const TRANSITIONS_AUTORISEES: Record<StatutTransaction, StatutTransaction[]> = {
   INITIEE: [StatutTransaction.EN_TRANSIT],
   EN_TRANSIT: [StatutTransaction.RECEPTIONNEE],
   RECEPTIONNEE: [StatutTransaction.VALIDEE, StatutTransaction.LITIGE],
   VALIDEE: [],
-  LITIGE: [],
+  LITIGE: [StatutTransaction.VALIDEE],
 };
 
 export const RoleLibelle = {
@@ -53,6 +54,12 @@ export type RoleLibelle = (typeof RoleLibelle)[keyof typeof RoleLibelle];
 // Rôles habilités à réceptionner/valider une transaction (§6.4, règle imperative).
 export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
+  RoleLibelle.DAF,
+];
+
+// Régularisation d'un LITIGE (§6.4) : Contrôle interne (arbitrage) + DAF (niveau 2).
+export const ROLES_REGULARISATION_LITIGE: RoleLibelle[] = [
+  RoleLibelle.CONTROLEUR_INTERNE,
   RoleLibelle.DAF,
 ];
 
