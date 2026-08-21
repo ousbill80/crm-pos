@@ -63,3 +63,52 @@ export const ROLES_LECTURE_CAISSES: RoleLibelle[] = [
   ROLE_SUPERVISEUR_ZONE,
   ...ROLES_PERIMETRE_BOUTIQUE,
 ];
+
+// Inventaire physique (sécurité du stock) : comptage en boutique, sans le
+// convoyeur (hors périmètre inventaire). La validation est un rôle distinct.
+export const ROLES_INVENTAIRE_COMPTAGE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.CAISSIER_BOUTIQUE,
+];
+
+export const ROLES_INVENTAIRE_VALIDATION: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Réception fournisseur : SI / DG (réseau) + responsable boutique (son périmètre). */
+export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Bons de commande : SI / DG / responsable boutique (création + confirmation). */
+export const ROLES_COMMANDE_ACHAT: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Factures fournisseur (saisie / comptabilisation) : SI, DG, DAF. */
+export const ROLES_FACTURE_FOURNISSEUR: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
+/**
+ * Paiements fournisseur — grand livre Achats, pas TRANSACTION_CAISSE §6.4.
+ * DAF + Caissier Central uniquement (trésorerie). Boutique et SI exclus.
+ */
+export const ROLES_PAIEMENT_FOURNISSEUR: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.CAISSIER_CENTRAL,
+];
+
+/** Fréquence cible (jours) au-delà de laquelle un entrepôt est « à inventorier ». */
+export const INVENTAIRE_FREQUENCE_CIBLE_JOURS = 30;

@@ -36,10 +36,11 @@ export class CaissesService {
     private readonly audit: AuditService,
   ) {}
 
-
   async create(dto: CreateCaisseDto, user: AuthenticatedUser) {
     if (!ROLES_ADMIN_STRUCTURE.includes(user.role)) {
-      throw new ForbiddenException('Création de caisse réservée à l\'admin structure.');
+      throw new ForbiddenException(
+        "Création de caisse réservée à l'admin structure.",
+      );
     }
     if (dto.type === 'CENTRALE') {
       throw new BadRequestException(
@@ -47,7 +48,9 @@ export class CaissesService {
       );
     }
     if (dto.type === 'AUXILIAIRE' && !dto.boutiqueId) {
-      throw new BadRequestException('boutiqueId obligatoire pour une caisse AUXILIAIRE.');
+      throw new BadRequestException(
+        'boutiqueId obligatoire pour une caisse AUXILIAIRE.',
+      );
     }
     const boutique = await this.prisma.boutique.findUnique({
       where: { id: dto.boutiqueId },

@@ -1,4 +1,10 @@
-import { IsBoolean, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 import { TypeEntrepot } from '@prisma/client';
 
 export class UpdateEntrepotDto {

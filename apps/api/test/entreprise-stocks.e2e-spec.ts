@@ -110,8 +110,18 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
     produitId = produit.id;
 
     await creerUtilisateur('respsi-es', 'RESPONSABLE_SI', null, 1);
-    await creerUtilisateur('caissier-a-es', 'CAISSIER_BOUTIQUE', boutiqueAId, 4);
-    await creerUtilisateur('caissier-b-es', 'CAISSIER_BOUTIQUE', boutiqueBId, 4);
+    await creerUtilisateur(
+      'caissier-a-es',
+      'CAISSIER_BOUTIQUE',
+      boutiqueAId,
+      4,
+    );
+    await creerUtilisateur(
+      'caissier-b-es',
+      'CAISSIER_BOUTIQUE',
+      boutiqueBId,
+      4,
+    );
     await creerUtilisateur('respcrm-es', 'RESPONSABLE_CRM', null, 1);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -167,7 +177,10 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
         .set(auth(tokens.respsi))
         .send({ raisonSociale: 'CaissePOS Demo', telephone: '+221770000000' })
         .expect(200);
-      const body = response.body as { raisonSociale: string; telephone: string };
+      const body = response.body as {
+        raisonSociale: string;
+        telephone: string;
+      };
       expect(body.raisonSociale).toBe('CaissePOS Demo');
       expect(body.telephone).toBe('+221770000000');
     });
@@ -262,9 +275,9 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
         .set(auth(tokens.respsi))
         .expect(200);
       const body = response.body as { produitId: string; quantite: number }[];
-      expect(body.some((q) => q.produitId === produitId && q.quantite === 20)).toBe(
-        true,
-      );
+      expect(
+        body.some((q) => q.produitId === produitId && q.quantite === 20),
+      ).toBe(true);
     });
 
     it('refuse (403) caissier A hors périmètre sur stocks entrepôt B', async () => {

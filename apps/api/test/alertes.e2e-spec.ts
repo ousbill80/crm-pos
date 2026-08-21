@@ -214,6 +214,29 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     );
   });
 
+  it('STOCK_BAS ignore un produit inactif même sous son seuil', async () => {
+    await env.prisma.produit.create({
+      data: {
+        designation: 'Produit inactif stock bas',
+        prixUnitaire: '1000.00',
+        stock: 1,
+        seuilReappro: 5,
+        actif: false,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+
+    const body = response.body as AlerteDto[];
+    const stockBas = body.filter((a) => a.type === 'STOCK_BAS');
+    expect(
+      stockBas.some((a) => a.message.includes('Produit inactif stock bas')),
+    ).toBe(false);
+  });
+
   it('CAISSIER_BOUTIQUE voit écart/retard de sa boutique, pas les ACCES_REFUSE réseau', async () => {
     const response = await request(app.getHttpServer())
       .get('/alertes')

@@ -7,7 +7,10 @@ import {
   IsNumber,
   IsOptional,
   IsPositive,
+  IsString,
   IsUUID,
+  MaxLength,
+  MinLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -47,4 +50,11 @@ export class CreateVenteDto {
   @IsOptional()
   @IsUUID()
   clientId?: string;
+
+  // Idempotence hors-ligne (§6.7) : UUID généré côté caisse.
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  clientOperationId?: string;
 }

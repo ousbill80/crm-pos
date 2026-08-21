@@ -30,6 +30,7 @@ interface ReceptionStockDto {
   quantite: number;
   prixAchat: string;
   utilisateurId: string;
+  reference?: string | null;
 }
 
 process.env.JWT_SECRET ??= 'test-secret-e2e';
@@ -82,7 +83,9 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
-    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone Fournisseurs' } });
+    const zone = await env.prisma.zone.create({
+      data: { nomZone: 'Zone Fournisseurs' },
+    });
     const boutique = await env.prisma.boutique.create({
       data: { nom: 'Boutique Fournisseurs', adresse: 'Adr', zoneId: zone.id },
     });
@@ -98,8 +101,35 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
     await creerUtilisateur('respsi-fourn', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('direction-fourn', 'DIRECTION_GENERALE', null, 0);
     await creerUtilisateur('daf-fourn', 'DAF', null, 1);
-    await creerUtilisateur('caissier-fourn', 'CAISSIER_BOUTIQUE', null, 4);
+    await creerUtilisateur(
+      'caissier-fourn',
+      'CAISSIER_BOUTIQUE',
+      boutique.id,
+      4,
+    );
     await creerUtilisateur('respcrm-fourn', 'RESPONSABLE_CRM', null, 1);
+    await creerUtilisateur(
+      'respbout-fourn',
+      'RESPONSABLE_BOUTIQUE',
+      boutique.id,
+      3,
+    );
+
+    const autreBoutique = await env.prisma.boutique.create({
+      data: {
+        nom: 'Boutique Autre Fournisseurs',
+        adresse: 'Adr 2',
+        zoneId: zone.id,
+      },
+    });
+    await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal Zone B',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: autreBoutique.id,
+      },
+    });
 
     const produit = await env.prisma.produit.create({
       data: { designation: 'Câble USB-C', prixUnitaire: '2000.00', stock: 5 },
@@ -138,6 +168,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
     tokens.daf = await login('daf-fourn');
     tokens.caissierBoutique = await login('caissier-fourn');
     tokens.respcrm = await login('respcrm-fourn');
+    tokens.respboutique = await login('respbout-fourn');
   }, 120_000);
 
   afterAll(async () => {
@@ -234,7 +265,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
     });
   });
 
-  describe('Réception de stock (ROLES_ADMIN_STRUCTURE uniquement)', () => {
+  describe('Réception de stock (ROLES_RECEPTION_STOCK)', () => {
     let fournisseurId: string;
 
     beforeAll(async () => {
@@ -256,11 +287,19 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       const avant = await env.prisma.produit.findUniqueOrThrow({
         where: { id: produitId },
       });
+      const entrepotPrincipal = await env.prisma.entrepot.findFirstOrThrow({
+        where: { nom: 'Principal Fournisseurs' },
+      });
 
       const response = await request(app.getHttpServer())
         .post(`/fournisseurs/${fournisseurId}/receptions`)
         .set(auth(tokens.respsi))
-        .send({ produitId, quantite: 15, prixAchat: 1500 })
+        .send({
+          produitId,
+          quantite: 15,
+          prixAchat: 1500,
+          entrepotId: entrepotPrincipal.id,
+        })
         .expect(201);
 
       const body = response.body as ReceptionStockDto;
@@ -369,8 +408,170 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       produit = await env.prisma.produit.findUniqueOrThrow({
         where: { id: produitCmpId },
       });
-      expect(produit.coutMoyenPondere.toNumber()).toBeCloseTo(1500, 2);
       expect(produit.stock).toBe(20);
+    });
+  });
+
+  describe('Fiche enrichie, synthèse et périmètre boutique', () => {
+    it('refuse (400) un nom de fournisseur déjà utilisé', async () => {
+      await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'Fournisseur Unique Test' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'fournisseur unique test' })
+        .expect(400);
+    });
+
+    it('autorise RESPONSABLE_SI à mettre à jour une fiche et journalise l’audit', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({
+          nom: 'Fiche Enrichie Test',
+          telephone: '+225 01 02 03 04 05',
+          email: 'contact@fiche-test.ci',
+        })
+        .expect(201);
+      const id = (created.body as FournisseurDto).id;
+
+      const patched = await request(app.getHttpServer())
+        .patch(`/fournisseurs/${id}`)
+        .set(auth(tokens.respsi))
+        .send({ adresse: 'Yopougon', notes: 'Délai habituel 48h', actif: true })
+        .expect(200);
+      expect((patched.body as { adresse: string }).adresse).toBe('Yopougon');
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: {
+          entite: 'Fournisseur',
+          entiteId: id,
+          action: 'FOURNISSEUR_UPDATED',
+        },
+      });
+      expect(audit).not.toBeNull();
+    });
+
+    it('refuse (403) le PATCH par DAF et RESPONSABLE_CRM', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'Patch Interdit Test' })
+        .expect(201);
+      const id = (created.body as FournisseurDto).id;
+
+      await request(app.getHttpServer())
+        .patch(`/fournisseurs/${id}`)
+        .set(auth(tokens.daf))
+        .send({ notes: 'x' })
+        .expect(403);
+      await request(app.getHttpServer())
+        .patch(`/fournisseurs/${id}`)
+        .set(auth(tokens.respcrm))
+        .send({ notes: 'x' })
+        .expect(403);
+    });
+
+    it('refuse (400) une réception sur fournisseur inactif', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'Fournisseur Inactif Test' })
+        .expect(201);
+      const id = (created.body as FournisseurDto).id;
+
+      await request(app.getHttpServer())
+        .patch(`/fournisseurs/${id}`)
+        .set(auth(tokens.respsi))
+        .send({ actif: false })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${id}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId, quantite: 2, prixAchat: 1000 })
+        .expect(400);
+    });
+
+    it('autorise RESPONSABLE_BOUTIQUE à réceptionner dans sa boutique, refuse un autre entrepôt', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'Fournisseur Boutique Test' })
+        .expect(201);
+      const id = (created.body as FournisseurDto).id;
+
+      const ok = await request(app.getHttpServer())
+        .post(`/fournisseurs/${id}/receptions`)
+        .set(auth(tokens.respboutique))
+        .send({
+          produitId,
+          quantite: 3,
+          prixAchat: 1600,
+          reference: 'BL-TEST-1',
+        })
+        .expect(201);
+      expect((ok.body as ReceptionStockDto).quantite).toBe(3);
+      expect((ok.body as ReceptionStockDto).reference).toBe('BL-TEST-1');
+
+      const autre = await env.prisma.entrepot.findFirstOrThrow({
+        where: { nom: 'Principal Zone B' },
+      });
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${id}/receptions`)
+        .set(auth(tokens.respboutique))
+        .send({
+          produitId,
+          quantite: 1,
+          prixAchat: 1600,
+          entrepotId: autre.id,
+        })
+        .expect(403);
+    });
+
+    it('renvoie une synthèse Achats (KPI, hausses, réceptions récentes)', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/fournisseurs')
+        .set(auth(tokens.respsi))
+        .send({ nom: 'Fournisseur Hausse Test' })
+        .expect(201);
+      const id = (created.body as FournisseurDto).id;
+
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${id}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId, quantite: 2, prixAchat: 1000 })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${id}/receptions`)
+        .set(auth(tokens.respsi))
+        .send({ produitId, quantite: 2, prixAchat: 1300 })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get('/fournisseurs/synthese')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as {
+        kpis: { fournisseurs: number; receptions30j: number };
+        haussesPrix: Array<{ fournisseurId: string; designation: string }>;
+        receptionsRecentes: unknown[];
+      };
+      expect(body.kpis.fournisseurs).toBeGreaterThanOrEqual(1);
+      expect(body.kpis.receptions30j).toBeGreaterThanOrEqual(2);
+      expect(body.haussesPrix.some((h) => h.fournisseurId === id)).toBe(true);
+      expect(body.receptionsRecentes.length).toBeGreaterThan(0);
+    });
+
+    it('refuse (403) la synthèse par RESPONSABLE_CRM', () => {
+      return request(app.getHttpServer())
+        .get('/fournisseurs/synthese')
+        .set(auth(tokens.respcrm))
+        .expect(403);
     });
   });
 

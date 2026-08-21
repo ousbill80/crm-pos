@@ -1,4 +1,11 @@
-import { IsInt, IsOptional, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class AjusterStockDto {
   @IsUUID()

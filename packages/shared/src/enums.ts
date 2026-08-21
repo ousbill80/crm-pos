@@ -90,6 +90,12 @@ export const SegmentClient = {
 } as const;
 export type SegmentClient = (typeof SegmentClient)[keyof typeof SegmentClient];
 
+export const TypeClient = {
+  PHYSIQUE: 'PHYSIQUE',
+  MORALE: 'MORALE',
+} as const;
+export type TypeClient = (typeof TypeClient)[keyof typeof TypeClient];
+
 export const NiveauFidelite = {
   BRONZE: 'BRONZE',
   ARGENT: 'ARGENT',
@@ -124,3 +130,75 @@ export const StatutSessionCaisse = {
   FERMEE: 'FERMEE',
 } as const;
 export type StatutSessionCaisse = (typeof StatutSessionCaisse)[keyof typeof StatutSessionCaisse];
+
+// ---------------------------------------------------------------------------
+// Achats — cycle commande → réception → facture → paiement.
+// Extension validée par l'utilisateur (hors MCD §6.5 d'origine). Les
+// paiements fournisseur sont un grand livre append-only distinct de
+// TRANSACTION_CAISSE (§6.4) : ils ne débitent pas une caisse boutique.
+// ---------------------------------------------------------------------------
+
+export const StatutCommandeAchat = {
+  BROUILLON: 'BROUILLON',
+  CONFIRMEE: 'CONFIRMEE',
+  PARTIELLEMENT_RECEPTIONNEE: 'PARTIELLEMENT_RECEPTIONNEE',
+  RECEPTIONNEE: 'RECEPTIONNEE',
+  CLOTUREE: 'CLOTUREE',
+  ANNULEE: 'ANNULEE',
+} as const;
+export type StatutCommandeAchat =
+  (typeof StatutCommandeAchat)[keyof typeof StatutCommandeAchat];
+
+export const TRANSITIONS_COMMANDE_ACHAT: Record<
+  StatutCommandeAchat,
+  StatutCommandeAchat[]
+> = {
+  BROUILLON: [StatutCommandeAchat.CONFIRMEE, StatutCommandeAchat.ANNULEE],
+  CONFIRMEE: [
+    StatutCommandeAchat.PARTIELLEMENT_RECEPTIONNEE,
+    StatutCommandeAchat.RECEPTIONNEE,
+    StatutCommandeAchat.ANNULEE,
+  ],
+  PARTIELLEMENT_RECEPTIONNEE: [StatutCommandeAchat.RECEPTIONNEE],
+  RECEPTIONNEE: [StatutCommandeAchat.CLOTUREE],
+  CLOTUREE: [],
+  ANNULEE: [],
+};
+
+export const StatutFactureFournisseur = {
+  BROUILLON: 'BROUILLON',
+  COMPTABILISEE: 'COMPTABILISEE',
+  PARTIELLEMENT_PAYEE: 'PARTIELLEMENT_PAYEE',
+  PAYEE: 'PAYEE',
+  ANNULEE: 'ANNULEE',
+} as const;
+export type StatutFactureFournisseur =
+  (typeof StatutFactureFournisseur)[keyof typeof StatutFactureFournisseur];
+
+export const TRANSITIONS_FACTURE_FOURNISSEUR: Record<
+  StatutFactureFournisseur,
+  StatutFactureFournisseur[]
+> = {
+  BROUILLON: [
+    StatutFactureFournisseur.COMPTABILISEE,
+    StatutFactureFournisseur.ANNULEE,
+  ],
+  COMPTABILISEE: [
+    StatutFactureFournisseur.PARTIELLEMENT_PAYEE,
+    StatutFactureFournisseur.PAYEE,
+  ],
+  PARTIELLEMENT_PAYEE: [
+    StatutFactureFournisseur.PARTIELLEMENT_PAYEE,
+    StatutFactureFournisseur.PAYEE,
+  ],
+  PAYEE: [],
+  ANNULEE: [],
+};
+
+export const ModePaiementFournisseur = {
+  VIREMENT: 'VIREMENT',
+  ESPECES: 'ESPECES',
+  MOBILE_MONEY: 'MOBILE_MONEY',
+} as const;
+export type ModePaiementFournisseur =
+  (typeof ModePaiementFournisseur)[keyof typeof ModePaiementFournisseur];

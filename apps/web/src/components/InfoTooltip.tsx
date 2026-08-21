@@ -44,7 +44,10 @@ export function InfoTooltip({ insight }: { insight: Insight }) {
         className="info-tooltip-trigger"
         aria-describedby={open ? panelId : undefined}
         aria-label={`Explication : ${insight.title}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
         onFocus={() => setOpen(true)}
       >
         <Info size={13} />

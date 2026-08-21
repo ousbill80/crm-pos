@@ -23,7 +23,6 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
   let boutique2Id: string;
   let caisseBoutique1Id: string;
   let caisseBoutique1PosId: string;
-  let caisseBoutique2Id: string;
   let produitId: string;
   let caissierB1Id: string;
   let temoinB1Id: string;
@@ -85,17 +84,32 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
     const caisse1Pos = await env.prisma.caisse.create({
       data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
     });
-    const caisse2 = await env.prisma.caisse.create({
+    await env.prisma.caisse.create({
       data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
     });
     caisseBoutique1Id = caisse1.id;
     caisseBoutique1PosId = caisse1Pos.id;
-    caisseBoutique2Id = caisse2.id;
 
     const produit = await env.prisma.produit.create({
-      data: { designation: 'Chargeur USB-C', prixUnitaire: '2000.00', stock: 100 },
+      data: {
+        designation: 'Chargeur USB-C',
+        prixUnitaire: '2000.00',
+        stock: 100,
+      },
     });
     produitId = produit.id;
+
+    const entrepot1 = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Principal Export 1',
+        code: 'PRINCIPAL',
+        type: 'PRINCIPAL',
+        boutiqueId: boutique1Id,
+      },
+    });
+    await env.prisma.stockQuant.create({
+      data: { produitId: produit.id, entrepotId: entrepot1.id, quantite: 100 },
+    });
 
     caissierB1Id = await creerUtilisateur(
       'exp-caissier-b1',
@@ -109,7 +123,12 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
       boutique1Id,
       3,
     );
-    await creerUtilisateur('exp-caissier-b2', 'CAISSIER_BOUTIQUE', boutique2Id, 4);
+    await creerUtilisateur(
+      'exp-caissier-b2',
+      'CAISSIER_BOUTIQUE',
+      boutique2Id,
+      4,
+    );
     await creerUtilisateur('exp-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('exp-crm', 'RESPONSABLE_CRM', null, 1);
 
@@ -187,11 +206,14 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .set('Authorization', `Bearer ${tokens.central}`)
         .expect(200);
 
-      expect(response.body.chiffreAffaires.total).toBe('8000.00');
-      const parMode = response.body.chiffreAffaires.parModePaiement as Array<{
-        modePaiement: string;
-        montant: string;
-      }>;
+      const body = response.body as {
+        chiffreAffaires: {
+          total: string;
+          parModePaiement: Array<{ modePaiement: string; montant: string }>;
+        };
+      };
+      expect(body.chiffreAffaires.total).toBe('8000.00');
+      const parMode = body.chiffreAffaires.parModePaiement;
       expect(parMode.find((m) => m.modePaiement === 'ESPECES')?.montant).toBe(
         '6000.00',
       );
@@ -208,7 +230,8 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .set('Authorization', `Bearer ${tokens.central}`)
         .expect(200);
 
-      expect(response.body.chiffreAffaires.total).toBe('7000.00');
+      const body = response.body as { chiffreAffaires: { total: string } };
+      expect(body.chiffreAffaires.total).toBe('7000.00');
     });
 
     it('rejette une dateFrom mal formée (400)', async () => {
@@ -251,7 +274,9 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .expect(200);
 
       expect(response.headers['content-type']).toContain('text/csv');
-      expect(response.text.split('\r\n')[0]).toBe('Boutique,Chiffre d’affaires');
+      expect(response.text.split('\r\n')[0]).toBe(
+        'Boutique,Chiffre d’affaires',
+      );
       expect(response.text).toContain('Boutique Export 1,8000.00');
     });
 
@@ -314,7 +339,7 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .expect(200);
 
       expect(response.headers['content-type']).toBe('application/pdf');
-      expect(response.body.length).toBeGreaterThan(100);
+      expect((response.body as Buffer).length).toBeGreaterThan(100);
     });
 
     it('refuse une autre boutique (403)', async () => {
@@ -341,7 +366,9 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
 
     it('404 sur une session inexistante', async () => {
       await request(app.getHttpServer())
-        .get('/ventes/sessions/00000000-0000-0000-0000-000000000000/cloture/pdf')
+        .get(
+          '/ventes/sessions/00000000-0000-0000-0000-000000000000/cloture/pdf',
+        )
         .set('Authorization', `Bearer ${tokens.central}`)
         .expect(404);
     });

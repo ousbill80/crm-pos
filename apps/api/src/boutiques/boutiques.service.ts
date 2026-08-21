@@ -100,7 +100,6 @@ export class BoutiquesService {
     return boutique;
   }
 
-
   async update(
     id: string,
     dto: UpdateBoutiqueDto,

@@ -151,3 +151,44 @@ export function insightTemoinOuverture(): Insight {
     severity: 'info',
   };
 }
+
+export function insightCommandeEnAttente(count: number): Insight {
+  return {
+    title: 'Ticket en attente',
+    interpretation:
+      'Le panier est parqué sur cette caisse uniquement : aucun encaissement, aucun mouvement de stock. Vous pouvez servir le client suivant puis reprendre ce ticket.',
+    recommendation:
+      count > 0
+        ? `${count} ticket(s) en attente — reprendre ou abandonner avant la clôture.`
+        : undefined,
+    severity: count > 0 ? 'info' : 'neutral',
+  };
+}
+
+export function insightHorsLignePos(pending: number, online: boolean): Insight {
+  if (!online) {
+    return {
+      title: 'Caisse hors ligne',
+      interpretation:
+        'Les encaissements sont mis en file locale et seront synchronisés à la reconnexion (append serveur, sans modifier une vente déjà enregistrée).',
+      recommendation:
+        pending > 0
+          ? `${pending} ticket(s) en attente — ne pas clôturer la session tant que la file n'est pas vide.`
+          : 'Vous pouvez encaisser ; la clôture reste bloquée tant qu’une vente n’est pas synchronisée.',
+      severity: 'warning',
+    };
+  }
+  if (pending > 0) {
+    return {
+      title: 'Synchronisation en cours',
+      interpretation: `${pending} encaissement(s) encore en file d'attente. La synchro reprend dès que le réseau répond.`,
+      recommendation: 'Ne pas clôturer la session tant que la file n’est pas vide — le bordereau espèces doit inclure toutes les ventes.',
+      severity: 'warning',
+    };
+  }
+  return {
+    title: 'Caisse en ligne',
+    interpretation: 'Les encaissements partent directement au serveur. File hors-ligne vide.',
+    severity: 'ok',
+  };
+}

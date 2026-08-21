@@ -1,4 +1,12 @@
-import { IsInt, IsNumber, IsOptional, IsPositive, IsUUID } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateReceptionDto {
   @IsUUID()
@@ -17,4 +25,15 @@ export class CreateReceptionDto {
   @IsOptional()
   @IsUUID()
   entrepotId?: string;
+
+  /** Référence de livraison (BL). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  reference?: string;
+
+  /** Ligne de bon de commande — plafonne la quantité restante. */
+  @IsOptional()
+  @IsUUID()
+  ligneCommandeId?: string;
 }

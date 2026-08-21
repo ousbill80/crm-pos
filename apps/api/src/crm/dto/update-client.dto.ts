@@ -6,13 +6,17 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { SegmentClient } from '@caisse-crm/shared';
+import { SegmentClient, TypeClient } from '@caisse-crm/shared';
 
 // Modification de fiche client, y compris la segmentation manuelle
 // (§6.6 : "segmentation paramétrable" — ici réglable manuellement par le
 // Responsable CRM ; voir aussi POST /crm/clients/:id/segment/recalculer
 // pour une proposition automatique basée sur l'historique d'achats).
 export class UpdateClientDto {
+  @IsOptional()
+  @IsEnum(TypeClient)
+  typeClient?: TypeClient;
+
   @IsOptional()
   @IsString()
   @MinLength(1)

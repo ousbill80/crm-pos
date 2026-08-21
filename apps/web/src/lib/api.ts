@@ -35,6 +35,34 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return (await res.json()) as T;
 }
 
+// NestJS renvoie { message: string | string[] }. On expose le texte métier
+// plutôt que le JSON brut pour les alertes POS / formulaires.
+export function messageDepuisApi(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(err.message) as { message?: unknown };
+    if (typeof parsed.message === 'string' && parsed.message.trim()) {
+      return parsed.message;
+    }
+    if (Array.isArray(parsed.message) && parsed.message.length > 0) {
+      return parsed.message.map(String).join(' ');
+    }
+  } catch {
+    // corps non JSON
+  }
+  if (err.message.trim() && err.message !== 'Bad Request') {
+    return err.message;
+  }
+  return fallback;
+}
+
+export function estErreurReseau(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  return err.status >= 500;
+}
+
 // Téléchargement d'un export fichier (CSV/PDF) authentifié — un lien <a
 // href> classique ne porterait pas le Bearer token, d'où ce fetch + Blob.
 export async function apiDownload(path: string, filename: string): Promise<void> {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RoleLibelle,
@@ -28,6 +29,18 @@ const ROLES_INITIATION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
+const STATUTS_EN_COURS: StatutTransaction[] = [
+  StatutTransaction.INITIEE,
+  StatutTransaction.EN_TRANSIT,
+  StatutTransaction.RECEPTIONNEE,
+];
+
+const AGEING_HOURS: Record<string, { minH: number; maxH: number | null }> = {
+  '0_24h': { minH: 0, maxH: 24 },
+  '24_48h': { minH: 24, maxH: 48 },
+  '48_72h': { minH: 48, maxH: 72 },
+  plus_72h: { minH: 72, maxH: null },
+};
 const STATUTS = Object.values(StatutTransaction);
 const TYPES = Object.values(TypeTransaction);
 
@@ -345,6 +358,9 @@ function TransactionActions({
 export function TransactionsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const enCours = searchParams.get('enCours') === '1';
+  const ageingBucket = searchParams.get('ageing');
   const peutInitier = user !== null && ROLES_INITIATION.includes(user.role);
   useTresorerieRealtime(user !== null);
   const [pendingOffline, setPendingOffline] = useState(outboxCount());
@@ -355,6 +371,7 @@ export function TransactionsPage() {
     from: '',
     to: '',
   });
+  const [vue, setVue] = useState<'liste' | 'colonnes'>('colonnes');
   const [modalOpen, setModalOpen] = useState(false);
   const [rapprocherTx, setRapprocherTx] = useState<TransactionDto | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -375,12 +392,51 @@ export function TransactionsPage() {
     return () => window.removeEventListener('online', sync);
   }, [queryClient]);
 
-  const queryUrl = useMemo(() => buildQuery(filters), [filters]);
+  // Depuis /tresorerie?enCours=1 : on charge sans filtre statut API, filtre local.
+  const queryFilters = enCours ? { ...filters, statut: '' } : filters;
+  const queryUrl = useMemo(() => buildQuery(queryFilters), [queryFilters]);
 
   const { data: transactions, isLoading, isError } = useQuery({
-    queryKey: ['transactions', filters],
+    queryKey: ['transactions', queryFilters, enCours, ageingBucket],
     queryFn: () => apiFetch<TransactionDto[]>(queryUrl),
   });
+
+  const transactionsFiltrees = useMemo(() => {
+    if (!transactions) return undefined;
+    let rows = transactions;
+    if (enCours) {
+      rows = rows.filter((t) =>
+        STATUTS_EN_COURS.includes(t.statut as StatutTransaction),
+      );
+    }
+    if (ageingBucket && AGEING_HOURS[ageingBucket]) {
+      const { minH, maxH } = AGEING_HOURS[ageingBucket];
+      const now = Date.now();
+      rows = rows.filter((t) => {
+        const ageH = (now - new Date(t.dateHeure).getTime()) / (60 * 60 * 1000);
+        if (ageH < minH) return false;
+        if (maxH !== null && ageH >= maxH) return false;
+        return true;
+      });
+    }
+    return rows;
+  }, [transactions, enCours, ageingBucket]);
+
+  const colonnesStatut = useMemo(() => {
+    if (enCours) return STATUTS_EN_COURS;
+    if (filters.statut) return [filters.statut as StatutTransaction];
+    return STATUTS;
+  }, [enCours, filters.statut]);
+
+  const parStatut = useMemo(() => {
+    const map = new Map<string, TransactionDto[]>();
+    for (const s of colonnesStatut) map.set(s, []);
+    for (const t of transactionsFiltrees ?? []) {
+      const bucket = map.get(t.statut);
+      if (bucket) bucket.push(t);
+    }
+    return map;
+  }, [transactionsFiltrees, colonnesStatut]);
 
   const { data: caisses } = useQuery({
     queryKey: ['caisses'],
@@ -391,7 +447,13 @@ export function TransactionsPage() {
     <div>
       <PageHeader
         title="Transactions"
-        subtitle="Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE"
+        subtitle={
+          enCours
+            ? ageingBucket && AGEING_HOURS[ageingBucket]
+              ? `En cours · ageing ${ageingBucket.replace('_', '–')}`
+              : 'Filtre : circuit en cours (initiée / transit / réceptionnée)'
+            : 'Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE'
+        }
         actions={
           <>
             {pendingOffline > 0 ? (
@@ -399,6 +461,22 @@ export function TransactionsPage() {
                 {pendingOffline} en file hors-ligne
               </span>
             ) : null}
+            <div className="vue-toggle" role="group" aria-label="Mode d'affichage">
+              <button
+                type="button"
+                className={vue === 'colonnes' ? 'btn-secondary is-active' : 'btn-secondary'}
+                onClick={() => setVue('colonnes')}
+              >
+                Colonnes
+              </button>
+              <button
+                type="button"
+                className={vue === 'liste' ? 'btn-secondary is-active' : 'btn-secondary'}
+                onClick={() => setVue('liste')}
+              >
+                Liste
+              </button>
+            </div>
             {peutInitier ? (
               <button
                 type="button"
@@ -420,6 +498,7 @@ export function TransactionsPage() {
             <select
               value={filters.statut}
               onChange={(e) => setFilters((f) => ({ ...f, statut: e.target.value }))}
+              disabled={enCours}
             >
               <option value="">Tous</option>
               {STATUTS.map((s) => (
@@ -479,9 +558,52 @@ export function TransactionsPage() {
       {isLoading && <LoadingState label="Chargement des transactions..." />}
       {isError && <p role="alert">Erreur lors du chargement des transactions.</p>}
 
-      {transactions && (
+      {transactionsFiltrees && vue === 'colonnes' && (
+        <div className="tx-kanban" aria-label="File de travail par statut §6.4">
+          {colonnesStatut.map((statut) => {
+            const cards = parStatut.get(statut) ?? [];
+            return (
+              <section key={statut} className="tx-kanban-col">
+                <header className="tx-kanban-col-head">
+                  <span className={badgeStatut(statut)}>{statut}</span>
+                  <InfoTooltip insight={insightStatutTransaction(statut)} />
+                  <span className="tx-kanban-count">{cards.length}</span>
+                </header>
+                <div className="tx-kanban-cards">
+                  {cards.length === 0 ? (
+                    <p className="tx-kanban-empty">Aucune</p>
+                  ) : (
+                    cards.map((t) => (
+                      <article key={t.id} className="tx-kanban-card">
+                        <button
+                          type="button"
+                          className="link-button tx-kanban-card-title"
+                          onClick={() => setDetailId(t.id)}
+                        >
+                          {new Date(t.dateHeure).toLocaleString()}
+                        </button>
+                        <div className="money">{t.montant} FCFA</div>
+                        <div className="tx-kanban-meta">
+                          {labelType(t.type)} ·{' '}
+                          <code>{t.caisseId.slice(0, 8)}…</code>
+                        </div>
+                        <TransactionActions
+                          transaction={t}
+                          onRapprocher={setRapprocherTx}
+                        />
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {transactionsFiltrees && vue === 'liste' && (
         <ListPanel title="Transactions">
-          {transactions.length === 0 ? (
+          {transactionsFiltrees.length === 0 ? (
             <EmptyState
               title="Aucune transaction"
               description="Aucune transaction sur votre périmètre pour ces filtres."
@@ -511,7 +633,7 @@ export function TransactionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => (
+                {transactionsFiltrees.map((t) => (
                   <tr key={t.id}>
                     <td>
                       <button

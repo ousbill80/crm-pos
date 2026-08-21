@@ -54,6 +54,15 @@ export class VentesController {
     return this.ventesService.findOne(id, utilisateur);
   }
 
+  @Get('sessions/:id/ventes')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  listerVentes(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.ventesService.listerVentesSession(id, utilisateur);
+  }
+
   @Post('sessions/:id/ventes')
   @Roles(...ROLES_PERIMETRE_BOUTIQUE)
   encaisserVente(

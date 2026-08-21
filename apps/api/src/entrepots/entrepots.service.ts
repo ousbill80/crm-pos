@@ -27,7 +27,10 @@ export class EntrepotsService {
     private readonly audit: AuditService,
   ) {}
 
-  async create(dto: CreateEntrepotDto, user: AuthenticatedUser): Promise<Entrepot> {
+  async create(
+    dto: CreateEntrepotDto,
+    user: AuthenticatedUser,
+  ): Promise<Entrepot> {
     const boutique = await this.prisma.boutique.findUnique({
       where: { id: dto.boutiqueId },
     });
@@ -54,11 +57,12 @@ export class EntrepotsService {
     return entrepot;
   }
 
-  async findAll(user: AuthenticatedUser, boutiqueId?: string): Promise<Entrepot[]> {
+  async findAll(user: AuthenticatedUser, boutiqueId?: string) {
     const where = await this.scopeWhere(user, boutiqueId);
     return this.prisma.entrepot.findMany({
       where,
-      orderBy: [{ boutiqueId: 'asc' }, { nom: 'asc' }],
+      include: { boutique: { select: { id: true, nom: true } } },
+      orderBy: [{ boutique: { nom: 'asc' } }, { nom: 'asc' }],
     });
   }
 

@@ -6,6 +6,7 @@ import type {
   StatutSessionCaisse,
   StatutTransaction,
   TypeCaisse,
+  TypeClient,
   TypeTransaction,
 } from '@caisse-crm/shared';
 
@@ -60,13 +61,23 @@ export interface FideliteDto {
 
 export interface ClientDto {
   id: string;
+  typeClient: TypeClient;
   nom: string;
-  prenom: string;
+  prenom: string | null;
   contact: string | null;
   dateNaissance: string | null;
   segment: SegmentClient;
   consentementMarketing: boolean;
   fidelite: FideliteDto | null;
+}
+
+export interface InteractionCrmDto {
+  id: string;
+  clientId: string;
+  type: string;
+  canal: CanalInteraction;
+  contenu: string | null;
+  date: string;
 }
 
 export interface CampagneCrmDto {
@@ -83,7 +94,7 @@ export interface CampagneCrmDto {
 export interface ContactCampagneDto {
   clientId: string;
   nom: string;
-  prenom: string;
+  prenom: string | null;
   contact: string | null;
   pointsCumules: number;
 }
@@ -148,6 +159,32 @@ export interface ProduitAnalyseDto {
   };
 }
 
+export interface ProduitClassementDto {
+  fenetreJours: number;
+  meilleuresVentes: Array<{
+    produit: ProduitDto;
+    quantiteVendue: number;
+    chiffreAffaires: string;
+  }>;
+  dormants: Array<{
+    produit: ProduitDto;
+    stock: number;
+    valeurStock: string;
+  }>;
+}
+
+export interface ProduitVenteDto {
+  ligneId: string;
+  venteId: string;
+  dateVente: string;
+  boutique: string | null;
+  modePaiement: string;
+  quantite: number;
+  prixUnitaire: string;
+  remise: string;
+  montant: string;
+}
+
 export interface MouvementStockDto {
   id: string;
   produitId: string;
@@ -188,10 +225,15 @@ export interface VenteHistoriqueDto {
   id: string;
   dateVente: string;
   montantTotal: string;
+  modePaiement: ModePaiement;
   caisseId: string;
-  caisse: CaisseDto;
+  caisse: CaisseDto & {
+    boutique?: { id: string; nom: string } | null;
+  };
   clientId: string | null;
   lignes: LigneVenteDto[];
+  /** Caissier ayant enregistré la vente (journal d'audit VENTE_ENREGISTREE). */
+  enregistrePar: { id: string; prenom: string; nom: string } | null;
 }
 
 export interface SessionCaisseDto {
@@ -218,6 +260,7 @@ export interface VenteDto {
   sessionCaisseId: string;
   clientId: string | null;
   lignes: LigneVenteDto[];
+  retours?: RetourVenteDto[];
 }
 
 export interface ReleveModePaiementDto {
@@ -236,6 +279,17 @@ export interface FournisseurDto {
   id: string;
   nom: string;
   contact: string | null;
+  telephone: string | null;
+  email: string | null;
+  adresse: string | null;
+  notes: string | null;
+  actif: boolean;
+  createdAt: string;
+  nombreReceptions: number;
+  unitesRecues: number;
+  montantCumule: string;
+  derniereReceptionAt: string | null;
+  produitsDistincts: number;
 }
 
 export interface ReceptionStockDto {
@@ -244,12 +298,140 @@ export interface ReceptionStockDto {
   fournisseurId: string;
   quantite: number;
   prixAchat: string;
+  montant: string;
   dateReception: string;
   utilisateurId: string;
+  entrepotId: string | null;
+  reference: string | null;
+  produit?: { id: string; designation: string; reference: string | null };
+  entrepot?: { id: string; nom: string; code: string } | null;
+  utilisateur?: { id: string; nom: string; prenom: string } | null;
+  fournisseur?: { id: string; nom: string };
+  commande?: { id: string; numero: string } | null;
+  ligneCommandeId?: string | null;
+}
+
+export interface FournisseurProduitStatsDto {
+  produitId: string;
+  designation: string;
+  reference: string | null;
+  unites: number;
+  montant: string;
+  dernierPrix: string;
+  prixPrecedent: string | null;
+  variationPct: string | null;
+  derniereReceptionAt: string;
 }
 
 export interface FournisseurDetailDto extends FournisseurDto {
-  receptions: (ReceptionStockDto & { produit: ProduitDto })[];
+  receptions: ReceptionStockDto[];
+  produits: FournisseurProduitStatsDto[];
+}
+
+export interface FournisseurHaussePrixDto {
+  fournisseurId: string;
+  fournisseurNom: string;
+  produitId: string;
+  designation: string;
+  prixPrecedent: string;
+  prixActuel: string;
+  variationPct: string;
+}
+
+export interface FournisseursSyntheseDto {
+  genereAt: string;
+  kpis: {
+    fournisseurs: number;
+    actifs: number;
+    jamaisLivres: number;
+    receptions30j: number;
+    unites30j: number;
+    montant30j: string;
+    commandesOuvertes: number;
+    unitesARecevoir: number;
+    facturesImpayees: number;
+    encours: string;
+  };
+  haussesPrix: FournisseurHaussePrixDto[];
+  receptionsRecentes: ReceptionStockDto[];
+  fournisseurs: FournisseurDto[];
+}
+
+export interface CommandeAchatLigneDto {
+  id: string;
+  produitId: string;
+  designation: string;
+  reference: string | null;
+  quantite: number;
+  quantiteRecue: number;
+  quantiteRestante: number;
+  prixUnitaire: string;
+  montant: string;
+}
+
+export interface CommandeAchatDto {
+  id: string;
+  numero: string;
+  fournisseurId: string;
+  fournisseur: { id: string; nom: string; actif: boolean };
+  statut:
+    | 'BROUILLON'
+    | 'CONFIRMEE'
+    | 'PARTIELLEMENT_RECEPTIONNEE'
+    | 'RECEPTIONNEE'
+    | 'CLOTUREE'
+    | 'ANNULEE';
+  notes: string | null;
+  dateCommande: string;
+  dateConfirmation: string | null;
+  dateCloture: string | null;
+  montant: string;
+  quantite: number;
+  quantiteRecue: number;
+  boutique: { id: string; nom: string } | null;
+  lignes: CommandeAchatLigneDto[];
+}
+
+export interface ReceptionAFacturerDto {
+  id: string;
+  fournisseurId: string;
+  fournisseur: { id: string; nom: string };
+  produit: { id: string; designation: string; reference: string | null };
+  quantite: number;
+  prixAchat: string;
+  montant: string;
+  dateReception: string;
+  commande: { id: string; numero: string } | null;
+}
+
+export interface FactureFournisseurDto {
+  id: string;
+  numero: string;
+  referenceFournisseur: string | null;
+  fournisseurId: string;
+  fournisseur: { id: string; nom: string };
+  statut: 'BROUILLON' | 'COMPTABILISEE' | 'PARTIELLEMENT_PAYEE' | 'PAYEE' | 'ANNULEE';
+  dateFacture: string;
+  dateEcheance: string | null;
+  notes: string | null;
+  montant: string;
+  montantPaye: string;
+  resteAPayer: string;
+  lignes: Array<{
+    id: string;
+    receptionId: string;
+    produit: { id: string; designation: string; reference: string | null };
+    quantite: number;
+    prixUnitaire: string;
+    montant: string;
+  }>;
+  paiements: Array<{
+    id: string;
+    montant: string;
+    mode: 'VIREMENT' | 'ESPECES' | 'MOBILE_MONEY';
+    reference: string | null;
+    datePaiement: string;
+  }>;
 }
 
 
@@ -372,4 +554,53 @@ export interface StockSyntheseDto {
     deficit: number;
     motif: string;
   }>;
+}
+
+export type StatutInventaire = 'EN_COURS' | 'VALIDE' | 'ANNULE';
+
+export interface LigneInventaireDto {
+  id: string;
+  produitId: string;
+  quantiteTheorique: number;
+  quantiteComptee: number | null;
+  dateComptage: string | null;
+  produit: {
+    designation: string;
+    reference: string | null;
+    actif: boolean;
+    coutMoyenPondere: string;
+    seuilReappro: number | null;
+  };
+}
+
+export interface SessionInventaireDto {
+  id: string;
+  entrepotId: string;
+  statut: StatutInventaire;
+  motif: string | null;
+  dateOuverture: string;
+  dateValidation: string | null;
+  initiateurId: string;
+  validateurId: string | null;
+  entrepot: {
+    id: string;
+    code: string;
+    nom: string;
+    boutiqueId: string;
+    boutique: { nom: string };
+  };
+  initiateur: { id: string; prenom: string; nom: string; login: string };
+  validateur: { id: string; prenom: string; nom: string; login: string } | null;
+  lignes: LigneInventaireDto[];
+}
+
+export interface InventairePrioriteDto {
+  entrepotId: string;
+  code: string;
+  nom: string;
+  nomBoutique: string;
+  dernierInventaireAt: string | null;
+  joursDepuis: number | null;
+  aInventorier: boolean;
+  frequenceCibleJours: number;
 }

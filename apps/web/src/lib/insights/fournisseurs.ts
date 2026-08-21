@@ -1,9 +1,6 @@
 import type { Insight } from './types';
 
-// Insights fournisseurs / réceptions — ancrés sur l’UI réelle (liste,
-// réception stock, prix d’achat vs CMP catalogue). Pas de seuil inventé.
-
-export function insightListeFournisseurs(count: number): Insight {
+export function insightListeFournisseurs(count: number, jamaisLivres: number): Insight {
   if (count === 0) {
     return {
       title: 'Fournisseurs',
@@ -14,10 +11,28 @@ export function insightListeFournisseurs(count: number): Insight {
       severity: 'warning',
     };
   }
+  if (jamaisLivres > 0) {
+    return {
+      title: 'Fournisseurs',
+      interpretation: `${count} fiche(s), dont ${jamaisLivres} sans aucune réception.`,
+      recommendation: 'Compléter la fiche ou enregistrer la première livraison pour suivre le CMP.',
+      severity: 'info',
+    };
+  }
   return {
     title: 'Fournisseurs',
-    interpretation: `${count} fournisseur(s). Chaque réception met à jour le stock et le coût moyen pondéré (CMP) du produit.`,
-    severity: 'info',
+    interpretation: `${count} fournisseur(s). Chaque réception met à jour le stock et le coût moyen pondéré (CMP).`,
+    severity: 'ok',
+  };
+}
+
+export function insightApprovisionnement(): Insight {
+  return {
+    title: 'Approvisionnement',
+    interpretation:
+      'Historique des réceptions de ce fournisseur : quantités, prix d’achat et écart au CMP catalogue.',
+    recommendation: 'Ouvrir la fiche pour comparer les prix d’achat successifs avant la prochaine commande.',
+    severity: 'neutral',
   };
 }
 
@@ -25,7 +40,7 @@ export function insightReceptionStock(): Insight {
   return {
     title: 'Réception de stock',
     interpretation:
-      'Enregistre une entrée de stock chez le fournisseur : quantité et prix d’achat alimentent le CMP et la quantité disponible à la vente.',
+      'Entrée de stock chez le fournisseur : quantité, prix d’achat et entrepôt alimentent le grand livre et le CMP. La référence BL est facultative (pas un bon de commande).',
     recommendation:
       'Cibler de préférence l’entrepôt PRINCIPAL du magasin qui vendra ces articles.',
     severity: 'info',
@@ -80,11 +95,27 @@ export function insightPrixAchatVsCmp(
   };
 }
 
-export function insightApprovisionnement(): Insight {
+export function insightHaussesPrix(count: number): Insight {
+  if (count === 0) {
+    return {
+      title: 'Prix d’achat',
+      interpretation: 'Aucune hausse de prix entre deux réceptions successives du même article.',
+      severity: 'ok',
+    };
+  }
   return {
-    title: 'Approvisionnement',
-    interpretation:
-      'Depuis cette colonne : enregistrer une réception (entrée stock + CMP) ou consulter l’historique des réceptions du fournisseur.',
-    severity: 'info',
+    title: 'Hausses de prix d’achat',
+    interpretation: `${count} article(s) plus chers que la livraison précédente chez le même fournisseur.`,
+    recommendation: 'Comparer avec le CMP catalogue avant de valider la prochaine réception.',
+    severity: 'warning',
+  };
+}
+
+export function insightMontantAchats(montant30j: number, receptions30j: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Achats 30 jours',
+    interpretation: `${fmt(montant30j)} FCFA sur ${receptions30j} réception(s) — valeur d’entrée stock, pas une facture fournisseur.`,
+    severity: receptions30j === 0 ? 'info' : 'ok',
   };
 }

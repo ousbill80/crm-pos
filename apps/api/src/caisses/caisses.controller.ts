@@ -2,7 +2,10 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
-import { ROLES_ADMIN_STRUCTURE, ROLES_LECTURE_CAISSES } from './access-scope.constants';
+import {
+  ROLES_ADMIN_STRUCTURE,
+  ROLES_LECTURE_CAISSES,
+} from './access-scope.constants';
 import { CreateCaisseDto } from './dto/create-caisse.dto';
 import { CaissesService } from './caisses.service';
 
@@ -15,10 +18,7 @@ export class CaissesController {
 
   @Post()
   @Roles(...ROLES_ADMIN_STRUCTURE)
-  create(
-    @Body() dto: CreateCaisseDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  create(@Body() dto: CreateCaisseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.caissesService.create(dto, user);
   }
 

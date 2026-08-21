@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, TransactionCaisse, TypeCaisse as PrismaTypeCaisse } from '@prisma/client';
+import {
+  Prisma,
+  TransactionCaisse,
+  TypeCaisse as PrismaTypeCaisse,
+} from '@prisma/client';
 import {
   StatutTransaction,
   TypeCaisse,
@@ -492,7 +496,10 @@ export class TransactionsService {
 
   private async assertLectureAutorisee(
     transaction: TransactionCaisse & {
-      caisse: { boutiqueId: string | null; boutique?: { id: string; nom: string } | null };
+      caisse: {
+        boutiqueId: string | null;
+        boutique?: { id: string; nom: string } | null;
+      };
     },
     utilisateur: AuthenticatedUser,
   ): Promise<void> {

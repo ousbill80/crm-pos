@@ -7,7 +7,11 @@ export interface PrioriteCatalogue {
   severity: Severity;
   title: string;
   detail: string;
-  filtre: { statutStock?: StatutStock; actif?: 'true' | 'false' | '' };
+  filtre: {
+    statutStock?: StatutStock;
+    actif?: 'true' | 'false' | '';
+    margeNegative?: boolean;
+  };
 }
 
 export function insightMargeUnitaire(
@@ -150,8 +154,26 @@ export function buildPrioritesCatalogue(synthese: {
       severity: 'critical',
       title: `${synthese.margesNegatives} prix sous le CMP`,
       detail: 'Le prix de vente est inférieur au coût moyen pondéré : marge unitaire négative.',
-      filtre: {},
+      filtre: { margeNegative: true },
     });
   }
   return priorites;
+}
+
+export function insightMeilleureVente(quantiteVendue: number, chiffreAffaires: string): Insight {
+  return {
+    title: 'Rotation 30 jours',
+    interpretation: `${quantiteVendue} unité(s) vendue(s) nettes, pour ${chiffreAffaires} FCFA de CA — calculé sur les lignes de vente des 30 derniers jours.`,
+    severity: 'info',
+  };
+}
+
+export function insightDormant(stock: number, valeurStock: string): Insight {
+  return {
+    title: 'Produit dormant',
+    interpretation: `${stock} unité(s) en stock (${valeurStock} FCFA au CMP) sans vente nette sur 30 jours.`,
+    recommendation:
+      'Vérifier le prix, la visibilité en boutique, ou transférer vers un point de vente plus demandeur.',
+    severity: stock > 0 ? 'warning' : 'neutral',
+  };
 }

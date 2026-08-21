@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Client } from '@prisma/client';
+import { TypeClient } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -23,15 +28,26 @@ export class ClientsService {
   ) {}
 
   async create(dto: CreateClientDto, utilisateurId: string): Promise<Client> {
+    const typeClient = dto.typeClient ?? TypeClient.PHYSIQUE;
+    const prenom = dto.prenom?.trim() || null;
+
+    if (typeClient === TypeClient.PHYSIQUE && !prenom) {
+      throw new BadRequestException(
+        'Le prénom est obligatoire pour une personne physique.',
+      );
+    }
+
     const client = await this.prisma.$transaction(async (tx) => {
       const created = await tx.client.create({
         data: {
-          nom: dto.nom,
-          prenom: dto.prenom,
-          contact: dto.contact,
-          dateNaissance: dto.dateNaissance
-            ? new Date(dto.dateNaissance)
-            : undefined,
+          typeClient,
+          nom: dto.nom.trim(),
+          prenom,
+          contact: dto.contact?.trim() || null,
+          dateNaissance:
+            typeClient === TypeClient.PHYSIQUE && dto.dateNaissance
+              ? new Date(dto.dateNaissance)
+              : null,
           consentementMarketing: dto.consentementMarketing ?? false,
         },
       });
@@ -46,12 +62,17 @@ export class ClientsService {
       return created;
     });
 
+    const libelle =
+      typeClient === TypeClient.MORALE
+        ? `Création fiche client morale « ${client.nom} »`
+        : `Création fiche client ${client.prenom} ${client.nom}`;
+
     await this.audit.record({
       utilisateurId,
       action: 'CLIENT_CREE',
       entite: 'Client',
       entiteId: client.id,
-      details: `Création fiche client ${client.prenom} ${client.nom}`,
+      details: libelle,
     });
 
     return client;
@@ -91,6 +112,7 @@ export class ClientsService {
     const client = await this.prisma.client.update({
       where: { id },
       data: {
+        typeClient: dto.typeClient,
         nom: dto.nom,
         prenom: dto.prenom,
         contact: dto.contact,
@@ -117,17 +139,59 @@ export class ClientsService {
   // visible depuis n'importe quelle boutique") — lecture seule, agrège les
   // Vente déjà créées par le module Ventes/Transactions. Ce service ne
   // crée ni ne modifie jamais de Vente.
+  // Enrichit chaque vente avec le mode de paiement (déjà sur Vente) et
+  // l'enregistreur issu du journal d'audit append-only (VENTE_ENREGISTREE) —
+  // Vente n'a pas d'utilisateurId dédié ; l'audit est la source de vérité.
   async historiqueAchats(clientId: string) {
     await this.findOne(clientId);
 
-    return this.prisma.vente.findMany({
+    const selectUtilisateur = {
+      id: true,
+      prenom: true,
+      nom: true,
+    } as const;
+
+    const ventes = await this.prisma.vente.findMany({
       where: { clientId },
       include: {
         lignes: { include: { produit: true } },
-        caisse: true,
+        caisse: { include: { boutique: true } },
+        // Repli si l'audit VENTE_ENREGISTREE est absent (vente seed / legacy) :
+        // caissier qui a ouvert la session — moins précis qu'un audit dédié.
+        sessionCaisse: {
+          include: { ouvertureUtilisateur: { select: selectUtilisateur } },
+        },
       },
       orderBy: { dateVente: 'desc' },
     });
+
+    if (ventes.length === 0) {
+      return ventes;
+    }
+
+    const audits = await this.prisma.journalAudit.findMany({
+      where: {
+        entite: 'Vente',
+        action: 'VENTE_ENREGISTREE',
+        entiteId: { in: ventes.map((v) => v.id) },
+      },
+      include: {
+        utilisateur: { select: selectUtilisateur },
+      },
+      orderBy: { dateHeure: 'asc' },
+    });
+
+    const enregistreParParVente = new Map(
+      audits.map((a) => [a.entiteId, a.utilisateur] as const),
+    );
+
+    return ventes.map(({ sessionCaisse, ...vente }) => ({
+      ...vente,
+      enregistrePar:
+        enregistreParParVente.get(vente.id) ??
+        sessionCaisse.ouvertureUtilisateur ??
+        null,
+    }));
   }
 
   // Tableau de bord client (§6.6) : agrège des données déjà exposées par

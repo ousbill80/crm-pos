@@ -188,6 +188,13 @@ async function main() {
     nom: 'Ba',
     prenom: 'Fatou',
   });
+  await ensureUser({
+    login: 'demo-daf',
+    roleLibelle: 'DAF',
+    boutiqueId: null,
+    nom: 'Traoré',
+    prenom: 'Mariam',
+  });
 
   let reserve = await prisma.entrepot.findUnique({
     where: {
@@ -374,13 +381,45 @@ async function main() {
     }
   }
 
+  const fournisseursDemo = [
+    {
+      nom: 'Grossiste Accessoires SARL',
+      contact: 'Kouadio Jean',
+      telephone: '+225 07 00 11 22 33',
+      email: 'commandes@grossiste-accessoires.ci',
+      adresse: 'Zone industrielle Yopougon, Abidjan',
+      notes: 'Principal fournisseur câbles et protections.',
+    },
+    {
+      nom: 'Import Téléphonie CI',
+      contact: 'Awa Diallo',
+      telephone: '+225 05 44 55 66 77',
+      email: 'awa@import-tel.ci',
+      adresse: 'Adjamé, marché de la téléphonie',
+      notes: 'Import audio et charge.',
+    },
+  ];
+  for (const fiche of fournisseursDemo) {
+    const existant = await prisma.fournisseur.findFirst({
+      where: { nom: fiche.nom },
+    });
+    if (existant) {
+      await prisma.fournisseur.update({
+        where: { id: existant.id },
+        data: fiche,
+      });
+    } else {
+      await prisma.fournisseur.create({ data: fiche });
+    }
+  }
+
   console.log(
     [
       'Seed CaissePOS terminé.',
       `Boutique: ${boutique.nom}`,
       `Caisse auxiliaire: ${caisse.id}`,
       'Comptes (mdp MotDePasse!123):',
-      '  demo-pos-caissier / demo-pos-temoin / demo-convoyeur / demo-dg / demo-respsi / demo-central',
+      '  demo-pos-caissier / demo-pos-temoin / demo-convoyeur / demo-dg / demo-respsi / demo-central / demo-daf',
     ].join('\n'),
   );
 }

@@ -1,19 +1,30 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CanalInteraction,
   NiveauFidelite,
   RoleLibelle,
   SegmentClient,
+  TypeClient,
 } from '@caisse-crm/shared';
 import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
+import { LoadingState } from '../components/LoadingState';
+import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  insightConsentementMarketing,
+  insightContactClient,
+  insightDateNaissanceClient,
+  insightFicheReseau,
+  insightTypeClient,
+} from '../lib/insights/crm';
 import type {
   CampagneCrmDto,
   ClientDto,
   ContactCampagneDto,
-  TableauDeBordClientDto,
-  VenteHistoriqueDto,
 } from '../lib/types';
 
 // Miroir de crm-roles.constants.ts (apps/api/src/crm) : ce module n'expose
@@ -42,22 +53,7 @@ function useClients(segment: string, niveauFidelite: string) {
   });
 }
 
-function useHistoriqueAchats(clientId: string | null) {
-  return useQuery({
-    queryKey: ['crm-clients', clientId, 'historique-achats'],
-    queryFn: () => apiFetch<VenteHistoriqueDto[]>(`/crm/clients/${clientId}/historique-achats`),
-    enabled: clientId !== null,
-  });
-}
 
-function useTableauDeBord(clientId: string | null) {
-  return useQuery({
-    queryKey: ['crm-clients', clientId, 'tableau-de-bord'],
-    queryFn: () =>
-      apiFetch<TableauDeBordClientDto>(`/crm/clients/${clientId}/tableau-de-bord`),
-    enabled: clientId !== null,
-  });
-}
 
 function useCampagnes() {
   return useQuery({
@@ -75,8 +71,15 @@ function useContactsCampagne(campagneId: string | null) {
   });
 }
 
-function NouveauClientForm() {
+function NouveauClientForm({
+  onSuccess,
+  onCancel,
+}: {
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}) {
   const queryClient = useQueryClient();
+  const [typeClient, setTypeClient] = useState<TypeClient>(TypeClient.PHYSIQUE);
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [contact, setContact] = useState('');
@@ -84,19 +87,34 @@ function NouveauClientForm() {
   const [consentementMarketing, setConsentementMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const estMorale = typeClient === TypeClient.MORALE;
+  const nomTrim = nom.trim();
+  const prenomTrim = prenom.trim();
+  const contactTrim = contact.trim();
+  const apercu = estMorale
+    ? nomTrim || 'Nouvelle entreprise'
+    : nomTrim || prenomTrim
+      ? `${prenomTrim} ${nomTrim}`.trim()
+      : 'Nouveau client';
+  const formulaireValide = estMorale
+    ? nomTrim.length > 0
+    : nomTrim.length > 0 && prenomTrim.length > 0;
+
   const mutation = useMutation({
     mutationFn: () =>
       apiFetch<ClientDto>('/crm/clients', {
         method: 'POST',
         body: JSON.stringify({
-          nom,
-          prenom,
-          contact: contact || undefined,
-          dateNaissance: dateNaissance || undefined,
+          typeClient,
+          nom: nomTrim,
+          prenom: prenomTrim || undefined,
+          contact: contactTrim || undefined,
+          dateNaissance: estMorale ? undefined : dateNaissance || undefined,
           consentementMarketing,
         }),
       }),
     onSuccess: () => {
+      setTypeClient(TypeClient.PHYSIQUE);
       setNom('');
       setPrenom('');
       setContact('');
@@ -104,145 +122,273 @@ function NouveauClientForm() {
       setConsentementMarketing(false);
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['crm-clients'] });
+      onSuccess?.();
     },
-    onError: () => setError('Échec de la création du client.'),
+    onError: () =>
+      setError('Échec de la création du client. Vérifiez les champs et réessayez.'),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!formulaireValide) {
+      setError(
+        estMorale
+          ? 'La raison sociale est obligatoire.'
+          : 'Le nom et le prénom sont obligatoires.',
+      );
+      return;
+    }
+    setError(null);
     mutation.mutate();
   }
 
+  function choisirType(nouveau: TypeClient) {
+    setTypeClient(nouveau);
+    setError(null);
+    if (nouveau === TypeClient.MORALE) {
+      setDateNaissance('');
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
-      <h2>Nouveau client</h2>
-      <label htmlFor="nom">Nom</label>
-      <input id="nom" value={nom} onChange={(e) => setNom(e.target.value)} required />
-      <label htmlFor="prenom">Prénom</label>
-      <input id="prenom" value={prenom} onChange={(e) => setPrenom(e.target.value)} required />
-      <label htmlFor="contact">Contact</label>
-      <input id="contact" value={contact} onChange={(e) => setContact(e.target.value)} />
-      <label htmlFor="dateNaissance">Date de naissance</label>
-      <input
-        id="dateNaissance"
-        type="date"
-        value={dateNaissance}
-        onChange={(e) => setDateNaissance(e.target.value)}
-      />
-      <label htmlFor="consentementMarketing">
-        <input
-          id="consentementMarketing"
-          type="checkbox"
-          checked={consentementMarketing}
-          onChange={(e) => setConsentementMarketing(e.target.checked)}
-        />
-        Consentement marketing
-      </label>
-      <button type="submit" disabled={mutation.isPending}>
-        Créer
-      </button>
-      {error && <p role="alert">{error}</p>}
+    <form className="modal-form client-form" onSubmit={handleSubmit}>
+      <div className="client-form-body">
+        <div className="client-form-banner">
+          <div className="client-form-avatar" aria-hidden>
+            {estMorale
+              ? (nomTrim[0] ?? 'E').toUpperCase()
+              : (prenomTrim[0] ?? nomTrim[0] ?? '?').toUpperCase()}
+          </div>
+          <div className="client-form-banner-text">
+            <strong>{apercu}</strong>
+            <span>
+              {estMorale ? 'Personne morale' : 'Personne physique'} · fiche unique réseau
+              <InfoTooltip insight={insightFicheReseau()} />
+            </span>
+          </div>
+        </div>
+
+        <fieldset className="client-form-section">
+          <legend>
+            Type de client
+            <InfoTooltip insight={insightTypeClient(typeClient)} />
+          </legend>
+          <div className="type-client-toggle" role="group" aria-label="Type de client">
+            <button
+              type="button"
+              className={typeClient === TypeClient.PHYSIQUE ? 'actif' : ''}
+              aria-pressed={typeClient === TypeClient.PHYSIQUE}
+              onClick={() => choisirType(TypeClient.PHYSIQUE)}
+            >
+              Personne physique
+            </button>
+            <button
+              type="button"
+              className={typeClient === TypeClient.MORALE ? 'actif' : ''}
+              aria-pressed={typeClient === TypeClient.MORALE}
+              onClick={() => choisirType(TypeClient.MORALE)}
+            >
+              Personne morale
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset className="client-form-section">
+          <legend>Identité</legend>
+          {estMorale ? (
+            <div className="form-field">
+              <label htmlFor="client-raison-sociale">
+                Raison sociale <span className="req">*</span>
+              </label>
+              <input
+                id="client-raison-sociale"
+                name="nom"
+                autoComplete="organization"
+                placeholder="ex. Marché des Accessoires SARL"
+                value={nom}
+                onChange={(e) => setNom(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+          ) : (
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label htmlFor="client-prenom">
+                  Prénom <span className="req">*</span>
+                </label>
+                <input
+                  id="client-prenom"
+                  name="prenom"
+                  autoComplete="given-name"
+                  placeholder="ex. Aminata"
+                  value={prenom}
+                  onChange={(e) => setPrenom(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="client-nom">
+                  Nom <span className="req">*</span>
+                </label>
+                <input
+                  id="client-nom"
+                  name="nom"
+                  autoComplete="family-name"
+                  placeholder="ex. Diop"
+                  value={nom}
+                  onChange={(e) => setNom(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          )}
+          {estMorale && (
+            <div className="form-field">
+              <label htmlFor="client-interlocuteur">Interlocuteur</label>
+              <input
+                id="client-interlocuteur"
+                name="prenom"
+                autoComplete="name"
+                placeholder="ex. Responsable achats"
+                value={prenom}
+                onChange={(e) => setPrenom(e.target.value)}
+              />
+              <p className="field-hint">Optionnel — personne à contacter chez le client.</p>
+            </div>
+          )}
+        </fieldset>
+
+        <fieldset className="client-form-section">
+          <legend>Coordonnées</legend>
+          <div className={estMorale ? 'form-field' : 'form-grid-2'}>
+            <div className="form-field">
+              <label htmlFor="client-contact">
+                Contact
+                <InfoTooltip insight={insightContactClient(contact)} />
+              </label>
+              <input
+                id="client-contact"
+                name="contact"
+                type="text"
+                autoComplete="tel email"
+                placeholder={estMorale ? 'Tél. ou e-mail professionnel' : 'Tél. ou e-mail'}
+                value={contact}
+                onChange={(e) => setContact(e.target.value)}
+              />
+              <p className="field-hint">Recommandé pour les campagnes CRM.</p>
+            </div>
+            {!estMorale && (
+              <div className="form-field">
+                <label htmlFor="client-naissance">
+                  Date de naissance
+                  <InfoTooltip insight={insightDateNaissanceClient(dateNaissance)} />
+                </label>
+                <input
+                  id="client-naissance"
+                  name="dateNaissance"
+                  type="date"
+                  max={new Date().toISOString().slice(0, 10)}
+                  value={dateNaissance}
+                  onChange={(e) => setDateNaissance(e.target.value)}
+                />
+                <p className="field-hint">Optionnel — anniversaires.</p>
+              </div>
+            )}
+          </div>
+        </fieldset>
+
+        <fieldset className="client-form-section">
+          <legend>
+            Consentement
+            <InfoTooltip insight={insightConsentementMarketing(consentementMarketing)} />
+          </legend>
+          <label
+            htmlFor="client-consentement"
+            className={`consent-card${consentementMarketing ? ' actif' : ''}`}
+          >
+            <input
+              id="client-consentement"
+              type="checkbox"
+              checked={consentementMarketing}
+              onChange={(e) => setConsentementMarketing(e.target.checked)}
+            />
+            <span className="consent-card-body">
+              <strong>Autoriser les communications marketing</strong>
+              <span>
+                Accord explicite pour les campagnes SMS / e-mail (§6.6). Sans
+                accord, la fiche reste utilisable en caisse, hors campagnes.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="modal-footer">
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onCancel}
+          disabled={mutation.isPending}
+        >
+          Annuler
+        </button>
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={mutation.isPending || !formulaireValide}
+        >
+          {mutation.isPending ? 'Création…' : 'Créer le client'}
+        </button>
+      </div>
     </form>
   );
 }
 
-function HistoriqueAchats({ clientId }: { clientId: string }) {
-  const { data: ventes, isLoading, isError } = useHistoriqueAchats(clientId);
 
-  if (isLoading) return <p>Chargement de l'historique...</p>;
-  if (isError) return <p>Erreur lors du chargement de l'historique.</p>;
-  if (!ventes || ventes.length === 0) return <p>Aucun achat enregistré pour ce client.</p>;
-
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Montant total</th>
-          <th>Caisse</th>
-          <th>Articles</th>
-        </tr>
-      </thead>
-      <tbody>
-        {ventes.map((v) => (
-          <tr key={v.id}>
-            <td>{new Date(v.dateVente).toLocaleString()}</td>
-            <td>{v.montantTotal}</td>
-            <td>{v.caisseId}</td>
-            <td>
-              {v.lignes
-                .map((l) => `${l.produit.designation} x${l.quantite}`)
-                .join(', ')}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function TableauDeBordClient({ clientId }: { clientId: string }) {
-  const { data: tdb, isLoading, isError } = useTableauDeBord(clientId);
-
-  if (isLoading) return <p>Chargement du tableau de bord...</p>;
-  if (isError || !tdb) return <p role="alert">Erreur lors du chargement du tableau de bord.</p>;
-
-  return (
-    <dl className="tableau-de-bord">
-      <dt>Total dépensé</dt>
-      <dd>{tdb.totalDepense}</dd>
-      <dt>Nombre d’achats</dt>
-      <dd>{tdb.nombreAchats}</dd>
-      <dt>Dernier achat</dt>
-      <dd>{tdb.dateDernierAchat ? new Date(tdb.dateDernierAchat).toLocaleString() : 'Aucun'}</dd>
-      <dt>Fidélité</dt>
-      <dd>
-        {tdb.niveauFidelite} ({tdb.pointsCumules} pts)
-      </dd>
-    </dl>
-  );
-}
 
 function ClientRow({ client }: { client: ClientDto }) {
-  const [historiqueOuvert, setHistoriqueOuvert] = useState(false);
-  const [tableauOuvert, setTableauOuvert] = useState(false);
-
+  const navigate = useNavigate();
   return (
-    <>
-      <tr>
-        <td>{client.nom}</td>
-        <td>{client.prenom}</td>
-        <td>{client.contact ?? '—'}</td>
-        <td>{client.segment}</td>
-        <td>{client.fidelite ? `${client.fidelite.niveau} (${client.fidelite.pointsCumules} pts)` : '—'}</td>
-        <td>
-          <button type="button" onClick={() => setHistoriqueOuvert((v) => !v)}>
-            {historiqueOuvert ? 'Masquer' : 'Historique d\u2019achats'}
-          </button>
-          <button type="button" onClick={() => setTableauOuvert((v) => !v)}>
-            {tableauOuvert ? 'Masquer' : 'Tableau de bord'}
-          </button>
-        </td>
-      </tr>
-      {historiqueOuvert && (
-        <tr>
-          <td colSpan={6}>
-            <HistoriqueAchats clientId={client.id} />
-          </td>
-        </tr>
-      )}
-      {tableauOuvert && (
-        <tr>
-          <td colSpan={6}>
-            <TableauDeBordClient clientId={client.id} />
-          </td>
-        </tr>
-      )}
-    </>
+    <tr
+      className="client-row"
+      onClick={() => navigate(`/clients/${client.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate(`/clients/${client.id}`);
+        }
+      }}
+      tabIndex={0}
+      role="link"
+      aria-label={`Ouvrir la fiche de ${client.nom}`}
+    >
+      <td>
+        <span className={`badge-type badge-type-${client.typeClient.toLowerCase()}`}>
+          {client.typeClient === TypeClient.MORALE ? 'Morale' : 'Physique'}
+        </span>
+      </td>
+      <td>{client.nom}</td>
+      <td>{client.prenom ?? '—'}</td>
+      <td>{client.contact ?? '—'}</td>
+      <td>{client.segment}</td>
+      <td>
+        {client.fidelite
+          ? `${client.fidelite.niveau} (${client.fidelite.pointsCumules} pts)`
+          : '—'}
+      </td>
+    </tr>
   );
 }
 
-function NouvelleCampagneForm() {
+function NouvelleCampagneForm({ onSuccess }: { onSuccess?: () => void }) {
   const queryClient = useQueryClient();
   const [nom, setNom] = useState('');
   const [message, setMessage] = useState('');
@@ -270,6 +416,7 @@ function NouvelleCampagneForm() {
       setNiveauFidelite('');
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['crm-campagnes'] });
+      onSuccess?.();
     },
     onError: () => setError('Échec de la création de la campagne.'),
   });
@@ -281,7 +428,6 @@ function NouvelleCampagneForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <h3>Nouvelle campagne</h3>
       <label htmlFor="campagne-nom">Nom</label>
       <input id="campagne-nom" value={nom} onChange={(e) => setNom(e.target.value)} required />
       <label htmlFor="campagne-message">Message</label>
@@ -329,7 +475,7 @@ function NouvelleCampagneForm() {
           </option>
         ))}
       </select>
-      <button type="submit" disabled={mutation.isPending}>
+      <button type="submit" className="btn-primary" disabled={mutation.isPending}>
         Créer la campagne
       </button>
       {error && <p role="alert">{error}</p>}
@@ -362,16 +508,18 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
         {campagne.niveauFidelite && <> · palier {campagne.niveauFidelite}</>}
       </div>
       <p>{campagne.message}</p>
-      <button type="button" onClick={() => setOuvert((v) => !v)}>
-        {ouvert ? 'Masquer les contacts' : 'Voir les contacts ciblés'}
-      </button>
-      <button type="button" onClick={() => void exporter()}>
-        Exporter CSV
-      </button>
+      <div className="table-actions">
+        <button type="button" onClick={() => setOuvert((v) => !v)}>
+          {ouvert ? 'Masquer les contacts' : 'Voir les contacts ciblés'}
+        </button>
+        <button type="button" onClick={() => void exporter()}>
+          Exporter CSV
+        </button>
+      </div>
       {exportError && <p role="alert">{exportError}</p>}
       {ouvert &&
         (isLoading ? (
-          <p>Chargement des contacts...</p>
+          <LoadingState label="Chargement des contacts..." />
         ) : (
           <ul>
             {(contacts ?? []).map((c) => (
@@ -388,22 +536,62 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
 
 function CampagnesSection({ peutGerer }: { peutGerer: boolean }) {
   const { data: campagnes, isLoading, isError } = useCampagnes();
+  const [modalCampagne, setModalCampagne] = useState(false);
 
   return (
-    <section className="campagnes-crm">
-      <h2>Campagnes CRM</h2>
-      {peutGerer && <NouvelleCampagneForm />}
-      {isLoading && <p>Chargement des campagnes...</p>}
-      {isError && <p role="alert">Erreur lors du chargement des campagnes.</p>}
-      {campagnes && campagnes.length === 0 && <p>Aucune campagne créée.</p>}
-      {campagnes && campagnes.length > 0 && (
-        <ul className="campagnes-liste">
-          {campagnes.map((c) => (
-            <CampagneItem key={c.id} campagne={c} />
-          ))}
-        </ul>
+    <>
+      <ListPanel
+        title="Campagnes CRM"
+        toolbar={
+          peutGerer ? (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setModalCampagne(true)}
+            >
+              Nouvelle campagne
+            </button>
+          ) : undefined
+        }
+      >
+        {isLoading && <LoadingState label="Chargement des campagnes..." />}
+        {isError && <p role="alert">Erreur lors du chargement des campagnes.</p>}
+        {campagnes && campagnes.length === 0 && (
+          <EmptyState
+            title="Aucune campagne"
+            description="Aucune campagne créée pour le moment."
+            action={
+              peutGerer ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setModalCampagne(true)}
+                >
+                  Nouvelle campagne
+                </button>
+              ) : undefined
+            }
+          />
+        )}
+        {campagnes && campagnes.length > 0 && (
+          <ul className="campagnes-liste">
+            {campagnes.map((c) => (
+              <CampagneItem key={c.id} campagne={c} />
+            ))}
+          </ul>
+        )}
+      </ListPanel>
+
+      {peutGerer && (
+        <Modal
+          open={modalCampagne}
+          onClose={() => setModalCampagne(false)}
+          title="Nouvelle campagne"
+        >
+          <NouvelleCampagneForm onSuccess={() => setModalCampagne(false)} />
+        </Modal>
       )}
-    </section>
+    </>
   );
 }
 
@@ -411,78 +599,124 @@ export function CrmClientsPage() {
   const { user } = useAuth();
   const [segment, setSegment] = useState('');
   const [niveauFidelite, setNiveauFidelite] = useState('');
+  const [modalNouveau, setModalNouveau] = useState(false);
   const { data: clients, isLoading, isError } = useClients(segment, niveauFidelite);
   const peutCreer = user !== null && ROLES_CREATION_CLIENT.includes(user.role);
-  const peutGererCampagnes = user !== null && ROLES_ADMIN_CRM.includes(user.role);
+  const peutAdmin = user !== null && ROLES_ADMIN_CRM.includes(user.role);
 
   return (
     <div>
-      <header className="page-header">
-        <div>
-          <h1>Clients</h1>
-          <p className="lead">Fichier CRM consolidé — segments et fidélité</p>
-        </div>
-      </header>
+      <PageHeader
+        title="Clients"
+        subtitle="Fichier CRM consolidé — cliquez une ligne pour ouvrir la fiche"
+        actions={
+          peutCreer ? (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setModalNouveau(true)}
+            >
+              Nouveau client
+            </button>
+          ) : undefined
+        }
+      />
 
-      {peutCreer && <NouveauClientForm />}
-
-      <div className="toolbar">
-        <div>
-          <label htmlFor="filtre-segment">Segment</label>
-          <select
-            id="filtre-segment"
-            value={segment}
-            onChange={(e) => setSegment(e.target.value)}
-          >
-            <option value="">Tous</option>
-            {Object.values(SegmentClient).map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="filtre-fidelite">Fidélité</label>
-          <select
-            id="filtre-fidelite"
-            value={niveauFidelite}
-            onChange={(e) => setNiveauFidelite(e.target.value)}
-          >
-            <option value="">Tous</option>
-            {Object.values(NiveauFidelite).map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {isLoading && <p>Chargement des clients...</p>}
+      {isLoading && <LoadingState label="Chargement des clients..." />}
       {isError && <p role="alert">Erreur lors du chargement des clients.</p>}
 
       {clients && (
-        <table>
-          <thead>
-            <tr>
-              <th>Nom</th>
-              <th>Prénom</th>
-              <th>Contact</th>
-              <th>Segment</th>
-              <th>Fidélité</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((c) => (
-              <ClientRow key={c.id} client={c} />
-            ))}
-          </tbody>
-        </table>
+        <ListPanel
+          title="Clients"
+          toolbar={
+            <div className="toolbar">
+              <div>
+                <label htmlFor="filtre-segment">Segment</label>
+                <select
+                  id="filtre-segment"
+                  value={segment}
+                  onChange={(e) => setSegment(e.target.value)}
+                >
+                  <option value="">Tous</option>
+                  {Object.values(SegmentClient).map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="filtre-fidelite">Fidélité</label>
+                <select
+                  id="filtre-fidelite"
+                  value={niveauFidelite}
+                  onChange={(e) => setNiveauFidelite(e.target.value)}
+                >
+                  <option value="">Tous</option>
+                  {Object.values(NiveauFidelite).map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          }
+        >
+          {clients.length === 0 ? (
+            <EmptyState
+              title="Aucun client"
+              description="Aucun client pour ces filtres."
+              action={
+                peutCreer ? (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => setModalNouveau(true)}
+                  >
+                    Nouveau client
+                  </button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Nom / Raison sociale</th>
+                  <th>Prénom / Interlocuteur</th>
+                  <th>Contact</th>
+                  <th>Segment</th>
+                  <th>Fidélité</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((c) => (
+                  <ClientRow key={c.id} client={c} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </ListPanel>
       )}
 
-      <CampagnesSection peutGerer={peutGererCampagnes} />
+      <CampagnesSection peutGerer={peutAdmin} />
+
+      {peutCreer && (
+        <Modal
+          open={modalNouveau}
+          onClose={() => setModalNouveau(false)}
+          title="Nouveau client"
+          description="Fiche unique pour tout le réseau — historique d’achats partagé entre boutiques."
+          size="lg"
+        >
+          <NouveauClientForm
+            onSuccess={() => setModalNouveau(false)}
+            onCancel={() => setModalNouveau(false)}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

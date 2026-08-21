@@ -5,9 +5,11 @@ import { ApiError } from '../lib/api';
 
 // Raccourcis DEV uniquement — comptes seedés en local (seed-pos-demo).
 const COMPTES_DEMO = [
-  { login: 'demo-pos-caissier', libelle: 'Caissier boutique (POS)' },
-  { login: 'demo-pos-temoin', libelle: 'Responsable boutique (témoin)' },
-  { login: 'demo-respsi', libelle: 'Responsable SI (catalogue)' },
+  { login: 'demo-pos-caissier', libelle: 'Caissier (POS)' },
+  { login: 'demo-pos-temoin', libelle: 'Responsable magasin (témoin)' },
+  { login: 'demo-respsi', libelle: 'Admin catalogue / Achats' },
+  { login: 'demo-daf', libelle: 'DAF (factures / paiements)' },
+  { login: 'demo-central', libelle: 'Caissier central (paiements)' },
 ];
 const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
 
@@ -48,10 +50,10 @@ export function LoginPage() {
     <div className="login-screen">
       <form onSubmit={handleSubmit} className="login-card">
         <div className="login-brand">
-          <div className="login-brand-mark">Marché des Accessoires</div>
+          <div className="login-brand-mark">CaissePOS</div>
           <h1>Connexion</h1>
           <p className="lead" style={{ color: 'var(--text-muted)', margin: 0 }}>
-            Caisse, trésorerie et relation client
+            Point de vente, stocks, clients et trésorerie
           </p>
         </div>
         <div>
@@ -76,7 +78,7 @@ export function LoginPage() {
           />
         </div>
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={isSubmitting}>
+        <button type="submit" className="btn-primary" disabled={isSubmitting}>
           {isSubmitting ? 'Connexion...' : 'Se connecter'}
         </button>
 

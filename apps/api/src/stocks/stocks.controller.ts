@@ -34,6 +34,16 @@ export class StocksController {
     private readonly audit: AuditService,
   ) {}
 
+  @Get('synthese')
+  @Roles(...ROLES_LECTURE_STRUCTURE)
+  async synthese(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('entrepotId') entrepotId?: string,
+  ) {
+    const entrepotIds = await this.resolveEntrepotScope(user, entrepotId);
+    return this.stocks.synthese(entrepotIds);
+  }
+
   @Get()
   @Roles(...ROLES_LECTURE_STRUCTURE)
   async list(
@@ -58,20 +68,16 @@ export class StocksController {
     @Query('produitId') produitId?: string,
   ) {
     const entrepotIds = await this.resolveEntrepotScope(user, entrepotId);
-    return this.prisma.mouvementStock.findMany({
-      where: {
-        ...(produitId ? { produitId } : {}),
-        ...(entrepotId
-          ? { entrepotId }
-          : { OR: [{ entrepotId: { in: entrepotIds } }, { entrepotId: null }] }),
-      },
-      orderBy: { dateHeure: 'desc' },
-      take: 200,
+    return this.stocks.listerMouvements({
+      produitId,
+      entrepotId:
+        entrepotId && entrepotIds.includes(entrepotId) ? entrepotId : undefined,
+      entrepotIds: entrepotId ? undefined : entrepotIds,
     });
   }
 
   @Post('ajustements')
-  @Roles(...ROLES_ADMIN_STRUCTURE, ...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_ADMIN_STRUCTURE)
   async ajuster(
     @Body() dto: AjusterStockDto,
     @CurrentUser() user: AuthenticatedUser,

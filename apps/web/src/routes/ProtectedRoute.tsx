@@ -5,7 +5,9 @@ import {
   Grid2x2,
   LayoutDashboard,
   LogOut,
+  Package,
   ShoppingCart,
+  Truck,
   Users,
   Wallet,
   Warehouse,
@@ -41,16 +43,37 @@ const APPS: AppDef[] = [
     menus: [],
   },
   {
+    id: 'produits',
+    name: 'Produits',
+    color: '#714B67',
+    icon: Package,
+    home: '/produits',
+    match: ['/produits'],
+    menus: [{ to: '/produits', label: 'Catalogue' }],
+  },
+  {
     id: 'inventory',
-    name: 'Inventaire',
+    name: 'Stocks',
     color: '#00A09D',
     icon: Warehouse,
     home: '/stocks',
-    match: ['/stocks', '/produits', '/fournisseurs'],
+    match: ['/stocks', '/inventaires'],
     menus: [
-      { to: '/stocks', label: 'Inventaire' },
-      { to: '/produits', label: 'Produits' },
+      { to: '/stocks', label: 'Stocks' },
+      { to: '/inventaires', label: 'Inventaires physiques' },
+    ],
+  },
+  {
+    id: 'purchase',
+    name: 'Achats',
+    color: '#C45100',
+    icon: Truck,
+    home: '/fournisseurs',
+    match: ['/fournisseurs', '/achats/commandes', '/achats/factures'],
+    menus: [
       { to: '/fournisseurs', label: 'Fournisseurs' },
+      { to: '/achats/commandes', label: 'Commandes' },
+      { to: '/achats/factures', label: 'Factures' },
     ],
   },
   {
@@ -231,7 +254,7 @@ export function ProtectedRoute() {
                 <NavLink
                   key={menu.to}
                   to={menu.to}
-                  end={menu.to === currentApp.home}
+                  end={menu.to === currentApp.home && !['/produits', '/clients'].includes(menu.to)}
                 >
                   {menu.label}
                 </NavLink>

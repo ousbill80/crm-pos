@@ -53,6 +53,7 @@ model Boutique {
   caisses      Caisse[]
   utilisateurs Utilisateur[]
   entrepots    Entrepot[]
+  commandesAchat CommandeAchat[]
 
   @@map("boutique")
 }
@@ -74,6 +75,8 @@ model Entrepot {
   boutiqueId String
   quants     StockQuant[]
   mouvements MouvementStock[]
+  sessionsInventaire SessionInventaire[]
+  receptions ReceptionStock[]
 
   @@unique([boutiqueId, code])
   @@map("entrepot")
@@ -119,6 +122,11 @@ model Utilisateur {
   mouvementsStock         MouvementStock[]
   retoursVente            RetourVente[]
   campagnesCreees         CampagneCrm[]
+  sessionsInventaireInitiees SessionInventaire[] @relation("InventaireInitiateur")
+  sessionsInventaireValidees SessionInventaire[] @relation("InventaireValidateur")
+  commandesAchatInitiees     CommandeAchat[]     @relation("CommandeAchatInitiateur")
+  facturesFournisseur        FactureFournisseur[]
+  paiementsFournisseur       PaiementFournisseur[]
 
   @@map("utilisateur")
 }
@@ -257,6 +265,8 @@ model Produit {
   receptions       ReceptionStock[]
   mouvements       MouvementStock[]
   quants           StockQuant[]
+  lignesInventaire LigneInventaire[]
+  lignesCommandeAchat LigneCommandeAchat[]
 
   @@index([categorie])
   @@index([actif])
@@ -310,21 +320,129 @@ model StockQuant {
   @@map("stock_quant")
 }
 
+// Inventaire physique — extension stock avancé (§6.5) pour la sécurité du
+// stock : le comptage ne modifie pas StockQuant. Seule la validation par un
+// autre utilisateur applique des AJUSTEMENT au grand livre (séparation des
+// tâches, même esprit que le témoin de session de caisse §5.1).
+enum StatutInventaire {
+  EN_COURS
+  VALIDE
+  ANNULE
+}
+
+model SessionInventaire {
+  id             String           @id @default(uuid())
+  entrepot       Entrepot         @relation(fields: [entrepotId], references: [id])
+  entrepotId     String
+  statut         StatutInventaire @default(EN_COURS)
+  motif          String?
+  dateOuverture  DateTime         @default(now())
+  dateValidation DateTime?
+  initiateur     Utilisateur      @relation("InventaireInitiateur", fields: [initiateurId], references: [id])
+  initiateurId   String
+  validateur     Utilisateur?     @relation("InventaireValidateur", fields: [validateurId], references: [id])
+  validateurId   String?
+  lignes         LigneInventaire[]
+
+  @@index([entrepotId, statut])
+  @@map("session_inventaire")
+}
+
+model LigneInventaire {
+  id                String            @id @default(uuid())
+  session           SessionInventaire @relation(fields: [sessionId], references: [id])
+  sessionId         String
+  produit           Produit           @relation(fields: [produitId], references: [id])
+  produitId         String
+  quantiteTheorique Int
+  quantiteComptee   Int?
+  dateComptage      DateTime?
+
+  @@unique([sessionId, produitId])
+  @@map("ligne_inventaire")
+}
+
 // ---------------------------------------------------------------------------
-// Fournisseurs & approvisionnement — extension au socle MCD (§6.5) : fiche
-// fournisseur simple + réception de stock (portée validée avec
-// l'utilisateur — pas de bon de commande ni de facturation fournisseur,
-// hors périmètre du cahier des charges qui ne mentionne pas ce rôle/flux).
+// Fournisseurs & approvisionnement — extension au socle MCD (§6.5), cycle
+// complet validé avec l'utilisateur : fiche → bon de commande → réception
+// → facture → paiement. Les paiements n'écrivent PAS dans TRANSACTION_CAISSE
+// (§6.4, circuit versements boutique / caisse centrale).
 // ---------------------------------------------------------------------------
+
+enum StatutCommandeAchat {
+  BROUILLON
+  CONFIRMEE
+  PARTIELLEMENT_RECEPTIONNEE
+  RECEPTIONNEE
+  CLOTUREE
+  ANNULEE
+}
+
+enum StatutFactureFournisseur {
+  BROUILLON
+  COMPTABILISEE
+  PARTIELLEMENT_PAYEE
+  PAYEE
+  ANNULEE
+}
+
+enum ModePaiementFournisseur {
+  VIREMENT
+  ESPECES
+  MOBILE_MONEY
+}
 
 model Fournisseur {
   id         String           @id @default(uuid())
   nom        String
   contact    String?
+  telephone  String?
+  email      String?
+  adresse    String?
+  notes      String?
+  actif      Boolean          @default(true)
   createdAt  DateTime         @default(now())
   receptions ReceptionStock[]
+  commandes  CommandeAchat[]
+  factures   FactureFournisseur[]
 
+  @@index([actif])
   @@map("fournisseur")
+}
+
+model CommandeAchat {
+  id                 String             @id @default(uuid())
+  numero             String             @unique
+  fournisseur        Fournisseur        @relation(fields: [fournisseurId], references: [id])
+  fournisseurId      String
+  statut             StatutCommandeAchat @default(BROUILLON)
+  notes              String?
+  dateCommande       DateTime           @default(now())
+  dateConfirmation   DateTime?
+  dateCloture        DateTime?
+  initiateur         Utilisateur        @relation("CommandeAchatInitiateur", fields: [initiateurId], references: [id])
+  initiateurId       String
+  boutique           Boutique?          @relation(fields: [boutiqueId], references: [id])
+  boutiqueId         String?
+  lignes             LigneCommandeAchat[]
+  receptions         ReceptionStock[]
+
+  @@index([fournisseurId, statut])
+  @@map("commande_achat")
+}
+
+model LigneCommandeAchat {
+  id              String        @id @default(uuid())
+  commande        CommandeAchat @relation(fields: [commandeId], references: [id])
+  commandeId      String
+  produit         Produit       @relation(fields: [produitId], references: [id])
+  produitId       String
+  quantite        Int
+  prixUnitaire    Decimal       @db.Decimal(14, 2)
+  receptions      ReceptionStock[]
+
+  @@unique([commandeId, produitId])
+  @@map("ligne_commande_achat")
 }
 
 // Réception de stock : incrémente Produit.stock de façon atomique (même
@@ -342,8 +460,70 @@ model ReceptionStock {
   dateReception DateTime    @default(now())
   utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
   utilisateurId String
+  // Emplacement réellement crédité (grand livre MouvementStock). Nullable
+  // pour les réceptions historiques antérieures à ce suivi.
+  entrepot      Entrepot?   @relation(fields: [entrepotId], references: [id])
+  entrepotId    String?
+  // Référence de livraison (BL).
+  reference     String?
+  commande      CommandeAchat?     @relation(fields: [commandeId], references: [id])
+  commandeId    String?
+  ligneCommande LigneCommandeAchat? @relation(fields: [ligneCommandeId], references: [id])
+  ligneCommandeId String?
+  ligneFacture  LigneFactureFournisseur?
 
+  @@index([fournisseurId, dateReception])
+  @@index([commandeId])
   @@map("reception_stock")
+}
+
+model FactureFournisseur {
+  id                    String                    @id @default(uuid())
+  numero                String                    @unique
+  referenceFournisseur  String?
+  fournisseur           Fournisseur               @relation(fields: [fournisseurId], references: [id])
+  fournisseurId         String
+  statut                StatutFactureFournisseur  @default(BROUILLON)
+  dateFacture           DateTime                  @default(now())
+  dateEcheance          DateTime?
+  notes                 String?
+  montant               Decimal                   @db.Decimal(14, 2)
+  createur              Utilisateur               @relation(fields: [createurId], references: [id])
+  createurId            String
+  lignes                LigneFactureFournisseur[]
+  paiements             PaiementFournisseur[]
+
+  @@index([fournisseurId, statut])
+  @@map("facture_fournisseur")
+}
+
+model LigneFactureFournisseur {
+  id            String              @id @default(uuid())
+  facture       FactureFournisseur  @relation(fields: [factureId], references: [id])
+  factureId     String
+  reception     ReceptionStock      @relation(fields: [receptionId], references: [id])
+  receptionId   String              @unique
+  quantite      Int
+  prixUnitaire  Decimal             @db.Decimal(14, 2)
+
+  @@map("ligne_facture_fournisseur")
+}
+
+// Grand livre append-only des règlements fournisseur — aucune modification
+// ni suppression d'une ligne déjà enregistrée (même esprit que JournalAudit).
+model PaiementFournisseur {
+  id            String                  @id @default(uuid())
+  facture       FactureFournisseur      @relation(fields: [factureId], references: [id])
+  factureId     String
+  montant       Decimal                 @db.Decimal(14, 2)
+  mode          ModePaiementFournisseur
+  reference     String?
+  datePaiement  DateTime                @default(now())
+  utilisateur   Utilisateur             @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
+
+  @@index([factureId, datePaiement])
+  @@map("paiement_fournisseur")
 }
 
 enum ModePaiement {
@@ -402,6 +582,8 @@ model Vente {
   // Rattachement client optionnel — la vente anonyme doit rester possible (§6.6)
   client          Client?       @relation(fields: [clientId], references: [id])
   clientId        String?
+  // Idempotence hors-ligne (§6.7) : UUID généré côté caisse, unique si renseigné.
+  clientOperationId String?     @unique
   lignes          LigneVente[]
   retours         RetourVente[]
 
@@ -463,11 +645,22 @@ enum SegmentClient {
   VIP
 }
 
+// Personne physique (particulier) ou morale (entreprise / association) —
+// une seule fiche réseau dans les deux cas (§6.6).
+enum TypeClient {
+  PHYSIQUE
+  MORALE
+}
+
 model Client {
   id                    String        @id @default(uuid())
+  typeClient            TypeClient    @default(PHYSIQUE)
+  // PHYSIQUE : nom de famille ; MORALE : raison sociale.
   nom                   String
-  prenom                String
+  // PHYSIQUE : prénom (obligatoire métier) ; MORALE : interlocuteur (optionnel).
+  prenom                String?
   contact               String?
+  // Uniquement pertinente pour PHYSIQUE (ignorée / null pour MORALE).
   dateNaissance         DateTime?
   segment               SegmentClient @default(NOUVEAU)
   consentementMarketing Boolean       @default(false)

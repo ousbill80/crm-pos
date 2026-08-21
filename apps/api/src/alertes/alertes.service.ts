@@ -214,7 +214,7 @@ export class AlertesService {
   // un snapshot (contrairement aux autres alertes dérivées du journal).
   private async alertesStockBas(): Promise<AlerteDto[]> {
     const produits = await this.prisma.produit.findMany({
-      where: { seuilReappro: { not: null } },
+      where: { actif: true, seuilReappro: { not: null } },
     });
 
     return produits

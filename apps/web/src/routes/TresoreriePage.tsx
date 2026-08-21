@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Banknote,
+  Clock,
   Scale,
   TrendingUp,
   Wallet,
@@ -14,7 +15,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,6 +32,9 @@ import {
   insightTresorerie,
   insightVersementsEnRetard,
 } from '../lib/insights/dashboard';
+import { useAuth } from '../context/AuthContext';
+import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
+import type { Insight } from '../lib/insights/types';
 import type { ReportingDashboard } from './DashboardPage';
 
 interface AlerteDto {
@@ -77,7 +80,30 @@ function formatFcfa(value: string | number): string {
   return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
 }
 
+function insightRunway(jours: number | null, moyenneCa: string): Insight {
+  if (jours === null) {
+    return {
+      title: 'Runway',
+      interpretation:
+        'Impossible à calculer : moyenne CA journalière nulle sur 30 j.',
+      severity: 'neutral',
+    };
+  }
+  return {
+    title: 'Runway cash',
+    interpretation: `Environ ${jours} jour(s) de cash consolidé au rythme du CA moyen (${formatFcfa(moyenneCa)}/j) — indicateur indicatif.`,
+    recommendation:
+      jours < 14
+        ? 'Surveiller les versements en retard et accélérer le circuit vers la centrale.'
+        : undefined,
+    severity: jours < 14 ? 'warning' : 'ok',
+  };
+}
+
 export function TresoreriePage() {
+  const { user } = useAuth();
+  useTresorerieRealtime(user !== null);
+
   const dashboard = useQuery({
     queryKey: ['reporting', 'dashboard', 'tresorerie'],
     queryFn: () => apiFetch<ReportingDashboard>('/reporting/dashboard'),
@@ -105,9 +131,7 @@ export function TresoreriePage() {
   const courbeChart = (pilot?.courbe ?? []).map((p) => ({
     jour: `J+${p.jourOffset}`,
     date: p.date,
-    Base: Number(p.cashBase),
-    Haut: Number(p.cashHaut),
-    Bas: Number(p.cashBas),
+    Projection: Number(p.cashBase),
   }));
 
   const ageingChart = (pilot?.ageing ?? []).map((a) => ({
@@ -119,6 +143,9 @@ export function TresoreriePage() {
 
   const proj7 = pilot?.courbe[7];
   const proj30 = pilot?.courbe[30];
+  const moyenneCa = Number(pilot?.meta.moyenneCaJournalier30j ?? 0);
+  const cash = Number(pilot?.position.cashConseille ?? 0);
+  const runwayJours = moyenneCa > 0 ? Math.floor(cash / moyenneCa) : null;
 
   const loading = dashboard.isLoading || pilotage.isLoading;
   const error = dashboard.isError || pilotage.isError;
@@ -130,8 +157,8 @@ export function TresoreriePage() {
         subtitle="Cash position & prévision indicative — grand livre append-only (inspiration Agicap)"
         actions={
           <div className="page-header-actions">
-            <Link className="btn-secondary" to="/transactions">
-              Transactions
+            <Link className="btn-secondary" to="/transactions?enCours=1">
+              En cours
             </Link>
             <Link className="btn-secondary" to="/litiges">
               Litiges
@@ -207,12 +234,37 @@ export function TresoreriePage() {
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.versementsEnCours)}
               </div>
-              <div className="kpi-hint">Initié / transit / réceptionné</div>
+              <div className="kpi-hint">
+                <Link to="/transactions?enCours=1">Voir le circuit</Link>
+              </div>
             </article>
           </div>
 
-          {/* Horizon J+7 / J+30 + litiges / retards */}
           <div className="kpi-grid dash-kpi-grid">
+            <article
+              className={
+                runwayJours !== null && runwayJours < 14
+                  ? 'kpi-card dash-kpi kpi-warning'
+                  : 'kpi-card dash-kpi'
+              }
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Clock size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightRunway(
+                    runwayJours,
+                    pilot.meta.moyenneCaJournalier30j,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Runway</div>
+              <div className="kpi-value">
+                {runwayJours === null ? '—' : `${runwayJours} j`}
+              </div>
+              <div className="kpi-hint">Cash ÷ CA moyen / j</div>
+            </article>
             {proj7 && (
               <article className="kpi-card dash-kpi">
                 <div className="dash-kpi-top">
@@ -226,7 +278,7 @@ export function TresoreriePage() {
                 </div>
                 <div className="kpi-label">Projection J+7</div>
                 <div className="kpi-value money">{formatFcfa(proj7.cashBase)}</div>
-                <div className="kpi-hint">Indicative — scénario base</div>
+                <div className="kpi-hint">Indicative</div>
               </article>
             )}
             {proj30 && (
@@ -267,8 +319,12 @@ export function TresoreriePage() {
               </div>
               <div className="kpi-label">Litiges</div>
               <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
-              <div className="kpi-hint money">
-                Écarts abs. {data.ecarts.montantEcartsAbsolus} FCFA
+              <div className="kpi-hint">
+                <Link to="/litiges">Traiter les litiges</Link>
+                {' · '}
+                <span className="money">
+                  Écarts abs. {data.ecarts.montantEcartsAbsolus} FCFA
+                </span>
               </div>
             </article>
             <article
@@ -288,15 +344,17 @@ export function TresoreriePage() {
               </div>
               <div className="kpi-label">Retards &gt; 24h</div>
               <div className="kpi-value">{data.versements.enRetard24h}</div>
-              <div className="kpi-hint">Versements non aboutis</div>
+              <div className="kpi-hint">
+                <Link to="/transactions?enCours=1">Voir le circuit</Link>
+              </div>
             </article>
           </div>
 
           <div className="panel-grid-2">
-            <ListPanel title="Courbe de liquidité 30 j (scénarios)">
+            <ListPanel title="Courbe de liquidité 30 j">
               <p className="lead">
-                Base / Haut (+10&nbsp;% pente) / Bas (−10&nbsp;% pente) — projection
-                indicative, pas un solde comptable.
+                Projection indicative = cash consolidé + moyenne CA 30 j × horizon.
+                Pas un solde comptable.
               </p>
               <div style={{ width: '100%', height: 280 }}>
                 <ResponsiveContainer>
@@ -314,30 +372,13 @@ export function TresoreriePage() {
                         formatFcfa(typeof value === 'number' ? value : Number(value))
                       }
                     />
-                    <Legend />
                     <Area
                       type="monotone"
-                      dataKey="Haut"
-                      stroke="#0d9488"
-                      fill="#0d9488"
-                      fillOpacity={0.12}
-                      strokeWidth={1.5}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Base"
+                      dataKey="Projection"
                       stroke="#0f766e"
                       fill="#0f766e"
                       fillOpacity={0.25}
                       strokeWidth={2}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="Bas"
-                      stroke="#b45309"
-                      fill="#b45309"
-                      fillOpacity={0.1}
-                      strokeWidth={1.5}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -368,6 +409,7 @@ export function TresoreriePage() {
                     <th>Bucket</th>
                     <th>Nb</th>
                     <th>Montant</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -381,13 +423,18 @@ export function TresoreriePage() {
                       </td>
                       <td>{a.nombre}</td>
                       <td className="money">{formatFcfa(a.montant)}</td>
+                      <td>
+                        <Link to={`/transactions?enCours=1&ageing=${a.bucket}`}>
+                          Voir
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <p className="lead">
-                <Link to="/transactions">
-                  Ouvrir les transactions <ArrowRight size={14} />
+                <Link to="/transactions?enCours=1">
+                  Toutes les transactions en cours <ArrowRight size={14} />
                 </Link>
               </p>
             </ListPanel>

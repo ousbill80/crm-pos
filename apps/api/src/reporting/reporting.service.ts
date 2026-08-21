@@ -146,15 +146,21 @@ export class ReportingService {
       ),
     ];
 
-    const [chiffreAffaires, versements, ecarts, tresorerie, crm, rentabiliteParBoutique] =
-      await Promise.all([
-        this.aggreguerChiffreAffaires(caisseIds, periode),
-        this.aggreguerVersements(caisseIds),
-        this.aggreguerEcarts(caisseIds),
-        this.aggreguerTresorerie(caisses),
-        this.aggreguerCrm(boutiqueIds, perimetre),
-        this.aggreguerRentabiliteParBoutique(caisseIds, boutiqueIds, periode),
-      ]);
+    const [
+      chiffreAffaires,
+      versements,
+      ecarts,
+      tresorerie,
+      crm,
+      rentabiliteParBoutique,
+    ] = await Promise.all([
+      this.aggreguerChiffreAffaires(caisseIds, periode),
+      this.aggreguerVersements(caisseIds),
+      this.aggreguerEcarts(caisseIds),
+      this.aggreguerTresorerie(caisses),
+      this.aggreguerCrm(boutiqueIds, perimetre),
+      this.aggreguerRentabiliteParBoutique(caisseIds, boutiqueIds, periode),
+    ]);
 
     return {
       perimetre,
@@ -281,13 +287,13 @@ export class ReportingService {
         cashConseille: money(cashConseille),
         versementsEnCours: money(versementsEnCours),
       },
-      ageing: (
-        ['0_24h', '24_48h', '48_72h', 'plus_72h'] as AgeingBucket[]
-      ).map((bucket) => ({
-        bucket,
-        nombre: buckets[bucket].nombre,
-        montant: money(buckets[bucket].montant),
-      })),
+      ageing: (['0_24h', '24_48h', '48_72h', 'plus_72h'] as AgeingBucket[]).map(
+        (bucket) => ({
+          bucket,
+          nombre: buckets[bucket].nombre,
+          montant: money(buckets[bucket].montant),
+        }),
+      ),
       courbe,
       meta: {
         moyenneCaJournalier30j: money(moyenneCa),
@@ -735,7 +741,10 @@ export class ReportingService {
           quantite: true,
           montantRembourse: true,
           ligneVente: {
-            select: { coutUnitaire: true, vente: { select: { caisseId: true } } },
+            select: {
+              coutUnitaire: true,
+              vente: { select: { caisseId: true } },
+            },
           },
         },
       });
@@ -745,7 +754,9 @@ export class ReportingService {
         );
         if (!boutiqueId) continue;
         const entry = cumul(boutiqueId);
-        entry.retoursMontant = entry.retoursMontant.plus(retour.montantRembourse);
+        entry.retoursMontant = entry.retoursMontant.plus(
+          retour.montantRembourse,
+        );
         if (retour.ligneVente.coutUnitaire !== null) {
           entry.retoursCout = entry.retoursCout.plus(
             retour.ligneVente.coutUnitaire.times(retour.quantite),

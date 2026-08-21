@@ -1,13 +1,51 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  ClipboardCheck,
+  Download,
+  Package,
+  PackageX,
+  Search,
+  SlidersHorizontal,
+  Timer,
+  Truck,
+  Warehouse,
+} from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
+import { LoadingState } from '../components/LoadingState';
+import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  insightCouvertureJours,
+  insightSanteStock,
+  insightStockQuantite,
+  insightSuggestionTransfert,
+  insightValeurInventaire,
+} from '../lib/insights/stocks';
 import type {
   EntrepotDto,
+  InventairePrioriteDto,
   MouvementStockDto,
   ProduitDto,
-  StockQuantDto,
+  StatutStockLigne,
+  StockSyntheseDto,
 } from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = [
@@ -28,13 +66,133 @@ const ROLES_ECRITURE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_BOUTIQUE,
 ];
 
+const ROLES_AJUSTEMENT_LIBRE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+const TYPE_MOUVEMENT: Record<MouvementStockDto['type'], string> = {
+  RECEPTION: 'Réception',
+  VENTE: 'Vente',
+  RETOUR: 'Retour',
+  AJUSTEMENT: 'Ajustement',
+  TRANSFERT_OUT: 'Transfert sortie',
+  TRANSFERT_IN: 'Transfert entrée',
+};
+
+const STATUT_LABEL: Record<StatutStockLigne, string> = {
+  RUPTURE: 'Rupture',
+  SOUS_SEUIL: 'Sous seuil',
+  OK: 'OK',
+};
+
+const COULEURS_STATUT: Record<StatutStockLigne, string> = {
+  RUPTURE: '#b42318',
+  SOUS_SEUIL: '#b54708',
+  OK: '#0f766e',
+};
+
+type VueNiveaux = 'liste' | 'matrice';
+type FiltreStatut = 'TOUS' | StatutStockLigne;
+
+function formatFcfa(value: string | number): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n)) return `${value} FCFA`;
+  return `${n.toLocaleString('fr-FR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })} FCFA`;
+}
+
+function messageErreur(err: unknown): string {
+  if (!(err instanceof Error)) return 'Une erreur est survenue.';
+  try {
+    const parsed = JSON.parse(err.message) as { message?: string | string[] };
+    if (typeof parsed.message === 'string') return parsed.message;
+    if (Array.isArray(parsed.message)) return parsed.message.join(' ');
+  } catch {
+    /* corps non JSON */
+  }
+  return err.message;
+}
+
+function chartTooltipStyle(): Record<string, string> {
+  return {
+    background: '#fff',
+    border: '1px solid #d8dee6',
+    borderRadius: '8px',
+    fontSize: '12.5px',
+  };
+}
+
+function csvCell(value: string | number | boolean | null | undefined): string {
+  const raw = value === null || value === undefined ? '' : String(value);
+  if (/[",\n]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
+  return raw;
+}
+
+function exporterInventaireCsv(
+  lignes: StockSyntheseDto['lignes'],
+  entrepots: StockSyntheseDto['parEntrepot'],
+) {
+  const headers = [
+    'Produit',
+    'Référence',
+    'Catégorie',
+    'Actif',
+    'Statut',
+    'Seuil',
+    'Réseau',
+    'Valeur CMP',
+    'Couverture jours',
+    ...entrepots.map((e) => `${e.code} (${e.nomBoutique})`),
+  ];
+  const rows = lignes.map((l) => [
+    csvCell(l.designation),
+    csvCell(l.reference),
+    csvCell(l.categorie),
+    l.actif ? 'oui' : 'non',
+    l.statut,
+    l.seuilReappro ?? '',
+    l.stockReseau,
+    l.valeur,
+    l.couvertureJours ?? '',
+    ...entrepots.map((e) => qtyAt(l, e.entrepotId)?.quantite ?? ''),
+  ]);
+  const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `inventaire-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function qtyAt(
+  ligne: StockSyntheseDto['lignes'][number],
+  entrepotId: string,
+): { quantite: number; statut: StatutStockLigne } | null {
+  return ligne.parEntrepot.find((c) => c.entrepotId === entrepotId) ?? null;
+}
+
 export function StocksPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutEcrire = user !== null && ROLES_ECRITURE.includes(user.role);
+  const peutAjusterLibre =
+    user !== null && ROLES_AJUSTEMENT_LIBRE.includes(user.role);
 
   const [filtreEntrepot, setFiltreEntrepot] = useState('');
+  const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>('TOUS');
+  const [filtreCategorie] = useState('');
+  const [voirInactifs] = useState(false);
+  const [recherche, setRecherche] = useState('');
+  const [vue, setVue] = useState<VueNiveaux>('liste');
+  const [filtreTypeMvt, setFiltreTypeMvt] = useState('');
+  const [modalAjuster, setModalAjuster] = useState(false);
+  const [modalTransferer, setModalTransferer] = useState(false);
 
   const entrepots = useQuery({
     queryKey: ['entrepots'],
@@ -46,11 +204,13 @@ export function StocksPage() {
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
     enabled: peutLire,
   });
-  const stocks = useQuery({
-    queryKey: ['stocks', filtreEntrepot],
+  const synthese = useQuery({
+    queryKey: ['stocks-synthese', filtreEntrepot],
     queryFn: () =>
-      apiFetch<StockQuantDto[]>(
-        filtreEntrepot ? `/stocks?entrepotId=${filtreEntrepot}` : '/stocks',
+      apiFetch<StockSyntheseDto>(
+        filtreEntrepot
+          ? `/stocks/synthese?entrepotId=${filtreEntrepot}`
+          : '/stocks/synthese',
       ),
     enabled: peutLire,
   });
@@ -64,11 +224,33 @@ export function StocksPage() {
       ),
     enabled: peutLire,
   });
+  const prioritesInventaire = useQuery({
+    queryKey: ['inventaires-priorites'],
+    queryFn: () => apiFetch<InventairePrioriteDto[]>('/inventaires/priorites'),
+    enabled: peutLire,
+  });
+
+  const entrepotCols = synthese.data?.parEntrepot ?? [];
+  const entrepotOptions = entrepots.data ?? [];
 
   const [ajProduit, setAjProduit] = useState('');
   const [ajEntrepot, setAjEntrepot] = useState('');
   const [ajQty, setAjQty] = useState('');
+  const [ajRef, setAjRef] = useState('');
   const [ajErr, setAjErr] = useState<string | null>(null);
+
+  const [trProduit, setTrProduit] = useState('');
+  const [trSource, setTrSource] = useState('');
+  const [trDest, setTrDest] = useState('');
+  const [trQty, setTrQty] = useState('');
+  const [trErr, setTrErr] = useState<string | null>(null);
+
+  function invaliderStocks() {
+    void queryClient.invalidateQueries({ queryKey: ['stocks'] });
+    void queryClient.invalidateQueries({ queryKey: ['stocks-synthese'] });
+    void queryClient.invalidateQueries({ queryKey: ['stocks-mouvements'] });
+    void queryClient.invalidateQueries({ queryKey: ['produits'] });
+  }
 
   const ajuster = useMutation({
     mutationFn: () =>
@@ -78,23 +260,18 @@ export function StocksPage() {
           produitId: ajProduit,
           entrepotId: ajEntrepot,
           quantiteComptee: Number(ajQty),
+          ...(ajRef.trim() ? { reference: ajRef.trim() } : {}),
         }),
       }),
     onSuccess: () => {
       setAjErr(null);
       setAjQty('');
-      void queryClient.invalidateQueries({ queryKey: ['stocks'] });
-      void queryClient.invalidateQueries({ queryKey: ['stocks-mouvements'] });
-      void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      setAjRef('');
+      setModalAjuster(false);
+      invaliderStocks();
     },
-    onError: () => setAjErr('Échec de l’ajustement.'),
+    onError: (err) => setAjErr(messageErreur(err)),
   });
-
-  const [trProduit, setTrProduit] = useState('');
-  const [trSource, setTrSource] = useState('');
-  const [trDest, setTrDest] = useState('');
-  const [trQty, setTrQty] = useState('');
-  const [trErr, setTrErr] = useState<string | null>(null);
 
   const transferer = useMutation({
     mutationFn: () =>
@@ -110,250 +287,1048 @@ export function StocksPage() {
     onSuccess: () => {
       setTrErr(null);
       setTrQty('');
-      void queryClient.invalidateQueries({ queryKey: ['stocks'] });
-      void queryClient.invalidateQueries({ queryKey: ['stocks-mouvements'] });
-      void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      setModalTransferer(false);
+      invaliderStocks();
     },
-    onError: () => setTrErr('Échec du transfert.'),
+    onError: (err) => setTrErr(messageErreur(err)),
   });
 
-  const matrice = useMemo(() => {
-    const rows = new Map<string, { designation: string; seuil: number | null; byEntrepot: Record<string, number> }>();
-    for (const q of stocks.data ?? []) {
-      const row = rows.get(q.produitId) ?? {
-        designation: q.produit.designation,
-        seuil: q.produit.seuilReappro,
-        byEntrepot: {},
-      };
-      row.byEntrepot[q.entrepotId] = q.quantite;
-      rows.set(q.produitId, row);
-    }
-    return rows;
-  }, [stocks.data]);
+  const lignesFiltrees = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    return (synthese.data?.lignes ?? []).filter((ligne) => {
+      if (!voirInactifs && !ligne.actif) return false;
+      if (filtreStatut !== 'TOUS' && ligne.statut !== filtreStatut) return false;
+      if (filtreCategorie && ligne.categorie !== filtreCategorie) return false;
+      if (q) {
+        const hay = `${ligne.designation} ${ligne.reference ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    synthese.data?.lignes,
+    filtreStatut,
+    filtreCategorie,
+    recherche,
+    voirInactifs,
+  ]);
 
-  const entrepotCols = entrepots.data ?? [];
+  const mouvementsFiltres = useMemo(() => {
+    const q = recherche.trim().toLowerCase();
+    return (mouvements.data ?? []).filter((m) => {
+      if (filtreTypeMvt && m.type !== filtreTypeMvt) return false;
+      if (!q) return true;
+      const designation =
+        m.produit?.designation ??
+        produits.data?.find((p) => p.id === m.produitId)?.designation ??
+        '';
+      return designation.toLowerCase().includes(q);
+    });
+  }, [mouvements.data, filtreTypeMvt, recherche, produits.data]);
+
+  const statutChart = useMemo(() => {
+    const data = synthese.data;
+    if (!data) return [];
+    const ok = Math.max(
+      0,
+      data.lignes.reduce((n, l) => n + l.parEntrepot.length, 0) -
+        data.kpis.ruptures -
+        data.kpis.sousSeuil,
+    );
+    return [
+      { key: 'RUPTURE' as const, label: 'Ruptures', value: data.kpis.ruptures },
+      { key: 'SOUS_SEUIL' as const, label: 'Sous seuil', value: data.kpis.sousSeuil },
+      { key: 'OK' as const, label: 'OK', value: ok },
+    ].filter((d) => d.value > 0);
+  }, [synthese.data]);
+
+  const qtyActuelleAjustement = useMemo(() => {
+    const ligne = synthese.data?.lignes.find((l) => l.produitId === ajProduit);
+    if (!ligne || !ajEntrepot) return null;
+    return qtyAt(ligne, ajEntrepot)?.quantite ?? 0;
+  }, [synthese.data, ajProduit, ajEntrepot]);
+
+  const qtySourceTransfert = useMemo(() => {
+    const ligne = synthese.data?.lignes.find((l) => l.produitId === trProduit);
+    if (!ligne || !trSource) return null;
+    return qtyAt(ligne, trSource)?.quantite ?? 0;
+  }, [synthese.data, trProduit, trSource]);
+
+  const produitsSelect = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const p of produits.data ?? []) {
+      byId.set(p.id, p.designation);
+    }
+    for (const l of synthese.data?.lignes ?? []) {
+      byId.set(l.produitId, l.designation);
+    }
+    return Array.from(byId, ([id, designation]) => ({ id, designation })).sort(
+      (a, b) => a.designation.localeCompare(b.designation, 'fr'),
+    );
+  }, [produits.data, synthese.data?.lignes]);
+
+  const entrepotsSelect = useMemo(() => {
+    if (entrepotOptions.length) {
+      return entrepotOptions.map((e) => ({
+        id: e.id,
+        label: `${e.code} — ${e.boutique?.nom ?? e.nom}`,
+      }));
+    }
+    return entrepotCols.map((e) => ({
+      id: e.entrepotId,
+      label: `${e.code} — ${e.nomBoutique}`,
+    }));
+  }, [entrepotOptions, entrepotCols]);
+
+  function ouvrirAjuster(produitId?: string, entrepotId?: string) {
+    setAjProduit(produitId || synthese.data?.lignes[0]?.produitId || produits.data?.[0]?.id || '');
+    setAjEntrepot(entrepotId || entrepotCols[0]?.entrepotId || entrepotOptions[0]?.id || '');
+    setAjQty('');
+    setAjRef('');
+    setAjErr(null);
+    setModalAjuster(true);
+  }
+
+  function ouvrirTransfert(prefill?: {
+    produitId: string;
+    sourceId: string;
+    destId: string;
+    quantite: number;
+  }) {
+    setTrProduit(prefill?.produitId || synthese.data?.lignes[0]?.produitId || produits.data?.[0]?.id || '');
+    setTrSource(prefill?.sourceId || entrepotCols[0]?.entrepotId || entrepotOptions[0]?.id || '');
+    setTrDest(
+      prefill?.destId ||
+        entrepotCols[1]?.entrepotId ||
+        entrepotOptions[1]?.id ||
+        entrepotCols[0]?.entrepotId ||
+        '',
+    );
+    setTrQty(prefill ? String(prefill.quantite) : '');
+    setTrErr(null);
+    setModalTransferer(true);
+  }
 
   if (!peutLire) {
     return <p>Vous n’avez pas accès aux stocks.</p>;
   }
 
+  const data = synthese.data;
+  const sante = data?.sante ?? 'OK';
+
   return (
-    <div>
-      <header className="page-header">
-        <div>
-          <h1>Stocks</h1>
-          <p className="lead">Niveaux par entrepôt — ajustements et transferts</p>
-        </div>
-      </header>
+    <div className="stock-module">
+      <PageHeader
+        title="Stocks"
+        subtitle="Niveaux par entrepôt, valorisation CMP, couverture et transferts"
+        actions={
+          <>
+            {data ? (
+              <button
+                type="button"
+                onClick={() => exporterInventaireCsv(lignesFiltrees, data.parEntrepot)}
+              >
+                <Download size={15} /> Export CSV
+              </button>
+            ) : null}
+            {peutAjusterLibre ? (
+              <button type="button" onClick={() => ouvrirAjuster()}>
+                <ClipboardCheck size={15} /> Ajuster
+              </button>
+            ) : null}
+            <Link to="/inventaires" className="stock-row-link">
+              Inventaire physique
+            </Link>
+            {peutEcrire ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => ouvrirTransfert()}
+              >
+                <ArrowLeftRight size={15} /> Transférer
+              </button>
+            ) : null}
+          </>
+        }
+      />
 
-      <label htmlFor="filtre-ent">Filtrer par entrepôt</label>
-      <select
-        id="filtre-ent"
-        value={filtreEntrepot}
-        onChange={(e) => setFiltreEntrepot(e.target.value)}
-      >
-        <option value="">Tous</option>
-        {entrepotCols.map((e) => (
-          <option key={e.id} value={e.id}>
-            {e.nom} ({e.code})
-          </option>
-        ))}
-      </select>
+      {synthese.isLoading && <LoadingState label="Chargement de l’inventaire..." />}
+      {synthese.isError && <p role="alert">Erreur de chargement de l’inventaire.</p>}
 
-      {stocks.isLoading && <p>Chargement des stocks...</p>}
-      {stocks.isError && <p role="alert">Erreur de chargement des stocks.</p>}
-
-      {stocks.data && (
-        <table>
-          <thead>
-            <tr>
-              <th>Produit</th>
-              {filtreEntrepot
-                ? [
-                    <th key="q">Quantité</th>,
-                    <th key="s">Seuil</th>,
-                  ]
-                : entrepotCols.map((e) => <th key={e.id}>{e.code}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {filtreEntrepot
-              ? (stocks.data ?? []).map((q) => {
-                  const bas =
-                    q.produit.seuilReappro !== null &&
-                    q.quantite <= q.produit.seuilReappro;
-                  return (
-                    <tr key={q.id}>
-                      <td>
-                        {q.produit.designation}
-                        {bas && <span className="badge badge-warning">Seuil</span>}
-                      </td>
-                      <td>{q.quantite}</td>
-                      <td>{q.produit.seuilReappro ?? '—'}</td>
-                    </tr>
-                  );
-                })
-              : Array.from(matrice.entries()).map(([produitId, row]) => (
-                  <tr key={produitId}>
-                    <td>{row.designation}</td>
-                    {entrepotCols.map((e) => {
-                      const qty = row.byEntrepot[e.id] ?? 0;
-                      const bas = row.seuil !== null && qty <= row.seuil;
-                      return (
-                        <td key={e.id}>
-                          {qty}
-                          {bas && qty > 0 ? ' ⚠' : ''}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-          </tbody>
-        </table>
+      {(prioritesInventaire.data ?? []).some((p) => p.aInventorier) && (
+        <section className="dash-sante dash-sante-warning">
+          <div className="dash-sante-main">
+            <span className="dash-sante-badge">Inventaire en retard</span>
+            <p>
+              {(prioritesInventaire.data ?? []).filter((p) => p.aInventorier).length}{' '}
+              entrepôt(s) sans inventaire validé depuis 30 jours.
+            </p>
+          </div>
+          <div className="dash-sante-meta">
+            <Link to="/inventaires">Ouvrir un inventaire</Link>
+          </div>
+        </section>
       )}
 
-      {peutEcrire && (
+      {data && (
         <>
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              ajuster.mutate();
-            }}
-          >
-            <h2>Ajuster un stock</h2>
-            <label htmlFor="ajp">Produit</label>
-            <select
-              id="ajp"
-              value={ajProduit || produits.data?.[0]?.id || ''}
-              onChange={(e) => setAjProduit(e.target.value)}
-              required
-            >
-              {(produits.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.designation}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="aje">Entrepôt</label>
-            <select
-              id="aje"
-              value={ajEntrepot || entrepotCols[0]?.id || ''}
-              onChange={(e) => setAjEntrepot(e.target.value)}
-              required
-            >
-              {entrepotCols.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nom}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="ajq">Quantité comptée</label>
-            <input
-              id="ajq"
-              type="number"
-              min="0"
-              value={ajQty}
-              onChange={(e) => setAjQty(e.target.value)}
-              required
-            />
-            <button type="submit" disabled={ajuster.isPending}>
-              Ajuster
-            </button>
-            {ajErr && <p role="alert">{ajErr}</p>}
-          </form>
+          <section className={`dash-sante dash-sante-${sante === 'CRITIQUE' ? 'critical' : sante === 'VIGILANCE' ? 'warning' : 'ok'}`}>
+            <div className="dash-sante-main">
+              <span className="dash-sante-badge">
+                {sante === 'CRITIQUE'
+                  ? 'Critique'
+                  : sante === 'VIGILANCE'
+                    ? 'Vigilance'
+                    : 'Sain'}
+              </span>
+              <p>
+                {data.kpis.ruptures} rupture(s) · {data.kpis.sousSeuil} sous
+                seuil · {data.kpis.skuDistincts} référence(s)
+                <InfoTooltip
+                  insight={insightSanteStock(
+                    data.sante,
+                    data.kpis.ruptures,
+                    data.kpis.sousSeuil,
+                  )}
+                />
+              </p>
+            </div>
+            <div className="dash-sante-meta">
+              <span>
+                Actualisé {new Date(data.genereAt).toLocaleTimeString('fr-FR')}
+              </span>
+            </div>
+          </section>
 
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              transferer.mutate();
-            }}
-          >
-            <h2>Transférer</h2>
-            <label htmlFor="trp">Produit</label>
-            <select
-              id="trp"
-              value={trProduit || produits.data?.[0]?.id || ''}
-              onChange={(e) => setTrProduit(e.target.value)}
-              required
+          {data.suggestionsTransfert.length > 0 && (
+            <section className="dash-priorites" aria-label="Suggestions de transfert">
+              <h2>À traiter — transferts internes suggérés</h2>
+              <div className="dash-priorites-grid">
+                {data.suggestionsTransfert.slice(0, 4).map((s) => (
+                  <article
+                    key={`${s.produitId}-${s.entrepotDestId}`}
+                    className={`dash-priorite dash-priorite-${s.destStatut === 'RUPTURE' ? 'critical' : 'warning'}`}
+                  >
+                    <div className="dash-priorite-icon">
+                      <AlertTriangle size={16} />
+                    </div>
+                    <div>
+                      <h3>
+                        {s.designation}{' '}
+                        <InfoTooltip
+                          insight={insightSuggestionTransfert(
+                            s.designation,
+                            s.quantiteSuggeree,
+                            s.sourceCode,
+                            s.destCode,
+                            s.destStatut,
+                          )}
+                        />
+                      </h3>
+                      <p>{s.motif}</p>
+                      {peutEcrire ? (
+                        <button
+                          type="button"
+                          className="stock-link-btn"
+                          onClick={() =>
+                            ouvrirTransfert({
+                              produitId: s.produitId,
+                              sourceId: s.entrepotSourceId,
+                              destId: s.entrepotDestId,
+                              quantite: s.quantiteSuggeree,
+                            })
+                          }
+                        >
+                          Transférer {s.quantiteSuggeree} · {s.sourceCode} → {s.destCode}
+                        </button>
+                      ) : (
+                        <span className="kpi-hint">
+                          {s.sourceCode} → {s.destCode} · {s.quantiteSuggeree} unité(s)
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(data.suggestionsReappro?.length ?? 0) > 0 && (
+            <section className="dash-priorites" aria-label="Réapprovisionnements">
+              <h2>Réception fournisseur — pas de surplus interne</h2>
+              <div className="dash-priorites-grid">
+                {data.suggestionsReappro.slice(0, 4).map((s) => (
+                  <article
+                    key={s.produitId}
+                    className="dash-priorite dash-priorite-warning"
+                  >
+                    <div className="dash-priorite-icon">
+                      <Truck size={16} />
+                    </div>
+                    <div>
+                      <h3>
+                        {s.designation}
+                        {s.reference ? (
+                          <small> · {s.reference}</small>
+                        ) : null}
+                      </h3>
+                      <p>{s.motif}</p>
+                      <Link to="/fournisseurs">
+                        Réception · {s.deficit} unité(s)
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="kpi-grid dash-kpi-grid">
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Package size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightValeurInventaire(
+                    data.kpis.valeurStock,
+                    data.kpis.unitesTotales,
+                    data.kpis.skuDistincts,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Valeur au CMP</div>
+              <div className="kpi-value">{formatFcfa(data.kpis.valeurStock)}</div>
+              <div className="kpi-hint">
+                {data.kpis.unitesTotales} unité(s) · {data.kpis.skuDistincts} SKU
+              </div>
+            </article>
+
+            <article
+              className={
+                data.kpis.ruptures > 0
+                  ? 'kpi-card dash-kpi kpi-danger'
+                  : 'kpi-card dash-kpi'
+              }
             >
-              {(produits.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.designation}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="trs">Source</label>
-            <select
-              id="trs"
-              value={trSource || entrepotCols[0]?.id || ''}
-              onChange={(e) => setTrSource(e.target.value)}
-              required
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <PackageX size={16} />
+                </span>
+              </div>
+              <div className="kpi-label">Ruptures</div>
+              <div className="kpi-value">{data.kpis.ruptures}</div>
+              <div className="kpi-hint">Emplacements à 0</div>
+            </article>
+
+            <article
+              className={
+                data.kpis.sousSeuil > 0
+                  ? 'kpi-card dash-kpi kpi-warning'
+                  : 'kpi-card dash-kpi'
+              }
             >
-              {entrepotCols.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nom}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="trd">Destination</label>
-            <select
-              id="trd"
-              value={trDest || entrepotCols[1]?.id || entrepotCols[0]?.id || ''}
-              onChange={(e) => setTrDest(e.target.value)}
-              required
-            >
-              {entrepotCols.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nom}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="trq">Quantité</label>
-            <input
-              id="trq"
-              type="number"
-              min="1"
-              value={trQty}
-              onChange={(e) => setTrQty(e.target.value)}
-              required
-            />
-            <button type="submit" disabled={transferer.isPending}>
-              Transférer
-            </button>
-            {trErr && <p role="alert">{trErr}</p>}
-          </form>
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <AlertTriangle size={16} />
+                </span>
+              </div>
+              <div className="kpi-label">Sous le seuil</div>
+              <div className="kpi-value">{data.kpis.sousSeuil}</div>
+              <div className="kpi-hint">Réappro à planifier</div>
+            </article>
+
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Timer size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightCouvertureJours(
+                    data.kpis.couvertureJoursMediane,
+                    data.fenetreVentesJours,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Couverture médiane</div>
+              <div className="kpi-value">
+                {data.kpis.couvertureJoursMediane === null
+                  ? '—'
+                  : `${data.kpis.couvertureJoursMediane} j`}
+              </div>
+              <div className="kpi-hint">Cadence ventes {data.fenetreVentesJours} j</div>
+            </article>
+
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Warehouse size={16} />
+                </span>
+              </div>
+              <div className="kpi-label">Entrepôts</div>
+              <div className="kpi-value">{data.parEntrepot.length}</div>
+              <div className="kpi-hint">Périmètre du profil</div>
+            </article>
+          </div>
+
+          <div className="dash-layout stock-charts">
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Valeur par entrepôt</h2>
+                <span className="dash-panel-meta">CMP × quantité</span>
+              </div>
+              {data.parEntrepot.every((e) => Number(e.valeur) === 0) ? (
+                <p className="lead">Aucune valorisation (CMP à 0 ou stock vide).</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart
+                    data={data.parEntrepot.map((e) => ({
+                      name: e.code,
+                      valeur: Number(e.valeur),
+                      boutique: e.nomBoutique,
+                    }))}
+                    margin={{ left: 8, right: 8, top: 8 }}
+                  >
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      width={56}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${Math.round(v / 1000)} k` : String(v)
+                      }
+                    />
+                    <Tooltip
+                      contentStyle={chartTooltipStyle()}
+                      formatter={(value) => [
+                        formatFcfa(Number(value ?? 0)),
+                        'Valeur',
+                      ]}
+                      labelFormatter={(label, payload) =>
+                        `${label} · ${payload?.[0]?.payload?.boutique ?? ''}`
+                      }
+                    />
+                    <Bar dataKey="valeur" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Répartition des emplacements</h2>
+              </div>
+              {statutChart.length === 0 ? (
+                <p className="lead">Aucun emplacement de stock.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={statutChart}
+                      dataKey="value"
+                      nameKey="label"
+                      innerRadius={52}
+                      outerRadius={78}
+                      paddingAngle={2}
+                    >
+                      {statutChart.map((entry) => (
+                        <Cell
+                          key={entry.key}
+                          fill={COULEURS_STATUT[entry.key]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={chartTooltipStyle()} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+              <ul className="stock-legend">
+                {statutChart.map((s) => (
+                  <li key={s.key}>
+                    <span
+                      className="dash-seg-dot"
+                      style={{ background: COULEURS_STATUT[s.key] }}
+                    />
+                    {s.label} · {s.value}
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Entrepôts</h2>
+              </div>
+              {data.parEntrepot.length === 0 ? (
+                <p className="lead">Aucun entrepôt dans le périmètre.</p>
+              ) : (
+                <ul className="dash-rank">
+                  {[...data.parEntrepot]
+                    .sort((a, b) => Number(b.valeur) - Number(a.valeur))
+                    .map((e, i) => (
+                      <li key={e.entrepotId}>
+                        <div className="dash-rank-row">
+                          <span className="dash-rank-pos">{i + 1}</span>
+                          <span className="dash-rank-name">
+                            {e.code}
+                            <small> · {e.nomBoutique}</small>
+                          </span>
+                          <span className="money">{formatFcfa(e.valeur)}</span>
+                        </div>
+                        <div className="kpi-hint" style={{ marginTop: 0 }}>
+                          {e.unites} u. · {e.ruptures} rupture(s) · {e.sousSeuil}{' '}
+                          seuil
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </section>
+          </div>
         </>
       )}
 
-      <h2>Historique des mouvements</h2>
-      {mouvements.isLoading && <p>Chargement...</p>}
-      {mouvements.data && (
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Produit</th>
-              <th>Entrepôt</th>
-              <th>Δ</th>
-              <th>Après</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mouvements.data.map((m) => (
-              <tr key={m.id}>
-                <td>{new Date(m.dateHeure).toLocaleString('fr-FR')}</td>
-                <td>{m.type}</td>
-                <td>{produits.data?.find((p) => p.id === m.produitId)?.designation ?? m.produitId.slice(0, 8)}</td>
-                <td>
-                  {entrepotCols.find((e) => e.id === m.entrepotId)?.code ?? m.entrepotId?.slice(0, 8) ?? '—'}
-                </td>
-                <td>{m.quantite}</td>
-                <td>{m.stockApres}</td>
-              </tr>
+      <div className="toolbar stock-toolbar">
+        <div className="stock-search">
+          <label htmlFor="stock-q">Recherche</label>
+          <div className="stock-search-field">
+            <Search size={14} />
+            <input
+              id="stock-q"
+              type="search"
+              placeholder="Désignation ou référence"
+              value={recherche}
+              onChange={(e) => setRecherche(e.target.value)}
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="filtre-ent">Entrepôt</label>
+          <select
+            id="filtre-ent"
+            value={filtreEntrepot}
+            onChange={(e) => setFiltreEntrepot(e.target.value)}
+          >
+            <option value="">Tous</option>
+            {entrepotOptions.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.code} — {e.boutique?.nom ?? e.nom}
+              </option>
             ))}
-          </tbody>
-        </table>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-statut">Statut</label>
+          <select
+            id="filtre-statut"
+            value={filtreStatut}
+            onChange={(e) => setFiltreStatut(e.target.value as FiltreStatut)}
+          >
+            <option value="TOUS">Tous</option>
+            <option value="RUPTURE">Ruptures</option>
+            <option value="SOUS_SEUIL">Sous seuil</option>
+            <option value="OK">OK</option>
+          </select>
+        </div>
+        <div>
+          <span className="stock-vue-label">
+            <SlidersHorizontal size={13} /> Vue
+          </span>
+          <div className="dash-presets" role="group" aria-label="Vue des niveaux">
+            <button
+              type="button"
+              className={vue === 'liste' ? 'dash-preset actif' : 'dash-preset'}
+              onClick={() => setVue('liste')}
+            >
+              Liste
+            </button>
+            <button
+              type="button"
+              className={vue === 'matrice' ? 'dash-preset actif' : 'dash-preset'}
+              onClick={() => setVue('matrice')}
+            >
+              Matrice
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {data && (
+        <ListPanel
+          title="Niveaux de stock"
+          toolbar={
+            <span className="dash-panel-meta">
+              {lignesFiltrees.length} référence(s)
+            </span>
+          }
+        >
+          {lignesFiltrees.length === 0 ? (
+            <EmptyState
+              title="Aucun stock"
+              description="Aucune référence ne correspond à ces filtres."
+            />
+          ) : vue === 'liste' ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produit</th>
+                    <th>Statut</th>
+                    <th>Réseau</th>
+                    <th>Valeur</th>
+                    <th>Couverture</th>
+                    {entrepotCols.map((e) => (
+                      <th key={e.entrepotId} title={`${e.nom} — ${e.nomBoutique}`}>
+                        {e.code}
+                      </th>
+                    ))}
+                    {peutEcrire || peutAjusterLibre ? <th>Actions</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignesFiltrees.map((ligne) => (
+                    <tr key={ligne.produitId}>
+                      <td>
+                        <strong>{ligne.designation}</strong>
+                        <div className="kpi-hint" style={{ margin: 0 }}>
+                          {ligne.reference ?? 'Sans réf.'}
+                          {ligne.categorie ? ` · ${ligne.categorie}` : ''}
+                          {' · '}
+                          Seuil {ligne.seuilReappro ?? '—'} · CMP{' '}
+                          {formatFcfa(ligne.coutMoyenPondere)}
+                        </div>
+                        {!ligne.actif && (
+                          <span className="badge badge-neutral">Inactif</span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            ligne.statut === 'RUPTURE'
+                              ? 'badge badge-critical'
+                              : ligne.statut === 'SOUS_SEUIL'
+                                ? 'badge badge-warning'
+                                : 'badge badge-ok'
+                          }
+                        >
+                          {STATUT_LABEL[ligne.statut]}
+                        </span>
+                      </td>
+                      <td>
+                        {ligne.stockReseau}
+                        <InfoTooltip
+                          insight={insightStockQuantite(
+                            ligne.stockReseau,
+                            ligne.seuilReappro,
+                          )}
+                        />
+                      </td>
+                      <td className="money">{formatFcfa(ligne.valeur)}</td>
+                      <td>
+                        {ligne.couvertureJours === null
+                          ? '—'
+                          : `${ligne.couvertureJours} j`}
+                        <InfoTooltip
+                          insight={insightCouvertureJours(
+                            ligne.couvertureJours,
+                            data.fenetreVentesJours,
+                            ligne.ventesUnites14j,
+                          )}
+                        />
+                      </td>
+                      {entrepotCols.map((e) => {
+                        const cell = qtyAt(ligne, e.entrepotId);
+                        if (!cell) {
+                          return (
+                            <td key={e.entrepotId} className="stock-cell-empty">
+                              —
+                            </td>
+                          );
+                        }
+                        return (
+                          <td
+                            key={e.entrepotId}
+                            className={
+                              cell.statut === 'RUPTURE'
+                                ? 'stock-cell-rupture'
+                                : cell.statut === 'SOUS_SEUIL'
+                                  ? 'stock-cell-seuil'
+                                  : undefined
+                            }
+                          >
+                            {cell.quantite}
+                          </td>
+                        );
+                      })}
+                      {peutEcrire || peutAjusterLibre ? (
+                        <td>
+                          <div className="table-actions">
+                            {peutAjusterLibre ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  ouvrirAjuster(
+                                    ligne.produitId,
+                                    entrepotCols[0]?.entrepotId,
+                                  )
+                                }
+                              >
+                                Ajuster
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                ouvrirTransfert({
+                                  produitId: ligne.produitId,
+                                  sourceId: entrepotCols[0]?.entrepotId ?? '',
+                                  destId: entrepotCols[1]?.entrepotId ?? entrepotCols[0]?.entrepotId ?? '',
+                                  quantite: 1,
+                                })
+                              }
+                            >
+                              Transférer
+                            </button>
+                            {(ligne.statut === 'RUPTURE' ||
+                              ligne.statut === 'SOUS_SEUIL') &&
+                            !(data.suggestionsTransfert ?? []).some(
+                              (s) => s.produitId === ligne.produitId,
+                            ) ? (
+                              <Link to="/fournisseurs" className="stock-row-link">
+                                Réception
+                              </Link>
+                            ) : null}
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produit</th>
+                    {entrepotCols.map((e) => (
+                      <th key={e.entrepotId}>
+                        {e.code}
+                        <div className="kpi-hint" style={{ margin: 0 }}>
+                          {e.nomBoutique}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignesFiltrees.map((ligne) => (
+                    <tr key={ligne.produitId}>
+                      <td>
+                        <strong>{ligne.designation}</strong>
+                        {ligne.reference ? (
+                          <div className="kpi-hint" style={{ margin: 0 }}>
+                            {ligne.reference}
+                          </div>
+                        ) : null}
+                        {!ligne.actif && (
+                          <span className="badge badge-neutral">Inactif</span>
+                        )}
+                      </td>
+                      {entrepotCols.map((e) => {
+                        const cell = qtyAt(ligne, e.entrepotId);
+                        if (!cell) {
+                          return (
+                            <td key={e.entrepotId} className="stock-cell-empty">
+                              —
+                            </td>
+                          );
+                        }
+                        return (
+                          <td
+                            key={e.entrepotId}
+                            className={
+                              cell.statut === 'RUPTURE'
+                                ? 'stock-cell-rupture'
+                                : cell.statut === 'SOUS_SEUIL'
+                                  ? 'stock-cell-seuil'
+                                  : undefined
+                            }
+                          >
+                            <button
+                              type="button"
+                              className="stock-cell-btn"
+                              disabled={!peutAjusterLibre}
+                              onClick={() =>
+                                ouvrirAjuster(ligne.produitId, e.entrepotId)
+                              }
+                            >
+                              {cell.quantite}
+                            </button>
+                            <InfoTooltip
+                              insight={insightStockQuantite(
+                                cell.quantite,
+                                ligne.seuilReappro,
+                              )}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </ListPanel>
+      )}
+
+      <ListPanel
+        title="Journal des mouvements"
+        toolbar={
+          <div>
+            <label htmlFor="filtre-mvt" className="sr-only">
+              Type de mouvement
+            </label>
+            <select
+              id="filtre-mvt"
+              value={filtreTypeMvt}
+              onChange={(e) => setFiltreTypeMvt(e.target.value)}
+            >
+              <option value="">Tous les types</option>
+              {(Object.keys(TYPE_MOUVEMENT) as Array<MouvementStockDto['type']>).map(
+                (t) => (
+                  <option key={t} value={t}>
+                    {TYPE_MOUVEMENT[t]}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+        }
+      >
+        {mouvements.isLoading && <LoadingState label="Chargement des mouvements..." />}
+        {mouvements.isError && (
+          <p role="alert">Erreur de chargement des mouvements.</p>
+        )}
+        {mouvements.data && mouvementsFiltres.length === 0 && (
+          <EmptyState
+            title="Aucun mouvement"
+            description="Aucun mouvement de stock pour ce filtre."
+          />
+        )}
+        {mouvementsFiltres.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Produit</th>
+                  <th>Entrepôt</th>
+                  <th>Δ</th>
+                  <th>Après</th>
+                  <th>Par</th>
+                  <th>Réf.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mouvementsFiltres.map((m) => (
+                  <tr key={m.id}>
+                    <td>{new Date(m.dateHeure).toLocaleString('fr-FR')}</td>
+                    <td>
+                      <span
+                        className={
+                          m.type === 'VENTE' || m.type === 'TRANSFERT_OUT'
+                            ? 'badge badge-neutral'
+                            : m.type === 'AJUSTEMENT'
+                              ? 'badge badge-warning'
+                              : 'badge badge-ok'
+                        }
+                      >
+                        {TYPE_MOUVEMENT[m.type]}
+                      </span>
+                    </td>
+                    <td>
+                      {m.produit?.designation ??
+                        produits.data?.find((p) => p.id === m.produitId)
+                          ?.designation ??
+                        m.produitId.slice(0, 8)}
+                    </td>
+                    <td>
+                      {m.entrepot?.code ??
+                        entrepotOptions.find((e) => e.id === m.entrepotId)?.code ??
+                        '—'}
+                    </td>
+                    <td className={m.quantite < 0 ? 'stock-delta-neg' : 'stock-delta-pos'}>
+                      {m.quantite > 0 ? `+${m.quantite}` : m.quantite}
+                    </td>
+                    <td>{m.stockApres}</td>
+                    <td>
+                      {m.utilisateur
+                        ? `${m.utilisateur.prenom} ${m.utilisateur.nom}`
+                        : '—'}
+                    </td>
+                    <td>{m.reference ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ListPanel>
+
+      {peutAjusterLibre && (
+        <>
+          <Modal
+            open={modalAjuster}
+            onClose={() => setModalAjuster(false)}
+            title="Ajustement d’urgence (SI / Direction)"
+          >
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                ajuster.mutate();
+              }}
+            >
+              <label htmlFor="ajp">Produit</label>
+              <select
+                id="ajp"
+                value={ajProduit}
+                onChange={(e) => setAjProduit(e.target.value)}
+                required
+              >
+                {produitsSelect.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.designation}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="aje">Entrepôt</label>
+              <select
+                id="aje"
+                value={ajEntrepot}
+                onChange={(e) => setAjEntrepot(e.target.value)}
+                required
+              >
+                {entrepotsSelect.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+              {qtyActuelleAjustement !== null && (
+                <p className="lead">
+                  Quantité théorique actuelle : <strong>{qtyActuelleAjustement}</strong>
+                  {ajQty !== '' && Number.isFinite(Number(ajQty))
+                    ? ` → écart ${Number(ajQty) - qtyActuelleAjustement}`
+                    : ''}
+                </p>
+              )}
+              <label htmlFor="ajq">Quantité comptée</label>
+              <input
+                id="ajq"
+                type="number"
+                min="0"
+                value={ajQty}
+                onChange={(e) => setAjQty(e.target.value)}
+                required
+              />
+              <label htmlFor="ajr">Motif / référence (optionnel)</label>
+              <input
+                id="ajr"
+                type="text"
+                value={ajRef}
+                onChange={(e) => setAjRef(e.target.value)}
+                placeholder="Ex. inventaire 20/08"
+              />
+              <button type="submit" className="btn-primary" disabled={ajuster.isPending}>
+                {ajuster.isPending ? 'Ajustement…' : 'Enregistrer l’ajustement'}
+              </button>
+              {ajErr && <p role="alert">{ajErr}</p>}
+            </form>
+          </Modal>
+        </>
+      )}
+
+      {peutEcrire && (
+        <Modal
+            open={modalTransferer}
+            onClose={() => setModalTransferer(false)}
+            title="Transférer entre entrepôts"
+          >
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                transferer.mutate();
+              }}
+            >
+              <label htmlFor="trp">Produit</label>
+              <select
+                id="trp"
+                value={trProduit}
+                onChange={(e) => setTrProduit(e.target.value)}
+                required
+              >
+                {produitsSelect.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.designation}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="trs">Source</label>
+              <select
+                id="trs"
+                value={trSource}
+                onChange={(e) => setTrSource(e.target.value)}
+                required
+              >
+                {entrepotsSelect.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+              {qtySourceTransfert !== null && (
+                <p className="lead">
+                  Disponible à la source : <strong>{qtySourceTransfert}</strong>
+                </p>
+              )}
+              <label htmlFor="trd">Destination</label>
+              <select
+                id="trd"
+                value={trDest}
+                onChange={(e) => setTrDest(e.target.value)}
+                required
+              >
+                {entrepotsSelect.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.label}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="trq">Quantité</label>
+              <input
+                id="trq"
+                type="number"
+                min="1"
+                value={trQty}
+                onChange={(e) => setTrQty(e.target.value)}
+                required
+              />
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={transferer.isPending || trSource === trDest}
+              >
+                {transferer.isPending ? 'Transfert…' : 'Confirmer le transfert'}
+              </button>
+              {trSource === trDest && trSource !== '' && (
+                <p role="alert">Source et destination identiques.</p>
+              )}
+              {trErr && <p role="alert">{trErr}</p>}
+            </form>
+          </Modal>
       )}
     </div>
   );

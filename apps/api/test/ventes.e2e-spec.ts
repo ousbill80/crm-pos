@@ -125,7 +125,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         boutiqueId: boutique1Id,
       },
     });
-    const entrepot2 = await env.prisma.entrepot.create({
+    await env.prisma.entrepot.create({
       data: {
         nom: 'Principal B2',
         code: 'PRINCIPAL',
@@ -394,6 +394,46 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         expect(ventesApres).toBe(ventesAvant);
       });
 
+      it('refuse (400) l’encaissement d’un produit inactif, sans écriture', async () => {
+        const inactif = await env.prisma.produit.create({
+          data: {
+            designation: 'Produit retiré du catalogue',
+            prixUnitaire: '800.00',
+            stock: 10,
+            actif: false,
+          },
+        });
+        await env.prisma.stockQuant.create({
+          data: {
+            produitId: inactif.id,
+            entrepotId: (
+              await env.prisma.entrepot.findFirstOrThrow({
+                where: { boutiqueId: boutique1Id, type: 'PRINCIPAL' },
+              })
+            ).id,
+            quantite: 10,
+          },
+        });
+
+        const ventesAvant = await env.prisma.vente.count({
+          where: { sessionCaisseId: sessionBoutique1Id },
+        });
+
+        await request(app.getHttpServer())
+          .post(`/ventes/sessions/${sessionBoutique1Id}/ventes`)
+          .set(auth(tokens.caissierB1))
+          .send({
+            lignes: [{ produitId: inactif.id, quantite: 1 }],
+            modePaiement: 'ESPECES',
+          })
+          .expect(400);
+
+        const ventesApres = await env.prisma.vente.count({
+          where: { sessionCaisseId: sessionBoutique1Id },
+        });
+        expect(ventesApres).toBe(ventesAvant);
+      });
+
       it('encaisse une vente ESPECES sans client (anonyme), montantTotal recalculé serveur, journalise VENTE_ENREGISTREE', async () => {
         const response = await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/ventes`)
@@ -437,6 +477,48 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         const body = response.body as VenteDto;
         expect(body.clientId).toBe(clientId);
         expect(Number(body.montantTotal)).toBe(1000);
+      });
+    });
+
+    // ---------------------------------------------------------------------
+    // Lecture des tickets de la session — tiroir POS survivant au refresh
+    // (§6.3.2). Même RBAC que GET /ventes/sessions/:id (lecture caisses).
+    // ---------------------------------------------------------------------
+    describe('GET /ventes/sessions/:id/ventes', () => {
+      it('refuse (403) qu’un caissier d’une autre boutique lise les tickets', async () => {
+        await request(app.getHttpServer())
+          .get(`/ventes/sessions/${sessionBoutique1Id}/ventes`)
+          .set(auth(tokens.caissierB2))
+          .expect(403);
+      });
+
+      it('liste les ventes de la session (lignes + produit + retours) pour le caissier boutique', async () => {
+        const response = await request(app.getHttpServer())
+          .get(`/ventes/sessions/${sessionBoutique1Id}/ventes`)
+          .set(auth(tokens.caissierB1))
+          .expect(200);
+
+        const body = response.body as Array<
+          VenteDto & {
+            retours: unknown[];
+            lignes: { produit: { designation: string } }[];
+          }
+        >;
+        expect(body).toHaveLength(2);
+        expect(
+          body.every((v) => v.sessionCaisseId === sessionBoutique1Id),
+        ).toBe(true);
+        expect(body[0]?.lignes[0]?.produit.designation).toEqual(
+          expect.any(String),
+        );
+        expect(Array.isArray(body[0]?.retours)).toBe(true);
+      });
+
+      it('autorise (200) la lecture réseau par le DAF — sans droit d’encaisser', async () => {
+        await request(app.getHttpServer())
+          .get(`/ventes/sessions/${sessionBoutique1Id}/ventes`)
+          .set(auth(tokens.daf))
+          .expect(200);
       });
     });
 
@@ -617,6 +699,99 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       const body = cloture.body as ClotureResponseDto;
       expect(body.transactionVersementId).toBeNull();
       expect(body.session.transactionVersementId).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Idempotence hors-ligne (§6.7) : rejouer le même clientOperationId
+  // ne crée pas de second ticket et ne redécrémente pas le stock.
+  // ---------------------------------------------------------------------
+  describe('Idempotence hors-ligne des ventes §6.7', () => {
+    it('réutilise clientOperationId sans second décrément de stock', async () => {
+      const entrepotB2 = await env.prisma.entrepot.findFirstOrThrow({
+        where: { boutiqueId: boutique2Id, type: 'PRINCIPAL' },
+      });
+      await env.prisma.stockQuant.upsert({
+        where: {
+          produitId_entrepotId: {
+            produitId: produitStock2Id,
+            entrepotId: entrepotB2.id,
+          },
+        },
+        update: { quantite: 4 },
+        create: {
+          produitId: produitStock2Id,
+          entrepotId: entrepotB2.id,
+          quantite: 4,
+        },
+      });
+      const somme = await env.prisma.stockQuant.aggregate({
+        where: { produitId: produitStock2Id },
+        _sum: { quantite: true },
+      });
+      await env.prisma.produit.update({
+        where: { id: produitStock2Id },
+        data: { stock: somme._sum.quantite ?? 0 },
+      });
+
+      const ouverture = await ouvrirSession(
+        tokens.caissierB2,
+        caisse2Id,
+        500,
+        'resp-b2',
+      ).expect(201);
+      const sessionId = (ouverture.body as SessionCaisseDto).id;
+      const clientOperationId = 'vente-offline-test-001';
+      const payload = {
+        lignes: [{ produitId: produitStock2Id, quantite: 1 }],
+        modePaiement: 'CARTE',
+        clientOperationId,
+      };
+
+      const premiere = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB2))
+        .send(payload)
+        .expect(201);
+      const body1 = premiere.body as VenteDto;
+
+      const stockApres1 = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: {
+            produitId: produitStock2Id,
+            entrepotId: entrepotB2.id,
+          },
+        },
+      });
+
+      const replay = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB2))
+        .send(payload)
+        .expect(201);
+      const body2 = replay.body as VenteDto;
+
+      expect(body2.id).toBe(body1.id);
+      const stockApres2 = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: {
+            produitId: produitStock2Id,
+            entrepotId: entrepotB2.id,
+          },
+        },
+      });
+      expect(stockApres2?.quantite).toBe(stockApres1?.quantite);
+      expect(stockApres2?.quantite).toBe(3);
+
+      await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB2))
+        .expect(200)
+        .expect((res) => {
+          expect(
+            (res.body as VenteDto[]).filter((v) => v.id === body1.id),
+          ).toHaveLength(1);
+        });
     });
   });
 });

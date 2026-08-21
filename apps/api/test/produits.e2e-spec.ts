@@ -23,6 +23,14 @@ interface ProduitDto {
   stock: number;
   seuilReappro: number | null;
   coutMoyenPondere: string;
+  reference: string | null;
+  categorie: string | null;
+  description: string | null;
+  actif: boolean;
+  statutStock: 'RUPTURE' | 'SOUS_SEUIL' | 'OK';
+  margeUnitaire: string;
+  tauxMarge: string;
+  valeurStock: string;
 }
 
 interface MouvementStockDto {
@@ -82,7 +90,9 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
-    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone Test Produits' } });
+    const zone = await env.prisma.zone.create({
+      data: { nomZone: 'Zone Test Produits' },
+    });
     const boutique = await env.prisma.boutique.create({
       data: { nom: 'Boutique Test Produits', adresse: 'Adr', zoneId: zone.id },
     });
@@ -158,6 +168,8 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
       expect(body.id).toEqual(expect.any(String));
       expect(Number(body.prixUnitaire)).toBe(2500);
       expect(body.stock).toBe(10);
+      expect(body.actif).toBe(true);
+      expect(body.statutStock).toBe('OK');
 
       const entreeAudit = await env.prisma.journalAudit.findFirst({
         where: { entite: 'Produit', entiteId: body.id },
@@ -349,6 +361,334 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     it('renvoie 404 pour un produit inexistant', () => {
       return request(app.getHttpServer())
         .get('/produits/00000000-0000-0000-0000-000000000000/mouvements')
+        .set(auth(tokens.daf))
+        .expect(404);
+    });
+  });
+
+  describe('Catalogue avancé (référence, filtres, synthèse, analyse)', () => {
+    let skuProduitId: string;
+    let ruptureId: string;
+    let inactifId: string;
+
+    beforeAll(async () => {
+      const created = await request(app.getHttpServer())
+        .post('/produits')
+        .set(auth(tokens.respsi))
+        .send({
+          designation: 'Coque MagSafe',
+          reference: 'COQ-MS-01',
+          categorie: 'Protection',
+          prixUnitaire: 4500,
+          stock: 20,
+          seuilReappro: 5,
+        })
+        .expect(201);
+      skuProduitId = (created.body as ProduitDto).id;
+
+      const rupture = await env.prisma.produit.create({
+        data: {
+          designation: 'Anneau support',
+          reference: 'ACC-ANN-01',
+          categorie: 'Accessoires',
+          prixUnitaire: '2000.00',
+          stock: 0,
+          seuilReappro: 4,
+          coutMoyenPondere: '500.00',
+        },
+      });
+      ruptureId = rupture.id;
+
+      const inactif = await env.prisma.produit.create({
+        data: {
+          designation: 'Coque iPhone 8',
+          reference: 'COQ-IP8',
+          categorie: 'Protection',
+          prixUnitaire: '1000.00',
+          stock: 2,
+          seuilReappro: 5,
+          actif: false,
+        },
+      });
+      inactifId = inactif.id;
+    });
+
+    it('refuse (409) une référence déjà attribuée', async () => {
+      await request(app.getHttpServer())
+        .post('/produits')
+        .set(auth(tokens.respsi))
+        .send({
+          designation: 'Doublon SKU',
+          reference: 'COQ-MS-01',
+          prixUnitaire: 1000,
+          stock: 0,
+        })
+        .expect(409);
+    });
+
+    it('filtre par recherche (désignation ou référence)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits?q=COQ-MS-01')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as ProduitDto[];
+      expect(body.map((p) => p.id)).toContain(skuProduitId);
+      expect(
+        body.every(
+          (p) =>
+            p.reference === 'COQ-MS-01' || p.designation.includes('MagSafe'),
+        ),
+      ).toBe(true);
+    });
+
+    it('filtre par catégorie et par statutStock=RUPTURE', async () => {
+      const parCat = await request(app.getHttpServer())
+        .get('/produits?categorie=Accessoires')
+        .set(auth(tokens.daf))
+        .expect(200);
+      expect((parCat.body as ProduitDto[]).map((p) => p.id)).toContain(
+        ruptureId,
+      );
+
+      const ruptures = await request(app.getHttpServer())
+        .get('/produits?statutStock=RUPTURE')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const ids = (ruptures.body as ProduitDto[]).map((p) => p.id);
+      expect(ids).toContain(ruptureId);
+      expect(ids).not.toContain(skuProduitId);
+    });
+
+    it('filtre actif=false et exclut les inactifs de actif=true', async () => {
+      const inactifs = await request(app.getHttpServer())
+        .get('/produits?actif=false')
+        .set(auth(tokens.daf))
+        .expect(200);
+      expect((inactifs.body as ProduitDto[]).map((p) => p.id)).toContain(
+        inactifId,
+      );
+
+      const actifs = await request(app.getHttpServer())
+        .get('/produits?actif=true')
+        .set(auth(tokens.daf))
+        .expect(200);
+      expect((actifs.body as ProduitDto[]).map((p) => p.id)).not.toContain(
+        inactifId,
+      );
+    });
+
+    it('expose la synthèse catalogue (KPIs sur les produits actifs)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits/synthese')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as {
+        nombreProduits: number;
+        actifs: number;
+        inactifs: number;
+        ruptures: number;
+        valeurStock: string;
+      };
+      expect(body.nombreProduits).toBeGreaterThanOrEqual(3);
+      expect(body.inactifs).toBeGreaterThanOrEqual(1);
+      expect(body.ruptures).toBeGreaterThanOrEqual(1);
+      expect(body.valeurStock).toEqual(expect.any(String));
+    });
+
+    it('refuse (403) la synthèse au RESPONSABLE_CRM', () => {
+      return request(app.getHttpServer())
+        .get('/produits/synthese')
+        .set(auth(tokens.respcrm))
+        .expect(403);
+    });
+
+    it('liste les catégories distinctes', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits/categories')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as string[];
+      expect(body).toEqual(
+        expect.arrayContaining(['Protection', 'Accessoires']),
+      );
+    });
+
+    it("renvoie l'analyse 30 j, la répartition stock et la suggestion d'écart au seuil", async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/produits/${ruptureId}/analyse`)
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as {
+        produit: ProduitDto;
+        repartitionStock: unknown[];
+        performance30j: { quantiteVendue: number; chiffreAffaires: string };
+        suggestionReappro: { necessaire: boolean; quantiteSuggeree: number };
+      };
+      expect(body.produit.id).toBe(ruptureId);
+      expect(body.produit.statutStock).toBe('RUPTURE');
+      expect(body.suggestionReappro.necessaire).toBe(true);
+      expect(body.suggestionReappro.quantiteSuggeree).toBe(5);
+      expect(body.performance30j.quantiteVendue).toBe(0);
+    });
+
+    it('autorise la désactivation (sans suppression) et journalise PRODUIT_UPDATED', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/produits/${skuProduitId}`)
+        .set(auth(tokens.respsi))
+        .send({ actif: false })
+        .expect(200);
+      expect((response.body as ProduitDto).actif).toBe(false);
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: {
+          entite: 'Produit',
+          entiteId: skuProduitId,
+          action: 'PRODUIT_UPDATED',
+        },
+        orderBy: { dateHeure: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+    });
+  });
+
+  describe('Export, classement 30 j et historique des ventes', () => {
+    let venduId: string;
+    let margeNegId: string;
+
+    beforeAll(async () => {
+      const user = await env.prisma.utilisateur.findUniqueOrThrow({
+        where: { login: 'respsi' },
+      });
+      const boutique = await env.prisma.boutique.findFirstOrThrow();
+      const caisse = await env.prisma.caisse.create({
+        data: { type: 'AUXILIAIRE', boutiqueId: boutique.id },
+      });
+      const session = await env.prisma.sessionCaisse.create({
+        data: {
+          caisseId: caisse.id,
+          fondInitial: 1000,
+          ouvertureUtilisateurId: user.id,
+          ouvertureTemoinId: user.id,
+        },
+      });
+
+      const vendu = await env.prisma.produit.create({
+        data: {
+          designation: 'Câble test ventes',
+          reference: 'CAB-TEST-V',
+          categorie: 'Câbles',
+          prixUnitaire: '2000.00',
+          stock: 10,
+          coutMoyenPondere: '600.00',
+        },
+      });
+      venduId = vendu.id;
+
+      await env.prisma.vente.create({
+        data: {
+          caisseId: caisse.id,
+          sessionCaisseId: session.id,
+          montantTotal: 4000,
+          modePaiement: 'ESPECES',
+          lignes: {
+            create: {
+              produitId: venduId,
+              quantite: 2,
+              prixUnitaire: 2000,
+              remise: 0,
+            },
+          },
+        },
+      });
+
+      const margeNeg = await env.prisma.produit.create({
+        data: {
+          designation: 'Promo sous CMP',
+          reference: 'PROMO-CMP',
+          categorie: 'Accessoires',
+          prixUnitaire: '500.00',
+          stock: 8,
+          coutMoyenPondere: '2000.00',
+        },
+      });
+      margeNegId = margeNeg.id;
+    });
+
+    it('exporte le catalogue en CSV (mêmes filtres que la liste)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits/export.csv')
+        .set(auth(tokens.daf))
+        .expect(200);
+      expect(response.headers['content-type']).toMatch(/text\/csv/);
+      expect(response.text).toContain('Désignation');
+      expect(response.text).toContain('Câble test ventes');
+    });
+
+    it('refuse (403) l’export au RESPONSABLE_CRM', () => {
+      return request(app.getHttpServer())
+        .get('/produits/export.csv')
+        .set(auth(tokens.respcrm))
+        .expect(403);
+    });
+
+    it('filtre les fiches dont le prix est sous le CMP', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits?margeNegative=true')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const ids = (response.body as ProduitDto[]).map((p) => p.id);
+      expect(ids).toContain(margeNegId);
+      expect(ids).not.toContain(venduId);
+    });
+
+    it('classe les meilleures ventes 30 j et les dormants (stock sans vente)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/produits/classement')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const body = response.body as {
+        fenetreJours: number;
+        meilleuresVentes: Array<{
+          produit: ProduitDto;
+          quantiteVendue: number;
+        }>;
+        dormants: Array<{ produit: ProduitDto; stock: number }>;
+      };
+      expect(body.fenetreJours).toBe(30);
+      expect(body.meilleuresVentes.map((r) => r.produit.id)).toContain(venduId);
+      expect(body.meilleuresVentes[0]?.quantiteVendue).toBeGreaterThanOrEqual(
+        2,
+      );
+      expect(body.dormants.map((r) => r.produit.id)).toContain(margeNegId);
+      expect(body.dormants.map((r) => r.produit.id)).not.toContain(venduId);
+    });
+
+    it('refuse (403) le classement au RESPONSABLE_CRM', () => {
+      return request(app.getHttpServer())
+        .get('/produits/classement')
+        .set(auth(tokens.respcrm))
+        .expect(403);
+    });
+
+    it('liste l’historique des ventes du produit (réseau)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/produits/${venduId}/ventes`)
+        .set(auth(tokens.caissierBoutique))
+        .expect(200);
+      const body = response.body as Array<{
+        quantite: number;
+        boutique: string | null;
+        montant: string;
+      }>;
+      expect(body).toHaveLength(1);
+      expect(body[0].quantite).toBe(2);
+      expect(body[0].boutique).toBe('Boutique Test Produits');
+      expect(Number(body[0].montant)).toBe(4000);
+    });
+
+    it('renvoie 404 pour l’historique d’un produit inexistant', () => {
+      return request(app.getHttpServer())
+        .get('/produits/00000000-0000-0000-0000-000000000000/ventes')
         .set(auth(tokens.daf))
         .expect(404);
     });

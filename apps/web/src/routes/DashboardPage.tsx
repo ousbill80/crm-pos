@@ -1,13 +1,28 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Banknote,
+  Building2,
+  Download,
+  Package,
+  Scale,
+  ShoppingCart,
+  Users,
+  Wallet,
+} from 'lucide-react';
+import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
   Legend,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -16,6 +31,19 @@ import {
   YAxis,
 } from 'recharts';
 import { apiDownload, apiFetch } from '../lib/api';
+import { PageHeader } from '../components/PageChrome';
+import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  buildPrioritesDashboard,
+  insightChiffreAffaires,
+  insightClientsCrm,
+  insightLitiges,
+  insightMargeBrute,
+  insightTresorerie,
+  insightVersementsEnRetard,
+  synthetiserSante,
+} from '../lib/insights/dashboard';
 
 // Dashboard Reporting §6.3.4 — source unique : GET /reporting/dashboard.
 export interface ReportingDashboard {
@@ -51,6 +79,15 @@ export interface ReportingDashboard {
     nombreClients: number;
     parSegment: Array<{ segment: string; nombre: number }>;
   };
+  rentabiliteParBoutique: Array<{
+    boutiqueId: string;
+    nomBoutique: string;
+    chiffreAffairesNet: string;
+    coutDesVentes: string;
+    margeBrute: string;
+    tauxMarge: string;
+    valeurStock: string;
+  }>;
 }
 
 interface VenteQuotidienne {
@@ -58,12 +95,64 @@ interface VenteQuotidienne {
   total: string;
 }
 
-const COULEURS_MODES = ['#2563eb', '#16a34a', '#d97706'];
+type PeriodePreset = '7j' | '30j' | 'mois' | 'perso';
+
+const COULEURS_MODES = ['#0f766e', '#2563eb', '#d97706', '#7c3aed'];
+const COULEURS_SEGMENTS: Record<string, string> = {
+  VIP: '#0f766e',
+  REGULIER: '#2563eb',
+  NOUVEAU: '#d97706',
+};
+
+const STATUT_ORDER = [
+  'INITIEE',
+  'EN_TRANSIT',
+  'RECEPTIONNEE',
+  'VALIDEE',
+  'LITIGE',
+] as const;
+
+const STATUT_LABEL: Record<string, string> = {
+  INITIEE: 'Initiée',
+  EN_TRANSIT: 'En transit',
+  RECEPTIONNEE: 'Réceptionnée',
+  VALIDEE: 'Validée',
+  LITIGE: 'Litige',
+};
+
+const MODE_LABEL: Record<string, string> = {
+  ESPECES: 'Espèces',
+  CARTE: 'Carte',
+  MOBILE_MONEY: 'Mobile Money',
+};
+
+function toInputDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function rangeForPreset(preset: Exclude<PeriodePreset, 'perso'>): { from: string; to: string } {
+  const to = new Date();
+  to.setHours(23, 59, 59, 999);
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  if (preset === '7j') from.setDate(from.getDate() - 6);
+  else if (preset === '30j') from.setDate(from.getDate() - 29);
+  else from.setDate(1);
+  return { from: toInputDate(from), to: toInputDate(to) };
+}
 
 function buildQuery(dateFrom: string, dateTo: string): string {
   const params = new URLSearchParams();
-  if (dateFrom) params.set('dateFrom', new Date(dateFrom).toISOString());
-  if (dateTo) params.set('dateTo', new Date(dateTo).toISOString());
+  if (dateFrom) {
+    const d = new Date(dateFrom);
+    d.setHours(0, 0, 0, 0);
+    params.set('dateFrom', d.toISOString());
+  }
+  if (dateTo) {
+    const d = new Date(dateTo);
+    d.setHours(23, 59, 59, 999);
+    params.set('dateTo', d.toISOString());
+  }
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
@@ -79,252 +168,670 @@ function useReportingDashboard(dateFrom: string, dateTo: string) {
 function useVentesQuotidiennes() {
   return useQuery({
     queryKey: ['reporting', 'ventes-quotidiennes'],
-    queryFn: () =>
-      apiFetch<VenteQuotidienne[]>('/reporting/ventes-quotidiennes?jours=30'),
+    queryFn: () => apiFetch<VenteQuotidienne[]>('/reporting/ventes-quotidiennes?jours=30'),
   });
 }
 
-function formatFcfa(value: string) {
-  return `${value} FCFA`;
+function formatFcfa(value: string | number): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n)) return `${value} FCFA`;
+  return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
+}
+
+function formatCompact(value: number): string {
+  if (Math.abs(value) >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M`;
+  }
+  if (Math.abs(value) >= 1_000) {
+    return `${(value / 1_000).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} k`;
+  }
+  return value.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+}
+
+function tendanceCa(serie: VenteQuotidienne[] | undefined): { deltaPct: number | null; label: string } {
+  if (!serie || serie.length < 8) return { deltaPct: null, label: 'Tendance N/D' };
+  const nums = serie.map((d) => Number(d.total));
+  const recent = nums.slice(-7).reduce((a, b) => a + b, 0);
+  const prev = nums.slice(-14, -7).reduce((a, b) => a + b, 0);
+  if (prev === 0) {
+    return { deltaPct: recent > 0 ? 100 : 0, label: recent > 0 ? 'vs 7 j. préc.' : 'Stable' };
+  }
+  return { deltaPct: ((recent - prev) / prev) * 100, label: 'vs 7 j. préc.' };
+}
+
+function tooltipStyle() {
+  return {
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    boxShadow: 'var(--shadow-md)',
+    fontSize: 12.5,
+  };
 }
 
 export function DashboardPage() {
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const { data, isLoading, isError, error } = useReportingDashboard(dateFrom, dateTo);
+  const initial = rangeForPreset('30j');
+  const [preset, setPreset] = useState<PeriodePreset>('30j');
+  const [dateFrom, setDateFrom] = useState(initial.from);
+  const [dateTo, setDateTo] = useState(initial.to);
+  const { data, isLoading, isError, error, isFetching } = useReportingDashboard(dateFrom, dateTo);
   const { data: serieQuotidienne } = useVentesQuotidiennes();
 
-  if (isLoading) {
-    return <p>Chargement du tableau de bord...</p>;
-  }
+  const priorites = useMemo(
+    () =>
+      data
+        ? buildPrioritesDashboard({
+            versementsEnRetard24h: data.versements.enRetard24h,
+            nombreLitiges: data.ecarts.nombreLitiges,
+            montantEcartsAbsolus: data.ecarts.montantEcartsAbsolus,
+            rentabilite: data.rentabiliteParBoutique.map((r) => ({
+              boutiqueId: r.boutiqueId,
+              nomBoutique: r.nomBoutique,
+              margeBrute: r.margeBrute,
+              tauxMarge: r.tauxMarge,
+            })),
+          })
+        : [],
+    [data],
+  );
+  const sante = useMemo(() => synthetiserSante(priorites), [priorites]);
+  const tendance = useMemo(() => tendanceCa(serieQuotidienne), [serieQuotidienne]);
 
-  if (isError) {
-    return <p role="alert">Erreur reporting : {(error as Error).message}</p>;
-  }
+  const serieChart = useMemo(
+    () =>
+      (serieQuotidienne ?? []).map((d) => ({
+        date: d.date.slice(5),
+        total: Number(d.total),
+        label: d.date,
+      })),
+    [serieQuotidienne],
+  );
 
-  if (!data) {
-    return null;
+  const modesChart = useMemo(
+    () =>
+      (data?.chiffreAffaires.parModePaiement ?? []).map((m) => ({
+        ...m,
+        montant: Number(m.montant),
+        label: MODE_LABEL[m.modePaiement] ?? m.modePaiement,
+      })),
+    [data],
+  );
+
+  const caMax = Math.max(
+    ...(data?.chiffreAffaires.parBoutique.map((b) => Number(b.montant)) ?? [0]),
+    1,
+  );
+
+  const margeReseau = useMemo(() => {
+    if (!data?.rentabiliteParBoutique.length) return null;
+    const ca = data.rentabiliteParBoutique.reduce((s, r) => s + Number(r.chiffreAffairesNet), 0);
+    const marge = data.rentabiliteParBoutique.reduce((s, r) => s + Number(r.margeBrute), 0);
+    return { marge, taux: ca > 0 ? ((marge / ca) * 100).toFixed(1) : '0.0' };
+  }, [data]);
+
+  function applyPreset(p: Exclude<PeriodePreset, 'perso'>) {
+    const r = rangeForPreset(p);
+    setPreset(p);
+    setDateFrom(r.from);
+    setDateTo(r.to);
   }
 
   const query = buildQuery(dateFrom, dateTo);
 
   return (
-    <div>
-      <header className="page-header">
-        <div>
-          <h1>Tableau de bord</h1>
-          <p className="lead">
-            Périmètre <strong>{data.perimetre}</strong> · mis à jour{' '}
-            {new Date(data.genereAt).toLocaleString()}
-          </p>
-        </div>
-      </header>
-
-      <section className="panel">
-        <h2>Période & exports</h2>
-        <div className="filtre-periode">
-          <label htmlFor="dateFrom">Du</label>
-          <input
-            id="dateFrom"
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-          <label htmlFor="dateTo">Au</label>
-          <input
-            id="dateTo"
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-          <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }}>
-            Réinitialiser
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void apiDownload(`/reporting/dashboard/export.csv${query}`, 'tableau-de-bord.csv')
-            }
-          >
-            Exporter CA par boutique (CSV)
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              void apiDownload(`/reporting/ventes/export.csv${query}`, 'ventes.csv')
-            }
-          >
-            Exporter le détail des ventes (CSV)
-          </button>
-        </div>
-      </section>
-
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="kpi-label">Chiffre d&apos;affaires</div>
-          <div className="kpi-value">{formatFcfa(data.chiffreAffaires.total)}</div>
-          <div className="kpi-hint">
-            {data.chiffreAffaires.parBoutique.length} boutique(s)
-          </div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Trésorerie auxiliaire</div>
-          <div className="kpi-value">
-            {formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}
-          </div>
-          <div className="kpi-hint">{data.tresorerie.caisses.length} caisse(s)</div>
-        </div>
-        <div
-          className={
-            data.versements.enRetard24h > 0 ? 'kpi-card kpi-warning' : 'kpi-card'
-          }
-        >
-          <div className="kpi-label">Versements en retard</div>
-          <div className="kpi-value">{data.versements.enRetard24h}</div>
-          <div className="kpi-hint">&gt; 24 h non transmis</div>
-        </div>
-        <div
-          className={
-            data.ecarts.nombreLitiges > 0 ? 'kpi-card kpi-danger' : 'kpi-card'
-          }
-        >
-          <div className="kpi-label">Litiges / écarts</div>
-          <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
-          <div className="kpi-hint">
-            {formatFcfa(data.ecarts.montantEcartsAbsolus)} cumulés
-          </div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Clients CRM</div>
-          <div className="kpi-value">{data.crm.nombreClients}</div>
-          <div className="kpi-hint">fichier consolidé réseau</div>
-        </div>
-      </div>
-
-      <div className="panel-grid">
-        <section className="panel">
-          <h2>CA par boutique</h2>
-          {data.chiffreAffaires.parBoutique.length === 0 ? (
-            <p className="lead">Aucune vente sur la période.</p>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data.chiffreAffaires.parBoutique}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="nomBoutique" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="montant" name="CA (FCFA)" fill="#2563eb" />
-                </BarChart>
-              </ResponsiveContainer>
-              <ul>
-                {data.chiffreAffaires.parBoutique.map((b) => (
-                  <li key={b.boutiqueId}>
-                    <span>{b.nomBoutique}</span>
-                    <span className="money">{formatFcfa(b.montant)}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Répartition par mode de paiement</h2>
-          {data.chiffreAffaires.parModePaiement.length === 0 ? (
-            <p className="lead">Aucune vente sur la période.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={data.chiffreAffaires.parModePaiement}
-                  dataKey="montant"
-                  nameKey="modePaiement"
-                  outerRadius={80}
-                  label
+    <div className="dash">
+      <PageHeader
+        title="Tableau de bord"
+        subtitle={
+          data
+            ? `Périmètre ${data.perimetre} · actualisé ${new Date(data.genereAt).toLocaleString('fr-FR')}`
+            : 'Pilotage CA, trésorerie, rentabilité et CRM'
+        }
+        actions={
+          <div className="dash-toolbar">
+            <div className="dash-presets" role="group" aria-label="Période">
+              {(
+                [
+                  ['7j', '7 jours'],
+                  ['30j', '30 jours'],
+                  ['mois', 'Ce mois'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={preset === id ? 'dash-preset actif' : 'dash-preset'}
+                  onClick={() => applyPreset(id)}
                 >
-                  {data.chiffreAffaires.parModePaiement.map((entry, index) => (
-                    <Cell
-                      key={entry.modePaiement}
-                      fill={COULEURS_MODES[index % COULEURS_MODES.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Évolution du CA (30 derniers jours)</h2>
-          {!serieQuotidienne || serieQuotidienne.length === 0 ? (
-            <p className="lead">Aucune donnée disponible.</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={serieQuotidienne}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  name="CA (FCFA)"
-                  stroke="#16a34a"
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Versements par statut</h2>
-          <ul>
-            {data.versements.parStatut
-              .filter((s) => s.nombre > 0)
-              .map((s) => (
-                <li key={s.statut}>
-                  <span>
-                    {s.statut} · {s.nombre}
-                  </span>
-                  <span className="money">{formatFcfa(s.montant)}</span>
-                </li>
+                  {label}
+                </button>
               ))}
-          </ul>
-        </section>
+              <button
+                type="button"
+                className={preset === 'perso' ? 'dash-preset actif' : 'dash-preset'}
+                onClick={() => setPreset('perso')}
+              >
+                Perso
+              </button>
+            </div>
+            {preset === 'perso' && (
+              <div className="filtre-periode">
+                <label htmlFor="dateFrom">Du</label>
+                <input
+                  id="dateFrom"
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setPreset('perso');
+                    setDateFrom(e.target.value);
+                  }}
+                />
+                <label htmlFor="dateTo">Au</label>
+                <input
+                  id="dateTo"
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setPreset('perso');
+                    setDateTo(e.target.value);
+                  }}
+                />
+              </div>
+            )}
+            <div className="dash-exports">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() =>
+                  void apiDownload(`/reporting/dashboard/export.csv${query}`, 'tableau-de-bord.csv')
+                }
+              >
+                <Download size={14} /> CA boutique
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => void apiDownload(`/reporting/ventes/export.csv${query}`, 'ventes.csv')}
+              >
+                <Download size={14} /> Détail ventes
+              </button>
+            </div>
+          </div>
+        }
+      />
 
-        <section className="panel">
-          <h2>Soldes de caisse</h2>
-          <ul>
-            {data.tresorerie.caisses.map((c) => (
-              <li key={c.caisseId}>
-                <span>
-                  {c.type}{' '}
-                  <small style={{ color: 'var(--text-muted)' }}>
-                    {c.caisseId.slice(0, 8)}
-                  </small>
+      {isLoading && <LoadingState label="Chargement du tableau de bord…" />}
+      {isError && <p role="alert">Erreur reporting : {(error as Error).message}</p>}
+
+      {data && (
+        <>
+          {isFetching && !isLoading && <p className="dash-refreshing">Actualisation…</p>}
+
+          <section className={`dash-sante dash-sante-${sante.severity}`}>
+            <div className="dash-sante-main">
+              <span className="dash-sante-badge">{sante.label}</span>
+              <p>{sante.detail}</p>
+            </div>
+            <div className="dash-sante-meta">
+              <span>{priorites.length} priorité(s)</span>
+              <Link to="/alertes">
+                Alertes <ArrowRight size={14} />
+              </Link>
+            </div>
+          </section>
+
+          {priorites.length > 0 && (
+            <section className="dash-priorites" aria-label="Actions prioritaires">
+              <h2>À traiter</h2>
+              <div className="dash-priorites-grid">
+                {priorites.slice(0, 4).map((p) => (
+                  <article key={p.id} className={`dash-priorite dash-priorite-${p.severity}`}>
+                    <div className="dash-priorite-icon">
+                      <AlertTriangle size={16} />
+                    </div>
+                    <div>
+                      <h3>{p.title}</h3>
+                      <p>{p.detail}</p>
+                      <Link to={p.href}>
+                        {p.cta} <ArrowRight size={13} />
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="kpi-grid dash-kpi-grid">
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <ShoppingCart size={16} />
                 </span>
-                <span className="money">{formatFcfa(c.solde)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+                <InfoTooltip
+                  insight={insightChiffreAffaires(
+                    data.chiffreAffaires.total,
+                    data.chiffreAffaires.parBoutique.length,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Chiffre d&apos;affaires</div>
+              <div className="kpi-value">{formatFcfa(data.chiffreAffaires.total)}</div>
+              <div className="kpi-hint dash-kpi-trend">
+                {tendance.deltaPct === null ? (
+                  <span>{data.chiffreAffaires.parBoutique.length} boutique(s)</span>
+                ) : (
+                  <span className={tendance.deltaPct >= 0 ? 'trend-up' : 'trend-down'}>
+                    {tendance.deltaPct >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                    {Math.abs(tendance.deltaPct).toFixed(1)} % {tendance.label}
+                  </span>
+                )}
+              </div>
+            </article>
 
-        <section className="panel">
-          <h2>Segments clients</h2>
-          <ul>
-            {data.crm.parSegment.map((s) => (
-              <li key={s.segment}>
-                <span>{s.segment}</span>
-                <span className="money">{s.nombre}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Wallet size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightTresorerie(
+                    data.tresorerie.totalSoldesAuxiliaires,
+                    data.tresorerie.caisses.length,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Trésorerie auxiliaire</div>
+              <div className="kpi-value">{formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}</div>
+              <div className="kpi-hint">{data.tresorerie.caisses.length} caisse(s) · grand livre</div>
+            </article>
+
+            <article
+              className={
+                data.versements.enRetard24h > 0 ? 'kpi-card dash-kpi kpi-warning' : 'kpi-card dash-kpi'
+              }
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Banknote size={16} />
+                </span>
+                <InfoTooltip insight={insightVersementsEnRetard(data.versements.enRetard24h)} />
+              </div>
+              <div className="kpi-label">Versements en retard</div>
+              <div className="kpi-value">{data.versements.enRetard24h}</div>
+              <div className="kpi-hint">&gt; 24 h non transmis</div>
+            </article>
+
+            <article
+              className={
+                data.ecarts.nombreLitiges > 0 ? 'kpi-card dash-kpi kpi-danger' : 'kpi-card dash-kpi'
+              }
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Scale size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightLitiges(
+                    data.ecarts.nombreLitiges,
+                    data.ecarts.montantEcartsAbsolus,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Litiges / écarts</div>
+              <div className="kpi-value">{data.ecarts.nombreLitiges}</div>
+              <div className="kpi-hint">{formatFcfa(data.ecarts.montantEcartsAbsolus)} cumulés</div>
+            </article>
+
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Users size={16} />
+                </span>
+                <InfoTooltip insight={insightClientsCrm(data.crm.nombreClients)} />
+              </div>
+              <div className="kpi-label">Clients CRM</div>
+              <div className="kpi-value">{data.crm.nombreClients}</div>
+              <div className="kpi-hint">{data.crm.parSegment.length} segment(s)</div>
+            </article>
+
+            {margeReseau && (
+              <article
+                className={
+                  Number(margeReseau.taux) < 0
+                    ? 'kpi-card dash-kpi kpi-danger'
+                    : Number(margeReseau.taux) < 15
+                      ? 'kpi-card dash-kpi kpi-warning'
+                      : 'kpi-card dash-kpi'
+                }
+              >
+                <div className="dash-kpi-top">
+                  <span className="dash-kpi-icon">
+                    <Building2 size={16} />
+                  </span>
+                  <InfoTooltip
+                    insight={insightMargeBrute(margeReseau.marge.toFixed(2), margeReseau.taux)}
+                  />
+                </div>
+                <div className="kpi-label">Marge brute réseau</div>
+                <div className="kpi-value">{formatFcfa(margeReseau.marge)}</div>
+                <div className="kpi-hint">Taux {margeReseau.taux} %</div>
+              </article>
+            )}
+          </div>
+
+          <div className="dash-layout">
+            <section className="panel dash-panel-span">
+              <div className="dash-panel-head">
+                <h2>Évolution du CA — 30 jours</h2>
+                <span className="dash-panel-meta">
+                  Période affichée {formatFcfa(data.chiffreAffaires.total)}
+                </span>
+              </div>
+              {serieChart.length === 0 ? (
+                <p className="lead">Aucune vente sur les 30 derniers jours.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <AreaChart data={serieChart}>
+                    <defs>
+                      <linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0f766e" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="#0f766e" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e9ef" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v: number) => formatCompact(v)}
+                      width={48}
+                    />
+                    <Tooltip
+                      contentStyle={tooltipStyle()}
+                      formatter={(value) => [formatFcfa(Number(value ?? 0)), 'CA']}
+                      labelFormatter={(_, payload) => String(payload?.[0]?.payload?.label ?? '')}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="total"
+                      stroke="#0f766e"
+                      strokeWidth={2}
+                      fill="url(#caFill)"
+                      name="CA"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>CA par boutique</h2>
+              </div>
+              {data.chiffreAffaires.parBoutique.length === 0 ? (
+                <p className="lead">Aucune vente sur la période.</p>
+              ) : (
+                <ul className="dash-rank">
+                  {[...data.chiffreAffaires.parBoutique]
+                    .sort((a, b) => Number(b.montant) - Number(a.montant))
+                    .map((b, i) => (
+                      <li key={b.boutiqueId}>
+                        <div className="dash-rank-row">
+                          <span className="dash-rank-pos">{i + 1}</span>
+                          <span className="dash-rank-name">{b.nomBoutique}</span>
+                          <span className="money">{formatFcfa(b.montant)}</span>
+                        </div>
+                        <div className="dash-bar-track">
+                          <div
+                            className="dash-bar-fill"
+                            style={{ width: `${(Number(b.montant) / caMax) * 100}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Modes de paiement</h2>
+              </div>
+              {modesChart.length === 0 ? (
+                <p className="lead">Aucune vente sur la période.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={modesChart}
+                      dataKey="montant"
+                      nameKey="label"
+                      innerRadius={52}
+                      outerRadius={78}
+                      paddingAngle={2}
+                    >
+                      {modesChart.map((entry, index) => (
+                        <Cell
+                          key={entry.modePaiement}
+                          fill={COULEURS_MODES[index % COULEURS_MODES.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={tooltipStyle()}
+                      formatter={(value) => formatFcfa(Number(value ?? 0))}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </section>
+          </div>
+
+          <section className="panel">
+            <div className="dash-panel-head">
+              <h2>Rentabilité par boutique</h2>
+              <span className="dash-panel-meta">Seuil vigilance marge &lt; 15 %</span>
+            </div>
+            {data.rentabiliteParBoutique.length === 0 ? (
+              <p className="lead">Aucune boutique dans le périmètre.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Boutique</th>
+                      <th>CA net</th>
+                      <th>Coût des ventes</th>
+                      <th>Marge brute</th>
+                      <th>Taux</th>
+                      <th>Stock valorisé</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...data.rentabiliteParBoutique]
+                      .sort((a, b) => Number(b.margeBrute) - Number(a.margeBrute))
+                      .map((r) => {
+                        const margeNegative = Number(r.margeBrute) < 0;
+                        const margeFaible = !margeNegative && Number(r.tauxMarge) < 15;
+                        return (
+                          <tr key={r.boutiqueId}>
+                            <td>
+                              <strong>{r.nomBoutique}</strong>{' '}
+                              <InfoTooltip insight={insightMargeBrute(r.margeBrute, r.tauxMarge)} />
+                            </td>
+                            <td className="money">{formatFcfa(r.chiffreAffairesNet)}</td>
+                            <td className="money">{formatFcfa(r.coutDesVentes)}</td>
+                            <td className="money">{formatFcfa(r.margeBrute)}</td>
+                            <td>
+                              <span
+                                className={
+                                  margeNegative
+                                    ? 'dash-taux dash-taux-bad'
+                                    : margeFaible
+                                      ? 'dash-taux dash-taux-warn'
+                                      : 'dash-taux dash-taux-ok'
+                                }
+                              >
+                                {r.tauxMarge} %
+                              </span>
+                              {margeNegative && (
+                                <span className="badge badge-critical">Négative</span>
+                              )}
+                              {margeFaible && (
+                                <span className="badge badge-warning">Faible</span>
+                              )}
+                            </td>
+                            <td className="money">{formatFcfa(r.valeurStock)}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <div className="dash-layout dash-layout-3">
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Pipeline versements</h2>
+              </div>
+              <ul className="dash-pipeline">
+                {STATUT_ORDER.map((statut) => {
+                  const row = data.versements.parStatut.find((s) => s.statut === statut);
+                  const nombre = row?.nombre ?? 0;
+                  const montant = row?.montant ?? '0';
+                  return (
+                    <li key={statut} className={nombre === 0 ? 'muted' : undefined}>
+                      <span className={`dash-pipe-dot statut-${statut.toLowerCase()}`} />
+                      <span>
+                        {STATUT_LABEL[statut] ?? statut}
+                        <small> · {nombre}</small>
+                      </span>
+                      <span className="money">{formatFcfa(montant)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Soldes de caisse</h2>
+              </div>
+              {data.tresorerie.caisses.length === 0 ? (
+                <p className="lead">Aucune caisse dans le périmètre.</p>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={140}>
+                    <BarChart
+                      data={[...data.tresorerie.caisses]
+                        .sort((a, b) => Number(b.solde) - Number(a.solde))
+                        .slice(0, 6)
+                        .map((c) => ({
+                          name:
+                            c.type === 'CENTRALE'
+                              ? 'Centrale'
+                              : `Aux. ${c.caisseId.slice(0, 4)}`,
+                          solde: Number(c.solde),
+                        }))}
+                      layout="vertical"
+                      margin={{ left: 8, right: 8 }}
+                    >
+                      <XAxis type="number" hide />
+                      <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
+                      <Tooltip
+                        contentStyle={tooltipStyle()}
+                        formatter={(value) => formatFcfa(Number(value ?? 0))}
+                      />
+                      <Bar dataKey="solde" fill="#0f766e" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <ul>
+                    {data.tresorerie.caisses.map((c) => (
+                      <li key={c.caisseId}>
+                        <span>
+                          {c.type === 'CENTRALE' ? 'Centrale' : 'Auxiliaire'}{' '}
+                          <small style={{ color: 'var(--text-muted)' }}>{c.caisseId.slice(0, 8)}</small>
+                        </span>
+                        <span className="money">{formatFcfa(c.solde)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="dash-panel-head">
+                <h2>Segments clients</h2>
+              </div>
+              {data.crm.parSegment.length === 0 ? (
+                <p className="lead">Aucun client segmenté.</p>
+              ) : (
+                <ul className="dash-segments">
+                  {data.crm.parSegment.map((s) => {
+                    const part =
+                      data.crm.nombreClients > 0
+                        ? (s.nombre / data.crm.nombreClients) * 100
+                        : 0;
+                    return (
+                      <li key={s.segment}>
+                        <div className="dash-rank-row">
+                          <span
+                            className="dash-seg-dot"
+                            style={{ background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280' }}
+                          />
+                          <span className="dash-rank-name">{s.segment}</span>
+                          <span>
+                            {s.nombre} <small>({part.toFixed(0)} %)</small>
+                          </span>
+                        </div>
+                        <div className="dash-bar-track">
+                          <div
+                            className="dash-bar-fill"
+                            style={{
+                              width: `${part}%`,
+                              background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280',
+                            }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          <nav className="dash-shortcuts" aria-label="Raccourcis">
+            <Link to="/pos" className="dash-shortcut">
+              <ShoppingCart size={18} />
+              <span>Point de vente</span>
+            </Link>
+            <Link to="/transactions" className="dash-shortcut">
+              <Banknote size={18} />
+              <span>Transactions</span>
+            </Link>
+            <Link to="/stocks" className="dash-shortcut">
+              <Package size={18} />
+              <span>Stocks</span>
+            </Link>
+            <Link to="/clients" className="dash-shortcut">
+              <Users size={18} />
+              <span>Clients CRM</span>
+            </Link>
+            <Link to="/caisses" className="dash-shortcut">
+              <Wallet size={18} />
+              <span>Caisses</span>
+            </Link>
+            <Link to="/alertes" className="dash-shortcut">
+              <AlertTriangle size={18} />
+              <span>Alertes</span>
+            </Link>
+          </nav>
+        </>
+      )}
     </div>
   );
 }

@@ -5,10 +5,21 @@ interface ModalProps {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** Sous-titre sous le titre (contexte métier). */
+  description?: string;
+  /** Largeur du panneau — `lg` pour les formulaires riches. */
+  size?: 'md' | 'lg';
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, title, children }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  size = 'md',
+  children,
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
@@ -23,14 +34,17 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal-panel"
+        className={`modal-panel${size === 'lg' ? ' modal-panel-lg' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3>{title}</h3>
+          <div className="modal-header-text">
+            <h3>{title}</h3>
+            {description ? <p className="modal-description">{description}</p> : null}
+          </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">
             ×
           </button>

@@ -21,6 +21,10 @@ interface LoginResponseBody {
 }
 interface ClientResponseBody {
   id: string;
+  typeClient: string;
+  nom: string;
+  prenom: string | null;
+  dateNaissance: string | null;
   segment: string;
   consentementMarketing: boolean;
 }
@@ -29,7 +33,14 @@ interface FideliteResponseBody {
   niveau: string;
 }
 interface VenteResponseBody {
+  id: string;
   montantTotal: string;
+  modePaiement: string;
+  enregistrePar: { id: string; prenom: string; nom: string } | null;
+  caisse: {
+    id: string;
+    boutique: { nom: string } | null;
+  };
 }
 interface InteractionResponseBody {
   canal: string;
@@ -199,6 +210,51 @@ describe('CRM (e2e)', () => {
       const fidelite = body<FideliteResponseBody>(fideliteResponse);
       expect(fidelite.pointsCumules).toBe(0);
       expect(fidelite.niveau).toBe('BRONZE');
+    });
+
+    it('crée une personne morale avec raison sociale seule (sans prénom)', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({
+          typeClient: 'MORALE',
+          nom: 'Accessoires Plus SARL',
+          contact: 'contact@accessoires-plus.sn',
+          consentementMarketing: true,
+        })
+        .expect(201);
+
+      const client = body<ClientResponseBody>(response);
+      expect(client.typeClient).toBe('MORALE');
+      expect(client.nom).toBe('Accessoires Plus SARL');
+      expect(client.prenom).toBeNull();
+      expect(client.dateNaissance).toBeNull();
+    });
+
+    it('refuse une personne physique sans prénom (400)', async () => {
+      await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({ typeClient: 'PHYSIQUE', nom: 'SansPrenom' })
+        .expect(400);
+    });
+
+    it('ignore la date de naissance pour une personne morale', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({
+          typeClient: 'MORALE',
+          nom: 'Boutique Centrale SA',
+          prenom: 'Service Achats',
+          dateNaissance: '1990-01-15',
+        })
+        .expect(201);
+
+      const client = body<ClientResponseBody>(response);
+      expect(client.typeClient).toBe('MORALE');
+      expect(client.prenom).toBe('Service Achats');
+      expect(client.dateNaissance).toBeNull();
     });
   });
 
@@ -392,7 +448,7 @@ describe('CRM (e2e)', () => {
       clientSansAchatsId = clientSansAchats.id;
 
       // Deux ventes rattachées au client.
-      await env.prisma.vente.create({
+      const venteAvecAudit = await env.prisma.vente.create({
         data: {
           montantTotal: '15000.00',
           caisseId,
@@ -406,8 +462,20 @@ describe('CRM (e2e)', () => {
           montantTotal: '5000.00',
           caisseId,
           clientId: clientAvecAchatsId,
-          modePaiement: 'ESPECES',
+          modePaiement: 'CARTE',
           sessionCaisseId,
+        },
+      });
+
+      // Journal d'audit réel (comme après POST /ventes) — source de
+      // « qui a enregistré » dans l'historique CRM.
+      await env.prisma.journalAudit.create({
+        data: {
+          utilisateurId: caissierSession.id,
+          action: 'VENTE_ENREGISTREE',
+          entite: 'Vente',
+          entiteId: venteAvecAudit.id,
+          details: JSON.stringify({ montantTotal: '15000.00' }),
         },
       });
 
@@ -437,6 +505,22 @@ describe('CRM (e2e)', () => {
         0,
       );
       expect(total).toBe(20000);
+
+      const parMode = Object.fromEntries(
+        ventes.map((v) => [v.modePaiement, Number(v.montantTotal)]),
+      );
+      expect(parMode.ESPECES).toBe(15000);
+      expect(parMode.CARTE).toBe(5000);
+
+      const avecEnregistreur = ventes.find((v) => v.enregistrePar !== null);
+      expect(avecEnregistreur?.enregistrePar).toMatchObject({
+        prenom: 'CaissierSession',
+        nom: 'Test',
+      });
+      // Audit prioritaire + repli session : chaque vente de la fixture a un
+      // enregistreur (audit pour l'une, ouverture de session pour l'autre).
+      expect(ventes.every((v) => v.enregistrePar !== null)).toBe(true);
+      expect(ventes.every((v) => v.caisse.boutique !== undefined)).toBe(true);
     });
 
     it('renvoie un historique vide pour un client sans achat, sans planter', async () => {

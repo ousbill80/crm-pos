@@ -8,7 +8,7 @@ import { toCsv, type CsvPrimitive } from '../../common/csv.util';
 export interface ContactCible extends Record<string, CsvPrimitive> {
   clientId: string;
   nom: string;
-  prenom: string;
+  prenom: string | null;
   contact: string | null;
   pointsCumules: number;
 }

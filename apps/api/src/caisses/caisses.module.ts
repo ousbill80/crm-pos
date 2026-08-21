@@ -5,6 +5,7 @@ import { CaissesController } from './caisses.controller';
 import { CaisseBalanceService } from './caisse-balance.service';
 
 @Module({
+  imports: [AuditModule],
   providers: [CaissesService, CaisseBalanceService],
   controllers: [CaissesController],
   exports: [CaissesService, CaisseBalanceService],

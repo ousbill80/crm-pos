@@ -19,6 +19,7 @@ import { FournisseursModule } from './fournisseurs/fournisseurs.module';
 import { AlertesModule } from './alertes/alertes.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { StocksModule } from './stocks/stocks.module';
+import { InventairesModule } from './inventaires/inventaires.module';
 import { EntrepotsModule } from './entrepots/entrepots.module';
 import { EntrepriseModule } from './entreprise/entreprise.module';
 
@@ -39,6 +40,7 @@ import { EntrepriseModule } from './entreprise/entreprise.module';
     AlertesModule,
     ReportingModule,
     StocksModule,
+    InventairesModule,
     EntrepotsModule,
     EntrepriseModule,
   ],

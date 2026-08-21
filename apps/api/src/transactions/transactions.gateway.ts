@@ -7,7 +7,6 @@ import {
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { RoleLibelle } from '@caisse-crm/shared';
 import type { JwtPayload } from '../auth/types';
 import {
   ROLES_PERIMETRE_BOUTIQUE,
@@ -57,8 +56,8 @@ export class TransactionsGateway implements OnGatewayConnection {
         return;
       }
       const payload = this.jwt.verify<JwtPayload>(token);
-      const role = payload.role as RoleLibelle;
-      client.data.user = {
+      const role = payload.role;
+      (client.data as Record<string, unknown>).user = {
         userId: payload.sub,
         role,
         boutiqueId: payload.boutiqueId,

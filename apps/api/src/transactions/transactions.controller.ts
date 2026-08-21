@@ -81,10 +81,7 @@ export class TransactionsController {
   // Rapprochement : Central / DAF, + Direction Générale pour seuils
   // exceptionnels (garde fine dans le service).
   @Patch(':id/rapprocher')
-  @Roles(
-    ...ROLES_VALIDATION_CAISSE_CENTRALE,
-    RoleLibelle.DIRECTION_GENERALE,
-  )
+  @Roles(...ROLES_VALIDATION_CAISSE_CENTRALE, RoleLibelle.DIRECTION_GENERALE)
   @HttpCode(HttpStatus.OK)
   rapprocher(
     @Param('id', ParseUUIDPipe) id: string,

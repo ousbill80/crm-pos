@@ -132,6 +132,19 @@ export class VentesService {
     dto: CreateVenteDto,
     utilisateur: AuthenticatedUser,
   ): Promise<Vente> {
+    if (dto.clientOperationId) {
+      const existante = await this.chargerParClientOperationId(
+        dto.clientOperationId,
+      );
+      if (existante) {
+        const sessionExistante = await this.trouverSessionOuEchouer(
+          existante.sessionCaisseId,
+        );
+        this.verifierPerimetreBoutique(sessionExistante, utilisateur);
+        return existante;
+      }
+    }
+
     const session = await this.trouverSessionOuEchouer(sessionId);
     this.verifierPerimetreBoutique(session, utilisateur);
 
@@ -143,80 +156,112 @@ export class VentesService {
 
     if (!session.caisse.boutiqueId) {
       throw new BadRequestException(
-        'La caisse de session n\'est rattachée à aucune boutique (stock multi-emplacement).',
+        "La caisse de session n'est rattachée à aucune boutique (stock multi-emplacement).",
       );
     }
-    const entrepotIdPos = await this.stockService.trouverEntrepotPrincipalBoutique(
-      session.caisse.boutiqueId,
-    );
+    const entrepotIdPos =
+      await this.stockService.trouverEntrepotPrincipalBoutique(
+        session.caisse.boutiqueId,
+      );
 
-    const vente = await this.prisma.$transaction(async (tx) => {
-      let montantTotal = new Prisma.Decimal(0);
-      const lignesData: {
-        produitId: string;
-        quantite: number;
-        prixUnitaire: Prisma.Decimal;
-        remise: Prisma.Decimal;
-      }[] = [];
+    let vente: Vente;
+    try {
+      vente = await this.prisma.$transaction(async (tx) => {
+        let montantTotal = new Prisma.Decimal(0);
+        const lignesData: {
+          produitId: string;
+          quantite: number;
+          prixUnitaire: Prisma.Decimal;
+          remise: Prisma.Decimal;
+          coutUnitaire: Prisma.Decimal;
+        }[] = [];
 
-      for (const ligne of dto.lignes) {
-        const produit = await tx.produit.findUnique({
-          where: { id: ligne.produitId },
-        });
-        if (!produit) {
-          throw new NotFoundException(
-            `Produit ${ligne.produitId} introuvable.`,
+        for (const ligne of dto.lignes) {
+          const produit = await tx.produit.findUnique({
+            where: { id: ligne.produitId },
+          });
+          if (!produit) {
+            throw new NotFoundException(
+              `Produit ${ligne.produitId} introuvable.`,
+            );
+          }
+          if (!produit.actif) {
+            throw new BadRequestException(
+              `Le produit « ${produit.designation} » est inactif et ne peut plus être encaissé.`,
+            );
+          }
+          const dispo = await this.stockService.getQuantite(
+            produit.id,
+            entrepotIdPos,
           );
-        }
-        const dispo = await this.stockService.getQuantite(produit.id, entrepotIdPos);
-        if (dispo < ligne.quantite) {
-          throw new BadRequestException(
-            `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
-          );
-        }
+          if (dispo < ligne.quantite) {
+            throw new BadRequestException(
+              `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
+            );
+          }
 
-        const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
-        const montantLigne = prixUnitaire.times(ligne.quantite);
-        const remise = new Prisma.Decimal(ligne.remise ?? 0);
-        const plafondRemise = montantLigne.times(REMISE_MAX_RATIO);
-        if (remise.greaterThan(plafondRemise)) {
-          throw new BadRequestException(
-            `Remise trop élevée pour le produit "${produit.designation}" : maximum ${plafondRemise.toFixed(2)} (20% du montant de la ligne).`,
-          );
-        }
+          const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
+          const montantLigne = prixUnitaire.times(ligne.quantite);
+          const remise = new Prisma.Decimal(ligne.remise ?? 0);
+          const plafondRemise = montantLigne.times(REMISE_MAX_RATIO);
+          if (remise.greaterThan(plafondRemise)) {
+            throw new BadRequestException(
+              `Remise trop élevée pour le produit "${produit.designation}" : maximum ${plafondRemise.toFixed(2)} (20% du montant de la ligne).`,
+            );
+          }
 
-        await this.stockService.appliquerMouvement(
-          {
+          await this.stockService.appliquerMouvement(
+            {
+              produitId: produit.id,
+              entrepotId: entrepotIdPos,
+              type: 'VENTE',
+              delta: -ligne.quantite,
+              utilisateurId: utilisateur.userId,
+            },
+            tx,
+          );
+
+          montantTotal = montantTotal.plus(montantLigne.minus(remise));
+          lignesData.push({
             produitId: produit.id,
-            entrepotId: entrepotIdPos,
-            type: 'VENTE',
-            delta: -ligne.quantite,
-            utilisateurId: utilisateur.userId,
+            quantite: ligne.quantite,
+            prixUnitaire,
+            remise,
+            // Snapshot immuable du CMP au moment de la vente (rentabilité par
+            // boutique) — jamais recalculé après coup, même si une réception
+            // ultérieure fait évoluer coutMoyenPondere.
+            coutUnitaire: new Prisma.Decimal(produit.coutMoyenPondere),
+          });
+        }
+
+        return tx.vente.create({
+          data: {
+            caisseId: session.caisseId,
+            sessionCaisseId: session.id,
+            modePaiement: dto.modePaiement,
+            montantTotal,
+            clientId: dto.clientId,
+            clientOperationId: dto.clientOperationId,
+            lignes: { create: lignesData },
           },
-          tx,
-        );
-
-        montantTotal = montantTotal.plus(montantLigne.minus(remise));
-        lignesData.push({
-          produitId: produit.id,
-          quantite: ligne.quantite,
-          prixUnitaire,
-          remise,
+          include: { lignes: { include: { produit: true } } },
         });
-      }
-
-      return tx.vente.create({
-        data: {
-          caisseId: session.caisseId,
-          sessionCaisseId: session.id,
-          modePaiement: dto.modePaiement,
-          montantTotal,
-          clientId: dto.clientId,
-          lignes: { create: lignesData },
-        },
-        include: { lignes: { include: { produit: true } } },
       });
-    });
+    } catch (error) {
+      if (this.estConflitIdempotence(error) && dto.clientOperationId) {
+        const existante = await this.chargerParClientOperationId(
+          dto.clientOperationId,
+        );
+        if (existante) {
+          const sessionExistante = await this.trouverSessionOuEchouer(
+            existante.sessionCaisseId,
+          );
+          this.verifierPerimetreBoutique(sessionExistante, utilisateur);
+          return existante;
+        }
+      }
+      throw error;
+    }
 
     await this.audit.record({
       utilisateurId: utilisateur.userId,
@@ -284,7 +329,6 @@ export class VentesService {
       .toDecimalPlaces(2);
 
     const retour = await this.prisma.$transaction(async (tx) => {
-
       const created = await tx.retourVente.create({
         data: {
           venteId: ligneVente.venteId,
@@ -543,6 +587,35 @@ export class VentesService {
 
     throw new ForbiddenException(
       `Rôle "${utilisateur.role}" non habilité à consulter les sessions de caisse.`,
+    );
+  }
+
+  // Tickets de la session pour le tiroir POS — lecture seule, même périmètre
+  // que findOne. Les retours sont inclus pour reconstituer les quantités
+  // encore retournables après un refresh (§6.3.2).
+  async listerVentesSession(sessionId: string, utilisateur: AuthenticatedUser) {
+    await this.findOne(sessionId, utilisateur);
+    return this.prisma.vente.findMany({
+      where: { sessionCaisseId: sessionId },
+      orderBy: { dateVente: 'desc' },
+      include: {
+        lignes: { include: { produit: true } },
+        retours: true,
+      },
+    });
+  }
+
+  private async chargerParClientOperationId(clientOperationId: string) {
+    return this.prisma.vente.findUnique({
+      where: { clientOperationId },
+      include: { lignes: { include: { produit: true } } },
+    });
+  }
+
+  private estConflitIdempotence(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
     );
   }
 

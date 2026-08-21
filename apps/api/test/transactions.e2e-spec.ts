@@ -723,7 +723,10 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
       const regularisee = await request(app.getHttpServer())
         .patch(`/transactions/${transaction.id}/regulariser`)
         .set('Authorization', `Bearer ${tokens.controle}`)
-        .send({ montantRetenu: 380, motif: 'Écart partiel accepté après inventaire' })
+        .send({
+          montantRetenu: 380,
+          motif: 'Écart partiel accepté après inventaire',
+        })
         .expect(200);
       expect((regularisee.body as TransactionDto).statut).toBe('VALIDEE');
 
