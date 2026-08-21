@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   RoleLibelle,
+  ROLES_MISE_EN_TRANSIT,
   ROLES_REGULARISATION_LITIGE,
   ROLES_VALIDATION_CAISSE_CENTRALE,
 } from '@caisse-crm/shared';
@@ -25,16 +26,10 @@ import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
 import { RegulariserTransactionDto } from './dto/regulariser-transaction.dto';
 import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
 
-// Endpoints de la machine à états des transactions de caisse (§6.4). Chaque
-// route sensible porte @Roles(...) explicitement : aucune route de ce
-// contrôleur ne doit être laissée sans restriction de rôle, sous peine de
-// devenir accessible à n'importe quel utilisateur authentifié (cf. RolesGuard).
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
-  // Lecture (§6.2) : même périmètre de rôles que la lecture des caisses
-  // (réseau trésorerie, superviseur de zone, périmètre boutique).
   @Get()
   @Roles(...ROLES_LECTURE_CAISSES)
   findAll(
@@ -53,7 +48,6 @@ export class TransactionsController {
     return this.transactionsService.findOne(id, utilisateur);
   }
 
-  // INITIEE — §6.4 : caissier boutique / responsable boutique uniquement.
   @Post()
   @Roles(RoleLibelle.CAISSIER_BOUTIQUE, RoleLibelle.RESPONSABLE_BOUTIQUE)
   initier(
@@ -63,11 +57,9 @@ export class TransactionsController {
     return this.transactionsService.initier(dto, utilisateur);
   }
 
-  // EN_TRANSIT — §6.4 : responsable boutique. Le "convoyeur" cité par le
-  // cahier des charges n'a pas de rôle dédié dans le référentiel (voir
-  // rapport de fin de tâche) : non implémenté séparément.
+  // EN_TRANSIT — §6.4 : responsable boutique ou convoyeur.
   @Patch(':id/transit')
-  @Roles(RoleLibelle.RESPONSABLE_BOUTIQUE)
+  @Roles(...ROLES_MISE_EN_TRANSIT)
   @HttpCode(HttpStatus.OK)
   passerEnTransit(
     @Param('id', ParseUUIDPipe) id: string,
@@ -76,9 +68,6 @@ export class TransactionsController {
     return this.transactionsService.passerEnTransit(id, utilisateur);
   }
 
-  // RECEPTIONNEE — §6.4 : Caissier Central / DAF UNIQUEMENT. Une caisse
-  // auxiliaire (boutique) ne doit jamais pouvoir atteindre cette route :
-  // appliqué ici côté serveur via @Roles(), pas seulement masqué côté UI.
   @Patch(':id/receptionner')
   @Roles(...ROLES_VALIDATION_CAISSE_CENTRALE)
   @HttpCode(HttpStatus.OK)
@@ -89,10 +78,13 @@ export class TransactionsController {
     return this.transactionsService.receptionner(id, utilisateur);
   }
 
-  // VALIDEE / LITIGE — §6.4 : Caissier Central / DAF UNIQUEMENT, à l'issue
-  // du rapprochement (écart nul => VALIDEE, écart non nul => LITIGE).
+  // Rapprochement : Central / DAF, + Direction Générale pour seuils
+  // exceptionnels (garde fine dans le service).
   @Patch(':id/rapprocher')
-  @Roles(...ROLES_VALIDATION_CAISSE_CENTRALE)
+  @Roles(
+    ...ROLES_VALIDATION_CAISSE_CENTRALE,
+    RoleLibelle.DIRECTION_GENERALE,
+  )
   @HttpCode(HttpStatus.OK)
   rapprocher(
     @Param('id', ParseUUIDPipe) id: string,
@@ -102,7 +94,6 @@ export class TransactionsController {
     return this.transactionsService.rapprocher(id, dto, utilisateur);
   }
 
-  // LITIGE → VALIDEE — §6.4 : Contrôle interne / DAF uniquement.
   @Patch(':id/regulariser')
   @Roles(...ROLES_REGULARISATION_LITIGE)
   @HttpCode(HttpStatus.OK)

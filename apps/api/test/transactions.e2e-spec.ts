@@ -153,6 +153,8 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     await creerUtilisateur('caissier-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('daf', 'DAF', null, 1);
     await creerUtilisateur('controle', 'CONTROLEUR_INTERNE', null, 1);
+    await creerUtilisateur('convoyeur-b1', 'CONVOYEUR', boutique1Id, 4);
+    await creerUtilisateur('dg-reseau', 'DIRECTION_GENERALE', null, 0);
     // Superviseur de zone rattaché à boutique1 (zone A) : la zone de
     // supervision est résolue via Utilisateur.boutiqueId -> Boutique.zoneId
     // (limite de schéma documentée dans boutique-scope.util.ts).
@@ -183,6 +185,8 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     tokens.daf = await login('daf');
     tokens.controle = await login('controle');
     tokens.superviseurA = await login('superviseur-a');
+    tokens.convoyeurB1 = await login('convoyeur-b1');
+    tokens.dg = await login('dg-reseau');
   }, 120_000);
 
   afterAll(async () => {
@@ -837,6 +841,110 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
       expect(body.bordereau).toBeDefined();
       expect(Number(body.bordereau!.montantDeclare)).toBe(42);
       expect(body.caisse?.id).toBe(caisseBoutique1Id);
+    });
+  });
+
+  describe('convoyeur, seuil DG et hors-ligne (§4 / §5.2 / §6.7)', () => {
+    it('autorise un CONVOYEUR à passer une transaction EN_TRANSIT', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        120,
+      );
+      const enTransit = await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/transit`)
+        .set('Authorization', `Bearer ${tokens.convoyeurB1}`)
+        .expect(200);
+      expect((enTransit.body as TransactionDto).statut).toBe('EN_TRANSIT');
+    });
+
+    it('refuse (403) qu’un CONVOYEUR réceptionne ou rapproche', async () => {
+      const transaction = await initierTransaction(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        130,
+      );
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/transit`)
+        .set('Authorization', `Bearer ${tokens.convoyeurB1}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/receptionner`)
+        .set('Authorization', `Bearer ${tokens.convoyeurB1}`)
+        .expect(403);
+    });
+
+    it('exige la Direction Générale pour valider un montant ≥ seuil', async () => {
+      const societe = await env.prisma.societe.findFirst();
+      if (!societe) {
+        await env.prisma.societe.create({
+          data: {
+            raisonSociale: 'Test',
+            adresse: 'Test',
+            devise: 'XOF',
+            seuilValidationDg: 1000,
+          },
+        });
+      } else {
+        await env.prisma.societe.update({
+          where: { id: societe.id },
+          data: { seuilValidationDg: 1000 },
+        });
+      }
+
+      const transaction = await cycleJusquaReceptionnee(
+        tokens.caissierB1,
+        caisseBoutique1Id,
+        5000,
+        'SORTIE_FONDS',
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.caissierCentral}`)
+        .send({ montantRecu: 5000 })
+        .expect(403);
+
+      const validee = await request(app.getHttpServer())
+        .patch(`/transactions/${transaction.id}/rapprocher`)
+        .set('Authorization', `Bearer ${tokens.dg}`)
+        .send({ montantRecu: 5000 })
+        .expect(200);
+      expect((validee.body as TransactionDto).statut).toBe('VALIDEE');
+    });
+
+    it('réutilise clientOperationId (idempotence hors-ligne)', async () => {
+      const clientOperationId = 'op-offline-test-001';
+      const first = await request(app.getHttpServer())
+        .post('/transactions')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .send({
+          caisseId: caisseBoutique1Id,
+          type: 'VENTE',
+          montant: 77,
+          clientOperationId,
+        })
+        .expect(201);
+
+      const second = await request(app.getHttpServer())
+        .post('/transactions')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .send({
+          caisseId: caisseBoutique1Id,
+          type: 'VENTE',
+          montant: 77,
+          clientOperationId,
+        })
+        .expect(201);
+
+      expect((second.body as TransactionDto).id).toBe(
+        (first.body as TransactionDto).id,
+      );
+      const count = await env.prisma.transactionCaisse.count({
+        where: { clientOperationId },
+      });
+      expect(count).toBe(1);
     });
   });
 });

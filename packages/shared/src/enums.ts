@@ -46,12 +46,16 @@ export const RoleLibelle = {
   SUPERVISEUR_ZONE: 'SUPERVISEUR_ZONE',
   RESPONSABLE_BOUTIQUE: 'RESPONSABLE_BOUTIQUE',
   CAISSIER_BOUTIQUE: 'CAISSIER_BOUTIQUE',
+  // Convoyeur (§6.4) : peut faire passer INITIEE → EN_TRANSIT uniquement.
+  CONVOYEUR: 'CONVOYEUR',
   RESPONSABLE_SI: 'RESPONSABLE_SI',
   RESPONSABLE_CRM: 'RESPONSABLE_CRM',
 } as const;
 export type RoleLibelle = (typeof RoleLibelle)[keyof typeof RoleLibelle];
 
 // Rôles habilités à réceptionner/valider une transaction (§6.4, règle imperative).
+// La Direction Générale n'est PAS ici : elle ne valide que les montants
+// au-dessus du seuil exceptionnel (voir assertValidationSeuilDg).
 export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
   RoleLibelle.DAF,
@@ -62,6 +66,16 @@ export const ROLES_REGULARISATION_LITIGE: RoleLibelle[] = [
   RoleLibelle.CONTROLEUR_INTERNE,
   RoleLibelle.DAF,
 ];
+
+// INITIEE → EN_TRANSIT (§6.4) : responsable boutique ou convoyeur.
+export const ROLES_MISE_EN_TRANSIT: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.CONVOYEUR,
+];
+
+// Seuil par défaut (FCFA) au-delà duquel seul la Direction Générale peut
+// valider (rapprochement sans écart). Paramétrable sur Societe.seuilValidationDg.
+export const SEUIL_VALIDATION_DG_DEFAUT = 5_000_000;
 
 // ---------------------------------------------------------------------------
 // CRM (§6.6) — segmentation, fidélité, interactions.

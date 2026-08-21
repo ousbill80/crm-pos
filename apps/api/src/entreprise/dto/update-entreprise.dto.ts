@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class UpdateEntrepriseDto {
   @IsOptional()
@@ -27,4 +27,9 @@ export class UpdateEntrepriseDto {
   @IsOptional()
   @IsString()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  seuilValidationDg?: number;
 }

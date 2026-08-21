@@ -37,10 +37,12 @@ export const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
 export const ROLE_SUPERVISEUR_ZONE = RoleLibelle.SUPERVISEUR_ZONE;
 
 // Rôles à périmètre boutique unique (vente + initiation seulement — jamais de
-// validation/réception, cf. règle de séparation des tâches).
+// validation/réception, cf. règle de séparation des tâches). Le CONVOYEUR
+// (§6.4) est rattaché à une boutique et ne peut que mettre EN_TRANSIT.
 export const ROLES_PERIMETRE_BOUTIQUE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
   RoleLibelle.CAISSIER_BOUTIQUE,
+  RoleLibelle.CONVOYEUR,
 ];
 
 // Rôles autorisés à lire la structure (zones/boutiques) : tous les rôles

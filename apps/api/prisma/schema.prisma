@@ -27,6 +27,9 @@ model Societe {
   email         String?
   devise        String  @default("XOF")
   logoUrl       String?
+  // Montant (FCFA) au-delà duquel seul la Direction Générale peut valider
+  // un rapprochement sans écart (§4 « validation seuils exceptionnels »).
+  seuilValidationDg Decimal @default(5000000) @db.Decimal(14, 2)
 
   @@map("societe")
 }
@@ -180,6 +183,10 @@ model TransactionCaisse {
   transactionSource   TransactionCaisse?  @relation("ContrepartieCentrale", fields: [transactionSourceId], references: [id])
   transactionSourceId String?
   contreparties       TransactionCaisse[] @relation("ContrepartieCentrale")
+
+  // Clé d'idempotence pour le mode hors-ligne (§6.7) : une opération
+  // rejouée à la reconnexion ne crée pas de doublon.
+  clientOperationId String? @unique
 
   bordereau     BordereauVersement?
   sessionCaisse SessionCaisse?

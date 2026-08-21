@@ -5,6 +5,8 @@ import {
   IsPositive,
   IsString,
   IsUUID,
+  MaxLength,
+  MinLength,
 } from 'class-validator';
 import { TypeTransaction } from '@caisse-crm/shared';
 
@@ -26,4 +28,11 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   pieceJointe?: string;
+
+  // Idempotence hors-ligne (§6.7) : UUID généré côté client.
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  clientOperationId?: string;
 }

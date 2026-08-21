@@ -24,6 +24,6 @@ import { RolesGuard } from './guards/roles.guard';
   ],
   providers: [AuthService, JwtStrategy, RolesGuard],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

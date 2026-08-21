@@ -1,7 +1,8 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RoleLibelle,
+  ROLES_MISE_EN_TRANSIT,
   ROLES_VALIDATION_CAISSE_CENTRALE,
   StatutTransaction,
   TypeCaisse,
@@ -14,6 +15,12 @@ import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { insightStatutTransaction } from '../lib/insights/transactions';
+import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
+import {
+  enqueueTransactionInit,
+  flushOutbox,
+  outboxCount,
+} from '../lib/offline/outbox';
 import type { CaisseDto, TransactionDto } from '../lib/types';
 
 const ROLES_INITIATION: RoleLibelle[] = [
@@ -70,18 +77,44 @@ function NouvelleTransactionForm({
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch<TransactionDto>('/transactions', {
+    mutationFn: async () => {
+      const payload = {
+        caisseId,
+        type,
+        montant: Number(montant),
+        clientOperationId: crypto.randomUUID(),
+      };
+      if (!navigator.onLine) {
+        enqueueTransactionInit({
+          caisseId: payload.caisseId,
+          type: payload.type,
+          montant: payload.montant,
+        });
+        return null;
+      }
+      return apiFetch<TransactionDto>('/transactions', {
         method: 'POST',
-        body: JSON.stringify({ caisseId, type, montant: Number(montant) }),
-      }),
+        body: JSON.stringify(payload),
+      });
+    },
     onSuccess: () => {
       setMontant('');
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['transactions'] });
       onSuccess?.();
     },
-    onError: () => setError("Échec de l'initiation de la transaction."),
+    onError: () => {
+      // Filet hors-ligne : si le réseau tombe pendant le POST.
+      enqueueTransactionInit({
+        caisseId,
+        type,
+        montant: Number(montant),
+      });
+      setError(
+        "Hors ligne ou erreur réseau — transaction mise en file d'attente (§6.7).",
+      );
+      onSuccess?.();
+    },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -274,7 +307,7 @@ function TransactionActions({
 
   if (
     transaction.statut === StatutTransaction.INITIEE &&
-    user.role === RoleLibelle.RESPONSABLE_BOUTIQUE
+    ROLES_MISE_EN_TRANSIT.includes(user.role)
   ) {
     actions.push(
       <button key="transit" type="button" onClick={() => transition.mutate('transit')}>
@@ -296,7 +329,8 @@ function TransactionActions({
 
   if (
     transaction.statut === StatutTransaction.RECEPTIONNEE &&
-    ROLES_VALIDATION_CAISSE_CENTRALE.includes(user.role)
+    (ROLES_VALIDATION_CAISSE_CENTRALE.includes(user.role) ||
+      user.role === RoleLibelle.DIRECTION_GENERALE)
   ) {
     actions.push(
       <button key="rapprocher" type="button" onClick={() => onRapprocher(transaction)}>
@@ -310,7 +344,10 @@ function TransactionActions({
 
 export function TransactionsPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const peutInitier = user !== null && ROLES_INITIATION.includes(user.role);
+  useTresorerieRealtime(user !== null);
+  const [pendingOffline, setPendingOffline] = useState(outboxCount());
   const [filters, setFilters] = useState({
     statut: '',
     type: '',
@@ -321,6 +358,22 @@ export function TransactionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [rapprocherTx, setRapprocherTx] = useState<TransactionDto | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function sync() {
+      if (!navigator.onLine) return;
+      const result = await flushOutbox((path, body) =>
+        apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+      );
+      setPendingOffline(outboxCount());
+      if (result.flushed > 0) {
+        void queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      }
+    }
+    void sync();
+    window.addEventListener('online', sync);
+    return () => window.removeEventListener('online', sync);
+  }, [queryClient]);
 
   const queryUrl = useMemo(() => buildQuery(filters), [filters]);
 
@@ -340,16 +393,23 @@ export function TransactionsPage() {
         title="Transactions"
         subtitle="Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE"
         actions={
-          peutInitier ? (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setModalOpen(true)}
-              disabled={!caisses}
-            >
-              Nouvelle transaction
-            </button>
-          ) : undefined
+          <>
+            {pendingOffline > 0 ? (
+              <span className="badge badge-warning">
+                {pendingOffline} en file hors-ligne
+              </span>
+            ) : null}
+            {peutInitier ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setModalOpen(true)}
+                disabled={!caisses}
+              >
+                Nouvelle transaction
+              </button>
+            ) : null}
+          </>
         }
       />
 

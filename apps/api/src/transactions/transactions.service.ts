@@ -9,6 +9,9 @@ import {
   StatutTransaction,
   TypeCaisse,
   TypeTransaction,
+  RoleLibelle,
+  ROLES_VALIDATION_CAISSE_CENTRALE,
+  SEUIL_VALIDATION_DG_DEFAUT,
 } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -23,6 +26,7 @@ import {
   resolveZoneScopeForSuperviseur,
 } from '../boutiques/boutique-scope.util';
 import { TransactionStateMachineService } from './transaction-state-machine.service';
+import { TransactionsGateway } from './transactions.gateway';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
 import { RegulariserTransactionDto } from './dto/regulariser-transaction.dto';
@@ -48,6 +52,7 @@ export class TransactionsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly stateMachine: TransactionStateMachineService,
+    private readonly gateway: TransactionsGateway,
   ) {}
 
   // INITIEE — Caissier boutique / Responsable boutique (§6.4).
@@ -55,6 +60,15 @@ export class TransactionsService {
     dto: CreateTransactionDto,
     utilisateur: AuthenticatedUser,
   ): Promise<TransactionCaisse> {
+    if (dto.clientOperationId) {
+      const existante = await this.prisma.transactionCaisse.findUnique({
+        where: { clientOperationId: dto.clientOperationId },
+      });
+      if (existante) {
+        return existante;
+      }
+    }
+
     const caisse = await this.prisma.caisse.findUnique({
       where: { id: dto.caisseId },
     });
@@ -86,6 +100,7 @@ export class TransactionsService {
           statut: StatutTransaction.INITIEE,
           caisseId: dto.caisseId,
           initiateurId: utilisateur.userId,
+          clientOperationId: dto.clientOperationId,
         },
       });
 
@@ -109,9 +124,11 @@ export class TransactionsService {
         type: dto.type,
         montant: dto.montant,
         caisseId: dto.caisseId,
+        clientOperationId: dto.clientOperationId,
       }),
     });
 
+    await this.broadcastStatut(transaction);
     return transaction;
   }
 
@@ -139,6 +156,7 @@ export class TransactionsService {
       entiteId: id,
     });
 
+    await this.broadcastStatut(misAJour);
     return misAJour;
   }
 
@@ -165,11 +183,12 @@ export class TransactionsService {
       entiteId: id,
     });
 
+    await this.broadcastStatut(misAJour);
     return misAJour;
   }
 
-  // VALIDEE ou LITIGE — Caissier Central / DAF (§6.4). Écart nul => VALIDEE
-  // (+ miroir CENTRALE si SORTIE_FONDS) ; écart non nul => LITIGE (pas de miroir).
+  // VALIDEE ou LITIGE — Caissier Central / DAF (§6.4), Direction Générale
+  // uniquement si montant ≥ seuil exceptionnel (§4).
   async rapprocher(
     id: string,
     dto: RapprocherTransactionDto,
@@ -207,6 +226,12 @@ export class TransactionsService {
 
     this.stateMachine.assertTransitionAutorisee(
       transaction.statut,
+      statutFinal,
+    );
+
+    await this.assertHabilitationRapprochement(
+      utilisateur,
+      montantDeclare,
       statutFinal,
     );
 
@@ -256,6 +281,7 @@ export class TransactionsService {
       }),
     });
 
+    await this.broadcastStatut(misAJour);
     return misAJour;
   }
 
@@ -341,6 +367,7 @@ export class TransactionsService {
       }),
     });
 
+    await this.broadcastStatut(misAJour);
     return misAJour;
   }
 
@@ -512,5 +539,61 @@ export class TransactionsService {
         'Vous ne pouvez agir que sur une transaction de votre propre boutique.',
       );
     }
+  }
+
+  // §4 : au-dessus du seuil, seule la DG valide (VALIDEE). En dessous,
+  // Central/DAF uniquement. LITIGE reste accessible à Central/DAF même
+  // au-dessus du seuil (constat d'écart).
+  private async assertHabilitationRapprochement(
+    utilisateur: AuthenticatedUser,
+    montantDeclare: Prisma.Decimal,
+    statutFinal: string,
+  ): Promise<void> {
+    const societe = await this.prisma.societe.findFirst();
+    const seuil = societe?.seuilValidationDg
+      ? new Prisma.Decimal(societe.seuilValidationDg)
+      : new Prisma.Decimal(SEUIL_VALIDATION_DG_DEFAUT);
+    const auDessusDuSeuil = montantDeclare.greaterThanOrEqualTo(seuil);
+
+    if (statutFinal === StatutTransaction.LITIGE) {
+      if (!ROLES_VALIDATION_CAISSE_CENTRALE.includes(utilisateur.role)) {
+        throw new ForbiddenException(
+          'Seul le Caissier Central ou le DAF peut constater un litige.',
+        );
+      }
+      return;
+    }
+
+    // VALIDEE
+    if (auDessusDuSeuil) {
+      if (utilisateur.role !== RoleLibelle.DIRECTION_GENERALE) {
+        throw new ForbiddenException(
+          `Montant ≥ seuil DG (${seuil.toFixed(2)} FCFA) : validation réservée à la Direction Générale (§4).`,
+        );
+      }
+      return;
+    }
+
+    if (!ROLES_VALIDATION_CAISSE_CENTRALE.includes(utilisateur.role)) {
+      throw new ForbiddenException(
+        'Sous le seuil exceptionnel, seul le Caissier Central ou le DAF peut valider.',
+      );
+    }
+  }
+
+  private async broadcastStatut(transaction: TransactionCaisse): Promise<void> {
+    const caisse = await this.prisma.caisse.findUnique({
+      where: { id: transaction.caisseId },
+      include: { boutique: { select: { id: true, zoneId: true } } },
+    });
+    this.gateway.emitStatutChange({
+      id: transaction.id,
+      statut: transaction.statut,
+      type: transaction.type,
+      montant: transaction.montant.toString(),
+      caisseId: transaction.caisseId,
+      boutiqueId: caisse?.boutiqueId ?? null,
+      zoneId: caisse?.boutique?.zoneId ?? null,
+    });
   }
 }
