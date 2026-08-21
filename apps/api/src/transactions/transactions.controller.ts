@@ -12,8 +12,10 @@ import {
 } from '@nestjs/common';
 import {
   RoleLibelle,
+  ROLES_INITIATION_SORTIE_FONDS,
   ROLES_MISE_EN_TRANSIT,
   ROLES_REGULARISATION_LITIGE,
+  ROLES_REGULARISATION_LITIGE_INTERNE,
   ROLES_VALIDATION_CAISSE_CENTRALE,
 } from '@caisse-crm/shared';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -49,7 +51,7 @@ export class TransactionsController {
   }
 
   @Post()
-  @Roles(RoleLibelle.CAISSIER_BOUTIQUE, RoleLibelle.RESPONSABLE_BOUTIQUE)
+  @Roles(...ROLES_INITIATION_SORTIE_FONDS)
   initier(
     @Body() dto: CreateTransactionDto,
     @CurrentUser() utilisateur: AuthenticatedUser,
@@ -92,7 +94,7 @@ export class TransactionsController {
   }
 
   @Patch(':id/regulariser')
-  @Roles(...ROLES_REGULARISATION_LITIGE)
+  @Roles(...ROLES_REGULARISATION_LITIGE, ...ROLES_REGULARISATION_LITIGE_INTERNE)
   @HttpCode(HttpStatus.OK)
   regulariser(
     @Param('id', ParseUUIDPipe) id: string,

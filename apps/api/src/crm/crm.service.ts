@@ -200,7 +200,7 @@ export class ClientsService {
   async tableauDeBord(clientId: string) {
     await this.findOne(clientId);
 
-    const [agregat, dernierAchat, fidelite] = await Promise.all([
+    const [agregat, dernierAchat, fidelite, ventesPourPdv] = await Promise.all([
       this.prisma.vente.aggregate({
         where: { clientId },
         _sum: { montantTotal: true },
@@ -211,7 +211,63 @@ export class ClientsService {
         orderBy: { dateVente: 'desc' },
       }),
       this.prisma.fidelite.findUnique({ where: { clientId } }),
+      // Points de vente fréquentés = boutiques des caisses ayant encaissé
+      // ce client (§6.6 : fiche réseau, pas de rattachement boutique fixe).
+      this.prisma.vente.findMany({
+        where: { clientId },
+        select: {
+          montantTotal: true,
+          dateVente: true,
+          caisse: {
+            select: {
+              boutique: { select: { id: true, nom: true } },
+            },
+          },
+        },
+      }),
     ]);
+
+    const parBoutique = new Map<
+      string,
+      {
+        id: string;
+        nom: string;
+        nombreAchats: number;
+        totalDepense: Prisma.Decimal;
+        dateDernierAchat: Date;
+      }
+    >();
+
+    for (const vente of ventesPourPdv) {
+      const boutique = vente.caisse.boutique;
+      if (!boutique) continue;
+      const existant = parBoutique.get(boutique.id);
+      if (!existant) {
+        parBoutique.set(boutique.id, {
+          id: boutique.id,
+          nom: boutique.nom,
+          nombreAchats: 1,
+          totalDepense: new Prisma.Decimal(vente.montantTotal),
+          dateDernierAchat: vente.dateVente,
+        });
+      } else {
+        existant.nombreAchats += 1;
+        existant.totalDepense = existant.totalDepense.plus(vente.montantTotal);
+        if (vente.dateVente > existant.dateDernierAchat) {
+          existant.dateDernierAchat = vente.dateVente;
+        }
+      }
+    }
+
+    const pointsDeVente = [...parBoutique.values()]
+      .map((p) => ({
+        id: p.id,
+        nom: p.nom,
+        nombreAchats: p.nombreAchats,
+        totalDepense: p.totalDepense.toFixed(2),
+        dateDernierAchat: p.dateDernierAchat,
+      }))
+      .sort((a, b) => b.nombreAchats - a.nombreAchats);
 
     return {
       totalDepense: (
@@ -221,6 +277,7 @@ export class ClientsService {
       dateDernierAchat: dernierAchat?.dateVente ?? null,
       pointsCumules: fidelite?.pointsCumules ?? 0,
       niveauFidelite: fidelite?.niveau ?? 'BRONZE',
+      pointsDeVente,
     };
   }
 

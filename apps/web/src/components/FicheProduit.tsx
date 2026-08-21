@@ -50,6 +50,7 @@ const MOUVEMENT_LABEL: Record<MouvementStockDto['type'], string> = {
   AJUSTEMENT: 'Ajustement',
   TRANSFERT_OUT: 'Transfert sortant',
   TRANSFERT_IN: 'Transfert entrant',
+  SCRAP: 'Rebut',
 };
 
 function formatFcfa(value: string | number): string {

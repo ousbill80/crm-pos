@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import { ROLES_CONFIG_TIROIRS } from '@caisse-crm/shared';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
@@ -6,12 +15,13 @@ import {
   ROLES_ADMIN_STRUCTURE,
   ROLES_LECTURE_CAISSES,
 } from './access-scope.constants';
-import { CreateCaisseDto } from './dto/create-caisse.dto';
+import {
+  CreateCaisseDto,
+  CreateTiroirDto,
+  UpdateTiroirDto,
+} from './dto/create-caisse.dto';
 import { CaissesService } from './caisses.service';
 
-// Endpoints Caisse — §6.3.1, §6.2 du cahier des charges. Le solde n'est
-// jamais exposé depuis la colonne de cache Caisse.soldeCourant : voir
-// GET /caisses/:id/solde, calculé à la volée depuis le grand livre.
 @Controller('caisses')
 export class CaissesController {
   constructor(private readonly caissesService: CaissesService) {}
@@ -20,6 +30,25 @@ export class CaissesController {
   @Roles(...ROLES_ADMIN_STRUCTURE)
   create(@Body() dto: CreateCaisseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.caissesService.create(dto, user);
+  }
+
+  @Post('tiroirs')
+  @Roles(...ROLES_CONFIG_TIROIRS)
+  createTiroir(
+    @Body() dto: CreateTiroirDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.caissesService.createTiroir(dto, user);
+  }
+
+  @Patch('tiroirs/:id')
+  @Roles(...ROLES_CONFIG_TIROIRS)
+  updateTiroir(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTiroirDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.caissesService.updateTiroir(id, dto, user);
   }
 
   @Get()

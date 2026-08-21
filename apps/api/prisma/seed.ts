@@ -118,11 +118,31 @@ async function main() {
   }
 
   let caisse = await prisma.caisse.findFirst({
-    where: { boutiqueId: boutique.id, type: 'AUXILIAIRE' },
+    where: { boutiqueId: boutique.id, type: 'MAGASIN' },
   });
   if (!caisse) {
     caisse = await prisma.caisse.create({
-      data: { type: 'AUXILIAIRE', boutiqueId: boutique.id },
+      data: {
+        type: 'MAGASIN',
+        boutiqueId: boutique.id,
+        libelle: `Caisse magasin — ${boutique.nom}`,
+      },
+    });
+  }
+
+  let tiroir = await prisma.caisse.findFirst({
+    where: { boutiqueId: boutique.id, type: 'TIROIR' },
+  });
+  if (!tiroir) {
+    tiroir = await prisma.caisse.create({
+      data: {
+        type: 'TIROIR',
+        boutiqueId: boutique.id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
     });
   }
 
@@ -142,6 +162,47 @@ async function main() {
         code: 'PRINCIPAL',
         type: 'PRINCIPAL',
         boutiqueId: b.id,
+      },
+    });
+  }
+
+  let hub = await prisma.boutique.findFirst({ where: { code: 'WH-CENTRAL' } });
+  if (!hub) {
+    hub = await prisma.boutique.create({
+      data: {
+        nom: 'Entrepôt Central',
+        adresse: 'Siège — stock réseau',
+        code: 'WH-CENTRAL',
+        zoneId: zone.id,
+      },
+    });
+  }
+  const emplacementsHub: Array<{
+    code: string;
+    nom: string;
+    type: 'PRINCIPAL' | 'SECONDAIRE';
+    usage: 'STOCK' | 'ENTREE' | 'SORTIE' | 'PERTE' | 'FOURNISSEUR' | 'CLIENT';
+    virtuel: boolean;
+  }> = [
+    { code: 'PRINCIPAL', nom: 'Stock central', type: 'PRINCIPAL', usage: 'STOCK', virtuel: false },
+    { code: 'ENTREE', nom: 'Quai de réception', type: 'SECONDAIRE', usage: 'ENTREE', virtuel: false },
+    { code: 'SORTIE', nom: 'Quai de sortie', type: 'SECONDAIRE', usage: 'SORTIE', virtuel: false },
+    { code: 'PERTE', nom: 'Pertes / rebuts', type: 'SECONDAIRE', usage: 'PERTE', virtuel: false },
+    { code: 'FOURNISSEUR', nom: 'Fournisseurs (virtuel)', type: 'SECONDAIRE', usage: 'FOURNISSEUR', virtuel: true },
+    { code: 'CLIENT', nom: 'Clients (virtuel)', type: 'SECONDAIRE', usage: 'CLIENT', virtuel: true },
+  ];
+  for (const e of emplacementsHub) {
+    await prisma.entrepot.upsert({
+      where: { boutiqueId_code: { boutiqueId: hub.id, code: e.code } },
+      update: { usage: e.usage, reseau: true, virtuel: e.virtuel, type: e.type },
+      create: {
+        nom: e.nom,
+        code: e.code,
+        type: e.type,
+        usage: e.usage,
+        reseau: true,
+        virtuel: e.virtuel,
+        boutiqueId: hub.id,
       },
     });
   }

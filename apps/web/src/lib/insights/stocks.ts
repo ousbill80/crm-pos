@@ -71,6 +71,21 @@ export function insightSanteStock(
   };
 }
 
+export function insightValorisationVide(unites: number, sku: number): Insight {
+  return {
+    title: 'Valorisation au CMP',
+    interpretation:
+      unites > 0
+        ? `${unites} unité(s) sur ${sku} référence(s), mais le coût moyen pondéré est à 0 (aucune réception fournisseur enregistrée). La valorisation reste nulle tant qu’un prix d’achat n’a pas été reçu.`
+        : 'Aucun stock à valoriser sur le périmètre affiché.',
+    recommendation:
+      unites > 0
+        ? 'Enregistrer une réception fournisseur pour initialiser le CMP — le stock n’est pas saisi à la main.'
+        : undefined,
+    severity: unites > 0 ? 'warning' : 'neutral',
+  };
+}
+
 export function insightValeurInventaire(
   valeurStock: string,
   unites: number,

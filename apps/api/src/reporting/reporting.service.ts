@@ -193,7 +193,7 @@ export class ReportingService {
     let soldeCentrale = zero();
     for (const c of tresorerie.caisses) {
       const solde = new Prisma.Decimal(c.solde);
-      if (c.type === TypeCaisse.AUXILIAIRE) {
+      if (c.type === TypeCaisse.MAGASIN || c.type === TypeCaisse.TIROIR) {
         soldeAuxiliaires = soldeAuxiliaires.plus(solde);
       } else if (c.type === TypeCaisse.CENTRALE) {
         soldeCentrale = soldeCentrale.plus(solde);
@@ -436,10 +436,10 @@ export class ReportingService {
       _sum: { montantTotal: true },
     });
 
-    const parMode = await this.prisma.vente.groupBy({
+    const parMode = await this.prisma.paiementVente.groupBy({
       by: ['modePaiement'],
-      where: { caisseId: { in: caisseIds }, dateVente },
-      _sum: { montantTotal: true },
+      where: { vente: { caisseId: { in: caisseIds }, dateVente } },
+      _sum: { montant: true },
     });
 
     const caissesMeta = await this.prisma.caisse.findMany({
@@ -483,7 +483,7 @@ export class ReportingService {
       parModePaiement: parMode
         .map((m) => ({
           modePaiement: m.modePaiement,
-          montant: money(m._sum.montantTotal ?? zero()),
+          montant: money(m._sum.montant ?? zero()),
         }))
         .sort((a, b) => a.modePaiement.localeCompare(b.modePaiement)),
     };
@@ -596,7 +596,9 @@ export class ReportingService {
     );
 
     const totalSoldesAuxiliaires = lignes
-      .filter((l) => l.type === TypeCaisse.AUXILIAIRE)
+      .filter(
+        (l) => l.type === TypeCaisse.MAGASIN || l.type === TypeCaisse.TIROIR,
+      )
       .reduce((acc, l) => acc.plus(l.solde), zero());
 
     return {

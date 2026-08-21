@@ -71,8 +71,8 @@ interface HealthAlert {
   tab: Onglet;
 }
 
-function boutiqueHasAuxiliaire(boutiqueId: string, caisses: CaisseDto[]) {
-  return caisses.some((c) => c.type === 'AUXILIAIRE' && c.boutiqueId === boutiqueId);
+function boutiqueHasMagasin(boutiqueId: string, caisses: CaisseDto[]) {
+  return caisses.some((c) => c.type === 'MAGASIN' && c.boutiqueId === boutiqueId);
 }
 
 function boutiqueHasPrincipal(boutiqueId: string, entrepots: EntrepotDto[]) {
@@ -247,7 +247,7 @@ export function EntreprisePage() {
       apiFetch<CaisseDto>('/caisses', {
         method: 'POST',
         body: JSON.stringify({
-          type: 'AUXILIAIRE',
+          type: 'MAGASIN',
           boutiqueId: caisseBoutiqueId || boutiques.data?.[0]?.id || '',
         }),
       }),
@@ -265,10 +265,10 @@ export function EntreprisePage() {
   const magasinsActifs = boutiquesList.filter((b) => b.actif);
   const magasinsInactifs = boutiquesList.filter((b) => !b.actif);
   const caissesCentrale = caissesList.filter((c) => c.type === 'CENTRALE');
-  const caissesAuxiliaires = caissesList.filter((c) => c.type === 'AUXILIAIRE');
+  const caissesMagasin = caissesList.filter((c) => c.type === 'MAGASIN');
 
   const boutiquesSansCaisse = boutiquesList.filter(
-    (b) => b.actif && !boutiqueHasAuxiliaire(b.id, caissesList),
+    (b) => b.actif && !boutiqueHasMagasin(b.id, caissesList),
   );
   const boutiquesSansPrincipal = boutiquesList.filter(
     (b) => b.actif && !boutiqueHasPrincipal(b.id, entrepotsList),
@@ -298,7 +298,7 @@ export function EntreprisePage() {
     if (boutiquesSansCaisse.length > 0) {
       alerts.push({
         id: 'sans-caisse',
-        label: `${boutiquesSansCaisse.length} magasin(s) sans caisse auxiliaire`,
+        label: `${boutiquesSansCaisse.length} magasin(s) sans caisse magasin`,
         severite: 'critique',
         tab: 'caisses',
       });
@@ -366,7 +366,7 @@ export function EntreprisePage() {
     },
     {
       ok: boutiquesSansCaisse.length === 0 && magasinsActifs.length > 0,
-      label: 'Chaque magasin actif a une caisse auxiliaire',
+      label: 'Chaque magasin actif a une caisse magasin',
       tab: 'caisses' as Onglet,
     },
   ];
@@ -544,14 +544,14 @@ export function EntreprisePage() {
                         <span>Caisses</span>
                         <InfoTooltip
                           insight={insightCaissesCount(
-                            caissesAuxiliaires.length,
+                            caissesMagasin.length,
                             caissesCentrale.length,
                           )}
                         />
                       </div>
                       <p className="cfg-kpi-value">{caissesList.length}</p>
                       <p className="cfg-kpi-meta">
-                        {caissesAuxiliaires.length} aux. · {caissesCentrale.length}{' '}
+                        {caissesMagasin.length} aux. · {caissesCentrale.length}{' '}
                         centrale(s)
                       </p>
                     </article>
@@ -900,7 +900,7 @@ export function EntreprisePage() {
                   </thead>
                   <tbody>
                     {magasinsFiltres.map((b) => {
-                      const hasCaisse = boutiqueHasAuxiliaire(b.id, caissesList);
+                      const hasCaisse = boutiqueHasMagasin(b.id, caissesList);
                       const hasPrincipal = boutiqueHasPrincipal(b.id, entrepotsList);
                       return (
                         <tr key={b.id}>
@@ -1142,9 +1142,9 @@ export function EntreprisePage() {
                 {caisses.isError && (
                   <p role="alert">Erreur lors du chargement des caisses.</p>
                 )}
-                {caissesAuxiliaires.length === 0 && !caisses.isLoading && (
+                {caissesMagasin.length === 0 && !caisses.isLoading && (
                   <EmptyState
-                    title="Aucune caisse auxiliaire"
+                    title="Aucune caisse magasin"
                     description="Provisionnez une caisse pour chaque magasin actif."
                     action={
                       peutAdmin ? (
@@ -1159,27 +1159,27 @@ export function EntreprisePage() {
                     }
                   />
                 )}
-                {caissesAuxiliaires.length > 0 && (
+                {caissesMagasin.length > 0 && (
                   <table>
                     <thead>
                       <tr>
                         <th>Référence</th>
                         <th>
                           Type{' '}
-                          <InfoTooltip insight={insightTypeCaisseConfig('AUXILIAIRE')} />
+                          <InfoTooltip insight={insightTypeCaisseConfig('MAGASIN')} />
                         </th>
                         <th>Boutique</th>
                         <th>Solde courant</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {caissesAuxiliaires.map((c) => (
+                      {caissesMagasin.map((c) => (
                         <tr key={c.id}>
                           <td>
                             <code>{c.id.slice(0, 8)}…</code>
                           </td>
                           <td>
-                            <span className="cfg-badge">AUXILIAIRE</span>{' '}
+                            <span className="cfg-badge">MAGASIN</span>{' '}
                             <InfoTooltip insight={insightTypeCaisseConfig(c.type)} />
                           </td>
                           <td>
@@ -1327,7 +1327,7 @@ export function EntreprisePage() {
           <Modal
             open={modalCaisse}
             onClose={() => setModalCaisse(false)}
-            title="Provisionner une caisse auxiliaire"
+            title="Provisionner une caisse magasin"
           >
             <form
               onSubmit={(e) => {

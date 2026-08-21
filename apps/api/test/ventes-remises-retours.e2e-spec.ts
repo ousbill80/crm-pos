@@ -133,16 +133,44 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
       data: { nom: 'Boutique 1', adresse: 'Adresse 1', zoneId: zoneA.id },
     });
 
+    await env.prisma.caisse.create({
+      data: {
+        type: TypeCaisse.MAGASIN,
+        boutiqueId: boutique1.id,
+        libelle: 'Magasin',
+      },
+    });
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1.id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1.id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
     });
     caisse1Id = caisse1.id;
     const caisse2 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1.id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1.id,
+        code: 'T02',
+        libelle: 'Tiroir 2',
+        actif: true,
+        ordreAffichage: 2,
+      },
     });
     caisse2Id = caisse2.id;
     const caisse3 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1.id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1.id,
+        code: 'T03',
+        libelle: 'Tiroir 3',
+        actif: true,
+        ordreAffichage: 3,
+      },
     });
     caisse3Id = caisse3.id;
 

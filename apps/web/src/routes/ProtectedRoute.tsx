@@ -60,6 +60,9 @@ const APPS: AppDef[] = [
     match: ['/stocks', '/inventaires'],
     menus: [
       { to: '/stocks', label: 'Stocks' },
+      { to: '/stocks/operations', label: 'Opérations' },
+      { to: '/stocks/emplacements', label: 'Emplacements' },
+      { to: '/stocks/reappro', label: 'Réappro' },
       { to: '/inventaires', label: 'Inventaires physiques' },
     ],
   },
@@ -254,7 +257,10 @@ export function ProtectedRoute() {
                 <NavLink
                   key={menu.to}
                   to={menu.to}
-                  end={menu.to === currentApp.home && !['/produits', '/clients'].includes(menu.to)}
+                  end={
+                    menu.to === currentApp.home &&
+                    !['/produits', '/clients', '/stocks'].includes(menu.to)
+                  }
                 >
                   {menu.label}
                 </NavLink>

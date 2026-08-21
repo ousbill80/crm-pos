@@ -19,6 +19,7 @@ import {
   Pause,
   Plus,
   Printer,
+  Repeat,
   Search,
   ShoppingCart,
   Smartphone,
@@ -27,7 +28,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { apiDownload, apiFetch, estErreurReseau, messageDepuisApi } from '../lib/api';
+import { apiDownload, apiFetch, codeDepuisApi, estErreurReseau, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { LoadingState } from '../components/LoadingState';
@@ -50,14 +51,25 @@ import {
   quantiteReserveeOutbox,
   venteEnAttenteSync,
 } from '../lib/offline/outbox';
+import {
+  CouponAttente,
+  FileAttenteCaisse,
+  ParkDialog,
+  PosConfirm,
+  PosNotice,
+  RailAttente,
+  nomClientPos,
+} from '../components/pos/AttenteCaisse';
 import { loadPosCache, savePosCache } from '../lib/offline/pos-cache';
 import {
   clearHolds,
+  formatNumeroAttente,
   loadHolds,
-  prochainLibelleAttente,
+  prochainNumero,
   quantiteParquee,
   saveHolds,
   type CommandeEnAttente,
+  type MotifAttente,
 } from '../lib/offline/pos-holds';
 import type {
   BoutiqueDto,
@@ -69,6 +81,7 @@ import type {
   ProduitDto,
   RetourVenteDto,
   SessionCaisseDto,
+  TemoinEligibleDto,
   StatutStock,
   StockQuantDto,
   VenteDto,
@@ -313,9 +326,28 @@ function PosGateCard({ children }: { children: ReactNode }) {
   );
 }
 
-function OuvertureSessionForm({ caisseId }: { caisseId: string }) {
+function useTemoinsEligibles(enabled: boolean) {
+  return useQuery({
+    queryKey: ['ventes-temoins-eligibles'],
+    queryFn: () => apiFetch<TemoinEligibleDto[]>('/ventes/temoins-eligibles'),
+    enabled,
+  });
+}
+
+const FONDS_RAPIDES = [0, 5_000, 10_000, 20_000, 50_000];
+
+function OuvertureSessionForm({
+  caisseId,
+  tiroirLabel,
+  boutiqueNom,
+}: {
+  caisseId: string;
+  tiroirLabel: string;
+  boutiqueNom?: string;
+}) {
   const queryClient = useQueryClient();
-  const [fondInitial, setFondInitial] = useState('');
+  const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
+  const [fondInitial, setFondInitial] = useState('0');
   const [temoinLogin, setTemoinLogin] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -330,36 +362,55 @@ function OuvertureSessionForm({ caisseId }: { caisseId: string }) {
         }),
       }),
     onSuccess: () => {
-      setFondInitial('');
+      setFondInitial('0');
       setTemoinLogin('');
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['ventes-sessions'] });
     },
     onError: (err) =>
       setError(
-        messageDepuisApi(err, 'Échec ouverture : fond initial ou témoin invalide.'),
+        messageDepuisApi(err, 'Échec ouverture : fond de tiroir ou confirmateur invalide.'),
       ),
   });
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!temoinLogin) {
+      setError('Sélectionnez le coéquipier qui confirme l’ouverture.');
+      return;
+    }
     mutation.mutate();
   }
 
   return (
-    <div className="pos-gate">
-      <form className="pos-gate-card" onSubmit={onSubmit}>
-        <div className="pos-gate-brand">CaissePOS</div>
-        <h1>Ouverture de session</h1>
-        <p className="lead">
-          Comptage contradictoire obligatoire
-          <InfoTooltip insight={insightTemoinOuverture()} />
-        </p>
-        <p className="pos-gate-hint">
-          Caisse auxiliaire — encaisser et initier uniquement
-          <InfoTooltip insight={insightCaisseAuxiliairePos()} />
-        </p>
-        <label htmlFor="fondInitial">Fond de caisse initial</label>
+    <form className="pos-gate-card pos-open-card" onSubmit={onSubmit}>
+      <div className="pos-gate-brand">CaissePOS</div>
+      <h1>Ouvrir le poste</h1>
+      <p className="pos-gate-hint">
+        {boutiqueNom ? `${boutiqueNom} · ` : ''}
+        {tiroirLabel}
+      </p>
+      <p className="lead">
+        Comme en magasin : compter le fond du tiroir, puis faire confirmer
+        l’ouverture par un coéquipier / responsable présent.
+        <InfoTooltip insight={insightTemoinOuverture()} />
+      </p>
+
+      <fieldset className="pos-open-fieldset">
+        <legend>1. Fond de tiroir</legend>
+        <div className="pos-open-fonds">
+          {FONDS_RAPIDES.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className={Number(fondInitial) === n ? 'actif' : ''}
+              onClick={() => setFondInitial(String(n))}
+            >
+              {n === 0 ? 'Vide' : `${n.toLocaleString('fr-FR')} F`}
+            </button>
+          ))}
+        </div>
+        <label htmlFor="fondInitial">Montant compté (FCFA)</label>
         <input
           id="fondInitial"
           type="number"
@@ -369,27 +420,58 @@ function OuvertureSessionForm({ caisseId }: { caisseId: string }) {
           value={fondInitial}
           onChange={(e) => setFondInitial(e.target.value)}
           required
-          autoFocus
         />
-        <label htmlFor="temoinLogin">
-          Login du témoin <InfoTooltip insight={insightTemoinOuverture()} />
-        </label>
-        <input
-          id="temoinLogin"
-          value={temoinLogin}
-          onChange={(e) => setTemoinLogin(e.target.value)}
-          autoComplete="off"
-          required
-        />
-        <button type="submit" className="pos-btn-primary" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Ouverture…' : 'Ouvrir la caisse'}
-        </button>
-        {error && <p role="alert">{error}</p>}
-        <Link to="/dashboard" className="pos-back-link">
-          ← Tableau de bord
-        </Link>
-      </form>
-    </div>
+      </fieldset>
+
+      <fieldset className="pos-open-fieldset">
+        <legend>2. Confirmateur présent</legend>
+        {loadingTemoins && <LoadingState label="Chargement des coéquipiers…" />}
+        {!loadingTemoins && temoins && temoins.length === 0 && (
+          <p role="alert">
+            Aucun coéquipier éligible sur cette boutique. Un autre caissier ou
+            le responsable magasin doit être créé et rattaché.
+          </p>
+        )}
+        {!loadingTemoins && temoins && temoins.length > 0 && (
+          <div className="pos-open-temoins" role="listbox" aria-label="Confirmateur">
+            {temoins.map((t) => {
+              const actif = temoinLogin === t.login;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="option"
+                  aria-selected={actif}
+                  className={actif ? 'actif' : ''}
+                  onClick={() => setTemoinLogin(t.login)}
+                >
+                  <strong>
+                    {t.prenom} {t.nom}
+                  </strong>
+                  <span>
+                    {t.role === 'RESPONSABLE_BOUTIQUE'
+                      ? 'Responsable magasin'
+                      : 'Caissier'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </fieldset>
+
+      <button
+        type="submit"
+        className="pos-btn-primary"
+        disabled={mutation.isPending || !temoinLogin}
+      >
+        {mutation.isPending ? 'Ouverture…' : 'Démarrer les ventes'}
+      </button>
+      {error && <p role="alert">{error}</p>}
+      <Link to="/dashboard" className="pos-back-link">
+        ← Tableau de bord
+      </Link>
+    </form>
   );
 }
 
@@ -446,7 +528,7 @@ function TicketVente({
         </ul>
         {client && (
           <p className="pos-receipt-client">
-            {client.prenom} {client.nom}
+            {nomClientPos(client)}
             {client.fidelite ? ` · ${client.fidelite.niveau}` : ''}
           </p>
         )}
@@ -489,6 +571,7 @@ function CloturePanel({
   onFermer: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: temoins } = useTemoinsEligibles(true);
   const [fondCompteCloture, setFondCompteCloture] = useState('');
   const [temoinLogin, setTemoinLogin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -581,8 +664,8 @@ function CloturePanel({
         )}
         {commandesEnAttente > 0 && (
           <p className="pos-warn" role="status">
-            {commandesEnAttente} ticket(s) en attente — reprendre ou abandonner
-            avant de clôturer (rien n’a été encaissé).
+            {commandesEnAttente} ticket(s) en file d’attente — reprendre ou
+            abandonner avant de clôturer (rien n’a été encaissé).
             <InfoTooltip insight={insightCommandeEnAttente(commandesEnAttente)} />
           </p>
         )}
@@ -590,7 +673,7 @@ function CloturePanel({
           Fond théorique {formatMontant(fondTheorique)} FCFA
           <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
         </p>
-        <label htmlFor="fondCompteCloture">Fond compté</label>
+        <label htmlFor="fondCompteCloture">Fond compté en tiroir</label>
         <input
           id="fondCompteCloture"
           type="number"
@@ -602,17 +685,40 @@ function CloturePanel({
           required
           autoFocus
         />
-        <label htmlFor="temoinLoginCloture">
-          Login témoin
-          <InfoTooltip insight={insightTemoinOuverture()} />
-        </label>
-        <input
-          id="temoinLoginCloture"
-          value={temoinLogin}
-          onChange={(e) => setTemoinLogin(e.target.value)}
-          autoComplete="off"
-          required
-        />
+        <div className="form-field">
+          <span className="client-chip-label">
+            Confirmateur présent
+            <InfoTooltip insight={insightTemoinOuverture()} />
+          </span>
+          {temoins && temoins.length > 0 ? (
+            <div className="pos-open-temoins" role="listbox" aria-label="Confirmateur">
+              {temoins.map((t) => {
+                const actif = temoinLogin === t.login;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="option"
+                    aria-selected={actif}
+                    className={actif ? 'actif' : ''}
+                    onClick={() => setTemoinLogin(t.login)}
+                  >
+                    <strong>
+                      {t.prenom} {t.nom}
+                    </strong>
+                    <span>
+                      {t.role === 'RESPONSABLE_BOUTIQUE'
+                        ? 'Responsable magasin'
+                        : 'Caissier'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="lead">Aucun coéquipier éligible pour confirmer.</p>
+          )}
+        </div>
         <div className="pos-receipt-actions">
           <button type="button" onClick={onFermer}>
             Annuler
@@ -620,7 +726,7 @@ function CloturePanel({
           <button
             type="submit"
             className="pos-btn-primary"
-            disabled={mutation.isPending || commandesEnAttente > 0}
+            disabled={mutation.isPending || commandesEnAttente > 0 || !temoinLogin}
           >
             Clôturer
           </button>
@@ -717,7 +823,7 @@ function ClientPicker({
     const list = !s
       ? clients
       : clients.filter((c) =>
-          `${c.nom} ${c.prenom} ${c.contact ?? ''}`.toLowerCase().includes(s),
+          `${nomClientPos(c)} ${c.contact ?? ''}`.toLowerCase().includes(s),
         );
     return list.slice(0, 12);
   }, [clients, q]);
@@ -742,7 +848,7 @@ function ClientPicker({
         <div className="pos-client-chip">
           <div>
             <strong>
-              {selected.prenom} {selected.nom}
+              {nomClientPos(selected)}
             </strong>
             <span>
               {selected.segment} · {selected.fidelite?.niveau ?? 'BRONZE'} ·{' '}
@@ -792,7 +898,7 @@ function ClientPicker({
                     }}
                   >
                     <strong>
-                      {c.prenom} {c.nom}
+                      {nomClientPos(c)}
                     </strong>
                     <small>
                       {c.segment} · {c.fidelite?.niveau ?? 'BRONZE'} ·{' '}
@@ -846,6 +952,9 @@ function PaiementScreen({
   panier,
   session,
   clients,
+  clientId,
+  holdId,
+  onClientChange,
   onAnnuler,
   onMettreEnAttente,
   onVente,
@@ -853,39 +962,79 @@ function PaiementScreen({
   panier: LignePanier[];
   session: SessionCaisseDto;
   clients: ClientDto[];
+  clientId: string;
+  holdId: string | null;
+  onClientChange: (id: string) => void;
   onAnnuler: () => void;
   onMettreEnAttente: () => void;
   onVente: (vente: VenteDto, client: ClientDto | null) => void;
 }) {
   const queryClient = useQueryClient();
-  const [modePaiement, setModePaiement] = useState<ModePaiement>(ModePaiement.ESPECES);
-  const [clientId, setClientId] = useState('');
+  const [parts, setParts] = useState<{ mode: ModePaiement; montant: string }[]>([
+    { mode: ModePaiement.ESPECES, montant: String(Math.round(totalNet(panier))) },
+  ]);
   const [recu, setRecu] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [derogation, setDerogation] = useState<{
+    motifs: Array<'REMISE_PLAFOND' | 'STOCK_INSUFFISANT'>;
+    login: string;
+    password: string;
+  } | null>(null);
   const total = totalNet(panier);
   const recuNum = Number(recu) || 0;
-  const especeOk = modePaiement !== ModePaiement.ESPECES || recuNum >= total;
+  const partsNum = parts.map((p) => ({
+    mode: p.mode,
+    montant: Number(p.montant) || 0,
+  }));
+  const sommeParts = partsNum.reduce((s, p) => s + p.montant, 0);
+  const reste = Math.round((total - sommeParts) * 100) / 100;
+  const mixteOk = Math.abs(reste) < 0.5 && partsNum.every((p) => p.montant > 0);
+  const cashPart =
+    partsNum.find((p) => p.mode === ModePaiement.ESPECES)?.montant ?? 0;
+  const aEspeces = cashPart > 0;
+  const especeOk = !aEspeces || recuNum >= cashPart;
+  const modePrincipal = aEspeces
+    ? ModePaiement.ESPECES
+    : (parts[0]?.mode ?? ModePaiement.ESPECES);
   const client = clients.find((c) => c.id === clientId) ?? null;
+
+  function construirePayload(clientOperationId: string) {
+    const paiements = partsNum
+      .filter((p) => p.montant > 0)
+      .map((p) => ({ modePaiement: p.mode, montant: p.montant }));
+    return {
+      lignes: panier.map((l) => ({
+        produitId: l.produitId,
+        quantite: l.quantite,
+        ...(l.remise > 0 ? { remise: l.remise } : {}),
+      })),
+      modePaiement: modePrincipal,
+      ...(paiements.length > 1 ? { paiements } : {}),
+      ...(clientId ? { clientId } : {}),
+      ...(holdId ? { holdId } : {}),
+      ...(derogation
+        ? {
+            derogation: {
+              motifs: derogation.motifs,
+              login: derogation.login,
+              password: derogation.password,
+            },
+          }
+        : {}),
+      clientOperationId,
+    };
+  }
 
   const mutation = useMutation({
     mutationFn: async () => {
       const clientOperationId = crypto.randomUUID();
-      const payload = {
-        lignes: panier.map((l) => ({
-          produitId: l.produitId,
-          quantite: l.quantite,
-          ...(l.remise > 0 ? { remise: l.remise } : {}),
-        })),
-        modePaiement,
-        ...(clientId ? { clientId } : {}),
-        clientOperationId,
-      };
+      const payload = construirePayload(clientOperationId);
       if (!navigator.onLine) {
         enqueueVente(session.id, payload);
         return venteOptimiste(
           panier,
           session,
-          modePaiement,
+          modePrincipal,
           clientId || null,
           clientOperationId,
         );
@@ -896,12 +1045,20 @@ function PaiementScreen({
           body: JSON.stringify(payload),
         });
       } catch (err) {
+        const code = codeDepuisApi(err);
+        if (code === 'REMISE_PLAFOND' || code === 'STOCK_INSUFFISANT') {
+          setDerogation({
+            motifs: [code],
+            login: '',
+            password: '',
+          });
+        }
         if (estErreurReseau(err)) {
           enqueueVente(session.id, payload);
           return venteOptimiste(
             panier,
             session,
-            modePaiement,
+            modePrincipal,
             clientId || null,
             clientOperationId,
           );
@@ -920,13 +1077,39 @@ function PaiementScreen({
   });
 
   function valider() {
-    if (!especeOk || mutation.isPending) return;
+    if (!especeOk || !mixteOk || mutation.isPending) return;
     mutation.mutate();
+  }
+
+  function toggleMode(m: ModePaiement) {
+    const existe = parts.some((p) => p.mode === m);
+    if (existe) {
+      if (parts.length === 1) return;
+      const next = parts.filter((p) => p.mode !== m);
+      if (next.length === 1) {
+        setParts([{ mode: next[0]!.mode, montant: String(Math.round(total)) }]);
+        return;
+      }
+      setParts(next);
+      return;
+    }
+    if (parts.length === 1) {
+      setParts([
+        { mode: parts[0]!.mode, montant: '' },
+        { mode: m, montant: '' },
+      ]);
+      return;
+    }
+    setParts([...parts, { mode: m, montant: reste > 0 ? String(Math.round(reste)) : '' }]);
   }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && !mutation.isPending) {
+        if (derogation) {
+          setDerogation(null);
+          return;
+        }
         onAnnuler();
         return;
       }
@@ -937,15 +1120,23 @@ function PaiementScreen({
       }
       if ((e.key === 'Enter' && e.ctrlKey) || e.key === 'F4') {
         e.preventDefault();
-        if (!especeOk || mutation.isPending) return;
+        if (!especeOk || !mixteOk || mutation.isPending) return;
         mutation.mutate();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mutation, mutation.isPending, onAnnuler, onMettreEnAttente, especeOk]);
+  }, [
+    mutation,
+    mutation.isPending,
+    onAnnuler,
+    onMettreEnAttente,
+    especeOk,
+    mixteOk,
+    derogation,
+  ]);
 
-  const rendu = recuNum - total;
+  const rendu = recuNum - cashPart;
 
   return (
     <div className="pos-payment">
@@ -967,16 +1158,22 @@ function PaiementScreen({
         </div>
         <h1>Paiement</h1>
         <p className="pos-payment-amount money">{formatMontant(total)} FCFA</p>
+        <p className="pos-mixte-reste">
+          {mixteOk
+            ? 'Répartition complète'
+            : `Reste à répartir : ${formatMontant(reste)} FCFA`}
+        </p>
         <div className="pos-payment-methods">
           {Object.values(ModePaiement).map((m) => {
             const meta = MODE_META[m];
             const Icon = meta.Icon;
+            const actif = parts.some((p) => p.mode === m);
             return (
               <button
                 key={m}
                 type="button"
-                className={m === modePaiement ? 'pos-pay-method is-active' : 'pos-pay-method'}
-                onClick={() => setModePaiement(m)}
+                className={actif ? 'pos-pay-method is-active' : 'pos-pay-method'}
+                onClick={() => toggleMode(m)}
               >
                 <Icon size={22} strokeWidth={2} />
                 {meta.label}
@@ -984,18 +1181,59 @@ function PaiementScreen({
             );
           })}
         </div>
+        {parts.length > 1 && (
+          <ul className="pos-mixte-parts">
+            {parts.map((p) => (
+              <li key={p.mode}>
+                <label htmlFor={`part-${p.mode}`}>{MODE_META[p.mode].label}</label>
+                <input
+                  id={`part-${p.mode}`}
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={p.montant}
+                  onChange={(e) =>
+                    setParts((prev) =>
+                      prev.map((x) =>
+                        x.mode === p.mode ? { ...x, montant: e.target.value } : x,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const autres = partsNum
+                      .filter((x) => x.mode !== p.mode)
+                      .reduce((s, x) => s + x.montant, 0);
+                    setParts((prev) =>
+                      prev.map((x) =>
+                        x.mode === p.mode
+                          ? { ...x, montant: String(Math.max(0, Math.round(total - autres))) }
+                          : x,
+                      ),
+                    );
+                  }}
+                >
+                  Reste
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-        {modePaiement === ModePaiement.ESPECES && (
+        {aEspeces && (
           <div className="pos-cash">
             <div className="pos-cash-head">
               <div>
-                <span>Reçu</span>
+                <span>Reçu (espèces {formatMontant(cashPart)})</span>
                 <strong className="money">{formatMontant(recuNum)} FCFA</strong>
               </div>
               <div>
                 <span>
                   Monnaie
-                  <InfoTooltip insight={insightMonnaiePos(recuNum, total)} />
+                  <InfoTooltip insight={insightMonnaiePos(recuNum, cashPart)} />
                 </span>
                 <strong className={rendu < 0 ? 'money pos-neg' : 'money'}>
                   {rendu < 0 ? '—' : `${formatMontant(rendu)} FCFA`}
@@ -1003,7 +1241,7 @@ function PaiementScreen({
               </div>
             </div>
             <div className="pos-cash-rapide">
-              <button type="button" onClick={() => setRecu(String(Math.round(total)))}>
+              <button type="button" onClick={() => setRecu(String(Math.round(cashPart)))}>
                 Exact
               </button>
               {RAPIDE_ESPECES.map((n) => (
@@ -1020,7 +1258,52 @@ function PaiementScreen({
           </div>
         )}
 
-        <ClientPicker clients={clients} clientId={clientId} onChange={setClientId} />
+        {derogation && (
+          <div className="pos-derogation">
+            <h2>Dérogation chef de caisse</h2>
+            <p>
+              {derogation.motifs.includes('REMISE_PLAFOND')
+                ? 'Remise au-dessus du plafond 20 %.'
+                : 'Stock insuffisant.'}{' '}
+              Login et mot de passe du Responsable boutique (pas vous).
+            </p>
+            <label htmlFor="chef-login">Login responsable</label>
+            <input
+              id="chef-login"
+              value={derogation.login}
+              onChange={(e) =>
+                setDerogation((d) => (d ? { ...d, login: e.target.value } : d))
+              }
+              autoComplete="off"
+              autoFocus
+            />
+            <label htmlFor="chef-password">Mot de passe</label>
+            <input
+              id="chef-password"
+              type="password"
+              value={derogation.password}
+              onChange={(e) =>
+                setDerogation((d) => (d ? { ...d, password: e.target.value } : d))
+              }
+              autoComplete="off"
+            />
+            <div className="pos-receipt-actions">
+              <button type="button" onClick={() => setDerogation(null)}>
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="pos-btn-primary"
+                disabled={!derogation.login || !derogation.password || mutation.isPending}
+                onClick={() => mutation.mutate()}
+              >
+                Valider la dérogation
+              </button>
+            </div>
+          </div>
+        )}
+
+        <ClientPicker clients={clients} clientId={clientId} onChange={onClientChange} />
         {error && <p role="alert">{error}</p>}
       </div>
       <aside className="pos-payment-side">
@@ -1043,7 +1326,7 @@ function PaiementScreen({
         <button
           type="button"
           className="pos-pay-btn"
-          disabled={!especeOk || mutation.isPending}
+          disabled={!especeOk || !mixteOk || mutation.isPending}
           onClick={valider}
         >
           {mutation.isPending ? 'Validation…' : `Valider · ${formatMontant(total)}`}
@@ -1068,7 +1351,21 @@ function PosCaisse({
 }) {
   const [panier, setPanier] = useState<LignePanier[]>([]);
   const [remisePanier, setRemisePanier] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [qteSaisie, setQteSaisie] = useState(1);
+  const [lastProduitId, setLastProduitId] = useState<string | null>(null);
   const [holds, setHolds] = useState<CommandeEnAttente[]>(() => loadHolds(session.id));
+  const [parkOpen, setParkOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);
+  const [parkLibelle, setParkLibelle] = useState('');
+  const [parkMotif, setParkMotif] = useState<MotifAttente>('OUBLI_PAIEMENT');
+  const [parkPrint, setParkPrint] = useState(true);
+  const [coupon, setCoupon] = useState<CommandeEnAttente | null>(null);
+  const [holdIdEnCours, setHoldIdEnCours] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<
+    null | { kind: 'vider' } | { kind: 'abandonner'; id: string }
+  >(null);
   const [recherche, setRecherche] = useState('');
   const [filtre, setFiltre] = useState<FiltreCatalogue>('TOUS');
   const [etape, setEtape] = useState<'caisse' | 'paiement'>('caisse');
@@ -1077,7 +1374,7 @@ function PosCaisse({
   const [cloture, setCloture] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  const now = useNowTick(30_000);
+  const now = useNowTick(5_000);
   const queryClient = useQueryClient();
   const online = useOnline();
   const [pending, setPending] = useState(() => outboxVentesCount(session.id));
@@ -1157,19 +1454,29 @@ function PosCaisse({
     return (
       stockCatalogue -
       quantiteReserveeOutbox(session.id, produitId) -
-      quantiteParquee(holds, produitId)
+      (online ? 0 : quantiteParquee(holds, produitId))
     );
   }
 
-  function ajouter(p: ProduitDto) {
+  function focuserScan() {
+    window.setTimeout(() => {
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    }, 0);
+  }
+
+  function ajouter(p: ProduitDto, qteDemandee?: number) {
     const dispo = stockDisponible(p.id, p.stock);
     if (dispo <= 0 || !p.actif) return;
+    const demande = Math.max(1, qteDemandee ?? qteSaisie);
     setPanier((prev) => {
       const ex = prev.find((l) => l.produitId === p.id);
+      const deja = ex?.quantite ?? 0;
+      const ajout = Math.min(demande, dispo - deja);
+      if (ajout <= 0) return prev;
       if (ex) {
-        if (ex.quantite >= dispo) return prev;
         return prev.map((l) =>
-          l.produitId === p.id ? { ...l, quantite: l.quantite + 1 } : l,
+          l.produitId === p.id ? { ...l, quantite: l.quantite + ajout } : l,
         );
       }
       return [
@@ -1180,18 +1487,39 @@ function PosCaisse({
           reference: p.reference,
           prixUnitaire: p.prixUnitaire,
           stock: dispo,
-          quantite: 1,
+          quantite: ajout,
           remise: 0,
         },
       ];
     });
+    setLastProduitId(p.id);
+    setQteSaisie(1);
+    setRecherche('');
+    focuserScan();
   }
 
-  function mettreEnAttente() {
+  function ouvrirPark() {
     if (panier.length === 0) return;
+    const client = clientsDisponibles.find((c) => c.id === clientId) ?? null;
+    setParkLibelle(nomClientPos(client));
+    setParkMotif(clientId ? 'FIDELITE' : 'OUBLI_PAIEMENT');
+    setParkPrint(true);
+    setParkOpen(true);
+  }
+
+  function confirmerPark() {
+    if (panier.length === 0) return;
+    const numero = prochainNumero(holds);
+    const client = clientsDisponibles.find((c) => c.id === clientId) ?? null;
     const hold: CommandeEnAttente = {
       id: crypto.randomUUID(),
-      libelle: prochainLibelleAttente(holds),
+      numero,
+      libelle:
+        parkLibelle.trim() ||
+        nomClientPos(client) ||
+        `N° ${formatNumeroAttente(numero)}`,
+      motif: parkMotif,
+      clientId: clientId || null,
       panier,
       remisePanier,
       createdAt: new Date().toISOString(),
@@ -1199,7 +1527,27 @@ function PosCaisse({
     setHolds((prev) => [...prev, hold]);
     setPanier([]);
     setRemisePanier('');
+    setClientId('');
+    setLastProduitId(null);
     setEtape('caisse');
+    setParkOpen(false);
+    setFileOpen(false);
+    setHoldIdEnCours(null);
+    if (navigator.onLine) {
+      void apiFetch(`/ventes/sessions/${session.id}/reservations`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          holdId: hold.id,
+          lignes: hold.panier.map((l) => ({
+            produitId: l.produitId,
+            quantite: l.quantite,
+          })),
+        }),
+      })
+        .then(() => queryClient.invalidateQueries({ queryKey: ['stocks'] }))
+        .catch(() => undefined);
+    }
+    if (parkPrint) setCoupon(hold);
   }
 
   function reprendre(id: string) {
@@ -1219,42 +1567,58 @@ function PosCaisse({
       restaure.push({ ...ligne, quantite, stock: dispo });
     }
     if (restaure.length === 0) {
-      window.alert(
+      setNotice(
         'Impossible de reprendre ce ticket : stock insuffisant ou produits inactifs.',
       );
       return;
     }
     if (restaure.length < hold.panier.length) {
-      window.alert(
+      setNotice(
         'Certains articles de ce ticket ne sont plus disponibles : le panier a été ajusté.',
       );
     }
     if (panier.length > 0) {
+      const numero = prochainNumero(autres);
+      const clientCourant = clientsDisponibles.find((c) => c.id === clientId) ?? null;
       const courant: CommandeEnAttente = {
         id: crypto.randomUUID(),
-        libelle: prochainLibelleAttente(autres),
+        numero,
+        libelle:
+          nomClientPos(clientCourant) || `N° ${formatNumeroAttente(numero)}`,
+        motif: 'AUTRE',
+        clientId: clientId || null,
         panier,
         remisePanier,
         createdAt: new Date().toISOString(),
       };
       setHolds([...autres, courant]);
+      if (navigator.onLine) {
+        void apiFetch(`/ventes/sessions/${session.id}/reservations`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            holdId: courant.id,
+            lignes: courant.panier.map((l) => ({
+              produitId: l.produitId,
+              quantite: l.quantite,
+            })),
+          }),
+        }).catch(() => undefined);
+      }
     } else {
       setHolds(autres);
     }
     setPanier(restaure);
     setRemisePanier(hold.remisePanier);
+    setClientId(hold.clientId ?? '');
+    setLastProduitId(restaure[restaure.length - 1]?.produitId ?? null);
+    setHoldIdEnCours(hold.id);
     setEtape('caisse');
+    setFileOpen(false);
+    setParkOpen(false);
   }
 
   function abandonnerAttente(id: string) {
-    if (
-      !window.confirm(
-        'Abandonner ce ticket en attente ? Rien n’a été encaissé ; le panier sera perdu.',
-      )
-    ) {
-      return;
-    }
-    setHolds((prev) => prev.filter((h) => h.id !== id));
+    setConfirm({ kind: 'abandonner', id });
   }
 
   function allerPaiement() {
@@ -1266,26 +1630,60 @@ function PosCaisse({
   function onSearchKey(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const q = recherche.trim().toLowerCase();
-    if (!q) return;
-    const exact = produits.find(
-      (p) => p.reference && p.reference.toLowerCase() === q && p.stock > 0,
-    );
-    if (exact) {
-      ajouter(exact);
+    const raw = recherche.trim();
+    if (!raw) return;
+    const prefix = /^(\d+)\s*[x*]\s*(.*)$/i.exec(raw);
+    const qte = prefix ? Math.max(1, Number(prefix[1])) : qteSaisie;
+    const query = (prefix ? prefix[2] : raw).trim().toLowerCase();
+    if (!query) {
+      setQteSaisie(qte);
       setRecherche('');
       return;
     }
-    if (filtres.length === 1 && filtres[0]!.stock > 0) {
-      ajouter(filtres[0]!);
-      setRecherche('');
+    const exact = produits.find(
+      (p) =>
+        p.reference &&
+        p.reference.toLowerCase() === query &&
+        p.actif &&
+        stockDisponible(p.id, p.stock) > 0,
+    );
+    if (exact) {
+      ajouter(exact, qte);
+      return;
+    }
+    const visibles = filtres.filter(
+      (p) => stockDisponible(p.id, p.stock) > 0 && p.actif,
+    );
+    if (visibles.length === 1) {
+      ajouter(visibles[0]!, qte);
     }
   }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (etape !== 'caisse' || ticket) return;
+      if (ticket || coupon) return;
       if (e.key === 'Escape') {
+        if (notice || confirm || parkOpen || fileOpen) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+        if (notice) {
+          setNotice(null);
+          return;
+        }
+        if (confirm) {
+          setConfirm(null);
+          return;
+        }
+        if (parkOpen) {
+          setParkOpen(false);
+          return;
+        }
+        if (fileOpen) {
+          setFileOpen(false);
+          return;
+        }
+        if (etape !== 'caisse') return;
         if (cloture) {
           setCloture(false);
           return;
@@ -1293,6 +1691,7 @@ function PosCaisse({
         if (drawer) setDrawer(false);
         return;
       }
+      if (etape !== 'caisse') return;
       if (e.key === 'F2') {
         e.preventDefault();
         searchRef.current?.focus();
@@ -1301,8 +1700,16 @@ function PosCaisse({
       }
       if (e.key === 'F3') {
         e.preventDefault();
-        if (panier.length === 0) return;
-        mettreEnAttente();
+        if (panier.length === 0) {
+          if (holds.length > 0) setFileOpen(true);
+          return;
+        }
+        ouvrirPark();
+        return;
+      }
+      if (e.key === 'F8') {
+        e.preventDefault();
+        if (holds.length > 0) setFileOpen((o) => !o);
         return;
       }
       if ((e.key === 'Enter' && e.ctrlKey) || e.key === 'F4') {
@@ -1312,18 +1719,40 @@ function PosCaisse({
         setEtape('paiement');
       }
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [
     etape,
     ticket,
+    coupon,
+    notice,
+    confirm,
+    parkOpen,
+    fileOpen,
     cloture,
     drawer,
     panier,
     remisePanier,
-    holds,
+    holds.length,
     remiseDepasse,
+    clientId,
+    parkLibelle,
+    parkMotif,
+    parkPrint,
   ]);
+
+  if (coupon) {
+    return (
+      <CouponAttente
+        hold={coupon}
+        boutiqueNom={boutiqueNom}
+        client={
+          clientsDisponibles.find((c) => c.id === coupon.clientId) ?? null
+        }
+        onSuite={() => setCoupon(null)}
+      />
+    );
+  }
 
   if (ticket) {
     return (
@@ -1340,23 +1769,118 @@ function PosCaisse({
     );
   }
 
+  const overlays = (
+    <>
+      {parkOpen && (
+        <ParkDialog
+          nbArticles={panier.reduce((s, l) => s + l.quantite, 0)}
+          montant={net}
+          libelle={parkLibelle}
+          motif={parkMotif}
+          imprimerCoupon={parkPrint}
+          onLibelle={setParkLibelle}
+          onMotif={setParkMotif}
+          onImprimerCoupon={setParkPrint}
+          onConfirmer={confirmerPark}
+          onAnnuler={() => setParkOpen(false)}
+        />
+      )}
+      {fileOpen && (
+        <FileAttenteCaisse
+          holds={holds}
+          clients={clientsDisponibles}
+          now={now}
+          onReprendre={reprendre}
+          onAbandonner={abandonnerAttente}
+          onImprimer={(id) => {
+            const h = holds.find((x) => x.id === id);
+            if (h) {
+              setFileOpen(false);
+              setCoupon(h);
+            }
+          }}
+          onFermer={() => setFileOpen(false)}
+        />
+      )}
+      {notice && <PosNotice message={notice} onFermer={() => setNotice(null)} />}
+      {confirm?.kind === 'vider' && (
+        <PosConfirm
+          titre="Vider la commande"
+          message="La commande en cours sera perdue. Rien n’a été encaissé."
+          confirmer="Vider"
+          danger
+          onAnnuler={() => setConfirm(null)}
+          onConfirmer={() => {
+            setPanier([]);
+            setRemisePanier('');
+            setClientId('');
+            setLastProduitId(null);
+            const hold = holdIdEnCours;
+            setHoldIdEnCours(null);
+            setConfirm(null);
+            focuserScan();
+            if (hold && navigator.onLine) {
+              void apiFetch(
+                `/ventes/sessions/${session.id}/reservations/${hold}`,
+                { method: 'DELETE' },
+              ).catch(() => undefined);
+            }
+          }}
+        />
+      )}
+      {confirm?.kind === 'abandonner' && (
+        <PosConfirm
+          titre="Abandonner le ticket"
+          message="Rien n’a été encaissé ; ce ticket disparaît de la file."
+          confirmer="Abandonner"
+          danger
+          onAnnuler={() => setConfirm(null)}
+          onConfirmer={() => {
+            const id = confirm.id;
+            setHolds((prev) => prev.filter((h) => h.id !== id));
+            setConfirm(null);
+            if (navigator.onLine) {
+              void apiFetch(
+                `/ventes/sessions/${session.id}/reservations/${id}`,
+                { method: 'DELETE' },
+              )
+                .then(() =>
+                  queryClient.invalidateQueries({ queryKey: ['stocks'] }),
+                )
+                .catch(() => undefined);
+            }
+          }}
+        />
+      )}
+    </>
+  );
+
   if (etape === 'paiement') {
     return (
-      <PaiementScreen
-        panier={panier}
-        session={session}
-        clients={clientsDisponibles}
-        onAnnuler={() => setEtape('caisse')}
-        onMettreEnAttente={mettreEnAttente}
-        onVente={(vente, client) => {
-          setPanier([]);
-          setRemisePanier('');
-          setEtape('caisse');
-          setTicketClient(client);
-          setTicket(vente);
-          setPending(outboxVentesCount(session.id));
-        }}
-      />
+      <>
+        <PaiementScreen
+          panier={panier}
+          session={session}
+          clients={clientsDisponibles}
+          clientId={clientId}
+          holdId={holdIdEnCours}
+          onClientChange={setClientId}
+          onAnnuler={() => setEtape('caisse')}
+          onMettreEnAttente={ouvrirPark}
+          onVente={(vente, client) => {
+            setPanier([]);
+            setRemisePanier('');
+            setClientId('');
+            setLastProduitId(null);
+            setHoldIdEnCours(null);
+            setEtape('caisse');
+            setTicketClient(client);
+            setTicket(vente);
+            setPending(outboxVentesCount(session.id));
+          }}
+        />
+        {overlays}
+      </>
     );
   }
 
@@ -1385,7 +1909,7 @@ function PosCaisse({
         </div>
         <p className="pos-shortcuts-hint" title="Raccourcis">
           <Keyboard size={13} />
-          F2 recherche · F3 attente · F4 / Ctrl+Entrée paiement · Échap
+          F2 scan · F3 attente · F8 file · F4 / Ctrl+Entrée paiement · Échap
         </p>
         <div className="pos-topbar-actions">
           <span className="pos-online-chip" title={online ? 'En ligne' : 'Hors ligne'}>
@@ -1395,12 +1919,21 @@ function PosCaisse({
           </span>
           <button
             type="button"
-            disabled={panier.length === 0}
-            title="Mettre la commande en attente et servir le client suivant (F3)"
-            onClick={mettreEnAttente}
+            title={
+              holds.length > 0
+                ? 'File d’attente — reprendre un ticket (F8)'
+                : 'Mettre la commande en attente (F3)'
+            }
+            onClick={() => {
+              if (holds.length > 0) {
+                setFileOpen(true);
+                return;
+              }
+              ouvrirPark();
+            }}
           >
             <Pause size={15} />
-            En attente
+            File
             {holds.length > 0 && <span className="pos-topbar-count">{holds.length}</span>}
           </button>
           <button type="button" onClick={() => setDrawer((d) => !d)}>
@@ -1435,17 +1968,51 @@ function PosCaisse({
       <div className="pos-workspace">
         <section className="pos-catalog">
           <div className="pos-search-bar">
-            <Search size={18} className="pos-search-icon" />
-            <input
-              ref={searchRef}
-              type="search"
-              placeholder="Produit, SKU ou code-barres…"
-              value={recherche}
-              onChange={(e) => setRecherche(e.target.value)}
-              onKeyDown={onSearchKey}
-              autoFocus
-              autoComplete="off"
-            />
+            <div className="pos-qty-stepper" aria-label="Quantité à scanner">
+              <button
+                type="button"
+                aria-label="Diminuer la quantité"
+                disabled={qteSaisie <= 1}
+                onClick={() => setQteSaisie((n) => Math.max(1, n - 1))}
+              >
+                <Minus size={14} />
+              </button>
+              <strong>{qteSaisie}</strong>
+              <button
+                type="button"
+                aria-label="Augmenter la quantité"
+                disabled={qteSaisie >= 99}
+                onClick={() => setQteSaisie((n) => Math.min(99, n + 1))}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            <div className="pos-search-field">
+              <Search size={18} className="pos-search-icon" />
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Scanner, SKU, 3xCODE…"
+                value={recherche}
+                onChange={(e) => setRecherche(e.target.value)}
+                onKeyDown={onSearchKey}
+                autoFocus
+                autoComplete="off"
+              />
+            </div>
+            {lastProduitId && (
+              <button
+                type="button"
+                className="pos-repeat-btn"
+                title="Répéter le dernier article"
+                onClick={() => {
+                  const p = produits.find((x) => x.id === lastProduitId);
+                  if (p) ajouter(p);
+                }}
+              >
+                <Repeat size={16} />
+              </button>
+            )}
           </div>
           <div className="pos-chips" role="tablist" aria-label="Catégories">
             <button
@@ -1519,47 +2086,41 @@ function PosCaisse({
         </section>
 
         <aside className="pos-ticket">
-          {holds.length > 0 && (
-            <ul className="pos-holds" aria-label="Tickets en attente">
-              {holds.map((h) => (
-                <li key={h.id}>
-                  <button
-                    type="button"
-                    className="pos-hold-chip"
-                    onClick={() => reprendre(h.id)}
-                    title="Reprendre ce ticket"
-                  >
-                    <Pause size={13} />
-                    <span>
-                      {h.libelle} · {formatMontant(totalNet(h.panier))}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="pos-hold-drop"
-                    aria-label={`Abandonner ${h.libelle}`}
-                    onClick={() => abandonnerAttente(h.id)}
-                  >
-                    <X size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <RailAttente
+            holds={holds}
+            now={now}
+            onOuvrirFile={() => setFileOpen(true)}
+            onReprendre={reprendre}
+          />
           <div className="pos-ticket-header">
             Commande en cours
+            {panier.length > 0 && (
+              <span className="pos-ticket-count">
+                {panier.reduce((s, l) => s + l.quantite, 0)} art.
+              </span>
+            )}
             <InfoTooltip insight={insightCommandeEnAttente(holds.length)} />
+          </div>
+          <div className="pos-ticket-client">
+            <ClientPicker
+              clients={clientsDisponibles}
+              clientId={clientId}
+              onChange={setClientId}
+            />
           </div>
           <ul className="pos-order-lines">
             {panier.length === 0 ? (
               <li className="pos-order-empty">
                 {holds.length > 0
-                  ? 'Touchez un produit, ou reprenez un ticket en attente'
-                  : 'Touchez un produit ou scannez un code'}
+                  ? 'Scannez, ou reprenez un n° dans la file'
+                  : 'Scannez un code ou touchez un produit'}
               </li>
             ) : (
               panier.map((l) => (
-                <li key={l.produitId}>
+                <li
+                  key={l.produitId}
+                  className={l.produitId === lastProduitId ? 'is-last' : undefined}
+                >
                   <div className="pos-order-line-main">
                     <strong>{l.designation}</strong>
                     <span className="money">
@@ -1666,7 +2227,7 @@ function PosCaisse({
               <button
                 type="button"
                 className="pos-hold-btn"
-                onClick={mettreEnAttente}
+                onClick={ouvrirPark}
               >
                 <Pause size={16} />
                 Mettre en attente
@@ -1676,12 +2237,7 @@ function PosCaisse({
               <button
                 type="button"
                 className="pos-btn-ghost pos-clear"
-                onClick={() => {
-                  if (window.confirm('Vider la commande en cours ?')) {
-                    setPanier([]);
-                    setRemisePanier('');
-                  }
-                }}
+                onClick={() => setConfirm({ kind: 'vider' })}
               >
                 Vider le panier
               </button>
@@ -1775,6 +2331,7 @@ function PosCaisse({
           onFermer={() => setCloture(false)}
         />
       )}
+      {overlays}
     </div>
   );
 }
@@ -1782,11 +2339,29 @@ function PosCaisse({
 export function PosPage() {
   const { user } = useAuth();
   const peut = user !== null && ROLES_PERIMETRE_BOUTIQUE.includes(user.role);
+  const [tiroirId, setTiroirId] = useState<string>('');
 
-  const { data: caisses, isLoading: loadingCaisses } = useCaisses(peut);
-  const caisse = caisses?.find(
-    (c) => c.type === 'AUXILIAIRE' && c.boutiqueId === user?.boutiqueId,
-  );
+  const {
+    data: caisses,
+    isLoading: loadingCaisses,
+    isError: erreurCaisses,
+    refetch: refetchCaisses,
+  } = useCaisses(peut);
+  const tiroirs =
+    caisses?.filter(
+      (c) =>
+        c.type === 'TIROIR' &&
+        c.boutiqueId === user?.boutiqueId &&
+        c.actif !== false,
+    ) ?? [];
+
+  useEffect(() => {
+    if (!tiroirId && tiroirs.length > 0) {
+      setTiroirId(tiroirs[0].id);
+    }
+  }, [tiroirId, tiroirs]);
+
+  const caisse = tiroirs.find((c) => c.id === tiroirId) ?? tiroirs[0];
 
   const { data: sessions, isLoading: loadingSessions } = useSessions(peut && !!caisse);
   const session = sessions?.find(
@@ -1809,7 +2384,11 @@ export function PosPage() {
   const produitsEntrepot =
     produits && stocksPos
       ? produits.map((p) => {
-          const stock = stocksPos.find((q) => q.produitId === p.id)?.quantite ?? 0;
+          const q = stocksPos.find((s) => s.produitId === p.id);
+          const stock = Math.max(
+            0,
+            (q?.quantite ?? 0) - (q?.quantiteReservee ?? 0),
+          );
           return {
             ...p,
             stock,
@@ -1824,14 +2403,17 @@ export function PosPage() {
         <div className="pos-gate-brand">CaissePOS</div>
         <h1>Point de vente</h1>
         <p>Réservé Caissier / Responsable boutique.</p>
-        <Link to="/dashboard" className="pos-back-link">
-          ← Tableau de bord
+        <p className="lead">
+          Compte démo : <strong>demo-pos-caissier</strong> / MotDePasse!123
+        </p>
+        <Link to="/login" className="pos-back-link">
+          ← Connexion
         </Link>
       </PosGateCard>
     );
   }
 
-  if (loadingCaisses || loadingSessions) {
+  if (loadingCaisses || (caisse && loadingSessions)) {
     return (
       <div className="pos-gate">
         <LoadingState label="Chargement de la caisse…" />
@@ -1839,13 +2421,22 @@ export function PosPage() {
     );
   }
 
-  if (!caisse) {
+  if (erreurCaisses) {
     return (
       <PosGateCard>
-          <h1>
-            Aucune caisse auxiliaire <InfoTooltip insight={insightCaisseAuxiliairePos()} />
-          </h1>
-          <p>Pas de caisse boutique liée à votre compte.</p>
+        <div className="pos-gate-brand">CaissePOS</div>
+        <h1>Caisses indisponibles</h1>
+        <p>
+          L’API n’a pas pu charger les caisses (souvent un serveur API arrêté ou
+          en erreur). Vérifiez que l’API tourne, puis réessayez.
+        </p>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => void refetchCaisses()}
+        >
+          Réessayer
+        </button>
         <Link to="/dashboard" className="pos-back-link">
           ← Tableau de bord
         </Link>
@@ -1853,8 +2444,77 @@ export function PosPage() {
     );
   }
 
+  if (!user?.boutiqueId) {
+    return (
+      <PosGateCard>
+        <div className="pos-gate-brand">CaissePOS</div>
+        <h1>Aucune boutique rattachée</h1>
+        <p>
+          Ce compte n’est lié à aucune boutique — le POS boutique exige un
+          rattachement.
+        </p>
+        <p className="lead">
+          Compte démo : <strong>demo-pos-caissier</strong> / MotDePasse!123
+        </p>
+        <Link to="/login" className="pos-back-link">
+          ← Changer de compte
+        </Link>
+      </PosGateCard>
+    );
+  }
+
+  if (!caisse) {
+    return (
+      <PosGateCard>
+        <div className="pos-gate-brand">CaissePOS</div>
+        <h1>
+          Aucun tiroir <InfoTooltip insight={insightCaisseAuxiliairePos()} />
+        </h1>
+        <p>
+          Aucun tiroir actif pour votre boutique. Le DAF configure les postes
+          de caisse (tiroirs) dans Entreprise.
+        </p>
+        <p className="lead">
+          Démo seedée : reconnectez-vous en <strong>demo-pos-caissier</strong>{' '}
+          (tiroir T01).
+        </p>
+        <Link to="/login" className="pos-back-link">
+          ← Connexion
+        </Link>
+      </PosGateCard>
+    );
+  }
+
   if (!session) {
-    return <OuvertureSessionForm caisseId={caisse.id} />;
+    return (
+      <div className="pos-gate">
+        {tiroirs.length > 1 && (
+          <label className="stack-form" style={{ marginBottom: 16, maxWidth: 360 }}>
+            Tiroir
+            <select
+              value={caisse.id}
+              onChange={(e) => setTiroirId(e.target.value)}
+            >
+              {tiroirs.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code ? `${t.code} — ` : ''}
+                  {t.libelle ?? t.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <OuvertureSessionForm
+          caisseId={caisse.id}
+          tiroirLabel={
+            caisse.code
+              ? `${caisse.code}${caisse.libelle ? ` — ${caisse.libelle}` : ''}`
+              : (caisse.libelle ?? 'Tiroir')
+          }
+          boutiqueNom={boutiqueNom}
+        />
+      </div>
+    );
   }
 
   if (!produitsEntrepot || !clients || !user) {

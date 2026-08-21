@@ -561,7 +561,7 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
       });
       const boutique = await env.prisma.boutique.findFirstOrThrow();
       const caisse = await env.prisma.caisse.create({
-        data: { type: 'AUXILIAIRE', boutiqueId: boutique.id },
+        data: { type: 'MAGASIN', boutiqueId: boutique.id },
       });
       const session = await env.prisma.sessionCaisse.create({
         data: {

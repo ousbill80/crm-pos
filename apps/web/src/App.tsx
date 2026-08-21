@@ -10,12 +10,16 @@ import { CommandesAchatsPage } from './routes/CommandesAchatsPage';
 import { FacturesFournisseurPage } from './routes/FacturesFournisseurPage';
 import { LitigesPage } from './routes/LitigesPage';
 import { InventairesPage } from './routes/InventairesPage';
+import { InventaireDetailPage } from './routes/InventaireDetailPage';
+import { OperationsStockPage } from './routes/OperationsStockPage';
 import { LoginPage } from './routes/LoginPage';
 import { PosPage } from './routes/PosPage';
 import { ProduitsPage } from './routes/ProduitsPage';
 import { ProduitDetailPage } from './routes/ProduitDetailPage';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { StocksPage } from './routes/StocksPage';
+import { EntrepotDetailPage } from './routes/EntrepotDetailPage';
+import { MouvementStockDetailPage } from './routes/MouvementStockDetailPage';
 import { TransactionsPage } from './routes/TransactionsPage';
 import { TresoreriePage } from './routes/TresoreriePage';
 import './App.css';
@@ -38,7 +42,13 @@ function App() {
         <Route path="/produits" element={<ProduitsPage />} />
         <Route path="/produits/:produitId" element={<ProduitDetailPage />} />
         <Route path="/stocks" element={<StocksPage />} />
+        <Route path="/stocks/operations" element={<OperationsStockPage />} />
+        <Route path="/stocks/emplacements" element={<OperationsStockPage />} />
+        <Route path="/stocks/reappro" element={<OperationsStockPage />} />
+        <Route path="/stocks/entrepots/:entrepotId" element={<EntrepotDetailPage />} />
+        <Route path="/stocks/mouvements/:mouvementId" element={<MouvementStockDetailPage />} />
         <Route path="/inventaires" element={<InventairesPage />} />
+        <Route path="/inventaires/:sessionId" element={<InventaireDetailPage />} />
         <Route path="/fournisseurs" element={<FournisseursPage />} />
         <Route path="/achats/commandes" element={<CommandesAchatsPage />} />
         <Route path="/achats/factures" element={<FacturesFournisseurPage />} />

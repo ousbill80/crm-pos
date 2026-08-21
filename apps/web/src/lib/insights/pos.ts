@@ -3,7 +3,7 @@ import type { ClientDto } from '../types';
 import type { Insight } from './types';
 
 // Insights POS ancrés sur des règles déjà en vigueur (plafond remise 20 %
-// serveur, caisse auxiliaire, vente anonyme §6.6, litige = Caissier Central).
+// serveur, caisse magasin, vente anonyme §6.6, litige = Caissier Central).
 // Aucun seuil monétaire inventé.
 
 export function insightRemisePos(remise: number, brut: number): Insight {
@@ -60,9 +60,9 @@ export function insightSessionPos(input: {
 
 export function insightCaisseAuxiliairePos(): Insight {
   return {
-    title: 'Caisse auxiliaire',
+    title: 'Tiroir de caisse',
     interpretation:
-      'Cette caisse boutique encaisse les ventes et initie le bordereau de versement à la clôture. Elle ne peut jamais valider, réceptionner ni solder une transaction.',
+      'Le POS s’ouvre sur un tiroir (poste de caisse) de la boutique. Les ventes y sont encaissées ; à la clôture, le magasin initie le versement. Le tiroir ne peut jamais valider, réceptionner ni solder une transaction (§1, §6.4).',
     severity: 'info',
   };
 }
@@ -145,22 +145,22 @@ export function insightEcartCloture(
 
 export function insightTemoinOuverture(): Insight {
   return {
-    title: 'Témoin',
+    title: 'Confirmateur d’ouverture',
     interpretation:
-      'Comptage contradictoire obligatoire (§5.1) : le témoin est un Caissier ou Responsable de la même boutique, distinct de vous. Son login suffit — pas de re-saisie du mot de passe.',
+      'Double contrôle terrain (§5.1) : un coéquipier ou le responsable magasin présent valide l’ouverture (ou la clôture). Il doit être de la même boutique et distinct du caissier au poste — comme un chef de caisse qui atteste le fond du tiroir.',
     severity: 'info',
   };
 }
 
 export function insightCommandeEnAttente(count: number): Insight {
   return {
-    title: 'Ticket en attente',
+    title: 'File d’attente caisse',
     interpretation:
-      'Le panier est parqué sur cette caisse uniquement : aucun encaissement, aucun mouvement de stock. Vous pouvez servir le client suivant puis reprendre ce ticket.',
+      'Comme en grande surface : le ticket est parqué sur cette caisse (nom + motif), sans encaissement ni mouvement de stock. Le client suivant passe ; la reprise se fait par n° de file. Un coupon de reprise peut être imprimé — ce n’est pas un ticket de caisse.',
     recommendation:
       count > 0
-        ? `${count} ticket(s) en attente — reprendre ou abandonner avant la clôture.`
-        : undefined,
+        ? `${count} ticket(s) en file — reprendre ou abandonner avant la clôture.`
+        : 'F3 parque. La file (barre du haut) rappelle le plus ancien en premier.',
     severity: count > 0 ? 'info' : 'neutral',
   };
 }

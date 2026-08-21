@@ -104,10 +104,10 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
     boutique3Id = boutique3.id;
 
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     const caisse3 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique3Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique3Id },
     });
     await env.prisma.caisse.create({
       data: { type: TypeCaisse.CENTRALE, boutiqueId: null },

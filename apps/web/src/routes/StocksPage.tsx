@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeftRight,
+  ChevronRight,
   ClipboardCheck,
   Download,
   Package,
@@ -38,6 +39,7 @@ import {
   insightStockQuantite,
   insightSuggestionTransfert,
   insightValeurInventaire,
+  insightValorisationVide,
 } from '../lib/insights/stocks';
 import type {
   EntrepotDto,
@@ -78,6 +80,7 @@ const TYPE_MOUVEMENT: Record<MouvementStockDto['type'], string> = {
   AJUSTEMENT: 'Ajustement',
   TRANSFERT_OUT: 'Transfert sortie',
   TRANSFERT_IN: 'Transfert entrée',
+  SCRAP: 'Rebut',
 };
 
 const STATUT_LABEL: Record<StatutStockLigne, string> = {
@@ -178,6 +181,7 @@ function qtyAt(
 
 export function StocksPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutEcrire = user !== null && ROLES_ECRITURE.includes(user.role);
@@ -186,8 +190,9 @@ export function StocksPage() {
 
   const [filtreEntrepot, setFiltreEntrepot] = useState('');
   const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>('TOUS');
-  const [filtreCategorie] = useState('');
-  const [voirInactifs] = useState(false);
+  const [filtreCategorie, setFiltreCategorie] = useState('');
+  const [voirInactifs, setVoirInactifs] = useState(false);
+  const [couvertureFaible, setCouvertureFaible] = useState(false);
   const [recherche, setRecherche] = useState('');
   const [vue, setVue] = useState<VueNiveaux>('liste');
   const [filtreTypeMvt, setFiltreTypeMvt] = useState('');
@@ -303,6 +308,11 @@ export function StocksPage() {
         const hay = `${ligne.designation} ${ligne.reference ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (couvertureFaible) {
+        const faible =
+          ligne.couvertureJours !== null && ligne.couvertureJours < 14;
+        if (!faible) return false;
+      }
       return true;
     });
   }, [
@@ -311,6 +321,7 @@ export function StocksPage() {
     filtreCategorie,
     recherche,
     voirInactifs,
+    couvertureFaible,
   ]);
 
   const mouvementsFiltres = useMemo(() => {
@@ -407,6 +418,34 @@ export function StocksPage() {
     setTrQty(prefill ? String(prefill.quantite) : '');
     setTrErr(null);
     setModalTransferer(true);
+  }
+
+  const categoriesStock = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of synthese.data?.lignes ?? []) {
+      if (l.categorie) set.add(l.categorie);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [synthese.data?.lignes]);
+
+  const valeurNulle = (synthese.data?.parEntrepot ?? []).every(
+    (e) => Number(e.valeur) === 0,
+  );
+  const totalEmplacements = statutChart.reduce((n, s) => n + s.value, 0);
+
+  function allerNiveaux() {
+    window.setTimeout(() => {
+      document.getElementById('stock-niveaux')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 0);
+  }
+
+  function toggleStatut(s: FiltreStatut) {
+    setFiltreStatut((prev) => (prev === s ? 'TOUS' : s));
+    setCouvertureFaible(false);
+    allerNiveaux();
   }
 
   if (!peutLire) {
@@ -584,17 +623,43 @@ export function StocksPage() {
           )}
 
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <article
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setFiltreEntrepot('');
+                document.getElementById('stock-charts')?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'start',
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  document.getElementById('stock-charts')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  });
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Package size={16} />
                 </span>
                 <InfoTooltip
-                  insight={insightValeurInventaire(
-                    data.kpis.valeurStock,
-                    data.kpis.unitesTotales,
-                    data.kpis.skuDistincts,
-                  )}
+                  insight={
+                    Number(data.kpis.valeurStock) === 0
+                      ? insightValorisationVide(
+                          data.kpis.unitesTotales,
+                          data.kpis.skuDistincts,
+                        )
+                      : insightValeurInventaire(
+                          data.kpis.valeurStock,
+                          data.kpis.unitesTotales,
+                          data.kpis.skuDistincts,
+                        )
+                  }
                 />
               </div>
               <div className="kpi-label">Valeur au CMP</div>
@@ -610,6 +675,12 @@ export function StocksPage() {
                   ? 'kpi-card dash-kpi kpi-danger'
                   : 'kpi-card dash-kpi'
               }
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleStatut('RUPTURE')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') toggleStatut('RUPTURE');
+              }}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -618,7 +689,9 @@ export function StocksPage() {
               </div>
               <div className="kpi-label">Ruptures</div>
               <div className="kpi-value">{data.kpis.ruptures}</div>
-              <div className="kpi-hint">Emplacements à 0</div>
+              <div className="kpi-hint">
+                {filtreStatut === 'RUPTURE' ? 'Filtre actif — cliquer pour retirer' : 'Emplacements à 0'}
+              </div>
             </article>
 
             <article
@@ -627,6 +700,12 @@ export function StocksPage() {
                   ? 'kpi-card dash-kpi kpi-warning'
                   : 'kpi-card dash-kpi'
               }
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleStatut('SOUS_SEUIL')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') toggleStatut('SOUS_SEUIL');
+              }}
             >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
@@ -635,10 +714,30 @@ export function StocksPage() {
               </div>
               <div className="kpi-label">Sous le seuil</div>
               <div className="kpi-value">{data.kpis.sousSeuil}</div>
-              <div className="kpi-hint">Réappro à planifier</div>
+              <div className="kpi-hint">
+                {filtreStatut === 'SOUS_SEUIL'
+                  ? 'Filtre actif — cliquer pour retirer'
+                  : 'Réappro à planifier'}
+              </div>
             </article>
 
-            <article className="kpi-card dash-kpi">
+            <article
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setCouvertureFaible((v) => !v);
+                setFiltreStatut('TOUS');
+                allerNiveaux();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setCouvertureFaible((v) => !v);
+                  setFiltreStatut('TOUS');
+                  allerNiveaux();
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Timer size={16} />
@@ -656,10 +755,33 @@ export function StocksPage() {
                   ? '—'
                   : `${data.kpis.couvertureJoursMediane} j`}
               </div>
-              <div className="kpi-hint">Cadence ventes {data.fenetreVentesJours} j</div>
+              <div className="kpi-hint">
+                {couvertureFaible
+                  ? 'Filtre < 14 j actif'
+                  : `Cadence ventes ${data.fenetreVentesJours} j`}
+              </div>
             </article>
 
-            <article className="kpi-card dash-kpi">
+            <article
+              className="kpi-card dash-kpi"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (data.parEntrepot.length === 1) {
+                  navigate(`/stocks/entrepots/${data.parEntrepot[0].entrepotId}`);
+                } else {
+                  document.getElementById('stock-charts')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  });
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && data.parEntrepot[0]) {
+                  navigate(`/stocks/entrepots/${data.parEntrepot[0].entrepotId}`);
+                }
+              }}
+            >
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Warehouse size={16} />
@@ -667,25 +789,41 @@ export function StocksPage() {
               </div>
               <div className="kpi-label">Entrepôts</div>
               <div className="kpi-value">{data.parEntrepot.length}</div>
-              <div className="kpi-hint">Périmètre du profil</div>
+              <div className="kpi-hint">Ouvrir la fiche entrepôt</div>
             </article>
           </div>
 
-          <div className="dash-layout stock-charts">
+          <div className="dash-layout stock-charts" id="stock-charts">
             <section className="panel">
               <div className="dash-panel-head">
-                <h2>Valeur par entrepôt</h2>
-                <span className="dash-panel-meta">CMP × quantité</span>
+                <h2>{valeurNulle ? 'Unités par entrepôt' : 'Valeur par entrepôt'}</h2>
+                <span className="dash-panel-meta">
+                  {valeurNulle ? 'CMP à 0 — quantités' : 'CMP × quantité'}
+                </span>
               </div>
-              {data.parEntrepot.every((e) => Number(e.valeur) === 0) ? (
-                <p className="lead">Aucune valorisation (CMP à 0 ou stock vide).</p>
+              {valeurNulle && (
+                <p className="lead">
+                  Valorisation nulle : le CMP n’est pas encore initialisé (réception
+                  fournisseur). Les unités restent visibles.
+                  <InfoTooltip
+                    insight={insightValorisationVide(
+                      data.kpis.unitesTotales,
+                      data.kpis.skuDistincts,
+                    )}
+                  />
+                </p>
+              )}
+              {data.parEntrepot.length === 0 ? (
+                <p className="lead">Aucun entrepôt dans le périmètre.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart
                     data={data.parEntrepot.map((e) => ({
+                      id: e.entrepotId,
                       name: e.code,
-                      valeur: Number(e.valeur),
                       boutique: e.nomBoutique,
+                      valeur: Number(e.valeur),
+                      unites: e.unites,
                     }))}
                     margin={{ left: 8, right: 8, top: 8 }}
                   >
@@ -699,15 +837,34 @@ export function StocksPage() {
                     />
                     <Tooltip
                       contentStyle={chartTooltipStyle()}
-                      formatter={(value) => [
-                        formatFcfa(Number(value ?? 0)),
-                        'Valeur',
-                      ]}
+                      formatter={(value, _name, item) => {
+                        const payload = item?.payload as {
+                          unites?: number;
+                          valeur?: number;
+                        };
+                        return [
+                          valeurNulle
+                            ? `${Number(value ?? 0)} u.`
+                            : formatFcfa(Number(value ?? 0)),
+                          valeurNulle
+                            ? 'Unités'
+                            : `Valeur · ${payload?.unites ?? 0} u.`,
+                        ];
+                      }}
                       labelFormatter={(label, payload) =>
                         `${label} · ${payload?.[0]?.payload?.boutique ?? ''}`
                       }
                     />
-                    <Bar dataKey="valeur" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      dataKey={valeurNulle ? 'unites' : 'valeur'}
+                      fill="#0f766e"
+                      radius={[4, 4, 0, 0]}
+                      cursor="pointer"
+                      onClick={(d) => {
+                        const id = (d as { id?: string }).id;
+                        if (id) navigate(`/stocks/entrepots/${id}`);
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -716,70 +873,116 @@ export function StocksPage() {
             <section className="panel">
               <div className="dash-panel-head">
                 <h2>Répartition des emplacements</h2>
+                <span className="dash-panel-meta">{totalEmplacements} emplacement(s)</span>
               </div>
               {statutChart.length === 0 ? (
                 <p className="lead">Aucun emplacement de stock.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={statutChart}
-                      dataKey="value"
-                      nameKey="label"
-                      innerRadius={52}
-                      outerRadius={78}
-                      paddingAngle={2}
-                    >
-                      {statutChart.map((entry) => (
-                        <Cell
-                          key={entry.key}
-                          fill={COULEURS_STATUT[entry.key]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={chartTooltipStyle()} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="stock-donut">
+                  <ResponsiveContainer width="100%" height={180}>
+                    <PieChart>
+                      <Pie
+                        data={statutChart}
+                        dataKey="value"
+                        nameKey="label"
+                        innerRadius={48}
+                        outerRadius={74}
+                        paddingAngle={2}
+                        onClick={(d) => {
+                          const key = (d as { key?: StatutStockLigne }).key;
+                          if (key) toggleStatut(key);
+                        }}
+                        cursor="pointer"
+                      >
+                        {statutChart.map((entry) => (
+                          <Cell
+                            key={entry.key}
+                            fill={COULEURS_STATUT[entry.key]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={chartTooltipStyle()}
+                        formatter={(value, name) => [
+                          `${Number(value ?? 0)} · ${
+                            totalEmplacements
+                              ? Math.round((Number(value ?? 0) / totalEmplacements) * 100)
+                              : 0
+                          } %`,
+                          String(name),
+                        ]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <ul className="stock-legend">
+                    {statutChart.map((s) => (
+                      <li key={s.key}>
+                        <button
+                          type="button"
+                          className={
+                            filtreStatut === s.key
+                              ? 'stock-legend-btn actif'
+                              : 'stock-legend-btn'
+                          }
+                          onClick={() => toggleStatut(s.key)}
+                        >
+                          <span
+                            className="dash-seg-dot"
+                            style={{ background: COULEURS_STATUT[s.key] }}
+                          />
+                          {s.label} · {s.value}
+                          {totalEmplacements
+                            ? ` (${Math.round((s.value / totalEmplacements) * 100)} %)`
+                            : ''}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-              <ul className="stock-legend">
-                {statutChart.map((s) => (
-                  <li key={s.key}>
-                    <span
-                      className="dash-seg-dot"
-                      style={{ background: COULEURS_STATUT[s.key] }}
-                    />
-                    {s.label} · {s.value}
-                  </li>
-                ))}
-              </ul>
             </section>
 
             <section className="panel">
               <div className="dash-panel-head">
                 <h2>Entrepôts</h2>
+                <span className="dash-panel-meta">Fiche détaillée</span>
               </div>
               {data.parEntrepot.length === 0 ? (
                 <p className="lead">Aucun entrepôt dans le périmètre.</p>
               ) : (
                 <ul className="dash-rank">
                   {[...data.parEntrepot]
-                    .sort((a, b) => Number(b.valeur) - Number(a.valeur))
-                    .map((e, i) => (
-                      <li key={e.entrepotId}>
-                        <div className="dash-rank-row">
-                          <span className="dash-rank-pos">{i + 1}</span>
-                          <span className="dash-rank-name">
-                            {e.code}
-                            <small> · {e.nomBoutique}</small>
-                          </span>
-                          <span className="money">{formatFcfa(e.valeur)}</span>
-                        </div>
-                        <div className="kpi-hint" style={{ marginTop: 0 }}>
-                          {e.unites} u. · {e.ruptures} rupture(s) · {e.sousSeuil}{' '}
-                          seuil
-                        </div>
-                      </li>
-                    ))}
+                    .sort((a, b) => Number(b.valeur) - Number(a.valeur) || b.unites - a.unites)
+                    .map((e, i) => {
+                      const meta = entrepotOptions.find((x) => x.id === e.entrepotId);
+                      return (
+                        <li key={e.entrepotId}>
+                          <button
+                            type="button"
+                            className="stock-entrepot-btn"
+                            onClick={() => navigate(`/stocks/entrepots/${e.entrepotId}`)}
+                          >
+                            <div className="dash-rank-row">
+                              <span className="dash-rank-pos">{i + 1}</span>
+                              <span className="dash-rank-name">
+                                {e.code}
+                                <small>
+                                  {' '}
+                                  · {e.nomBoutique}
+                                  {meta?.type === 'PRINCIPAL' ? ' · Principal' : ''}
+                                </small>
+                              </span>
+                              <span className="money">{formatFcfa(e.valeur)}</span>
+                              <ChevronRight size={16} />
+                            </div>
+                            <div className="kpi-hint" style={{ marginTop: 0 }}>
+                              {e.unites} u. · {e.ruptures} rupture(s) · {e.sousSeuil}{' '}
+                              sous seuil
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
                 </ul>
               )}
             </section>
@@ -821,13 +1024,44 @@ export function StocksPage() {
           <select
             id="filtre-statut"
             value={filtreStatut}
-            onChange={(e) => setFiltreStatut(e.target.value as FiltreStatut)}
+            onChange={(e) => {
+              setFiltreStatut(e.target.value as FiltreStatut);
+              setCouvertureFaible(false);
+            }}
           >
             <option value="TOUS">Tous</option>
             <option value="RUPTURE">Ruptures</option>
             <option value="SOUS_SEUIL">Sous seuil</option>
             <option value="OK">OK</option>
           </select>
+        </div>
+        {categoriesStock.length > 0 && (
+          <div>
+            <label htmlFor="filtre-cat">Catégorie</label>
+            <select
+              id="filtre-cat"
+              value={filtreCategorie}
+              onChange={(e) => setFiltreCategorie(e.target.value)}
+            >
+              <option value="">Toutes</option>
+              {categoriesStock.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="stock-toggle">
+          <label htmlFor="voir-inactifs">
+            <input
+              id="voir-inactifs"
+              type="checkbox"
+              checked={voirInactifs}
+              onChange={(e) => setVoirInactifs(e.target.checked)}
+            />
+            Inactifs
+          </label>
         </div>
         <div>
           <span className="stock-vue-label">
@@ -853,11 +1087,12 @@ export function StocksPage() {
       </div>
 
       {data && (
+        <div id="stock-niveaux">
         <ListPanel
           title="Niveaux de stock"
           toolbar={
             <span className="dash-panel-meta">
-              {lignesFiltrees.length} référence(s)
+              {lignesFiltrees.length} référence(s) — cliquer une ligne pour ouvrir la fiche
             </span>
           }
         >
@@ -872,9 +1107,12 @@ export function StocksPage() {
                 <thead>
                   <tr>
                     <th>Produit</th>
+                    <th>Catégorie</th>
                     <th>Statut</th>
                     <th>Réseau</th>
+                    <th>Seuil</th>
                     <th>Valeur</th>
+                    <th>Ventes {data.fenetreVentesJours} j</th>
                     <th>Couverture</th>
                     {entrepotCols.map((e) => (
                       <th key={e.entrepotId} title={`${e.nom} — ${e.nomBoutique}`}>
@@ -886,20 +1124,31 @@ export function StocksPage() {
                 </thead>
                 <tbody>
                   {lignesFiltrees.map((ligne) => (
-                    <tr key={ligne.produitId}>
+                    <tr
+                      key={ligne.produitId}
+                      className="produit-row"
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Ouvrir ${ligne.designation}`}
+                      onClick={() => navigate(`/produits/${ligne.produitId}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/produits/${ligne.produitId}`);
+                        }
+                      }}
+                    >
                       <td>
                         <strong>{ligne.designation}</strong>
                         <div className="kpi-hint" style={{ margin: 0 }}>
-                          {ligne.reference ?? 'Sans réf.'}
-                          {ligne.categorie ? ` · ${ligne.categorie}` : ''}
-                          {' · '}
-                          Seuil {ligne.seuilReappro ?? '—'} · CMP{' '}
+                          {ligne.reference ?? 'Sans réf.'} · CMP{' '}
                           {formatFcfa(ligne.coutMoyenPondere)}
                         </div>
                         {!ligne.actif && (
                           <span className="badge badge-neutral">Inactif</span>
                         )}
                       </td>
+                      <td>{ligne.categorie ?? '—'}</td>
                       <td>
                         <span
                           className={
@@ -922,7 +1171,9 @@ export function StocksPage() {
                           )}
                         />
                       </td>
+                      <td>{ligne.seuilReappro ?? '—'}</td>
                       <td className="money">{formatFcfa(ligne.valeur)}</td>
+                      <td>{ligne.ventesUnites14j}</td>
                       <td>
                         {ligne.couvertureJours === null
                           ? '—'
@@ -960,7 +1211,10 @@ export function StocksPage() {
                         );
                       })}
                       {peutEcrire || peutAjusterLibre ? (
-                        <td>
+                        <td
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
                           <div className="table-actions">
                             {peutAjusterLibre ? (
                               <button
@@ -1025,7 +1279,9 @@ export function StocksPage() {
                   {lignesFiltrees.map((ligne) => (
                     <tr key={ligne.produitId}>
                       <td>
-                        <strong>{ligne.designation}</strong>
+                        <Link className="link-button" to={`/produits/${ligne.produitId}`}>
+                          <strong>{ligne.designation}</strong>
+                        </Link>
                         {ligne.reference ? (
                           <div className="kpi-hint" style={{ margin: 0 }}>
                             {ligne.reference}
@@ -1081,10 +1337,11 @@ export function StocksPage() {
             </div>
           )}
         </ListPanel>
+        </div>
       )}
 
       <ListPanel
-        title="Journal des mouvements"
+        title="Journal des mouvements — cliquer une ligne pour le détail"
         toolbar={
           <div>
             <label htmlFor="filtre-mvt" className="sr-only">
@@ -1134,7 +1391,20 @@ export function StocksPage() {
               </thead>
               <tbody>
                 {mouvementsFiltres.map((m) => (
-                  <tr key={m.id}>
+                  <tr
+                    key={m.id}
+                    className="produit-row"
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Mouvement ${TYPE_MOUVEMENT[m.type]}`}
+                    onClick={() => navigate(`/stocks/mouvements/${m.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(`/stocks/mouvements/${m.id}`);
+                      }
+                    }}
+                  >
                     <td>{new Date(m.dateHeure).toLocaleString('fr-FR')}</td>
                     <td>
                       <span

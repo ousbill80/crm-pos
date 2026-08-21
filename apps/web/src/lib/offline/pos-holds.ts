@@ -1,5 +1,5 @@
 // Panier POS mis en attente — pas une vente serveur : aucun stock décrémenté,
-// aucun ticket encaissé. Pratique de surface (client suivant).
+// aucun ticket encaissé. Pratique de surface (client suivant / file de caisse).
 
 export interface LignePanierHold {
   produitId: string;
@@ -11,9 +11,25 @@ export interface LignePanierHold {
   remise: number;
 }
 
+export type MotifAttente =
+  | 'OUBLI_PAIEMENT'
+  | 'ARTICLE'
+  | 'FIDELITE'
+  | 'AUTRE';
+
+export const MOTIFS_ATTENTE: { id: MotifAttente; label: string }[] = [
+  { id: 'OUBLI_PAIEMENT', label: 'Oubli moyen de paiement' },
+  { id: 'ARTICLE', label: 'Va chercher un article' },
+  { id: 'FIDELITE', label: 'Carte / fiche client' },
+  { id: 'AUTRE', label: 'Autre' },
+];
+
 export interface CommandeEnAttente {
   id: string;
+  numero: number;
   libelle: string;
+  motif: MotifAttente;
+  clientId: string | null;
   panier: LignePanierHold[];
   remisePanier: string;
   createdAt: string;
@@ -25,12 +41,44 @@ function key(sessionId: string): string {
   return `${prefix}${sessionId}`;
 }
 
+function isMotif(value: unknown): value is MotifAttente {
+  return (
+    value === 'OUBLI_PAIEMENT' ||
+    value === 'ARTICLE' ||
+    value === 'FIDELITE' ||
+    value === 'AUTRE'
+  );
+}
+
+function normalizeHold(raw: unknown): CommandeEnAttente | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const h = raw as Record<string, unknown>;
+  if (typeof h.id !== 'string' || !Array.isArray(h.panier)) return null;
+  return {
+    id: h.id,
+    numero: typeof h.numero === 'number' && h.numero > 0 ? h.numero : 0,
+    libelle: typeof h.libelle === 'string' && h.libelle.trim() ? h.libelle : 'Ticket',
+    motif: isMotif(h.motif) ? h.motif : 'AUTRE',
+    clientId: typeof h.clientId === 'string' ? h.clientId : null,
+    panier: h.panier as LignePanierHold[],
+    remisePanier: typeof h.remisePanier === 'string' ? h.remisePanier : '',
+    createdAt: typeof h.createdAt === 'string' ? h.createdAt : new Date().toISOString(),
+  };
+}
+
 export function loadHolds(sessionId: string): CommandeEnAttente[] {
   try {
     const raw = localStorage.getItem(key(sessionId));
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as CommandeEnAttente[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const list = parsed.map(normalizeHold).filter((h): h is CommandeEnAttente => h !== null);
+    let max = Math.max(0, ...list.map((h) => h.numero));
+    return list.map((h) => {
+      if (h.numero > 0) return h;
+      max += 1;
+      return { ...h, numero: max };
+    });
   } catch {
     return [];
   }
@@ -62,10 +110,39 @@ export function quantiteParquee(
   }, 0);
 }
 
-export function prochainLibelleAttente(holds: CommandeEnAttente[]): string {
-  const nums = holds.map((h) => {
-    const m = /^Ticket (\d+)$/.exec(h.libelle);
-    return m ? Number(m[1]) : 0;
-  });
-  return `Ticket ${Math.max(0, ...nums) + 1}`;
+export function prochainNumero(holds: CommandeEnAttente[]): number {
+  return Math.max(0, ...holds.map((h) => h.numero)) + 1;
+}
+
+export function labelMotif(motif: MotifAttente): string {
+  return MOTIFS_ATTENTE.find((m) => m.id === motif)?.label ?? 'Autre';
+}
+
+export function nbArticlesHold(panier: LignePanierHold[]): number {
+  return panier.reduce((s, l) => s + l.quantite, 0);
+}
+
+export function montantHold(panier: LignePanierHold[]): number {
+  return panier.reduce(
+    (t, l) => t + Number(l.prixUnitaire) * l.quantite - l.remise,
+    0,
+  );
+}
+
+export function formatDureeAttente(createdAt: string, now: number): string {
+  const sec = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 1000));
+  if (sec < 60) return `${sec} s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+export function holdsFifo(holds: CommandeEnAttente[]): CommandeEnAttente[] {
+  return [...holds].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+}
+
+export function formatNumeroAttente(numero: number): string {
+  return String(numero).padStart(2, '0');
 }

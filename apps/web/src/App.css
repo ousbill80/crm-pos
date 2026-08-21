@@ -348,7 +348,7 @@
 }
 
 .modal-panel.modal-panel-lg {
-  width: min(560px, 100%);
+  width: min(640px, 100%);
 }
 
 .modal-panel form,
@@ -363,6 +363,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 
 .modal-header {

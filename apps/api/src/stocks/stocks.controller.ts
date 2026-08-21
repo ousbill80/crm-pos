@@ -3,6 +3,8 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -74,6 +76,16 @@ export class StocksController {
         entrepotId && entrepotIds.includes(entrepotId) ? entrepotId : undefined,
       entrepotIds: entrepotId ? undefined : entrepotIds,
     });
+  }
+
+  @Get('mouvements/:id')
+  @Roles(...ROLES_LECTURE_STRUCTURE)
+  async mouvement(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const entrepotIds = await this.resolveEntrepotScope(user);
+    return this.stocks.trouverMouvement(id, entrepotIds);
   }
 
   @Post('ajustements')

@@ -80,11 +80,10 @@ export const ROLES_INVENTAIRE_VALIDATION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
-/** Réception fournisseur : SI / DG (réseau) + responsable boutique (son périmètre). */
+/** Réception fournisseur : SI / DG uniquement (entrepôt central). La boutique réceptionne les transferts. */
 export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
 /** Bons de commande : SI / DG / responsable boutique (création + confirmation). */
@@ -108,6 +107,19 @@ export const ROLES_FACTURE_FOURNISSEUR: RoleLibelle[] = [
 export const ROLES_PAIEMENT_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.DAF,
   RoleLibelle.CAISSIER_CENTRAL,
+];
+
+/** Création / mise en prêt des bons de stock (réseau). */
+export const ROLES_BON_STOCK_PILOTE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Valider FAIT un bon : pilote réseau + responsable boutique (destination dans son magasin). */
+export const ROLES_BON_STOCK_FAIT: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
 /** Fréquence cible (jours) au-delà de laquelle un entrepôt est « à inventorier ». */

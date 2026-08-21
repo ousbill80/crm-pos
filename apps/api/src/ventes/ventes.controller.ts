@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -21,6 +23,7 @@ import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
 import { CreateRetourDto } from './dto/create-retour.dto';
+import { UpsertReservationDto } from './dto/paiement-reservation.dto';
 
 // Endpoints POS — sessions de caisse et encaissement (§6.3.2, §5.1). Toute
 // écriture est réservée au périmètre boutique (caissier/responsable
@@ -29,6 +32,12 @@ import { CreateRetourDto } from './dto/create-retour.dto';
 @Controller('ventes')
 export class VentesController {
   constructor(private readonly ventesService: VentesService) {}
+
+  @Get('temoins-eligibles')
+  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  listerTemoinsEligibles(@CurrentUser() utilisateur: AuthenticatedUser) {
+    return this.ventesService.listerTemoinsEligibles(utilisateur);
+  }
 
   @Post('sessions')
   @Roles(...ROLES_PERIMETRE_BOUTIQUE)
@@ -71,6 +80,26 @@ export class VentesController {
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.ventesService.encaisserVente(id, dto, utilisateur);
+  }
+
+  @Put('sessions/:id/reservations')
+  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  upsertReservation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpsertReservationDto,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.ventesService.upsertReservation(id, dto, utilisateur);
+  }
+
+  @Delete('sessions/:id/reservations/:holdId')
+  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  libererReservation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('holdId', ParseUUIDPipe) holdId: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.ventesService.libererReservation(id, holdId, utilisateur);
   }
 
   @Post('sessions/:id/retours')

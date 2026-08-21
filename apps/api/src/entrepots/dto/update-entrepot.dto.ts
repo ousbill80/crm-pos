@@ -5,7 +5,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { TypeEntrepot } from '@prisma/client';
+import { TypeEntrepot, UsageEmplacement } from '@prisma/client';
 
 export class UpdateEntrepotDto {
   @IsOptional()
@@ -16,6 +16,18 @@ export class UpdateEntrepotDto {
   @IsOptional()
   @IsEnum(TypeEntrepot)
   type?: TypeEntrepot;
+
+  @IsOptional()
+  @IsEnum(UsageEmplacement)
+  usage?: UsageEmplacement;
+
+  @IsOptional()
+  @IsBoolean()
+  reseau?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  virtuel?: boolean;
 
   @IsOptional()
   @IsBoolean()

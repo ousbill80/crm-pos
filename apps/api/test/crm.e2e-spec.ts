@@ -393,7 +393,7 @@ describe('CRM (e2e)', () => {
         },
       });
       const caisse = await env.prisma.caisse.create({
-        data: { type: 'AUXILIAIRE', boutiqueId: boutique.id },
+        data: { type: 'MAGASIN', boutiqueId: boutique.id },
       });
       caisseId = caisse.id;
 

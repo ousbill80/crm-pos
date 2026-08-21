@@ -199,7 +199,7 @@ export function TresoreriePage() {
                 <InfoTooltip
                   insight={insightTresorerie(
                     pilot.position.soldeAuxiliaires,
-                    data.tresorerie.caisses.filter((c) => c.type === 'AUXILIAIRE')
+                    data.tresorerie.caisses.filter((c) => c.type === 'MAGASIN')
                       .length,
                   )}
                 />

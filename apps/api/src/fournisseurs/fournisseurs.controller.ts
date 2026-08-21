@@ -13,8 +13,8 @@ import { UpdateFournisseurDto } from './dto/update-fournisseur.dto';
 import { CreateReceptionDto } from './dto/create-reception.dto';
 
 // Endpoints Fournisseur & réception de stock — extension au socle MCD (§6.5).
-// Fiches : administration structure. Réceptions : SI / DG / responsable boutique
-// (périmètre boutique côté service). Lecture : ROLES_LECTURE_STRUCTURE.
+// Fiches : administration structure. Réceptions fournisseur : SI / DG
+// (entrepôt central). La boutique réceptionne les bons de transfert interne.
 @Controller('fournisseurs')
 export class FournisseursController {
   constructor(private readonly fournisseursService: FournisseursService) {}

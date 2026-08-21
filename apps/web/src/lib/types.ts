@@ -50,6 +50,10 @@ export interface CaisseDto {
   type: TypeCaisse;
   soldeCourant: string;
   boutiqueId: string | null;
+  code?: string | null;
+  libelle?: string | null;
+  actif?: boolean;
+  ordreAffichage?: number;
 }
 
 export interface FideliteDto {
@@ -99,12 +103,22 @@ export interface ContactCampagneDto {
   pointsCumules: number;
 }
 
+export interface PointDeVenteClientDto {
+  id: string;
+  nom: string;
+  nombreAchats: number;
+  totalDepense: string;
+  dateDernierAchat: string;
+}
+
 export interface TableauDeBordClientDto {
   totalDepense: string;
   nombreAchats: number;
   dateDernierAchat: string | null;
   pointsCumules: number;
   niveauFidelite: NiveauFidelite;
+  /** Boutiques où le client a déjà acheté (dérivé des ventes, §6.6). */
+  pointsDeVente: PointDeVenteClientDto[];
 }
 
 export type StatutStock = 'RUPTURE' | 'SOUS_SEUIL' | 'OK';
@@ -124,6 +138,11 @@ export interface ProduitDto {
   margeUnitaire: string;
   tauxMarge: string;
   valeurStock: string;
+  codeBarres?: string | null;
+  uniteMesure?: string;
+  methodeCout?: 'CMP' | 'FIFO' | 'STANDARD';
+  strategieSortie?: 'FIFO' | 'FEFO';
+  attributs?: string | null;
 }
 
 export interface ProduitsSyntheseDto {
@@ -188,16 +207,66 @@ export interface ProduitVenteDto {
 export interface MouvementStockDto {
   id: string;
   produitId: string;
-  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT' | 'TRANSFERT_OUT' | 'TRANSFERT_IN';
+  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT' | 'TRANSFERT_OUT' | 'TRANSFERT_IN' | 'SCRAP';
   entrepotId: string | null;
   quantite: number;
   stockApres: number;
   reference: string | null;
   dateHeure: string;
   utilisateurId: string;
-  produit?: { designation: string };
-  entrepot?: { code: string; nom: string } | null;
-  utilisateur?: { prenom: string; nom: string };
+  produit?: { id?: string; designation: string; reference?: string | null };
+  entrepot?: {
+    id?: string;
+    code: string;
+    nom: string;
+    boutique?: { nom: string };
+  } | null;
+  utilisateur?: { id?: string; prenom: string; nom: string; login?: string };
+}
+
+export interface BonStockDto {
+  id: string;
+  numero: string;
+  type: 'RECEPTION' | 'LIVRAISON' | 'TRANSFERT_INTERNE' | 'REBUT';
+  statut: 'BROUILLON' | 'PRET' | 'FAIT' | 'ANNULE';
+  notes: string | null;
+  receptionId: string | null;
+  entrepotSource: {
+    id: string;
+    nom: string;
+    code: string;
+    usage: string;
+    boutiqueId: string;
+  } | null;
+  entrepotDest: {
+    id: string;
+    nom: string;
+    code: string;
+    usage: string;
+    boutiqueId: string;
+  } | null;
+  dateCreation: string;
+  datePret: string | null;
+  dateFait: string | null;
+  lignes: Array<{
+    id: string;
+    produitId: string;
+    designation: string;
+    quantite: number;
+    quantiteOk: number | null;
+    quantiteRebut: number | null;
+    numeroLot: string | null;
+  }>;
+}
+
+export interface RegleReapproDto {
+  id: string;
+  produitId: string;
+  entrepotId: string;
+  min: number;
+  max: number;
+  produit: { designation: string };
+  entrepot: { nom: string; code: string };
 }
 
 export interface LigneVenteDto {
@@ -251,6 +320,21 @@ export interface SessionCaisseDto {
   transactionVersementId: string | null;
 }
 
+/** Coéquipier éligible au double contrôle d'ouverture/clôture (§5.1). */
+export interface TemoinEligibleDto {
+  id: string;
+  login: string;
+  prenom: string;
+  nom: string;
+  role: string | null;
+}
+
+export interface PaiementVenteDto {
+  id?: string;
+  modePaiement: ModePaiement;
+  montant: string;
+}
+
 export interface VenteDto {
   id: string;
   dateVente: string;
@@ -260,6 +344,7 @@ export interface VenteDto {
   sessionCaisseId: string;
   clientId: string | null;
   lignes: LigneVenteDto[];
+  paiements?: PaiementVenteDto[];
   retours?: RetourVenteDto[];
 }
 
@@ -465,6 +550,9 @@ export interface EntrepotDto {
   code: string;
   boutiqueId: string;
   type: 'PRINCIPAL' | 'SECONDAIRE';
+  usage?: 'STOCK' | 'ENTREE' | 'SORTIE' | 'PERTE' | 'FOURNISSEUR' | 'CLIENT';
+  reseau?: boolean;
+  virtuel?: boolean;
   actif: boolean;
   boutique?: { id: string; nom: string };
 }
@@ -474,6 +562,7 @@ export interface StockQuantDto {
   produitId: string;
   entrepotId: string;
   quantite: number;
+  quantiteReservee?: number;
   produit: {
     designation: string;
     seuilReappro: number | null;

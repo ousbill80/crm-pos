@@ -1314,6 +1314,50 @@ code {
   gap: 6px;
 }
 
+button.stock-legend-btn[type='button'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  align-self: auto;
+}
+
+button.stock-legend-btn[type='button']:hover {
+  background: var(--accent-bg);
+  color: inherit;
+}
+
+button.stock-legend-btn.actif[type='button'] {
+  border-color: var(--border-strong);
+  background: var(--accent-bg);
+  font-weight: 650;
+}
+
+button.stock-entrepot-btn[type='button'] {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  align-self: auto;
+}
+
+button.stock-entrepot-btn[type='button']:hover {
+  background: transparent;
+  color: inherit;
+}
+
+button.stock-entrepot-btn[type='button']:hover .dash-rank-name {
+  color: var(--accent);
+}
+
 .stock-toolbar .stock-search {
   min-width: 220px;
   flex: 1;
@@ -1477,6 +1521,82 @@ a.stock-row-link {
 
 button.stock-session-actif {
   font-weight: 700;
+}
+
+.inventaire-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.inventaire-preview-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inventaire-preview-card dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.inventaire-preview-card dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.inventaire-preview-card dd small {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.inventaire-workflow {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.inventaire-workflow li {
+  margin: 4px 0;
+}
+
+.inventaire-option-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.inventaire-progress {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.inventaire-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+}
+
+@media (max-width: 640px) {
+  .inventaire-preview {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Configuration entreprise (cfg-*) — ERP settings shell ── */
@@ -2312,6 +2432,21 @@ a.link-button:hover {
   font-weight: 700;
 }
 
+.badge-paiement-especes {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.badge-paiement-carte {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.badge-paiement-mobile_money {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .badge-type {
   display: inline-flex;
   padding: 2px 8px;
@@ -2543,3 +2678,234 @@ a.link-button:hover {
   }
 }
 
+
+
+.client-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.client-section-head h3 {
+  margin: 0;
+}
+
+.client-pdv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.client-apercu-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.client-pdv-summary .client-kpi-label {
+  margin-bottom: 8px;
+}
+
+.client-pdv-chip-meta {
+  opacity: 0.7;
+  font-weight: 600;
+}
+
+
+/* Fidélité + Interactions — fiche client */
+
+.client-fidelite {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.client-fidelite-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.client-fidelite-bronze {
+  background: linear-gradient(135deg, #f8f1e7 0%, var(--panel) 70%);
+}
+
+.client-fidelite-argent {
+  background: linear-gradient(135deg, #eef2f6 0%, var(--panel) 70%);
+}
+
+.client-fidelite-or {
+  background: linear-gradient(135deg, #fbf3d8 0%, var(--panel) 70%);
+}
+
+.client-fidelite-tier {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text-h);
+  margin-right: 6px;
+}
+
+.client-fidelite-sub {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.client-fidelite-points {
+  text-align: right;
+}
+
+.client-fidelite-points-value {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-h);
+}
+
+.client-fidelite-points-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.client-fidelite-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.client-fidelite-progress-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.client-fidelite-progress-bar > div {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+
+.client-fidelite-rapides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.client-fidelite-rapides button {
+  align-self: auto;
+  min-width: 64px;
+}
+
+.client-interactions {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.client-interactions-form {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.client-interactions-timeline h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+}
+
+.client-chip-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.client-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.client-chip-row button {
+  align-self: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.client-chip-row button:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.client-chip-row button.actif {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.client-interaction-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.client-interaction-contenu {
+  margin: 6px 0 0;
+  color: var(--text);
+}
+
+.client-interaction-contenu.muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.client-interactions-empty {
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+@media (max-width: 860px) {
+  .client-interactions {
+    grid-template-columns: 1fr;
+  }
+
+  .client-fidelite-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .client-fidelite-points {
+    text-align: left;
+  }
+}

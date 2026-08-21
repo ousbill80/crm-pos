@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsInt,
+  IsIn,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -54,4 +55,30 @@ export class CreateProduitDto {
   @IsInt()
   @Min(0)
   seuilReappro?: number;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(64)
+  codeBarres?: string;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(16)
+  uniteMesure?: string;
+
+  @IsOptional()
+  @IsIn(['CMP', 'FIFO', 'STANDARD'])
+  methodeCout?: 'CMP' | 'FIFO' | 'STANDARD';
+
+  @IsOptional()
+  @IsIn(['FIFO', 'FEFO'])
+  strategieSortie?: 'FIFO' | 'FEFO';
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(160)
+  attributs?: string;
 }

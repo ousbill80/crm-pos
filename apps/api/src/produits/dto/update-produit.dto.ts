@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -54,4 +55,23 @@ export class UpdateProduitDto {
   @IsOptional()
   @IsBoolean()
   actif?: boolean;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(64)
+  codeBarres?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  uniteMesure?: string;
+
+  @IsOptional()
+  @IsIn(['CMP', 'FIFO', 'STANDARD'])
+  methodeCout?: 'CMP' | 'FIFO' | 'STANDARD';
+
+  @IsOptional()
+  @IsIn(['FIFO', 'FEFO'])
+  strategieSortie?: 'FIFO' | 'FEFO';
 }

@@ -27,6 +27,7 @@ describe('Stocks synthèse (e2e)', () => {
   let entrepotBId: string;
   let produitId: string;
   let userSiId: string;
+  let mouvementVenteId: string;
 
   async function login(loginValue: string): Promise<string> {
     const response = await request(app.getHttpServer())
@@ -161,7 +162,7 @@ describe('Stocks synthèse (e2e)', () => {
     );
     await creerUtilisateur('respcrm-syn', 'RESPONSABLE_CRM', null, 1);
 
-    await env.prisma.mouvementStock.create({
+    const vente = await env.prisma.mouvementStock.create({
       data: {
         produitId,
         entrepotId: entrepotSourceId,
@@ -172,6 +173,7 @@ describe('Stocks synthèse (e2e)', () => {
         dateHeure: new Date(),
       },
     });
+    mouvementVenteId = vente.id;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -262,5 +264,39 @@ describe('Stocks synthèse (e2e)', () => {
     expect(body.parEntrepot.some((e) => e.entrepotId === entrepotBId)).toBe(
       false,
     );
+  });
+
+  describe('GET /stocks/mouvements/:id', () => {
+    it('refuse (403) RESPONSABLE_CRM', async () => {
+      await request(app.getHttpServer())
+        .get(`/stocks/mouvements/${mouvementVenteId}`)
+        .set(auth(tokens.respcrm))
+        .expect(403);
+    });
+
+    it('refuse (403) caissier hors périmètre boutique', async () => {
+      await request(app.getHttpServer())
+        .get(`/stocks/mouvements/${mouvementVenteId}`)
+        .set(auth(tokens.caissierB))
+        .expect(403);
+    });
+
+    it('retourne le mouvement pour un rôle structure du périmètre', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/stocks/mouvements/${mouvementVenteId}`)
+        .set(auth(tokens.caissierA))
+        .expect(200);
+      const body = response.body as { id: string; type: string; produitId: string };
+      expect(body.id).toBe(mouvementVenteId);
+      expect(body.type).toBe('VENTE');
+      expect(body.produitId).toBe(produitId);
+    });
+
+    it('répond 404 pour un id inconnu', async () => {
+      await request(app.getHttpServer())
+        .get('/stocks/mouvements/00000000-0000-0000-0000-000000000000')
+        .set(auth(tokens.respsi))
+        .expect(404);
+    });
   });
 });

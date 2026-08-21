@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type Produit } from '@prisma/client';
 import {
   enrichirProduit,
   quantitePourSortirAlerte,
@@ -37,7 +37,15 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       stock: 10,
       coutMoyenPondere: new Prisma.Decimal('400.00'),
       seuilReappro: 5,
-    });
+      codeBarres: null,
+      uniteMesure: 'UN',
+      facteurUnite: new Prisma.Decimal(1),
+      parentId: null,
+      attributs: null,
+      methodeCout: 'CMP',
+      coutStandard: new Prisma.Decimal(0),
+      strategieSortie: 'FIFO',
+    } as Produit);
     expect(enrichi.margeUnitaire).toBe('600.00');
     expect(enrichi.tauxMarge).toBe('60.0');
     expect(enrichi.valeurStock).toBe('4000.00');

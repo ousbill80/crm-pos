@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -29,11 +30,14 @@ export interface AppliquerMouvementInput {
     | 'RETOUR'
     | 'AJUSTEMENT'
     | 'TRANSFERT_OUT'
-    | 'TRANSFERT_IN';
+    | 'TRANSFERT_IN'
+    | 'SCRAP';
   /** Delta signé : +entrée / −sortie (sauf AJUSTEMENT qui pose la quantité cible via ajuster()). */
   delta: number;
   utilisateurId: string;
   reference?: string;
+  autoriserNegatif?: boolean;
+  lotId?: string;
 }
 
 /**
@@ -51,9 +55,47 @@ export class StockService {
     return quant?.quantite ?? 0;
   }
 
+  async getQuantiteReservee(
+    produitId: string,
+    entrepotId: string,
+    exceptHoldId?: string,
+    tx?: Tx,
+  ): Promise<number> {
+    const client = tx ?? this.prisma;
+    const aggs = await client.reservationStock.aggregate({
+      where: {
+        produitId,
+        entrepotId,
+        ...(exceptHoldId ? { holdId: { not: exceptHoldId } } : {}),
+      },
+      _sum: { quantite: true },
+    });
+    return aggs._sum.quantite ?? 0;
+  }
+
+  async getDisponible(
+    produitId: string,
+    entrepotId: string,
+    exceptHoldId?: string,
+    tx?: Tx,
+  ): Promise<number> {
+    const client = tx ?? this.prisma;
+    const quant = await client.stockQuant.findUnique({
+      where: { produitId_entrepotId: { produitId, entrepotId } },
+    });
+    const physique = quant?.quantite ?? 0;
+    const reserve = await this.getQuantiteReservee(
+      produitId,
+      entrepotId,
+      exceptHoldId,
+      tx,
+    );
+    return physique - reserve;
+  }
+
   async trouverEntrepotPrincipalBoutique(boutiqueId: string): Promise<string> {
     const entrepot = await this.prisma.entrepot.findFirst({
-      where: { boutiqueId, type: 'PRINCIPAL', actif: true },
+      where: { boutiqueId, type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
     });
     if (!entrepot) {
       throw new NotFoundException(
@@ -61,6 +103,33 @@ export class StockService {
       );
     }
     return entrepot.id;
+  }
+
+  async trouverEntrepotCentralStock() {
+    const entrepot = await this.prisma.entrepot.findFirst({
+      where: { reseau: true, usage: 'STOCK', virtuel: false, actif: true },
+    });
+    if (!entrepot) {
+      throw new NotFoundException(
+        'Aucun entrepôt réseau STOCK : semez l’entrepôt central.',
+      );
+    }
+    return entrepot;
+  }
+
+  async trouverEmplacementUsage(
+    usage: 'STOCK' | 'ENTREE' | 'SORTIE' | 'PERTE' | 'FOURNISSEUR' | 'CLIENT',
+    reseau = true,
+  ) {
+    const entrepot = await this.prisma.entrepot.findFirst({
+      where: { usage, reseau, actif: true },
+    });
+    if (!entrepot) {
+      throw new NotFoundException(
+        `Aucun emplacement ${usage}${reseau ? ' réseau' : ''} actif.`,
+      );
+    }
+    return entrepot;
   }
 
   async appliquerMouvement(
@@ -196,7 +265,7 @@ export class StockService {
       input.entrepotId,
     );
     const apres = actuel + input.delta;
-    if (apres < 0) {
+    if (apres < 0 && !input.autoriserNegatif) {
       throw new BadRequestException(
         `Stock insuffisant pour "${produit.designation}" sur l'entrepôt ${entrepot.code} (disponible : ${actuel}, delta : ${input.delta}).`,
       );
@@ -217,8 +286,14 @@ export class StockService {
       },
     });
 
+    const lotId = await this.appliquerLotTx(tx, input, produit.strategieSortie);
+
     const somme = await tx.stockQuant.aggregate({
-      where: { produitId: input.produitId },
+      where: {
+        produitId: input.produitId,
+        consignation: false,
+        entrepot: { usage: 'STOCK', virtuel: false },
+      },
       _sum: { quantite: true },
     });
     await tx.produit.update({
@@ -235,8 +310,74 @@ export class StockService {
         stockApres: apres,
         reference: input.reference,
         utilisateurId: input.utilisateurId,
+        lotId,
       },
     });
+  }
+
+  private async appliquerLotTx(
+    tx: Tx,
+    input: AppliquerMouvementInput,
+    strategie: 'FIFO' | 'FEFO',
+  ): Promise<string | null> {
+    let lotId = input.lotId ?? null;
+    if (!lotId && input.delta < 0) {
+      const lots = await tx.stockLot.findMany({
+        where: {
+          produitId: input.produitId,
+          entrepotId: input.entrepotId,
+          quantite: { gt: 0 },
+        },
+        include: { lot: true },
+        orderBy:
+          strategie === 'FEFO'
+            ? { lot: { dateExpiration: 'asc' } }
+            : { lot: { createdAt: 'asc' } },
+      });
+      let restant = -input.delta;
+      for (const sl of lots) {
+        if (restant <= 0) break;
+        const pris = Math.min(sl.quantite, restant);
+        await tx.stockLot.update({
+          where: { id: sl.id },
+          data: { quantite: sl.quantite - pris },
+        });
+        restant -= pris;
+        lotId = sl.lotId;
+      }
+      return lotId;
+    }
+    if (!lotId) return null;
+    const actuel = await tx.stockLot.findUnique({
+      where: {
+        produitId_entrepotId_lotId: {
+          produitId: input.produitId,
+          entrepotId: input.entrepotId,
+          lotId,
+        },
+      },
+    });
+    const apresLot = (actuel?.quantite ?? 0) + input.delta;
+    if (apresLot < 0 && !input.autoriserNegatif) {
+      throw new BadRequestException('Quantité de lot insuffisante.');
+    }
+    await tx.stockLot.upsert({
+      where: {
+        produitId_entrepotId_lotId: {
+          produitId: input.produitId,
+          entrepotId: input.entrepotId,
+          lotId,
+        },
+      },
+      update: { quantite: apresLot },
+      create: {
+        produitId: input.produitId,
+        entrepotId: input.entrepotId,
+        lotId,
+        quantite: apresLot,
+      },
+    });
+    return lotId;
   }
 
   async listerQuants(filters: {
@@ -245,6 +386,7 @@ export class StockService {
     entrepotIds?: string[];
   }): Promise<
     (StockQuant & {
+      quantiteReservee: number;
       produit: {
         designation: string;
         seuilReappro: number | null;
@@ -260,7 +402,7 @@ export class StockService {
       };
     })[]
   > {
-    return this.prisma.stockQuant.findMany({
+    const quants = await this.prisma.stockQuant.findMany({
       where: {
         ...(filters.produitId ? { produitId: filters.produitId } : {}),
         ...(filters.entrepotId
@@ -293,6 +435,28 @@ export class StockService {
         { produit: { designation: 'asc' } },
       ],
     });
+    const entrepotIds = [...new Set(quants.map((q) => q.entrepotId))];
+    const reserves =
+      entrepotIds.length === 0
+        ? []
+        : await this.prisma.reservationStock.groupBy({
+            by: ['produitId', 'entrepotId'],
+            where: {
+              entrepotId: { in: entrepotIds },
+              ...(filters.produitId ? { produitId: filters.produitId } : {}),
+            },
+            _sum: { quantite: true },
+          });
+    const reserveMap = new Map(
+      reserves.map((r) => [
+        `${r.produitId}:${r.entrepotId}`,
+        r._sum.quantite ?? 0,
+      ]),
+    );
+    return quants.map((q) => ({
+      ...q,
+      quantiteReservee: reserveMap.get(`${q.produitId}:${q.entrepotId}`) ?? 0,
+    }));
   }
 
   async listerMouvements(filters: {
@@ -315,13 +479,45 @@ export class StockService {
             : {}),
       },
       include: {
-        produit: { select: { designation: true } },
+    produit: { select: { designation: true, reference: true } },
         entrepot: { select: { code: true, nom: true } },
         utilisateur: { select: { prenom: true, nom: true } },
       },
       orderBy: { dateHeure: 'desc' },
       take: 200,
     });
+  }
+
+  async trouverMouvement(id: string, entrepotIds: string[]) {
+    const mouvement = await this.prisma.mouvementStock.findUnique({
+      where: { id },
+      include: {
+        produit: {
+          select: { id: true, designation: true, reference: true },
+        },
+        entrepot: {
+          select: {
+            id: true,
+            code: true,
+            nom: true,
+            boutique: { select: { nom: true } },
+          },
+        },
+        utilisateur: {
+          select: { id: true, prenom: true, nom: true, login: true },
+        },
+      },
+    });
+    if (!mouvement) {
+      throw new NotFoundException(`Mouvement ${id} introuvable.`);
+    }
+    if (mouvement.entrepotId && !entrepotIds.includes(mouvement.entrepotId)) {
+      throw new ForbiddenException('Mouvement hors périmètre.');
+    }
+    if (!mouvement.entrepotId && entrepotIds.length === 0) {
+      throw new ForbiddenException('Mouvement hors périmètre.');
+    }
+    return mouvement;
   }
 
   /**

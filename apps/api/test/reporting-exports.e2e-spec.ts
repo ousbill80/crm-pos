@@ -76,16 +76,16 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
     boutique2Id = boutique2.id;
 
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     // Caisse dédiée au flux POS réel (ouverture/vente/clôture) du test PDF,
     // distincte de caisse1 qui garde une session OUVERTE en permanence pour
     // les fixtures d'agrégation CA ci-dessous.
     const caisse1Pos = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique2Id },
     });
     caisseBoutique1Id = caisse1.id;
     caisseBoutique1PosId = caisse1Pos.id;

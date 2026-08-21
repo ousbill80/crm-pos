@@ -42,9 +42,21 @@ export function messageDepuisApi(err: unknown, fallback: string): string {
     return fallback;
   }
   try {
-    const parsed = JSON.parse(err.message) as { message?: unknown };
+    const parsed = JSON.parse(err.message) as {
+      message?: unknown;
+      code?: string;
+    };
     if (typeof parsed.message === 'string' && parsed.message.trim()) {
       return parsed.message;
+    }
+    if (
+      parsed.message &&
+      typeof parsed.message === 'object' &&
+      parsed.message !== null &&
+      'message' in parsed.message &&
+      typeof (parsed.message as { message: unknown }).message === 'string'
+    ) {
+      return (parsed.message as { message: string }).message;
     }
     if (Array.isArray(parsed.message) && parsed.message.length > 0) {
       return parsed.message.map(String).join(' ');
@@ -56,6 +68,29 @@ export function messageDepuisApi(err: unknown, fallback: string): string {
     return err.message;
   }
   return fallback;
+}
+
+export function codeDepuisApi(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  try {
+    const parsed = JSON.parse(err.message) as {
+      code?: unknown;
+      message?: unknown;
+    };
+    if (typeof parsed.code === 'string') return parsed.code;
+    if (
+      parsed.message &&
+      typeof parsed.message === 'object' &&
+      parsed.message !== null &&
+      'code' in parsed.message &&
+      typeof (parsed.message as { code: unknown }).code === 'string'
+    ) {
+      return (parsed.message as { code: string }).code;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 export function estErreurReseau(err: unknown): boolean {

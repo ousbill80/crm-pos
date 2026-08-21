@@ -497,7 +497,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
         .expect(400);
     });
 
-    it('autorise RESPONSABLE_BOUTIQUE à réceptionner dans sa boutique, refuse un autre entrepôt', async () => {
+    it('refuse (403) qu’un RESPONSABLE_BOUTIQUE réceptionne le fournisseur (vague 2 : transfert interne seulement)', async () => {
       const created = await request(app.getHttpServer())
         .post('/fournisseurs')
         .set(auth(tokens.respsi))
@@ -505,7 +505,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
         .expect(201);
       const id = (created.body as FournisseurDto).id;
 
-      const ok = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post(`/fournisseurs/${id}/receptions`)
         .set(auth(tokens.respboutique))
         .send({
@@ -513,22 +513,6 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
           quantite: 3,
           prixAchat: 1600,
           reference: 'BL-TEST-1',
-        })
-        .expect(201);
-      expect((ok.body as ReceptionStockDto).quantite).toBe(3);
-      expect((ok.body as ReceptionStockDto).reference).toBe('BL-TEST-1');
-
-      const autre = await env.prisma.entrepot.findFirstOrThrow({
-        where: { nom: 'Principal Zone B' },
-      });
-      await request(app.getHttpServer())
-        .post(`/fournisseurs/${id}/receptions`)
-        .set(auth(tokens.respboutique))
-        .send({
-          produitId,
-          quantite: 1,
-          prixAchat: 1600,
-          entrepotId: autre.id,
         })
         .expect(403);
     });

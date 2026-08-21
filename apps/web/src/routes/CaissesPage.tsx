@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, type FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RoleLibelle, ROLES_CONFIG_TIROIRS, TypeCaisse } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
@@ -22,9 +24,6 @@ function useBoutiques() {
   });
 }
 
-// Le solde n'est jamais lu depuis la colonne de cache Caisse.soldeCourant :
-// il est systématiquement recalculé côté serveur depuis le grand livre
-// append-only via GET /caisses/:id/solde (cf. CaisseBalanceService).
 function useSolde(caisseId: string) {
   return useQuery({
     queryKey: ['caisses', caisseId, 'solde'],
@@ -83,10 +82,154 @@ function MouvementsCaisse({ caisseId }: { caisseId: string }) {
   );
 }
 
+function labelCaisse(c: CaisseDto): string {
+  if (c.type === TypeCaisse.TIROIR) {
+    return `${c.code ?? 'T??'} — ${c.libelle ?? 'Tiroir'}`;
+  }
+  if (c.type === TypeCaisse.MAGASIN) {
+    return c.libelle ?? 'Caisse magasin';
+  }
+  return c.libelle ?? 'Caisse centrale';
+}
+
+function ConfigTiroirsDaf({
+  boutiques,
+  caisses,
+}: {
+  boutiques: BoutiqueDto[];
+  caisses: CaisseDto[];
+}) {
+  const queryClient = useQueryClient();
+  const [boutiqueId, setBoutiqueId] = useState(boutiques[0]?.id ?? '');
+  const [code, setCode] = useState('');
+  const [libelle, setLibelle] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const create = useMutation({
+    mutationFn: () =>
+      apiFetch<CaisseDto>('/caisses/tiroirs', {
+        method: 'POST',
+        body: JSON.stringify({ boutiqueId, code, libelle }),
+      }),
+    onSuccess: () => {
+      setCode('');
+      setLibelle('');
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+    },
+    onError: () => setError('Échec de création du tiroir.'),
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ id, actif }: { id: string; actif: boolean }) =>
+      apiFetch<CaisseDto>(`/caisses/tiroirs/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ actif }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+    },
+  });
+
+  const tiroirs = caisses
+    .filter((c) => c.type === TypeCaisse.TIROIR)
+    .sort((a, b) => (a.ordreAffichage ?? 0) - (b.ordreAffichage ?? 0));
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    create.mutate();
+  }
+
+  return (
+    <ListPanel title="Configuration des tiroirs (DAF)">
+      <p className="lead">
+        Postes POS par boutique — création / activation réservées au DAF.
+      </p>
+      <form className="stack-form filters-row" onSubmit={onSubmit}>
+        <label>
+          Boutique
+          <select
+            value={boutiqueId}
+            onChange={(e) => setBoutiqueId(e.target.value)}
+            required
+          >
+            {boutiques.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.nom}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Code
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="T01"
+            required
+          />
+        </label>
+        <label>
+          Libellé
+          <input
+            value={libelle}
+            onChange={(e) => setLibelle(e.target.value)}
+            placeholder="Tiroir caisse 1"
+            required
+          />
+        </label>
+        <button type="submit" className="btn-primary" disabled={create.isPending}>
+          Ajouter
+        </button>
+      </form>
+      {error && <p role="alert">{error}</p>}
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Libellé</th>
+            <th>Boutique</th>
+            <th>Actif</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {tiroirs.map((t) => (
+            <tr key={t.id}>
+              <td>
+                <code>{t.code}</code>
+              </td>
+              <td>{t.libelle}</td>
+              <td>
+                {boutiques.find((b) => b.id === t.boutiqueId)?.nom ?? '—'}
+              </td>
+              <td>{t.actif === false ? 'Non' : 'Oui'}</td>
+              <td>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() =>
+                    toggle.mutate({ id: t.id, actif: t.actif === false })
+                  }
+                >
+                  {t.actif === false ? 'Activer' : 'Désactiver'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ListPanel>
+  );
+}
+
 export function CaissesPage() {
+  const { user } = useAuth();
   const { data: caisses, isLoading, isError } = useCaisses();
   const { data: boutiques } = useBoutiques();
   const [selected, setSelected] = useState<CaisseDto | null>(null);
+  const peutConfigTiroirs =
+    user !== null && ROLES_CONFIG_TIROIRS.includes(user.role as RoleLibelle);
 
   function nomBoutique(boutiqueId: string | null) {
     if (!boutiqueId) return '—';
@@ -94,19 +237,30 @@ export function CaissesPage() {
     return b?.nom ?? `${boutiqueId.slice(0, 8)}…`;
   }
 
+  const ordered = [...(caisses ?? [])].sort((a, b) => {
+    const order = { CENTRALE: 0, MAGASIN: 1, TIROIR: 2 } as Record<string, number>;
+    const d = (order[a.type] ?? 9) - (order[b.type] ?? 9);
+    if (d !== 0) return d;
+    return (a.ordreAffichage ?? 0) - (b.ordreAffichage ?? 0);
+  });
+
   return (
     <div>
       <PageHeader
         title="Caisses"
-        subtitle="Soldes recalculés depuis le grand livre — jamais depuis le cache"
+        subtitle="Tiroirs → Magasin → Centrale — soldes recalculés (grand livre)"
       />
 
       {isLoading && <LoadingState label="Chargement des caisses..." />}
       {isError && <p role="alert">Erreur lors du chargement des caisses.</p>}
 
+      {peutConfigTiroirs && boutiques && caisses && (
+        <ConfigTiroirsDaf boutiques={boutiques} caisses={caisses} />
+      )}
+
       {caisses && (
         <ListPanel title="Soldes">
-          {caisses.length === 0 ? (
+          {ordered.length === 0 ? (
             <EmptyState
               title="Aucune caisse"
               description="Aucune caisse sur votre périmètre."
@@ -122,7 +276,7 @@ export function CaissesPage() {
                 </tr>
               </thead>
               <tbody>
-                {caisses.map((c) => (
+                {ordered.map((c) => (
                   <tr key={c.id}>
                     <td>
                       <button
@@ -130,13 +284,17 @@ export function CaissesPage() {
                         className="link-button"
                         onClick={() => setSelected(c)}
                       >
-                        <code>{c.id.slice(0, 8)}…</code>
+                        {labelCaisse(c)}
                       </button>
                     </td>
                     <td>
                       <span
                         className={
-                          c.type === 'CENTRALE' ? 'badge badge-info' : 'badge badge-neutral'
+                          c.type === 'CENTRALE'
+                            ? 'badge badge-info'
+                            : c.type === 'MAGASIN'
+                              ? 'badge badge-ok'
+                              : 'badge badge-neutral'
                         }
                       >
                         {c.type}
@@ -161,7 +319,7 @@ export function CaissesPage() {
         onClose={() => setSelected(null)}
         title={
           selected
-            ? `Grand livre · ${selected.type} · ${selected.id.slice(0, 8)}…`
+            ? `Grand livre · ${labelCaisse(selected)}`
             : 'Grand livre'
         }
       >

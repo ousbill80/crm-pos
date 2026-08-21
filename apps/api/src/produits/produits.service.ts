@@ -56,6 +56,11 @@ export class ProduitsService {
           prixUnitaire: dto.prixUnitaire,
           stock: 0,
           seuilReappro: dto.seuilReappro,
+          codeBarres: dto.codeBarres,
+          uniteMesure: dto.uniteMesure ?? 'UN',
+          methodeCout: dto.methodeCout ?? 'CMP',
+          strategieSortie: dto.strategieSortie ?? 'FIFO',
+          attributs: dto.attributs,
         },
       });
     } catch (error) {
@@ -69,7 +74,10 @@ export class ProduitsService {
 
     if (stockInitial > 0) {
       const entrepot = await this.prisma.entrepot.findFirst({
-        where: { type: 'PRINCIPAL', actif: true },
+        where: { type: 'PRINCIPAL', actif: true, reseau: false, usage: 'STOCK' },
+        orderBy: { nom: 'asc' },
+      }) ?? await this.prisma.entrepot.findFirst({
+        where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
         orderBy: { nom: 'asc' },
       });
       if (!entrepot) {
@@ -108,6 +116,7 @@ export class ProduitsService {
       where.OR = [
         { designation: { contains: q, mode: 'insensitive' } },
         { reference: { contains: q, mode: 'insensitive' } },
+        { codeBarres: { contains: q, mode: 'insensitive' } },
       ];
     }
     if (query.categorie) {
@@ -475,6 +484,10 @@ export class ProduitsService {
           prixUnitaire: dto.prixUnitaire,
           seuilReappro: dto.seuilReappro,
           actif: dto.actif,
+          codeBarres: dto.codeBarres,
+          uniteMesure: dto.uniteMesure,
+          methodeCout: dto.methodeCout,
+          strategieSortie: dto.strategieSortie,
         },
       });
     } catch (error) {

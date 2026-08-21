@@ -37,6 +37,13 @@ interface TableauDeBordResponseBody {
   dateDernierAchat: string | null;
   pointsCumules: number;
   niveauFidelite: string;
+  pointsDeVente: Array<{
+    id: string;
+    nom: string;
+    nombreAchats: number;
+    totalDepense: string;
+    dateDernierAchat: string;
+  }>;
 }
 
 function body<T>(response: request.Response): T {
@@ -355,7 +362,7 @@ describe('Campagnes CRM et tableau de bord client (e2e)', () => {
         },
       });
       const caisse = await env.prisma.caisse.create({
-        data: { type: 'AUXILIAIRE', boutiqueId: boutique.id },
+        data: { type: 'MAGASIN', boutiqueId: boutique.id },
       });
       caisseId = caisse.id;
 
@@ -445,6 +452,12 @@ describe('Campagnes CRM et tableau de bord client (e2e)', () => {
       );
       expect(tdb.pointsCumules).toBe(250);
       expect(tdb.niveauFidelite).toBe('ARGENT');
+      expect(tdb.pointsDeVente).toHaveLength(1);
+      expect(tdb.pointsDeVente[0]).toMatchObject({
+        nom: 'Boutique Test Tableau de bord',
+        nombreAchats: 2,
+        totalDepense: '20000.00',
+      });
     });
 
     it('renvoie un tableau de bord vide (zéro) pour un client sans achat', async () => {
@@ -457,6 +470,7 @@ describe('Campagnes CRM et tableau de bord client (e2e)', () => {
       expect(tdb.totalDepense).toBe('0.00');
       expect(tdb.nombreAchats).toBe(0);
       expect(tdb.dateDernierAchat).toBeNull();
+      expect(tdb.pointsDeVente).toEqual([]);
     });
 
     it('refuse explicitement (403) l’accès au tableau de bord à RESPONSABLE_SI', async () => {

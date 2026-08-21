@@ -78,7 +78,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     token: string,
     caisseId: string,
     montant: number,
-    type: 'VENTE' | 'SORTIE_FONDS' = 'VENTE',
+    type: 'SORTIE_FONDS' = 'SORTIE_FONDS',
   ): Promise<TransactionDto> {
     const response = await request(app.getHttpServer())
       .post('/transactions')
@@ -92,7 +92,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     tokenInit: string,
     caisseId: string,
     montant: number,
-    type: 'VENTE' | 'SORTIE_FONDS' = 'VENTE',
+    type: 'SORTIE_FONDS' = 'SORTIE_FONDS',
   ): Promise<TransactionDto> {
     const transaction = await initierTransaction(
       tokenInit,
@@ -130,13 +130,13 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     boutique3Id = boutique3.id;
 
     const caisseBoutique1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     const caisseBoutique2 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique2Id },
     });
     const caisseBoutique3 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique3Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique3Id },
     });
     const caisseCentrale = await env.prisma.caisse.create({
       data: { type: TypeCaisse.CENTRALE, boutiqueId: null },
@@ -149,7 +149,9 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     await creerUtilisateur('caissier-b1', 'CAISSIER_BOUTIQUE', boutique1Id, 4);
     await creerUtilisateur('resp-b1', 'RESPONSABLE_BOUTIQUE', boutique1Id, 3);
     await creerUtilisateur('caissier-b2', 'CAISSIER_BOUTIQUE', boutique2Id, 4);
+    await creerUtilisateur('resp-b2', 'RESPONSABLE_BOUTIQUE', boutique2Id, 3);
     await creerUtilisateur('caissier-b3', 'CAISSIER_BOUTIQUE', boutique3Id, 4);
+    await creerUtilisateur('resp-b3', 'RESPONSABLE_BOUTIQUE', boutique3Id, 3);
     await creerUtilisateur('caissier-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('daf', 'DAF', null, 1);
     await creerUtilisateur('controle', 'CONTROLEUR_INTERNE', null, 1);
@@ -180,7 +182,9 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     tokens.caissierB1 = await login('caissier-b1');
     tokens.respB1 = await login('resp-b1');
     tokens.caissierB2 = await login('caissier-b2');
+    tokens.respB2 = await login('resp-b2');
     tokens.caissierB3 = await login('caissier-b3');
+    tokens.respB3 = await login('resp-b3');
     tokens.caissierCentral = await login('caissier-central');
     tokens.daf = await login('daf');
     tokens.controle = await login('controle');
@@ -190,7 +194,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
+    if (app) await app.close();
     await env.stop();
   });
 
@@ -199,7 +203,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   // ---------------------------------------------------------------------
   it('exécute le cycle complet INITIEE -> EN_TRANSIT -> RECEPTIONNEE -> VALIDEE sans écart, avec journal d’audit', async () => {
     const transaction = await initierTransaction(
-      tokens.caissierB1,
+      tokens.respB1,
       caisseBoutique1Id,
       1000,
     );
@@ -256,7 +260,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   // ---------------------------------------------------------------------
   it('déclenche LITIGE quand le montant reçu diffère du montant déclaré', async () => {
     const transaction = await initierTransaction(
-      tokens.caissierB1,
+      tokens.respB1,
       caisseBoutique1Id,
       500,
     );
@@ -296,7 +300,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('transitions illégales', () => {
     it('refuse de réceptionner une transaction encore INITIEE (saute EN_TRANSIT)', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         200,
       );
@@ -309,7 +313,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse de repasser EN_TRANSIT une transaction déjà EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         200,
       );
@@ -326,7 +330,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse toute transition depuis un état terminal VALIDEE', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         150,
       );
@@ -366,7 +370,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('séparation des tâches — RBAC serveur non contournable', () => {
     it('refuse (403) qu’un CAISSIER_BOUTIQUE réceptionne une transaction', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -383,7 +387,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE valide (rapprochement) une transaction', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -405,7 +409,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un RESPONSABLE_BOUTIQUE réceptionne une transaction', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -422,7 +426,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CONTROLEUR_INTERNE (lecture/audit seul) réceptionne ou valide', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -437,17 +441,33 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         .expect(403);
     });
 
-    it('refuse (403) qu’un CAISSIER_CENTRAL initie une transaction (réservé caisse auxiliaire)', async () => {
+    it('refuse (403) qu’un CAISSIER_BOUTIQUE initie une SORTIE_FONDS (réservé Responsable boutique)', async () => {
+      await request(app.getHttpServer())
+        .post('/transactions')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .send({
+          caisseId: caisseBoutique1Id,
+          type: 'SORTIE_FONDS',
+          montant: 100,
+        })
+        .expect(403);
+    });
+
+    it('refuse (403) qu’un CAISSIER_CENTRAL initie une transaction (réservé magasin boutique)', async () => {
       await request(app.getHttpServer())
         .post('/transactions')
         .set('Authorization', `Bearer ${tokens.caissierCentral}`)
-        .send({ caisseId: caisseBoutique1Id, type: 'VENTE', montant: 100 })
+        .send({
+          caisseId: caisseBoutique1Id,
+          type: 'SORTIE_FONDS',
+          montant: 100,
+        })
         .expect(403);
     });
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE fasse passer une transaction EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -467,19 +487,27 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   // propre boutique.
   // ---------------------------------------------------------------------
   describe('périmètre de données (§6.2)', () => {
-    it('refuse (403) qu’un caissier initie depuis la caisse d’une autre boutique', async () => {
+    it('refuse (403) qu’un responsable initie depuis la caisse d’une autre boutique', async () => {
       await request(app.getHttpServer())
         .post('/transactions')
-        .set('Authorization', `Bearer ${tokens.caissierB1}`)
-        .send({ caisseId: caisseBoutique2Id, type: 'VENTE', montant: 100 })
+        .set('Authorization', `Bearer ${tokens.respB1}`)
+        .send({
+          caisseId: caisseBoutique2Id,
+          type: 'SORTIE_FONDS',
+          montant: 100,
+        })
         .expect(403);
     });
 
-    it('refuse (400) d’initier une transaction depuis une caisse CENTRALE', async () => {
+    it('refuse (400) d’initier une SORTIE_FONDS depuis une caisse CENTRALE', async () => {
       await request(app.getHttpServer())
         .post('/transactions')
-        .set('Authorization', `Bearer ${tokens.caissierB1}`)
-        .send({ caisseId: caisseCentraleId, type: 'VENTE', montant: 100 })
+        .set('Authorization', `Bearer ${tokens.respB1}`)
+        .send({
+          caisseId: caisseCentraleId,
+          type: 'SORTIE_FONDS',
+          montant: 100,
+        })
         .expect(400);
     });
   });
@@ -492,17 +520,17 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('lecture scopée par rôle (§6.2)', () => {
     it('un rôle réseau trésorerie (DAF) voit les transactions des trois boutiques', async () => {
       const t1 = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         111,
       );
       const t2 = await initierTransaction(
-        tokens.caissierB2,
+      tokens.respB2,
         caisseBoutique2Id,
         222,
       );
       const t3 = await initierTransaction(
-        tokens.caissierB3,
+      tokens.respB3,
         caisseBoutique3Id,
         333,
       );
@@ -518,12 +546,12 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('un CAISSIER_BOUTIQUE ne voit que les transactions de sa propre boutique', async () => {
       const t1 = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         50,
       );
       const t2 = await initierTransaction(
-        tokens.caissierB2,
+      tokens.respB2,
         caisseBoutique2Id,
         60,
       );
@@ -540,17 +568,17 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('un SUPERVISEUR_ZONE voit les transactions de sa zone (boutiques 1 et 2) mais pas celles de la zone B (boutique 3)', async () => {
       const t1 = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         71,
       );
       const t2 = await initierTransaction(
-        tokens.caissierB2,
+      tokens.respB2,
         caisseBoutique2Id,
         72,
       );
       const t3 = await initierTransaction(
-        tokens.caissierB3,
+      tokens.respB3,
         caisseBoutique3Id,
         73,
       );
@@ -567,7 +595,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — un CAISSIER_BOUTIQUE peut consulter le détail de sa propre transaction', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         90,
       );
@@ -582,7 +610,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — refuse (403) qu’un CAISSIER_BOUTIQUE consulte une transaction d’une autre boutique', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB2,
+      tokens.respB2,
         caisseBoutique2Id,
         90,
       );
@@ -595,7 +623,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — refuse (403) qu’un SUPERVISEUR_ZONE consulte une transaction hors de sa zone', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB3,
+      tokens.respB3,
         caisseBoutique3Id,
         90,
       );
@@ -633,7 +661,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         .expect(200);
 
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         800,
         'SORTIE_FONDS',
@@ -684,7 +712,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('ne crée pas de miroir CENTRALE quand le rapprochement aboutit en LITIGE', async () => {
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         600,
         'SORTIE_FONDS',
@@ -704,7 +732,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('régularise LITIGE → VALIDEE (Contrôle interne) et crédite la CENTRALE du montant retenu', async () => {
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         400,
         'SORTIE_FONDS',
@@ -755,7 +783,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE ou CAISSIER_CENTRAL régularise un litige', async () => {
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         250,
         'SORTIE_FONDS',
@@ -781,7 +809,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('autorise le DAF à régulariser un litige', async () => {
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         180,
         'SORTIE_FONDS',
@@ -802,7 +830,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions filtre par statut et type', async () => {
       await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         99,
         'SORTIE_FONDS',
@@ -829,7 +857,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id inclut bordereau et caisse', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         42,
       );
@@ -850,7 +878,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('convoyeur, seuil DG et hors-ligne (§4 / §5.2 / §6.7)', () => {
     it('autorise un CONVOYEUR à passer une transaction EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         120,
       );
@@ -863,7 +891,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CONVOYEUR réceptionne ou rapproche', async () => {
       const transaction = await initierTransaction(
-        tokens.caissierB1,
+      tokens.respB1,
         caisseBoutique1Id,
         130,
       );
@@ -897,7 +925,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
       }
 
       const transaction = await cycleJusquaReceptionnee(
-        tokens.caissierB1,
+        tokens.respB1,
         caisseBoutique1Id,
         5000,
         'SORTIE_FONDS',
@@ -921,10 +949,10 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
       const clientOperationId = 'op-offline-test-001';
       const first = await request(app.getHttpServer())
         .post('/transactions')
-        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .set('Authorization', `Bearer ${tokens.respB1}`)
         .send({
           caisseId: caisseBoutique1Id,
-          type: 'VENTE',
+          type: 'SORTIE_FONDS',
           montant: 77,
           clientOperationId,
         })
@@ -932,10 +960,10 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
       const second = await request(app.getHttpServer())
         .post('/transactions')
-        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .set('Authorization', `Bearer ${tokens.respB1}`)
         .send({
           caisseId: caisseBoutique1Id,
-          type: 'VENTE',
+          type: 'SORTIE_FONDS',
           montant: 77,
           clientOperationId,
         })

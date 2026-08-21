@@ -45,6 +45,9 @@ export class EntrepotsService {
         code: dto.code,
         boutiqueId: dto.boutiqueId,
         type: dto.type ?? 'SECONDAIRE',
+        usage: dto.usage ?? 'STOCK',
+        reseau: dto.reseau ?? false,
+        virtuel: dto.virtuel ?? false,
       },
     });
     await this.audit.record({

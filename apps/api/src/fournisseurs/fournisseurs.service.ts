@@ -339,17 +339,10 @@ export class FournisseursService {
     }
 
     const reception = await this.prisma.$transaction(async (tx) => {
-      const stockAvant = produitCible.stock;
-      const cmpAvant = new Prisma.Decimal(produitCible.coutMoyenPondere);
-      const prixAchat = new Prisma.Decimal(prixAchatNum);
-      const stockApresReseau = stockAvant + dto.quantite;
-      const nouveauCmp =
-        stockApresReseau === 0
-          ? new Prisma.Decimal(0)
-          : cmpAvant
-              .mul(stockAvant)
-              .plus(prixAchat.mul(dto.quantite))
-              .div(stockApresReseau);
+      const dest = await tx.entrepot.findUniqueOrThrow({
+        where: { id: entrepotId },
+      });
+      const autoFait = dest.usage === 'STOCK' && !dest.virtuel;
 
       const created = await tx.receptionStock.create({
         data: {
@@ -366,22 +359,52 @@ export class FournisseursService {
         include: INCLUDE_RECEPTION,
       });
 
-      await this.stockService.appliquerMouvement(
-        {
-          produitId,
-          entrepotId,
+      await tx.bonStock.create({
+        data: {
+          numero: `IN-${Date.now().toString(36).toUpperCase()}`,
           type: 'RECEPTION',
-          delta: dto.quantite,
-          utilisateurId: user.userId,
-          reference: created.id,
+          statut: autoFait ? 'FAIT' : 'BROUILLON',
+          entrepotDestId: dest.id,
+          receptionId: created.id,
+          initiateurId: user.userId,
+          datePret: autoFait ? new Date() : null,
+          dateFait: autoFait ? new Date() : null,
+          lignes: {
+            create: { produitId, quantite: dto.quantite },
+          },
         },
-        tx,
-      );
-
-      await tx.produit.update({
-        where: { id: produitId },
-        data: { coutMoyenPondere: nouveauCmp },
       });
+
+      if (autoFait) {
+        const stockAvant = produitCible.stock;
+        const cmpAvant = new Prisma.Decimal(produitCible.coutMoyenPondere);
+        const prixAchat = new Prisma.Decimal(prixAchatNum);
+        const stockApresReseau = stockAvant + dto.quantite;
+        const nouveauCmp =
+          stockApresReseau === 0
+            ? new Prisma.Decimal(0)
+            : cmpAvant
+                .mul(stockAvant)
+                .plus(prixAchat.mul(dto.quantite))
+                .div(stockApresReseau);
+
+        await this.stockService.appliquerMouvement(
+          {
+            produitId,
+            entrepotId,
+            type: 'RECEPTION',
+            delta: dto.quantite,
+            utilisateurId: user.userId,
+            reference: created.id,
+          },
+          tx,
+        );
+
+        await tx.produit.update({
+          where: { id: produitId },
+          data: { coutMoyenPondere: nouveauCmp },
+        });
+      }
 
       if (commandeId) {
         await this.mettreAJourStatutCommande(commandeId, tx);
@@ -435,19 +458,23 @@ export class FournisseursService {
           `Entrepôt ${entrepotId} introuvable ou inactif.`,
         );
       }
+      if (e.usage !== 'STOCK' && e.usage !== 'ENTREE') {
+        throw new BadRequestException(
+          'Réception fournisseur : destination STOCK ou ENTREE uniquement.',
+        );
+      }
       this.assertEntrepotPerimetre(e.boutiqueId, user);
       return e.id;
     }
+    const quai = await this.prisma.entrepot.findFirst({
+      where: { reseau: true, usage: 'ENTREE', actif: true },
+    });
+    if (quai) return quai.id;
     if (user.boutiqueId) {
-      const id = await this.stockService.trouverEntrepotPrincipalBoutique(
-        user.boutiqueId,
-      );
-      const e = await this.prisma.entrepot.findUniqueOrThrow({ where: { id } });
-      this.assertEntrepotPerimetre(e.boutiqueId, user);
-      return e.id;
+      return this.stockService.trouverEntrepotPrincipalBoutique(user.boutiqueId);
     }
     const premier = await this.prisma.entrepot.findFirst({
-      where: { type: 'PRINCIPAL', actif: true },
+      where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
       orderBy: { nom: 'asc' },
     });
     if (!premier) {

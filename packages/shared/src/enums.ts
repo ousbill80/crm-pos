@@ -2,8 +2,10 @@
 // Doivent rester en cohérence stricte avec apps/api/prisma/schema.prisma
 // et le cahier des charges (§6.4, §6.5).
 
+// Grande surface : TIROIR (poste) → MAGASIN (cash office) → CENTRALE.
 export const TypeCaisse = {
-  AUXILIAIRE: 'AUXILIAIRE',
+  TIROIR: 'TIROIR',
+  MAGASIN: 'MAGASIN',
   CENTRALE: 'CENTRALE',
 } as const;
 export type TypeCaisse = (typeof TypeCaisse)[keyof typeof TypeCaisse];
@@ -11,6 +13,8 @@ export type TypeCaisse = (typeof TypeCaisse)[keyof typeof TypeCaisse];
 export const TypeTransaction = {
   VENTE: 'VENTE',
   SORTIE_FONDS: 'SORTIE_FONDS',
+  /** Transfert tiroir ↔ magasin (hors circuit convoyeur §6.4). */
+  TRANSFERT_INTERNE: 'TRANSFERT_INTERNE',
 } as const;
 export type TypeTransaction = (typeof TypeTransaction)[keyof typeof TypeTransaction];
 
@@ -61,16 +65,31 @@ export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
   RoleLibelle.DAF,
 ];
 
-// Régularisation d'un LITIGE (§6.4) : Contrôle interne (arbitrage) + DAF (niveau 2).
+// Régularisation d'un LITIGE §6.4 (SORTIE_FONDS magasin→centrale) :
+// Contrôle interne (arbitrage) + DAF (niveau 2).
 export const ROLES_REGULARISATION_LITIGE: RoleLibelle[] = [
   RoleLibelle.CONTROLEUR_INTERNE,
   RoleLibelle.DAF,
 ];
 
+// Régularisation litige transfert interne tiroir→magasin (hors CENTRALE).
+export const ROLES_REGULARISATION_LITIGE_INTERNE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.DAF,
+];
+
+// Configuration dynamique des tiroirs (grande surface) : DAF uniquement.
+export const ROLES_CONFIG_TIROIRS: RoleLibelle[] = [RoleLibelle.DAF];
+
 // INITIEE → EN_TRANSIT (§6.4) : responsable boutique ou convoyeur.
 export const ROLES_MISE_EN_TRANSIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
   RoleLibelle.CONVOYEUR,
+];
+
+// Initiation SORTIE_FONDS magasin → centrale (plan GS : Responsable boutique).
+export const ROLES_INITIATION_SORTIE_FONDS: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
 // Seuil par défaut (FCFA) au-delà duquel seul la Direction Générale peut
@@ -202,3 +221,50 @@ export const ModePaiementFournisseur = {
 } as const;
 export type ModePaiementFournisseur =
   (typeof ModePaiementFournisseur)[keyof typeof ModePaiementFournisseur];
+
+export const UsageEmplacement = {
+  STOCK: 'STOCK',
+  ENTREE: 'ENTREE',
+  SORTIE: 'SORTIE',
+  PERTE: 'PERTE',
+  FOURNISSEUR: 'FOURNISSEUR',
+  CLIENT: 'CLIENT',
+} as const;
+export type UsageEmplacement = (typeof UsageEmplacement)[keyof typeof UsageEmplacement];
+
+export const TypeOperationStock = {
+  RECEPTION: 'RECEPTION',
+  LIVRAISON: 'LIVRAISON',
+  TRANSFERT_INTERNE: 'TRANSFERT_INTERNE',
+  REBUT: 'REBUT',
+} as const;
+export type TypeOperationStock =
+  (typeof TypeOperationStock)[keyof typeof TypeOperationStock];
+
+export const StatutBonStock = {
+  BROUILLON: 'BROUILLON',
+  PRET: 'PRET',
+  FAIT: 'FAIT',
+  ANNULE: 'ANNULE',
+} as const;
+export type StatutBonStock = (typeof StatutBonStock)[keyof typeof StatutBonStock];
+
+export const TRANSITIONS_BON_STOCK: Record<StatutBonStock, StatutBonStock[]> = {
+  BROUILLON: [StatutBonStock.PRET, StatutBonStock.ANNULE],
+  PRET: [StatutBonStock.FAIT, StatutBonStock.ANNULE],
+  FAIT: [],
+  ANNULE: [],
+};
+
+export const MethodeCout = {
+  CMP: 'CMP',
+  FIFO: 'FIFO',
+  STANDARD: 'STANDARD',
+} as const;
+export type MethodeCout = (typeof MethodeCout)[keyof typeof MethodeCout];
+
+export const StrategieSortie = {
+  FIFO: 'FIFO',
+  FEFO: 'FEFO',
+} as const;
+export type StrategieSortie = (typeof StrategieSortie)[keyof typeof StrategieSortie];

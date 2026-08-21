@@ -63,22 +63,40 @@ enum TypeEntrepot {
   SECONDAIRE
 }
 
+enum UsageEmplacement {
+  STOCK
+  ENTREE
+  SORTIE
+  PERTE
+  FOURNISSEUR
+  CLIENT
+}
+
 // Emplacement de stock rattaché à une boutique. Chaque boutique a au moins
 // un entrepôt PRINCIPAL (consommé par le POS de la boutique).
 model Entrepot {
-  id         String       @id @default(uuid())
+  id         String           @id @default(uuid())
   nom        String
   code       String
-  type       TypeEntrepot @default(PRINCIPAL)
-  actif      Boolean      @default(true)
-  boutique   Boutique     @relation(fields: [boutiqueId], references: [id])
+  type       TypeEntrepot     @default(PRINCIPAL)
+  usage      UsageEmplacement @default(STOCK)
+  reseau     Boolean          @default(false)
+  virtuel    Boolean          @default(false)
+  actif      Boolean          @default(true)
+  boutique   Boutique         @relation(fields: [boutiqueId], references: [id])
   boutiqueId String
   quants     StockQuant[]
   mouvements MouvementStock[]
   sessionsInventaire SessionInventaire[]
   receptions ReceptionStock[]
+  reservations ReservationStock[]
+  stockLots    StockLot[]
+  bonsSource   BonStock[] @relation("BonStockSource")
+  bonsDest     BonStock[] @relation("BonStockDest")
+  reglesReappro RegleReappro[]
 
   @@unique([boutiqueId, code])
+  @@index([reseau, usage])
   @@map("entrepot")
 }
 
@@ -127,6 +145,8 @@ model Utilisateur {
   commandesAchatInitiees     CommandeAchat[]     @relation("CommandeAchatInitiateur")
   facturesFournisseur        FactureFournisseur[]
   paiementsFournisseur       PaiementFournisseur[]
+  bonsStockInitiees          BonStock[]            @relation("BonStockInitiateur")
+  lotsCrees                  Lot[]
 
   @@map("utilisateur")
 }
@@ -135,8 +155,10 @@ model Utilisateur {
 // Caisses et trésorerie (§6.3.1, §6.4)
 // ---------------------------------------------------------------------------
 
+// Grande surface : TIROIR (poste POS) → MAGASIN (cash office) → CENTRALE.
 enum TypeCaisse {
-  AUXILIAIRE
+  TIROIR
+  MAGASIN
   CENTRALE
 }
 
@@ -150,17 +172,26 @@ model Caisse {
   soldeCourant Decimal    @default(0) @db.Decimal(14, 2)
   boutique     Boutique?  @relation(fields: [boutiqueId], references: [id])
   boutiqueId   String?
+  // Config tiroirs (DAF) — null pour MAGASIN / CENTRALE.
+  code            String?
+  libelle         String?
+  actif           Boolean  @default(true)
+  ordreAffichage  Int      @default(0)
 
   transactions TransactionCaisse[]
   ventes       Vente[]
   sessions     SessionCaisse[]
 
+  @@unique([boutiqueId, code])
+  @@index([boutiqueId, type])
   @@map("caisse")
 }
 
 enum TypeTransaction {
   VENTE
   SORTIE_FONDS
+  // Transfert tiroir ↔ magasin (hors circuit convoyeur §6.4).
+  TRANSFERT_INTERNE
 }
 
 // Machine à états stricte — §6.4 du cahier des charges.
@@ -185,11 +216,10 @@ model TransactionCaisse {
   initiateur   Utilisateur       @relation("Initiateur", fields: [initiateurId], references: [id])
   initiateurId String
 
-  // Contrepartie CENTRALE : écriture miroir d'une SORTIE_FONDS auxiliaire
-  // validée (ou régularisée). La transaction source pointe vers null ;
-  // le miroir porte transactionSourceId = id de la transaction boutique.
+  // Contrepartie miroir : SORTIE_FONDS → CENTRALE, ou TRANSFERT_INTERNE
+  // tiroir ↔ magasin. Unique : une seule contrepartie par source.
   transactionSource   TransactionCaisse?  @relation("ContrepartieCentrale", fields: [transactionSourceId], references: [id])
-  transactionSourceId String?
+  transactionSourceId String?             @unique
   contreparties       TransactionCaisse[] @relation("ContrepartieCentrale")
 
   // Clé d'idempotence pour le mode hors-ligne (§6.7) : une opération
@@ -201,7 +231,6 @@ model TransactionCaisse {
 
   @@index([caisseId])
   @@index([statut])
-  @@index([transactionSourceId])
   @@map("transaction_caisse")
 }
 
@@ -261,12 +290,28 @@ model Produit {
   // Seuil de réapprovisionnement optionnel : déclenche l'alerte STOCK_BAS
   // (apps/api/src/alertes/alertes.service.ts) quand stock <= seuilReappro.
   seuilReappro     Int?
+  codeBarres       String?          @unique
+  uniteMesure      String           @default("UN")
+  facteurUnite     Decimal          @default(1) @db.Decimal(12, 4)
+  parentId         String?
+  parent           Produit?         @relation("VarianteProduit", fields: [parentId], references: [id])
+  variantes        Produit[]        @relation("VarianteProduit")
+  attributs        String?
+  methodeCout      MethodeCout      @default(CMP)
+  coutStandard     Decimal          @default(0) @db.Decimal(14, 2)
+  strategieSortie  StrategieSortie  @default(FIFO)
   lignesVente      LigneVente[]
   receptions       ReceptionStock[]
   mouvements       MouvementStock[]
   quants           StockQuant[]
   lignesInventaire LigneInventaire[]
   lignesCommandeAchat LigneCommandeAchat[]
+  reservations        ReservationStock[]
+  lots                Lot[]
+  stockLots           StockLot[]
+  lignesBonStock      LigneBonStock[]
+  reglesReappro       RegleReappro[]
+  coutsLogistiques    CoutLogistique[]
 
   @@index([categorie])
   @@index([actif])
@@ -276,6 +321,17 @@ model Produit {
 // Grand livre append-only des mouvements de stock — même principe que
 // TransactionCaisse pour la trésorerie (voir CLAUDE.md) : Produit.stock est
 // un cache rapide, MouvementStock est la source de vérité auditable.
+enum MethodeCout {
+  CMP
+  FIFO
+  STANDARD
+}
+
+enum StrategieSortie {
+  FIFO
+  FEFO
+}
+
 enum TypeMouvementStock {
   RECEPTION
   VENTE
@@ -283,6 +339,7 @@ enum TypeMouvementStock {
   AJUSTEMENT
   TRANSFERT_OUT
   TRANSFERT_IN
+  SCRAP
 }
 
 model MouvementStock {
@@ -298,6 +355,8 @@ model MouvementStock {
   // Quantité du StockQuant après mouvement (pas le cache réseau Produit.stock)
   stockApres    Int
   reference     String?
+  lot           Lot?               @relation(fields: [lotId], references: [id])
+  lotId         String?
   dateHeure     DateTime           @default(now())
   utilisateur   Utilisateur        @relation(fields: [utilisateurId], references: [id])
   utilisateurId String
@@ -314,10 +373,124 @@ model StockQuant {
   produitId  String
   entrepot   Entrepot @relation(fields: [entrepotId], references: [id])
   entrepotId String
-  quantite   Int      @default(0)
+  quantite     Int      @default(0)
+  consignation Boolean  @default(false)
 
   @@unique([produitId, entrepotId])
   @@map("stock_quant")
+}
+
+model Lot {
+  id             String     @id @default(uuid())
+  produit        Produit    @relation(fields: [produitId], references: [id])
+  produitId      String
+  numero         String
+  dateExpiration DateTime?
+  createur       Utilisateur @relation(fields: [createurId], references: [id])
+  createurId     String
+  createdAt      DateTime   @default(now())
+  stockLots      StockLot[]
+  mouvements     MouvementStock[]
+  lignesBon      LigneBonStock[]
+
+  @@unique([produitId, numero])
+  @@map("lot")
+}
+
+model StockLot {
+  id         String   @id @default(uuid())
+  produit    Produit  @relation(fields: [produitId], references: [id])
+  produitId  String
+  entrepot   Entrepot @relation(fields: [entrepotId], references: [id])
+  entrepotId String
+  lot        Lot      @relation(fields: [lotId], references: [id])
+  lotId      String
+  quantite   Int      @default(0)
+
+  @@unique([produitId, entrepotId, lotId])
+  @@map("stock_lot")
+}
+
+enum TypeOperationStock {
+  RECEPTION
+  LIVRAISON
+  TRANSFERT_INTERNE
+  REBUT
+}
+
+enum StatutBonStock {
+  BROUILLON
+  PRET
+  FAIT
+  ANNULE
+}
+
+model BonStock {
+  id                 String             @id @default(uuid())
+  numero             String             @unique
+  type               TypeOperationStock
+  statut             StatutBonStock     @default(BROUILLON)
+  entrepotSource     Entrepot?          @relation("BonStockSource", fields: [entrepotSourceId], references: [id])
+  entrepotSourceId   String?
+  entrepotDest       Entrepot?          @relation("BonStockDest", fields: [entrepotDestId], references: [id])
+  entrepotDestId     String?
+  notes              String?
+  reception          ReceptionStock?    @relation(fields: [receptionId], references: [id])
+  receptionId        String?
+  initiateur         Utilisateur        @relation("BonStockInitiateur", fields: [initiateurId], references: [id])
+  initiateurId       String
+  dateCreation       DateTime           @default(now())
+  datePret           DateTime?
+  dateFait           DateTime?
+  lignes             LigneBonStock[]
+
+  @@index([statut, type])
+  @@map("bon_stock")
+}
+
+model LigneBonStock {
+  id             String    @id @default(uuid())
+  bon            BonStock  @relation(fields: [bonId], references: [id])
+  bonId          String
+  produit        Produit   @relation(fields: [produitId], references: [id])
+  produitId      String
+  quantite       Int
+  quantiteOk     Int?
+  quantiteRebut  Int?
+  lot            Lot?      @relation(fields: [lotId], references: [id])
+  lotId          String?
+  numeroLot      String?
+  dateExpiration DateTime?
+
+  @@map("ligne_bon_stock")
+}
+
+model RegleReappro {
+  id         String   @id @default(uuid())
+  produit    Produit  @relation(fields: [produitId], references: [id])
+  produitId  String
+  entrepot   Entrepot @relation(fields: [entrepotId], references: [id])
+  entrepotId String
+  min        Int
+  max        Int
+
+  @@unique([produitId, entrepotId])
+  @@map("regle_reappro")
+}
+
+model CoutLogistique {
+  id            String          @id @default(uuid())
+  produit       Produit         @relation(fields: [produitId], references: [id])
+  produitId     String
+  reception     ReceptionStock? @relation(fields: [receptionId], references: [id])
+  receptionId   String?
+  libelle       String
+  montant       Decimal         @db.Decimal(14, 2)
+  date          DateTime        @default(now())
+  utilisateurId String
+
+  @@index([produitId])
+  @@map("cout_logistique")
 }
 
 // Inventaire physique — extension stock avancé (§6.5) pour la sécurité du
@@ -471,6 +644,8 @@ model ReceptionStock {
   ligneCommande LigneCommandeAchat? @relation(fields: [ligneCommandeId], references: [id])
   ligneCommandeId String?
   ligneFacture  LigneFactureFournisseur?
+  bonsStock     BonStock[]
+  coutsLogistiques CoutLogistique[]
 
   @@index([fournisseurId, dateReception])
   @@index([commandeId])
@@ -566,6 +741,7 @@ model SessionCaisse {
   transactionVersementId String?             @unique
   ventes                 Vente[]
   retours                RetourVente[]
+  reservations           ReservationStock[]
 
   @@map("session_caisse")
 }
@@ -586,8 +762,42 @@ model Vente {
   clientOperationId String?     @unique
   lignes          LigneVente[]
   retours         RetourVente[]
+  paiements       PaiementVente[]
 
   @@map("vente")
+}
+
+// Règlements d'une vente — un ticket, plusieurs modes (espèces + carte…).
+// La clôture Z et le bordereau espèces s'appuient sur la part ESPECES, pas
+// sur Vente.modePaiement (conservé comme mode principal pour l'historique).
+model PaiementVente {
+  id           String       @id @default(uuid())
+  vente        Vente        @relation(fields: [venteId], references: [id])
+  venteId      String
+  modePaiement ModePaiement
+  montant      Decimal      @db.Decimal(14, 2)
+
+  @@unique([venteId, modePaiement])
+  @@map("paiement_vente")
+}
+
+// Réservation de stock sur ticket en attente — n'écrit PAS MouvementStock.
+// Disponible POS = StockQuant.quantite − somme(ReservationStock).
+model ReservationStock {
+  id              String        @id @default(uuid())
+  sessionCaisse   SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisseId String
+  holdId          String
+  produit         Produit       @relation(fields: [produitId], references: [id])
+  produitId       String
+  entrepot        Entrepot      @relation(fields: [entrepotId], references: [id])
+  entrepotId      String
+  quantite        Int
+  createdAt       DateTime      @default(now())
+
+  @@unique([sessionCaisseId, holdId, produitId])
+  @@index([entrepotId, produitId])
+  @@map("reservation_stock")
 }
 
 // Extension nécessaire au socle MCD pour un POS fonctionnel (détail des articles vendus)

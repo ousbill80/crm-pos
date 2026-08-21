@@ -134,15 +134,45 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       },
     });
 
+    const magasin1 = await env.prisma.caisse.create({
+      data: {
+        type: TypeCaisse.MAGASIN,
+        boutiqueId: boutique1Id,
+        libelle: 'Magasin B1',
+      },
+    });
+    const magasin2 = await env.prisma.caisse.create({
+      data: {
+        type: TypeCaisse.MAGASIN,
+        boutiqueId: boutique2Id,
+        libelle: 'Magasin B2',
+      },
+    });
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1Id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
     });
     const caisse2 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique2Id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
     });
     const caisseCentrale = await env.prisma.caisse.create({
       data: { type: TypeCaisse.CENTRALE, boutiqueId: null },
     });
+    void magasin1;
+    void magasin2;
     caisse1Id = caisse1.id;
     caisse2Id = caisse2.id;
     caisseCentraleId = caisseCentrale.id;
@@ -547,7 +577,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
 
       let transactionVersementId: string;
 
-      it('clôture la session : génère automatiquement le bordereau ESPECES uniquement (2000, pas 3000), journalise SESSION_CAISSE_FERMEE', async () => {
+      it('clôture la session : transfert interne tiroir→magasin (espèces comptées), journalise SESSION_CAISSE_FERMEE', async () => {
         const response = await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/cloture`)
           .set(auth(tokens.caissierB1))
@@ -568,8 +598,9 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
           where: { id: transactionVersementId },
         });
         expect(transaction).not.toBeNull();
-        expect(transaction?.statut).toBe('INITIEE');
-        expect(Number(transaction?.montant)).toBe(2000);
+        expect(transaction?.type).toBe('TRANSFERT_INTERNE');
+        expect(transaction?.statut).toBe('VALIDEE');
+        expect(Number(transaction?.montant)).toBe(7000);
 
         const entreeAudit = await env.prisma.journalAudit.findFirst({
           where: {
@@ -600,44 +631,31 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
           .expect(400);
       });
 
-      it('le bordereau auto-généré suit normalement le circuit §6.4 transit -> réception -> validation, et le solde de caisse ne bouge qu’après validation', async () => {
-        const soldeAvant = await request(app.getHttpServer())
+      it('le transfert interne crédite immédiatement la caisse MAGASIN (hors circuit §6.4)', async () => {
+        const soldeTiroir = await request(app.getHttpServer())
           .get(`/caisses/${caisse1Id}/solde`)
           .set(auth(tokens.daf))
           .expect(200);
-        expect((soldeAvant.body as { solde: string }).solde).toBe('0.00');
+        expect((soldeTiroir.body as { solde: string }).solde).toBe('0.00');
 
-        await request(app.getHttpServer())
-          .patch(`/transactions/${transactionVersementId}/transit`)
-          .set(auth(tokens.respB1))
-          .expect(200);
+        const transfert = await env.prisma.transactionCaisse.findUnique({
+          where: { id: transactionVersementId },
+          include: { contreparties: true },
+        });
+        expect(transfert?.type).toBe('TRANSFERT_INTERNE');
+        expect(transfert?.statut).toBe('VALIDEE');
+        expect(transfert?.contreparties.length).toBe(1);
 
-        const soldeApresTransit = await request(app.getHttpServer())
-          .get(`/caisses/${caisse1Id}/solde`)
+        const magasin = await env.prisma.caisse.findFirst({
+          where: { boutiqueId: boutique1Id, type: TypeCaisse.MAGASIN },
+        });
+        const soldeMagasin = await request(app.getHttpServer())
+          .get(`/caisses/${magasin!.id}/solde`)
           .set(auth(tokens.daf))
           .expect(200);
-        expect((soldeApresTransit.body as { solde: string }).solde).toBe(
-          '0.00',
-        );
-
-        await request(app.getHttpServer())
-          .patch(`/transactions/${transactionVersementId}/receptionner`)
-          .set(auth(tokens.caissierCentral))
-          .expect(200);
-
-        await request(app.getHttpServer())
-          .patch(`/transactions/${transactionVersementId}/rapprocher`)
-          .set(auth(tokens.caissierCentral))
-          .send({ montantRecu: 2000 })
-          .expect(200);
-
-        const soldeApresValidation = await request(app.getHttpServer())
-          .get(`/caisses/${caisse1Id}/solde`)
-          .set(auth(tokens.daf))
-          .expect(200);
-        expect((soldeApresValidation.body as { solde: string }).solde).toBe(
-          '2000.00',
-        );
+        // Fond initial remis + ventes espèces (7000) moins le float sorti à l'ouverture (5000) = +2000 net ventes
+        // Magasin : -5000 (float out) +7000 (retour) = +2000
+        expect((soldeMagasin.body as { solde: string }).solde).toBe('2000.00');
       });
     });
   });
@@ -697,8 +715,13 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         .expect(201);
 
       const body = cloture.body as ClotureResponseDto;
-      expect(body.transactionVersementId).toBeNull();
-      expect(body.session.transactionVersementId).toBeNull();
+      // Retour du fond de caisse (float) vers MAGASIN — hors ESPECES de vente.
+      expect(body.transactionVersementId).toEqual(expect.any(String));
+      const transfert = await env.prisma.transactionCaisse.findUnique({
+        where: { id: body.transactionVersementId! },
+      });
+      expect(transfert?.type).toBe('TRANSFERT_INTERNE');
+      expect(Number(transfert?.montant)).toBe(1000);
     });
   });
 
@@ -792,6 +815,301 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
             (res.body as VenteDto[]).filter((v) => v.id === body1.id),
           ).toHaveLength(1);
         });
+    });
+  });
+
+  describe('Paiement mixte, dérogation chef de caisse, réservation stock', () => {
+    let sessionId: string;
+    let produitMixteId: string;
+    let produitReserveId: string;
+    let produitRuptureId: string;
+    let entrepotId: string;
+
+    beforeAll(async () => {
+      const entrepot = await env.prisma.entrepot.findFirst({
+        where: { boutiqueId: boutique1Id, type: 'PRINCIPAL' },
+      });
+      if (!entrepot) throw new Error('entrepôt B1 manquant');
+      entrepotId = entrepot.id;
+
+      const mixte = await env.prisma.produit.create({
+        data: { designation: 'Article mixte', prixUnitaire: '1000.00', stock: 10 },
+      });
+      const reserve = await env.prisma.produit.create({
+        data: { designation: 'Article réservé', prixUnitaire: '800.00', stock: 5 },
+      });
+      const rupture = await env.prisma.produit.create({
+        data: { designation: 'Article rupture', prixUnitaire: '200.00', stock: 1 },
+      });
+      produitMixteId = mixte.id;
+      produitReserveId = reserve.id;
+      produitRuptureId = rupture.id;
+      await env.prisma.stockQuant.createMany({
+        data: [
+          { produitId: produitMixteId, entrepotId, quantite: 10 },
+          { produitId: produitReserveId, entrepotId, quantite: 5 },
+          { produitId: produitRuptureId, entrepotId, quantite: 1 },
+        ],
+      });
+
+      const ouverture = await ouvrirSession(
+        tokens.caissierB1,
+        caisse1Id,
+        2000,
+        'resp-b1',
+      );
+      if (ouverture.status !== 201) {
+        // session déjà ouverte par un autre describe : on la réutilise
+        const sessions = await request(app.getHttpServer())
+          .get('/ventes/sessions')
+          .set(auth(tokens.caissierB1))
+          .expect(200);
+        const ouverte = (
+          sessions.body as SessionCaisseDto[]
+        ).find((s) => s.caisseId === caisse1Id && s.statut === 'OUVERTE');
+        if (!ouverte) throw new Error('session B1 introuvable');
+        sessionId = ouverte.id;
+      } else {
+        sessionId = (ouverture.body as SessionCaisseDto).id;
+      }
+    });
+
+    it('encaisser espèces + carte : stock une fois, Z espèces = part cash', async () => {
+      const body = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+          modePaiement: 'ESPECES',
+          paiements: [
+            { modePaiement: 'ESPECES', montant: 400 },
+            { modePaiement: 'CARTE', montant: 600 },
+          ],
+        })
+        .expect(201)
+        .then((r) => r.body as VenteDto & { paiements: { modePaiement: string; montant: string }[] });
+
+      expect(Number(body.montantTotal)).toBe(1000);
+      expect(body.paiements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ modePaiement: 'ESPECES', montant: '400' }),
+          expect.objectContaining({ modePaiement: 'CARTE', montant: '600' }),
+        ]),
+      );
+
+      const stock = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: { produitId: produitMixteId, entrepotId },
+        },
+      });
+      expect(stock?.quantite).toBe(9);
+
+      const releve = await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/cloture/pdf`)
+        .set(auth(tokens.caissierB1))
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200)
+        .expect('Content-Type', /pdf/);
+      expect((releve.body as Buffer).byteLength).toBeGreaterThan(200);
+    });
+
+    it('refuse (400) une somme de règlements différente du total', async () => {
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+          modePaiement: 'ESPECES',
+          paiements: [
+            { modePaiement: 'ESPECES', montant: 100 },
+            { modePaiement: 'CARTE', montant: 100 },
+          ],
+        })
+        .expect(400);
+    });
+
+    it('refuse (400) une remise > 20% sans dérogation', async () => {
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1, remise: 300 }],
+          modePaiement: 'CARTE',
+        })
+        .expect(400);
+    });
+
+    it('accepte une remise > 20% avec login/mot de passe du responsable boutique', async () => {
+      const body = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1, remise: 300 }],
+          modePaiement: 'CARTE',
+          derogation: {
+            motifs: ['REMISE_PLAFOND'],
+            login: 'resp-b1',
+            password: MOT_DE_PASSE,
+          },
+        })
+        .expect(201)
+        .then((r) => r.body as VenteDto);
+      expect(Number(body.montantTotal)).toBe(700);
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: { action: 'DEROGATION_CAISSE', entiteId: body.id },
+      });
+      expect(audit).not.toBeNull();
+    });
+
+    it('refuse (400) une auto-dérogation du caissier', async () => {
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1, remise: 300 }],
+          modePaiement: 'CARTE',
+          derogation: {
+            motifs: ['REMISE_PLAFOND'],
+            login: 'caissier-b1',
+            password: MOT_DE_PASSE,
+          },
+        })
+        .expect(400);
+    });
+
+    it('refuse (400) le responsable d’une autre boutique', async () => {
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1, remise: 300 }],
+          modePaiement: 'CARTE',
+          derogation: {
+            motifs: ['REMISE_PLAFOND'],
+            login: 'resp-b2',
+            password: MOT_DE_PASSE,
+          },
+        })
+        .expect(400);
+    });
+
+    it('réserve le stock d’un ticket en attente et bloque le reliquat', async () => {
+      const holdId = 'a1a1a1a1-b2b2-4c3c-a4d4-e5e5e5e5e5e5';
+      await request(app.getHttpServer())
+        .put(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          holdId,
+          lignes: [{ produitId: produitReserveId, quantite: 4 }],
+        })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitReserveId, quantite: 2 }],
+          modePaiement: 'CARTE',
+        })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitReserveId, quantite: 1 }],
+          modePaiement: 'CARTE',
+        })
+        .expect(201);
+
+      const physique = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: { produitId: produitReserveId, entrepotId },
+        },
+      });
+      expect(physique?.quantite).toBe(4);
+
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitReserveId, quantite: 4 }],
+          modePaiement: 'CARTE',
+          holdId,
+        })
+        .expect(201);
+
+      const apres = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: { produitId: produitReserveId, entrepotId },
+        },
+      });
+      expect(apres?.quantite).toBe(0);
+      const restant = await env.prisma.reservationStock.count({
+        where: { holdId },
+      });
+      expect(restant).toBe(0);
+    });
+
+    it('autorise une vente en rupture avec dérogation STOCK_INSUFFISANT', async () => {
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitRuptureId, quantite: 3 }],
+          modePaiement: 'CARTE',
+        })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitRuptureId, quantite: 3 }],
+          modePaiement: 'CARTE',
+          derogation: {
+            motifs: ['STOCK_INSUFFISANT'],
+            login: 'resp-b1',
+            password: MOT_DE_PASSE,
+          },
+        })
+        .expect(201);
+
+      const stock = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: { produitId: produitRuptureId, entrepotId },
+        },
+      });
+      expect(stock?.quantite).toBe(-2);
+    });
+
+    it('refuse la clôture tant qu’une réservation existe', async () => {
+      const holdId = 'b2b2b2b2-c3c3-4d4d-a5a5-f6f6f6f6f6f6';
+      await request(app.getHttpServer())
+        .put(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          holdId,
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+        })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/cloture`)
+        .set(auth(tokens.caissierB1))
+        .send({ fondCompteCloture: 2000, temoinLogin: 'resp-b1' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .delete(`/ventes/sessions/${sessionId}/reservations/${holdId}`)
+        .set(auth(tokens.caissierB1))
+        .expect(200);
     });
   });
 });

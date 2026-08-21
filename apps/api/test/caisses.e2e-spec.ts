@@ -110,10 +110,10 @@ describe('Caisses / Zones / Boutiques (e2e)', () => {
     boutique3Id = boutique3.id;
 
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     const caisse2 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique2Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique2Id },
     });
     const caisseCentrale = await env.prisma.caisse.create({
       data: { type: TypeCaisse.CENTRALE, boutiqueId: null },

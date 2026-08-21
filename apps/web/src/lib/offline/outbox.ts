@@ -54,6 +54,13 @@ export function enqueueVente(
   body: {
     lignes: Array<{ produitId: string; quantite: number; remise?: number }>;
     modePaiement: string;
+    paiements?: Array<{ modePaiement: string; montant: number }>;
+    derogation?: {
+      motifs: string[];
+      login: string;
+      password: string;
+    };
+    holdId?: string;
     clientId?: string;
     clientOperationId: string;
   },

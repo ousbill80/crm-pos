@@ -15,6 +15,8 @@ import {
   TypeTransaction,
   RoleLibelle,
   ROLES_VALIDATION_CAISSE_CENTRALE,
+  ROLES_REGULARISATION_LITIGE,
+  ROLES_REGULARISATION_LITIGE_INTERNE,
   SEUIL_VALIDATION_DG_DEFAUT,
 } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,7 +61,7 @@ export class TransactionsService {
     private readonly gateway: TransactionsGateway,
   ) {}
 
-  // INITIEE — Caissier boutique / Responsable boutique (§6.4).
+  // INITIEE — SORTIE_FONDS depuis caisse MAGASIN uniquement (§6.4).
   async initier(
     dto: CreateTransactionDto,
     utilisateur: AuthenticatedUser,
@@ -81,9 +83,15 @@ export class TransactionsService {
       throw new NotFoundException('Caisse introuvable.');
     }
 
-    if (caisse.type !== TypeCaisse.AUXILIAIRE) {
+    if (caisse.type !== TypeCaisse.MAGASIN) {
       throw new BadRequestException(
-        'Seule une caisse auxiliaire (boutique) peut initier une transaction de versement / sortie de fonds.',
+        'Une SORTIE_FONDS (§6.4) ne peut être initiée que depuis la caisse MAGASIN.',
+      );
+    }
+
+    if (dto.type !== TypeTransaction.SORTIE_FONDS) {
+      throw new BadRequestException(
+        'Seule une SORTIE_FONDS peut être initiée via cet endpoint.',
       );
     }
 
@@ -99,7 +107,7 @@ export class TransactionsService {
     const transaction = await this.prisma.$transaction(async (tx) => {
       const creee = await tx.transactionCaisse.create({
         data: {
-          type: dto.type,
+          type: TypeTransaction.SORTIE_FONDS,
           montant: dto.montant,
           statut: StatutTransaction.INITIEE,
           caisseId: dto.caisseId,
@@ -134,6 +142,107 @@ export class TransactionsService {
 
     await this.broadcastStatut(transaction);
     return transaction;
+  }
+
+  /**
+   * Transfert tiroir ↔ magasin (hors §6.4 convoyeur).
+   * Source = caisse qui sort les fonds ; destination = caisse qui les reçoit.
+   * Si statut VALIDEE : écriture miroir immédiate sur la destination.
+   */
+  async creerTransfertInterne(params: {
+    caisseSourceId: string;
+    caisseDestinationId: string;
+    montant: Prisma.Decimal | number;
+    initiateurId: string;
+    statut: typeof StatutTransaction.VALIDEE | typeof StatutTransaction.LITIGE;
+    clientOperationId?: string;
+  }): Promise<TransactionCaisse> {
+    const montant = new Prisma.Decimal(params.montant);
+    if (montant.lessThanOrEqualTo(0)) {
+      throw new BadRequestException(
+        'Le montant du transfert interne doit être strictement positif.',
+      );
+    }
+
+    const [source, dest] = await Promise.all([
+      this.prisma.caisse.findUnique({ where: { id: params.caisseSourceId } }),
+      this.prisma.caisse.findUnique({
+        where: { id: params.caisseDestinationId },
+      }),
+    ]);
+    if (!source || !dest) {
+      throw new NotFoundException('Caisse source ou destination introuvable.');
+    }
+    if (source.boutiqueId !== dest.boutiqueId || !source.boutiqueId) {
+      throw new BadRequestException(
+        'Un transfert interne doit rester dans la même boutique.',
+      );
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const txSource = await tx.transactionCaisse.create({
+        data: {
+          type: TypeTransaction.TRANSFERT_INTERNE,
+          montant,
+          statut: params.statut,
+          caisseId: source.id,
+          initiateurId: params.initiateurId,
+          clientOperationId: params.clientOperationId,
+        },
+      });
+
+      if (params.statut === StatutTransaction.VALIDEE) {
+        await this.creerContrepartieTransfert(tx, txSource, dest.id, montant);
+      }
+
+      return txSource;
+    });
+
+    await this.audit.record({
+      utilisateurId: params.initiateurId,
+      action: 'TRANSFERT_INTERNE_CREE',
+      entite: 'TransactionCaisse',
+      entiteId: created.id,
+      details: JSON.stringify({
+        caisseSourceId: source.id,
+        caisseDestinationId: dest.id,
+        montant: montant.toString(),
+        statut: params.statut,
+      }),
+    });
+
+    await this.broadcastStatut(created);
+    return created;
+  }
+
+  /** Crédit tiroir : encaissement ESPECES reconnu au grand livre (VALIDEE). */
+  async enregistrerEncaissementTiroir(params: {
+    caisseTiroirId: string;
+    montant: Prisma.Decimal | number;
+    initiateurId: string;
+  }): Promise<TransactionCaisse | null> {
+    const montant = new Prisma.Decimal(params.montant);
+    if (montant.lessThanOrEqualTo(0)) {
+      return null;
+    }
+    const caisse = await this.prisma.caisse.findUnique({
+      where: { id: params.caisseTiroirId },
+    });
+    if (!caisse || caisse.type !== TypeCaisse.TIROIR) {
+      throw new BadRequestException(
+        'Encaissement ledger réservé à une caisse TIROIR.',
+      );
+    }
+
+    return this.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.VENTE,
+        montant,
+        statut: StatutTransaction.VALIDEE,
+        caisseId: caisse.id,
+        initiateurId: params.initiateurId,
+      },
+    });
   }
 
   async passerEnTransit(
@@ -289,7 +398,7 @@ export class TransactionsService {
     return misAJour;
   }
 
-  // LITIGE → VALIDEE — Contrôle interne / DAF (§6.4 régularisation).
+  // LITIGE → VALIDEE — CI/DAF (§6.4) ou Resp boutique/DAF (transfert interne).
   async regulariser(
     id: string,
     dto: RegulariserTransactionDto,
@@ -297,7 +406,10 @@ export class TransactionsService {
   ): Promise<TransactionCaisse> {
     const transaction = await this.prisma.transactionCaisse.findUnique({
       where: { id },
-      include: { bordereau: { include: { reception: true } } },
+      include: {
+        bordereau: { include: { reception: true } },
+        caisse: true,
+      },
     });
 
     if (!transaction) {
@@ -310,21 +422,88 @@ export class TransactionsService {
       );
     }
 
+    this.stateMachine.assertTransitionAutorisee(
+      StatutTransaction.LITIGE,
+      StatutTransaction.VALIDEE,
+    );
+
+    const montantRetenu = new Prisma.Decimal(dto.montantRetenu);
+
+    if (transaction.type === TypeTransaction.TRANSFERT_INTERNE) {
+      if (!ROLES_REGULARISATION_LITIGE_INTERNE.includes(utilisateur.role)) {
+        throw new ForbiddenException(
+          'Régularisation d’un litige interne réservée au Responsable boutique / DAF.',
+        );
+      }
+      if (
+        utilisateur.role === RoleLibelle.RESPONSABLE_BOUTIQUE &&
+        transaction.caisse.boutiqueId !== utilisateur.boutiqueId
+      ) {
+        throw new ForbiddenException(
+          'Vous ne pouvez régulariser que les litiges internes de votre boutique.',
+        );
+      }
+
+      const magasin = await this.prisma.caisse.findFirst({
+        where: {
+          boutiqueId: transaction.caisse.boutiqueId!,
+          type: PrismaTypeCaisse.MAGASIN,
+        },
+      });
+      if (!magasin) {
+        throw new BadRequestException(
+          'Caisse MAGASIN introuvable pour cette boutique.',
+        );
+      }
+
+      const misAJour = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.transactionCaisse.update({
+          where: { id },
+          data: {
+            statut: StatutTransaction.VALIDEE,
+            montant: montantRetenu,
+          },
+        });
+        if (montantRetenu.greaterThan(0)) {
+          await this.creerContrepartieTransfert(
+            tx,
+            updated,
+            magasin.id,
+            montantRetenu,
+          );
+        }
+        return updated;
+      });
+
+      await this.audit.record({
+        utilisateurId: utilisateur.userId,
+        action: 'TRANSFERT_INTERNE_REGULARISE',
+        entite: 'TransactionCaisse',
+        entiteId: id,
+        details: JSON.stringify({
+          motif: dto.motif,
+          montantRetenu: montantRetenu.toString(),
+        }),
+      });
+      await this.broadcastStatut(misAJour);
+      return misAJour;
+    }
+
+    // SORTIE_FONDS §6.4
+    if (!ROLES_REGULARISATION_LITIGE.includes(utilisateur.role)) {
+      throw new ForbiddenException(
+        'Régularisation d’un litige CENTRALE réservée au Contrôle interne / DAF.',
+      );
+    }
     if (!transaction.bordereau?.reception) {
       throw new BadRequestException(
         'Aucun rapprochement associé à cette transaction en litige.',
       );
     }
 
-    this.stateMachine.assertTransitionAutorisee(
-      StatutTransaction.LITIGE,
-      StatutTransaction.VALIDEE,
-    );
-
     const montantDeclare = new Prisma.Decimal(
       transaction.bordereau.montantDeclare,
     );
-    const montantRetenu = new Prisma.Decimal(dto.montantRetenu);
     const ecart = montantRetenu.minus(montantDeclare);
 
     const misAJour = await this.prisma.$transaction(async (tx) => {
@@ -340,13 +519,13 @@ export class TransactionsService {
 
       const updated = await tx.transactionCaisse.update({
         where: { id },
-        data: { statut: StatutTransaction.VALIDEE },
+        data: {
+          statut: StatutTransaction.VALIDEE,
+          montant: montantRetenu,
+        },
       });
 
-      if (
-        transaction.type === TypeTransaction.SORTIE_FONDS &&
-        montantRetenu.greaterThan(0)
-      ) {
+      if (montantRetenu.greaterThan(0)) {
         await this.creerContrepartieCentrale(
           tx,
           updated,
@@ -474,6 +653,31 @@ export class TransactionsService {
         statut: StatutTransaction.VALIDEE,
         caisseId: centrale.id,
         initiateurId,
+        transactionSourceId: source.id,
+      },
+    });
+  }
+
+  private async creerContrepartieTransfert(
+    tx: TxClient,
+    source: TransactionCaisse,
+    caisseDestinationId: string,
+    montant: Prisma.Decimal,
+  ): Promise<void> {
+    const existante = await tx.transactionCaisse.findFirst({
+      where: { transactionSourceId: source.id },
+    });
+    if (existante) {
+      return;
+    }
+
+    await tx.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.TRANSFERT_INTERNE,
+        montant,
+        statut: StatutTransaction.VALIDEE,
+        caisseId: caisseDestinationId,
+        initiateurId: source.initiateurId,
         transactionSourceId: source.id,
       },
     });

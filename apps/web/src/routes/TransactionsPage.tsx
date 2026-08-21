@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   RoleLibelle,
+  ROLES_INITIATION_SORTIE_FONDS,
   ROLES_MISE_EN_TRANSIT,
   ROLES_VALIDATION_CAISSE_CENTRALE,
   StatutTransaction,
@@ -23,11 +24,6 @@ import {
   outboxCount,
 } from '../lib/offline/outbox';
 import type { CaisseDto, TransactionDto } from '../lib/types';
-
-const ROLES_INITIATION: RoleLibelle[] = [
-  RoleLibelle.CAISSIER_BOUTIQUE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-];
 
 const STATUTS_EN_COURS: StatutTransaction[] = [
   StatutTransaction.INITIEE,
@@ -83,9 +79,9 @@ function NouvelleTransactionForm({
   onSuccess?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const auxiliaires = caisses.filter((c) => c.type === TypeCaisse.AUXILIAIRE);
-  const [caisseId, setCaisseId] = useState(auxiliaires[0]?.id ?? '');
-  const [type, setType] = useState<TypeTransaction>(TypeTransaction.SORTIE_FONDS);
+  const magasins = caisses.filter((c) => c.type === TypeCaisse.MAGASIN);
+  const [caisseId, setCaisseId] = useState(magasins[0]?.id ?? '');
+  const [type] = useState<TypeTransaction>(TypeTransaction.SORTIE_FONDS);
   const [montant, setMontant] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +89,7 @@ function NouvelleTransactionForm({
     mutationFn: async () => {
       const payload = {
         caisseId,
-        type,
+        type: TypeTransaction.SORTIE_FONDS as typeof TypeTransaction.SORTIE_FONDS,
         montant: Number(montant),
         clientOperationId: crypto.randomUUID(),
       };
@@ -117,10 +113,9 @@ function NouvelleTransactionForm({
       onSuccess?.();
     },
     onError: () => {
-      // Filet hors-ligne : si le réseau tombe pendant le POST.
       enqueueTransactionInit({
         caisseId,
-        type,
+        type: TypeTransaction.SORTIE_FONDS,
         montant: Number(montant),
       });
       setError(
@@ -135,29 +130,26 @@ function NouvelleTransactionForm({
     mutation.mutate();
   }
 
-  if (auxiliaires.length === 0) {
-    return <p>Aucune caisse auxiliaire disponible pour initier une transaction.</p>;
+  if (magasins.length === 0) {
+    return (
+      <p>
+        Aucune caisse MAGASIN disponible pour initier une SORTIE_FONDS vers la
+        centrale.
+      </p>
+    );
   }
 
   return (
     <form onSubmit={handleSubmit} className="stack-form">
-      <label htmlFor="caisseId">Caisse</label>
+      <label htmlFor="caisseId">Caisse magasin</label>
       <select id="caisseId" value={caisseId} onChange={(e) => setCaisseId(e.target.value)}>
-        {auxiliaires.map((c) => (
+        {magasins.map((c) => (
           <option key={c.id} value={c.id}>
-            {`AUXILIAIRE · ${c.id.slice(0, 8)}`}
+            {c.libelle ?? `MAGASIN · ${c.id.slice(0, 8)}`}
           </option>
         ))}
       </select>
-      <label htmlFor="type">Type</label>
-      <select
-        id="type"
-        value={type}
-        onChange={(e) => setType(e.target.value as TypeTransaction)}
-      >
-        <option value={TypeTransaction.SORTIE_FONDS}>Versement / sortie vers centrale</option>
-        <option value={TypeTransaction.VENTE}>Encaissement (vente) local</option>
-      </select>
+      <p className="lead">Type : versement / sortie vers centrale (§6.4)</p>
       <label htmlFor="montant">Montant</label>
       <input
         id="montant"
@@ -361,7 +353,8 @@ export function TransactionsPage() {
   const [searchParams] = useSearchParams();
   const enCours = searchParams.get('enCours') === '1';
   const ageingBucket = searchParams.get('ageing');
-  const peutInitier = user !== null && ROLES_INITIATION.includes(user.role);
+  const peutInitier =
+    user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
   useTresorerieRealtime(user !== null);
   const [pendingOffline, setPendingOffline] = useState(outboxCount());
   const [filters, setFilters] = useState({

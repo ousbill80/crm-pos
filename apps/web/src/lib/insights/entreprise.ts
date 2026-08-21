@@ -1,7 +1,7 @@
 import type { Insight } from './types';
 
 // Insights configuration structurelle — ancrés sur la checklist UI existante
-// (zones, magasins actifs, PRINCIPAL, caisse auxiliaire) et la séparation
+// (zones, magasins actifs, PRINCIPAL, caisse magasin) et la séparation
 // des tâches (§1) : auxiliaire n'encaisse / n'initie que, ne valide jamais.
 
 export function insightCompletenessSetup(score: number, alertCount: number): Insight {
@@ -24,7 +24,7 @@ export function insightCompletenessSetup(score: number, alertCount: number): Ins
     return {
       title: 'Complétude setup',
       interpretation: `${score} % des critères de mise en service sont satisfaits · ${alertCount} alerte(s).`,
-      recommendation: 'Suivre la checklist : chaque magasin actif doit avoir un entrepôt PRINCIPAL et une caisse auxiliaire.',
+      recommendation: 'Suivre la checklist : chaque magasin actif doit avoir un entrepôt PRINCIPAL et une caisse magasin.',
       severity: 'warning',
     };
   }
@@ -108,7 +108,7 @@ export function insightCaissesCount(aux: number, centrale: number): Insight {
     return {
       title: 'Caisses',
       interpretation: `${centrale} centrale(s), aucune auxiliaire — les boutiques ne peuvent pas encaisser.`,
-      recommendation: 'Créer une caisse AUXILIAIRE par magasin actif.',
+      recommendation: 'Créer une caisse MAGASIN par magasin actif.',
       severity: 'warning',
     };
   }
@@ -131,7 +131,7 @@ export function insightSanteMagasin(
     };
   }
   const manques: string[] = [];
-  if (!hasAuxiliaire) manques.push('caisse auxiliaire');
+  if (!hasAuxiliaire) manques.push('caisse magasin');
   if (!hasPrincipal) manques.push('entrepôt PRINCIPAL');
   return {
     title: 'Santé magasin',
@@ -145,7 +145,7 @@ export function insightSanteColonne(): Insight {
   return {
     title: 'Colonne Santé',
     interpretation:
-      'Chaque magasin actif doit avoir une caisse auxiliaire (encaissement / initiation) et un entrepôt PRINCIPAL (stock POS).',
+      'Chaque magasin actif doit avoir une caisse magasin (encaissement / initiation) et un entrepôt PRINCIPAL (stock POS).',
     severity: 'info',
   };
 }
@@ -168,12 +168,26 @@ export function insightTypeEntrepot(type: 'PRINCIPAL' | 'SECONDAIRE'): Insight {
 }
 
 export function insightTypeCaisseConfig(type: string): Insight {
-  const centrale = type === 'CENTRALE';
+  if (type === 'CENTRALE') {
+    return {
+      title: 'Caisse centrale',
+      interpretation:
+        'Trésorerie réseau — reçoit les SORTIE_FONDS magasin après validation §6.4.',
+      severity: 'info',
+    };
+  }
+  if (type === 'TIROIR') {
+    return {
+      title: 'Tiroir',
+      interpretation:
+        'Poste POS configuré par le DAF — session et encaissement uniquement.',
+      severity: 'info',
+    };
+  }
   return {
-    title: centrale ? 'Caisse centrale' : 'Caisse auxiliaire',
-    interpretation: centrale
-      ? 'Caisse consolidée réseau — reçoit les versements après réception et validation par le Caissier Central.'
-      : 'Caisse de boutique — peut uniquement encaisser des ventes et initier un versement ; ne peut jamais valider ni réceptionner une transaction.',
+    title: 'Caisse magasin',
+    interpretation:
+      'Cash office boutique — reçoit les transferts des tiroirs et initie les versements vers la centrale.',
     severity: 'info',
   };
 }

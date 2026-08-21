@@ -73,7 +73,7 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     boutique1Id = boutique1.id;
 
     const caisse1 = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.AUXILIAIRE, boutiqueId: boutique1Id },
+      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     caisseBoutique1Id = caisse1.id;
 

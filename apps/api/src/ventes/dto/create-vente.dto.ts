@@ -15,6 +15,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ModePaiement } from '@caisse-crm/shared';
+import {
+  DerogationCaisseDto,
+  PaiementVenteInputDto,
+} from './paiement-reservation.dto';
 
 class LigneVenteInputDto {
   @IsUUID()
@@ -45,6 +49,23 @@ export class CreateVenteDto {
 
   @IsIn(Object.values(ModePaiement))
   modePaiement: ModePaiement;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => PaiementVenteInputDto)
+  paiements?: PaiementVenteInputDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DerogationCaisseDto)
+  derogation?: DerogationCaisseDto;
+
+  // Consomme la réservation du ticket en attente (holdId POS).
+  @IsOptional()
+  @IsUUID()
+  holdId?: string;
 
   // Rattachement client optionnel — la vente anonyme doit rester possible (§6.6)
   @IsOptional()

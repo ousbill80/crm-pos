@@ -10,16 +10,13 @@ import {
 } from 'class-validator';
 import { TypeTransaction } from '@caisse-crm/shared';
 
-// Initiation d'une TransactionCaisse (§6.4) : uniquement le versement d'une
-// vente ou une demande de sortie de fonds depuis une caisse boutique
-// (caisse auxiliaire). Le bordereau de versement est émis dans le même
-// geste (montant déclaré = montant de la transaction).
+/** Initiation publique : SORTIE_FONDS depuis caisse MAGASIN uniquement (§6.4). */
 export class CreateTransactionDto {
   @IsUUID()
   caisseId: string;
 
-  @IsIn(Object.values(TypeTransaction))
-  type: TypeTransaction;
+  @IsIn([TypeTransaction.SORTIE_FONDS])
+  type: typeof TypeTransaction.SORTIE_FONDS;
 
   @IsNumber()
   @IsPositive()
@@ -29,7 +26,6 @@ export class CreateTransactionDto {
   @IsString()
   pieceJointe?: string;
 
-  // Idempotence hors-ligne (§6.7) : UUID généré côté client.
   @IsOptional()
   @IsString()
   @MinLength(8)

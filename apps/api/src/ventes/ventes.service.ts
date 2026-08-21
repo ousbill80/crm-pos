@@ -5,10 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, RetourVente, SessionCaisse, Vente } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import {
   ModePaiement,
   RoleLibelle,
   StatutSessionCaisse,
+  StatutTransaction,
   TypeCaisse,
   TypeTransaction,
 } from '@caisse-crm/shared';
@@ -30,6 +32,7 @@ import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
 import { CreateRetourDto } from './dto/create-retour.dto';
+import { UpsertReservationDto } from './dto/paiement-reservation.dto';
 
 // Rôles éligibles au comptage contradictoire (§5.1) : caissier boutique ou
 // responsable boutique — les deux profils "périmètre boutique" du référentiel.
@@ -47,14 +50,10 @@ type SessionAvecCaisse = SessionCaisse & {
   caisse: { boutiqueId: string | null };
 };
 
-// Sessions de caisse + encaissement POS (§6.3.2, §5.1). Les ventes
-// individuelles n'écrivent jamais directement de TransactionCaisse : elles
-// s'accumulent dans une session ouverte, et c'est la clôture qui génère
-// automatiquement UNE TransactionCaisse (via TransactionsService.initier —
-// réutilisation de la machine à états §6.4, aucune duplication) pour le
-// total ESPECES de la session. Seules les ventes ESPECES alimentent le
-// bordereau : CARTE/MOBILE_MONEY ne transitent jamais physiquement par la
-// caisse auxiliaire (interprétation documentée, voir plan de la tâche).
+// Sessions de caisse + encaissement POS (§6.3.2, §5.1).
+// Grande surface : session sur TIROIR uniquement. À la clôture :
+// 1) crédit ledger VENTE (ESPECES) sur le tiroir
+// 2) TRANSFERT_INTERNE tiroir → MAGASIN (VALIDEE si écart 0, sinon LITIGE)
 @Injectable()
 export class VentesService {
   constructor(
@@ -76,14 +75,17 @@ export class VentesService {
     if (!caisse) {
       throw new NotFoundException('Caisse introuvable.');
     }
-    if (caisse.type !== TypeCaisse.AUXILIAIRE) {
+    if (caisse.type !== TypeCaisse.TIROIR) {
       throw new BadRequestException(
-        'Une session de caisse ne peut être ouverte que sur une caisse auxiliaire (boutique).',
+        'Une session POS ne peut être ouverte que sur un TIROIR actif.',
       );
+    }
+    if (!caisse.actif) {
+      throw new BadRequestException('Ce tiroir est désactivé.');
     }
     if (caisse.boutiqueId !== boutiqueId) {
       throw new ForbiddenException(
-        'Vous ne pouvez ouvrir une session que sur une caisse de votre propre boutique.',
+        'Vous ne pouvez ouvrir une session que sur un tiroir de votre propre boutique.',
       );
     }
 
@@ -92,7 +94,7 @@ export class VentesService {
     });
     if (sessionExistante) {
       throw new BadRequestException(
-        'Une session de caisse est déjà ouverte pour cette caisse : clôturez-la avant d’en ouvrir une nouvelle.',
+        'Une session est déjà ouverte pour ce tiroir : clôturez-la avant d’en ouvrir une nouvelle.',
       );
     }
 
@@ -102,15 +104,36 @@ export class VentesService {
       boutiqueId,
     );
 
+    const magasin = await this.prisma.caisse.findFirst({
+      where: { boutiqueId, type: TypeCaisse.MAGASIN },
+    });
+    if (!magasin) {
+      throw new BadRequestException(
+        'Caisse MAGASIN introuvable pour cette boutique.',
+      );
+    }
+
+    const fondInitial = new Prisma.Decimal(dto.fondInitial);
     const session = await this.prisma.sessionCaisse.create({
       data: {
         caisseId: dto.caisseId,
         statut: StatutSessionCaisse.OUVERTE,
-        fondInitial: dto.fondInitial,
+        fondInitial,
         ouvertureUtilisateurId: utilisateur.userId,
         ouvertureTemoinId: temoin.id,
       },
     });
+
+    // Fond de caisse : magasin → tiroir (transfert interne VALIDEE).
+    if (fondInitial.greaterThan(0)) {
+      await this.transactionsService.creerTransfertInterne({
+        caisseSourceId: magasin.id,
+        caisseDestinationId: caisse.id,
+        montant: fondInitial,
+        initiateurId: utilisateur.userId,
+        statut: StatutTransaction.VALIDEE,
+      });
+    }
 
     await this.audit.record({
       utilisateurId: utilisateur.userId,
@@ -159,6 +182,15 @@ export class VentesService {
         "La caisse de session n'est rattachée à aucune boutique (stock multi-emplacement).",
       );
     }
+    const chef = dto.derogation
+      ? await this.resoudreChefCaisse(
+          dto.derogation.login,
+          dto.derogation.password,
+          utilisateur,
+          session.caisse.boutiqueId,
+        )
+      : null;
+    const motifs = new Set(dto.derogation?.motifs ?? []);
     const entrepotIdPos =
       await this.stockService.trouverEntrepotPrincipalBoutique(
         session.caisse.boutiqueId,
@@ -190,24 +222,31 @@ export class VentesService {
               `Le produit « ${produit.designation} » est inactif et ne peut plus être encaissé.`,
             );
           }
-          const dispo = await this.stockService.getQuantite(
+          const dispo = await this.stockService.getDisponible(
             produit.id,
             entrepotIdPos,
+            dto.holdId,
+            tx,
           );
-          if (dispo < ligne.quantite) {
-            throw new BadRequestException(
-              `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
-            );
+          if (dispo < ligne.quantite && !motifs.has('STOCK_INSUFFISANT')) {
+            throw new BadRequestException({
+              code: 'STOCK_INSUFFISANT',
+              message: `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
+            });
           }
 
           const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
           const montantLigne = prixUnitaire.times(ligne.quantite);
           const remise = new Prisma.Decimal(ligne.remise ?? 0);
           const plafondRemise = montantLigne.times(REMISE_MAX_RATIO);
-          if (remise.greaterThan(plafondRemise)) {
-            throw new BadRequestException(
-              `Remise trop élevée pour le produit "${produit.designation}" : maximum ${plafondRemise.toFixed(2)} (20% du montant de la ligne).`,
-            );
+          if (
+            remise.greaterThan(plafondRemise) &&
+            !motifs.has('REMISE_PLAFOND')
+          ) {
+            throw new BadRequestException({
+              code: 'REMISE_PLAFOND',
+              message: `Remise trop élevée pour le produit "${produit.designation}" : maximum ${plafondRemise.toFixed(2)} (20% du montant de la ligne).`,
+            });
           }
 
           await this.stockService.appliquerMouvement(
@@ -217,6 +256,7 @@ export class VentesService {
               type: 'VENTE',
               delta: -ligne.quantite,
               utilisateurId: utilisateur.userId,
+              autoriserNegatif: motifs.has('STOCK_INSUFFISANT'),
             },
             tx,
           );
@@ -227,25 +267,34 @@ export class VentesService {
             quantite: ligne.quantite,
             prixUnitaire,
             remise,
-            // Snapshot immuable du CMP au moment de la vente (rentabilité par
-            // boutique) — jamais recalculé après coup, même si une réception
-            // ultérieure fait évoluer coutMoyenPondere.
             coutUnitaire: new Prisma.Decimal(produit.coutMoyenPondere),
           });
         }
 
-        return tx.vente.create({
+        const paiements = this.normaliserPaiements(dto, montantTotal);
+        const created = await tx.vente.create({
           data: {
             caisseId: session.caisseId,
             sessionCaisseId: session.id,
-            modePaiement: dto.modePaiement,
+            modePaiement: this.modePrincipal(paiements, dto.modePaiement),
             montantTotal,
             clientId: dto.clientId,
             clientOperationId: dto.clientOperationId,
             lignes: { create: lignesData },
+            paiements: { create: paiements },
           },
-          include: { lignes: { include: { produit: true } } },
+          include: {
+            lignes: { include: { produit: true } },
+            paiements: true,
+          },
         });
+
+        if (dto.holdId) {
+          await tx.reservationStock.deleteMany({
+            where: { sessionCaisseId: session.id, holdId: dto.holdId },
+          });
+        }
+        return created;
       });
     } catch (error) {
       if (this.estConflitIdempotence(error) && dto.clientOperationId) {
@@ -263,6 +312,20 @@ export class VentesService {
       throw error;
     }
 
+    if (chef && dto.derogation) {
+      await this.audit.record({
+        utilisateurId: utilisateur.userId,
+        action: 'DEROGATION_CAISSE',
+        entite: 'Vente',
+        entiteId: vente.id,
+        details: JSON.stringify({
+          chefId: chef.id,
+          chefLogin: chef.login,
+          motifs: dto.derogation.motifs,
+        }),
+      });
+    }
+
     await this.audit.record({
       utilisateurId: utilisateur.userId,
       action: 'VENTE_ENREGISTREE',
@@ -271,8 +334,9 @@ export class VentesService {
       details: JSON.stringify({
         sessionCaisseId: session.id,
         montantTotal: vente.montantTotal.toString(),
-        modePaiement: dto.modePaiement,
+        modePaiement: vente.modePaiement,
         clientId: dto.clientId ?? null,
+        holdId: dto.holdId ?? null,
       }),
     });
 
@@ -390,46 +454,61 @@ export class VentesService {
     }[];
     totalEspeces: Prisma.Decimal;
   }> {
-    const totauxParMode = await this.prisma.vente.groupBy({
-      by: ['modePaiement'],
+    const ventes = await this.prisma.vente.findMany({
       where: { sessionCaisseId: sessionId },
-      _sum: { montantTotal: true },
-      _count: { _all: true },
+      include: { paiements: true, retours: true },
     });
 
-    // Retours espèces de la session : seul le cash physique alimente le
-    // bordereau (règle déjà établie pour l'encaissement), donc seuls les
-    // retours sur ventes ESPECES en sont déduits — CARTE/MOBILE_MONEY
-    // suivent un remboursement hors caisse physique, hors périmètre ici.
-    const retoursEspeces = await this.prisma.retourVente.findMany({
-      where: {
-        sessionCaisseId: sessionId,
-        vente: { modePaiement: ModePaiement.ESPECES },
-      },
-    });
-    const totalRetoursEspeces = retoursEspeces.reduce(
-      (total, r) => total.plus(r.montantRembourse),
-      new Prisma.Decimal(0),
-    );
-
-    const releve = totauxParMode.map((ligne) => {
-      const totalBrut = ligne._sum.montantTotal ?? new Prisma.Decimal(0);
-      const totalNet =
-        ligne.modePaiement === ModePaiement.ESPECES
-          ? totalBrut.minus(totalRetoursEspeces)
-          : totalBrut;
-      return {
-        modePaiement: ligne.modePaiement,
-        total: totalNet.toFixed(2),
-        nombreVentes: ligne._count._all,
+    const totaux = new Map<
+      ModePaiement,
+      { total: Prisma.Decimal; nombreVentes: number }
+    >();
+    const bump = (mode: ModePaiement, montant: Prisma.Decimal, ticket: boolean) => {
+      const actuel = totaux.get(mode) ?? {
+        total: new Prisma.Decimal(0),
+        nombreVentes: 0,
       };
-    });
+      totaux.set(mode, {
+        total: actuel.total.plus(montant),
+        nombreVentes: actuel.nombreVentes + (ticket ? 1 : 0),
+      });
+    };
 
-    const totalEspecesBrut =
-      totauxParMode.find((l) => l.modePaiement === ModePaiement.ESPECES)?._sum
-        .montantTotal ?? new Prisma.Decimal(0);
-    const totalEspeces = totalEspecesBrut.minus(totalRetoursEspeces);
+    for (const vente of ventes) {
+      const paiements =
+        vente.paiements.length > 0
+          ? vente.paiements
+          : [
+              {
+                modePaiement: vente.modePaiement,
+                montant: vente.montantTotal,
+              },
+            ];
+      const modesTicket = new Set<ModePaiement>();
+      for (const p of paiements) {
+        bump(p.modePaiement, p.montant, !modesTicket.has(p.modePaiement));
+        modesTicket.add(p.modePaiement);
+      }
+      const especes =
+        paiements.find((p) => p.modePaiement === ModePaiement.ESPECES)
+          ?.montant ?? new Prisma.Decimal(0);
+      const retours = vente.retours.reduce(
+        (s, r) => s.plus(r.montantRembourse),
+        new Prisma.Decimal(0),
+      );
+      const debitEspeces = especes.lessThan(retours) ? especes : retours;
+      if (debitEspeces.greaterThan(0)) {
+        bump(ModePaiement.ESPECES, debitEspeces.negated(), false);
+      }
+    }
 
+    const releve = [...totaux.entries()].map(([modePaiement, ligne]) => ({
+      modePaiement,
+      total: ligne.total.toFixed(2),
+      nombreVentes: ligne.nombreVentes,
+    }));
+    const totalEspeces =
+      totaux.get(ModePaiement.ESPECES)?.total ?? new Prisma.Decimal(0);
     return { releve, totalEspeces };
   }
 
@@ -471,6 +550,15 @@ export class VentesService {
       throw new BadRequestException('Cette session de caisse est déjà fermée.');
     }
 
+    const reservationsRestantes = await this.prisma.reservationStock.count({
+      where: { sessionCaisseId: session.id },
+    });
+    if (reservationsRestantes > 0) {
+      throw new BadRequestException(
+        'Impossible de clôturer : des tickets en attente réservent encore du stock. Reprendre ou abandonner la file.',
+      );
+    }
+
     const boutiqueId = requireOwnBoutiqueId(utilisateur);
     const temoin = await this.resoudreTemoin(
       dto.temoinLogin,
@@ -479,18 +567,44 @@ export class VentesService {
     );
 
     const { releve, totalEspeces } = await this.calculerReleve(session.id);
+    const fondCompte = new Prisma.Decimal(dto.fondCompteCloture);
+    const fondInitial = new Prisma.Decimal(session.fondInitial);
+    const attendu = fondInitial.plus(totalEspeces);
+    const ecart = fondCompte.minus(attendu);
 
-    let transactionVersementId: string | null = null;
-    if (totalEspeces.greaterThan(0)) {
-      const transaction = await this.transactionsService.initier(
-        {
-          caisseId: session.caisseId,
-          type: TypeTransaction.VENTE,
-          montant: totalEspeces.toNumber(),
-        },
-        utilisateur,
+    const magasin = await this.prisma.caisse.findFirst({
+      where: {
+        boutiqueId,
+        type: TypeCaisse.MAGASIN,
+      },
+    });
+    if (!magasin) {
+      throw new BadRequestException(
+        'Caisse MAGASIN introuvable pour cette boutique.',
       );
-      transactionVersementId = transaction.id;
+    }
+
+    // 1) Reconnaître les encaissements ESPECES sur le tiroir.
+    await this.transactionsService.enregistrerEncaissementTiroir({
+      caisseTiroirId: session.caisseId,
+      montant: totalEspeces,
+      initiateurId: utilisateur.userId,
+    });
+
+    // 2) Remise tiroir → magasin (montant compté).
+    let transactionVersementId: string | null = null;
+    if (fondCompte.greaterThan(0)) {
+      const statutTransfert = ecart.isZero()
+        ? StatutTransaction.VALIDEE
+        : StatutTransaction.LITIGE;
+      const transfert = await this.transactionsService.creerTransfertInterne({
+        caisseSourceId: session.caisseId,
+        caisseDestinationId: magasin.id,
+        montant: fondCompte,
+        initiateurId: utilisateur.userId,
+        statut: statutTransfert,
+      });
+      transactionVersementId = transfert.id;
     }
 
     const sessionFermee = await this.prisma.sessionCaisse.update({
@@ -512,6 +626,9 @@ export class VentesService {
       entiteId: session.id,
       details: JSON.stringify({
         fondCompteCloture: dto.fondCompteCloture,
+        fondInitial: fondInitial.toString(),
+        totalEspeces: totalEspeces.toString(),
+        ecart: ecart.toString(),
         temoinId: temoin.id,
         releve,
         transactionVersementId,
@@ -601,6 +718,7 @@ export class VentesService {
       include: {
         lignes: { include: { produit: true } },
         retours: true,
+        paiements: true,
       },
     });
   }
@@ -608,7 +726,7 @@ export class VentesService {
   private async chargerParClientOperationId(clientOperationId: string) {
     return this.prisma.vente.findUnique({
       where: { clientOperationId },
-      include: { lignes: { include: { produit: true } } },
+      include: { lignes: { include: { produit: true } }, paiements: true },
     });
   }
 
@@ -644,6 +762,47 @@ export class VentesService {
         'Vous ne pouvez agir que sur une session de caisse de votre propre boutique.',
       );
     }
+  }
+
+  // Liste des coéquipiers éligibles au double contrôle d'ouverture/clôture
+  // (§5.1) pour la boutique de l'acteur — alimente le sélecteur POS (pas de
+  // saisie libre de login, usage terrain type grande surface).
+  async listerTemoinsEligibles(utilisateur: AuthenticatedUser) {
+    const boutiqueId = requireOwnBoutiqueId(utilisateur);
+    const roles = await this.prisma.role.findMany({
+      where: { libelle: { in: [...ROLES_TEMOIN_ELIGIBLES] } },
+      select: { id: true, libelle: true },
+    });
+    const roleIds = roles.map((r) => r.id);
+    if (roleIds.length === 0) {
+      return [];
+    }
+
+    const temoins = await this.prisma.utilisateur.findMany({
+      where: {
+        boutiqueId,
+        actif: true,
+        id: { not: utilisateur.userId },
+        roleId: { in: roleIds },
+      },
+      select: {
+        id: true,
+        login: true,
+        prenom: true,
+        nom: true,
+        roleId: true,
+      },
+      orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
+    });
+
+    const libelleParRole = new Map(roles.map((r) => [r.id, r.libelle]));
+    return temoins.map((t) => ({
+      id: t.id,
+      login: t.login,
+      prenom: t.prenom,
+      nom: t.nom,
+      role: libelleParRole.get(t.roleId) ?? null,
+    }));
   }
 
   // Comptage contradictoire (§5.1) : le témoin doit être un utilisateur actif
@@ -683,5 +842,189 @@ export class VentesService {
     }
 
     return temoin;
+  }
+
+  async upsertReservation(
+    sessionId: string,
+    dto: UpsertReservationDto,
+    utilisateur: AuthenticatedUser,
+  ) {
+    const session = await this.trouverSessionOuEchouer(sessionId);
+    this.verifierPerimetreBoutique(session, utilisateur);
+    if (session.statut !== StatutSessionCaisse.OUVERTE) {
+      throw new BadRequestException(
+        'Impossible de réserver du stock : la session est fermée.',
+      );
+    }
+    if (!session.caisse.boutiqueId) {
+      throw new BadRequestException(
+        "La caisse de session n'est rattachée à aucune boutique.",
+      );
+    }
+    const entrepotId = await this.stockService.trouverEntrepotPrincipalBoutique(
+      session.caisse.boutiqueId,
+    );
+
+    const lignes = new Map<string, number>();
+    for (const ligne of dto.lignes) {
+      lignes.set(
+        ligne.produitId,
+        (lignes.get(ligne.produitId) ?? 0) + ligne.quantite,
+      );
+    }
+
+    const reservations = await this.prisma.$transaction(async (tx) => {
+      if (lignes.size === 0) {
+        await tx.reservationStock.deleteMany({
+          where: { sessionCaisseId: session.id, holdId: dto.holdId },
+        });
+        return [];
+      }
+      for (const [produitId, quantite] of lignes) {
+        const produit = await tx.produit.findUnique({ where: { id: produitId } });
+        if (!produit?.actif) {
+          throw new NotFoundException(`Produit ${produitId} introuvable.`);
+        }
+        const dispo = await this.stockService.getDisponible(
+          produitId,
+          entrepotId,
+          dto.holdId,
+          tx,
+        );
+        if (dispo < quantite) {
+          throw new BadRequestException({
+            code: 'STOCK_INSUFFISANT',
+            message: `Stock insuffisant pour réserver « ${produit.designation} » (disponible : ${dispo}, demandé : ${quantite}).`,
+          });
+        }
+      }
+      await tx.reservationStock.deleteMany({
+        where: { sessionCaisseId: session.id, holdId: dto.holdId },
+      });
+      await tx.reservationStock.createMany({
+        data: [...lignes.entries()].map(([produitId, quantite]) => ({
+          sessionCaisseId: session.id,
+          holdId: dto.holdId,
+          produitId,
+          entrepotId,
+          quantite,
+        })),
+      });
+      return tx.reservationStock.findMany({
+        where: { sessionCaisseId: session.id, holdId: dto.holdId },
+      });
+    });
+
+    await this.audit.record({
+      utilisateurId: utilisateur.userId,
+      action: 'STOCK_RESERVE_ATTENTE',
+      entite: 'ReservationStock',
+      entiteId: dto.holdId,
+      details: JSON.stringify({
+        sessionCaisseId: session.id,
+        lignes: [...lignes.entries()].map(([produitId, quantite]) => ({
+          produitId,
+          quantite,
+        })),
+      }),
+    });
+    return reservations;
+  }
+
+  async libererReservation(
+    sessionId: string,
+    holdId: string,
+    utilisateur: AuthenticatedUser,
+  ) {
+    const session = await this.trouverSessionOuEchouer(sessionId);
+    this.verifierPerimetreBoutique(session, utilisateur);
+    await this.prisma.reservationStock.deleteMany({
+      where: { sessionCaisseId: session.id, holdId },
+    });
+    await this.audit.record({
+      utilisateurId: utilisateur.userId,
+      action: 'STOCK_RESERVATION_LIBEREE',
+      entite: 'ReservationStock',
+      entiteId: holdId,
+      details: JSON.stringify({ sessionCaisseId: session.id }),
+    });
+    return { holdId };
+  }
+
+  private normaliserPaiements(
+    dto: CreateVenteDto,
+    montantTotal: Prisma.Decimal,
+  ): { modePaiement: ModePaiement; montant: Prisma.Decimal }[] {
+    if (!dto.paiements?.length) {
+      return [{ modePaiement: dto.modePaiement, montant: montantTotal }];
+    }
+    const vus = new Set<ModePaiement>();
+    const lignes: { modePaiement: ModePaiement; montant: Prisma.Decimal }[] =
+      [];
+    let somme = new Prisma.Decimal(0);
+    for (const p of dto.paiements) {
+      if (vus.has(p.modePaiement)) {
+        throw new BadRequestException(
+          `Mode de paiement en double : ${p.modePaiement}.`,
+        );
+      }
+      vus.add(p.modePaiement);
+      const montant = new Prisma.Decimal(p.montant).toDecimalPlaces(2);
+      if (montant.lessThanOrEqualTo(0)) {
+        throw new BadRequestException(
+          'Chaque règlement doit être d’un montant strictement positif.',
+        );
+      }
+      somme = somme.plus(montant);
+      lignes.push({ modePaiement: p.modePaiement, montant });
+    }
+    if (!somme.equals(montantTotal.toDecimalPlaces(2))) {
+      throw new BadRequestException(
+        `La somme des règlements (${somme.toFixed(2)}) doit égaler le total (${montantTotal.toFixed(2)}).`,
+      );
+    }
+    return lignes;
+  }
+
+  private modePrincipal(
+    paiements: { modePaiement: ModePaiement; montant: Prisma.Decimal }[],
+    fallback: ModePaiement,
+  ): ModePaiement {
+    if (paiements.some((p) => p.modePaiement === ModePaiement.ESPECES)) {
+      return ModePaiement.ESPECES;
+    }
+    return paiements[0]?.modePaiement ?? fallback;
+  }
+
+  private async resoudreChefCaisse(
+    login: string,
+    password: string,
+    acteur: AuthenticatedUser,
+    boutiqueId: string,
+  ) {
+    const chef = await this.prisma.utilisateur.findUnique({
+      where: { login },
+      include: { role: true },
+    });
+    if (
+      !chef ||
+      !chef.actif ||
+      chef.boutiqueId !== boutiqueId ||
+      chef.id === acteur.userId
+    ) {
+      throw new BadRequestException(
+        'Dérogation refusée : le chef de caisse doit être un Responsable boutique actif de cette boutique, distinct de vous.',
+      );
+    }
+    if (chef.role.libelle !== RoleLibelle.RESPONSABLE_BOUTIQUE) {
+      throw new BadRequestException(
+        'Dérogation refusée : seul le Responsable boutique peut déroger.',
+      );
+    }
+    const ok = await bcrypt.compare(password, chef.passwordHash);
+    if (!ok) {
+      throw new BadRequestException('Dérogation refusée : identifiants invalides.');
+    }
+    return chef;
   }
 }

@@ -1,11 +1,12 @@
 import {
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MinLength,
 } from 'class-validator';
-import { TypeEntrepot } from '@prisma/client';
+import { TypeEntrepot, UsageEmplacement } from '@prisma/client';
 
 export class CreateEntrepotDto {
   @IsString()
@@ -22,4 +23,16 @@ export class CreateEntrepotDto {
   @IsOptional()
   @IsEnum(TypeEntrepot)
   type?: TypeEntrepot;
+
+  @IsOptional()
+  @IsEnum(UsageEmplacement)
+  usage?: UsageEmplacement;
+
+  @IsOptional()
+  @IsBoolean()
+  reseau?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  virtuel?: boolean;
 }

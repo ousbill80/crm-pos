@@ -229,47 +229,64 @@ function ApercuSection({ clientId }: { clientId: string }) {
   if (isError || !tdb) return <p role="alert">Impossible de charger le tableau de bord.</p>;
 
   return (
-    <div className="client-kpi-grid">
-      <article className="client-kpi-card">
-        <div className="client-kpi-label">
-          Total dépensé
-          <InfoTooltip insight={insightTotalDepense(tdb.totalDepense, tdb.nombreAchats)} />
-        </div>
-        <div className="client-kpi-value money">{tdb.totalDepense}</div>
-        <div className="client-kpi-hint">FCFA · réseau entier</div>
-      </article>
-      <article className="client-kpi-card">
-        <div className="client-kpi-label">
-          Achats
-          <InfoTooltip insight={insightNombreAchats(tdb.nombreAchats)} />
-        </div>
-        <div className="client-kpi-value">{tdb.nombreAchats}</div>
-        <div className="client-kpi-hint">tickets rattachés</div>
-      </article>
-      <article className="client-kpi-card">
-        <div className="client-kpi-label">
-          Dernier achat
-          <InfoTooltip insight={insightDernierAchat(tdb.dateDernierAchat)} />
-        </div>
-        <div className="client-kpi-value client-kpi-value-sm">
-          {tdb.dateDernierAchat
-            ? new Date(tdb.dateDernierAchat).toLocaleDateString()
-            : '—'}
-        </div>
-        <div className="client-kpi-hint">
-          {tdb.dateDernierAchat
-            ? new Date(tdb.dateDernierAchat).toLocaleTimeString()
-            : 'aucune vente'}
-        </div>
-      </article>
-      <article className="client-kpi-card">
-        <div className="client-kpi-label">
-          Fidélité
-          <InfoTooltip insight={insightFidelite(tdb.niveauFidelite, tdb.pointsCumules)} />
-        </div>
-        <div className="client-kpi-value">{tdb.niveauFidelite}</div>
-        <div className="client-kpi-hint">{tdb.pointsCumules} points</div>
-      </article>
+    <div className="client-apercu-stack">
+      <div className="client-kpi-grid">
+        <article className="client-kpi-card">
+          <div className="client-kpi-label">
+            Total dépensé
+            <InfoTooltip insight={insightTotalDepense(tdb.totalDepense, tdb.nombreAchats)} />
+          </div>
+          <div className="client-kpi-value money">{tdb.totalDepense}</div>
+          <div className="client-kpi-hint">FCFA · réseau entier</div>
+        </article>
+        <article className="client-kpi-card">
+          <div className="client-kpi-label">
+            Achats
+            <InfoTooltip insight={insightNombreAchats(tdb.nombreAchats)} />
+          </div>
+          <div className="client-kpi-value">{tdb.nombreAchats}</div>
+          <div className="client-kpi-hint">tickets rattachés</div>
+        </article>
+        <article className="client-kpi-card">
+          <div className="client-kpi-label">
+            Dernier achat
+            <InfoTooltip insight={insightDernierAchat(tdb.dateDernierAchat)} />
+          </div>
+          <div className="client-kpi-value client-kpi-value-sm">
+            {tdb.dateDernierAchat
+              ? new Date(tdb.dateDernierAchat).toLocaleDateString()
+              : '—'}
+          </div>
+          <div className="client-kpi-hint">
+            {tdb.dateDernierAchat
+              ? new Date(tdb.dateDernierAchat).toLocaleTimeString()
+              : 'aucune vente'}
+          </div>
+        </article>
+        <article className="client-kpi-card">
+          <div className="client-kpi-label">
+            Fidélité
+            <InfoTooltip insight={insightFidelite(tdb.niveauFidelite, tdb.pointsCumules)} />
+          </div>
+          <div className="client-kpi-value">{tdb.niveauFidelite}</div>
+          <div className="client-kpi-hint">{tdb.pointsCumules} points</div>
+        </article>
+      </div>
+      <div className="client-pdv-summary">
+        <div className="client-kpi-label">Points de vente</div>
+        {tdb.pointsDeVente.length === 0 ? (
+          <p className="lead">Aucun passage en boutique pour l’instant.</p>
+        ) : (
+          <div className="client-pdv-chips">
+            {tdb.pointsDeVente.map((p) => (
+              <span key={p.id} className="badge badge-neutral" title={`${p.nombreAchats} achat(s)`}>
+                {p.nom}
+                <span className="client-pdv-chip-meta"> · {p.nombreAchats}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -282,7 +299,7 @@ const LIBELLE_MODE_PAIEMENT: Record<ModePaiement, string> = {
 
 function libelleCaisse(v: VenteHistoriqueDto) {
   const boutique = v.caisse.boutique?.nom;
-  const type = v.caisse.type === 'AUXILIAIRE' ? 'Caisse boutique' : 'Caisse';
+  const type = v.caisse.type === 'MAGASIN' ? 'Caisse boutique' : 'Caisse';
   return boutique ? `${boutique} · ${type}` : type;
 }
 
@@ -291,13 +308,73 @@ function libelleEnregistreur(v: VenteHistoriqueDto) {
   return `${v.enregistrePar.prenom} ${v.enregistrePar.nom}`.trim();
 }
 
-function AchatsSection({ clientId }: { clientId: string }) {
+
+function PointsDeVenteFromTdb({ clientId }: { clientId: string }) {
+  const { data: tdb, isLoading, isError } = useTableauDeBord(clientId);
+  if (isLoading) return <LoadingState label="Chargement des points de vente..." />;
+  if (isError || !tdb) {
+    return <p role="alert">Impossible de charger les points de vente.</p>;
+  }
+  return <PointsDeVenteSection pointsDeVente={tdb.pointsDeVente} />;
+}
+
+function PointsDeVenteSection({
+  pointsDeVente,
+}: {
+  pointsDeVente: TableauDeBordClientDto['pointsDeVente'];
+}) {
+  if (pointsDeVente.length === 0) {
+    return (
+      <p className="lead">
+        Aucun point de vente pour l’instant — le client n’a pas encore d’achat
+        rattaché.
+      </p>
+    );
+  }
+
+  return (
+    <div className="clients-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Point de vente</th>
+            <th>Achats</th>
+            <th>Total dépensé</th>
+            <th>Dernier passage</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pointsDeVente.map((p) => (
+            <tr key={p.id}>
+              <td>
+                <strong>{p.nom}</strong>
+              </td>
+              <td>{p.nombreAchats}</td>
+              <td className="money">{p.totalDepense}</td>
+              <td>{new Date(p.dateDernierAchat).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AchatsSection({
+  clientId,
+  limite,
+}: {
+  clientId: string;
+  limite?: number;
+}) {
   const { data: ventes, isLoading, isError } = useHistoriqueAchats(clientId);
   if (isLoading) return <LoadingState label="Chargement de l'historique..." />;
   if (isError) return <p role="alert">Erreur lors du chargement de l'historique.</p>;
   if (!ventes || ventes.length === 0) {
     return <p className="lead">Aucun achat enregistré pour ce client.</p>;
   }
+
+  const liste = limite ? ventes.slice(0, limite) : ventes;
 
   return (
     <div className="clients-table-wrap">
@@ -313,7 +390,7 @@ function AchatsSection({ clientId }: { clientId: string }) {
           </tr>
         </thead>
         <tbody>
-          {ventes.map((v) => (
+          {liste.map((v) => (
             <tr key={v.id}>
               <td>{new Date(v.dateVente).toLocaleString()}</td>
               <td className="money">{v.montantTotal}</td>
@@ -335,6 +412,11 @@ function AchatsSection({ clientId }: { clientId: string }) {
           ))}
         </tbody>
       </table>
+      {limite && ventes.length > limite && (
+        <p className="lead client-achats-more">
+          {ventes.length - limite} autre(s) achat(s) — voir l’onglet Achats.
+        </p>
+      )}
     </div>
   );
 }
@@ -352,11 +434,11 @@ function FideliteSection({
   const [error, setError] = useState<string | null>(null);
 
   const credit = useMutation({
-    mutationFn: () =>
+    mutationFn: (nb: number) =>
       apiFetch(`/crm/clients/${client.id}/fidelite/points`, {
         method: 'POST',
         body: JSON.stringify({
-          points: Number(points),
+          points: nb,
           motif: motif.trim() || undefined,
         }),
       }),
@@ -368,43 +450,99 @@ function FideliteSection({
     onError: () => setError('Échec du crédit de points.'),
   });
 
-  const fidelite = client.fidelite;
+  const niveau = client.fidelite?.niveau ?? NiveauFidelite.BRONZE;
+  const pointsCumules = client.fidelite?.pointsCumules ?? 0;
+  // Miroir de crm-thresholds.constants.ts (seuils programme fidélité §6.6).
+  const SEUIL_ARGENT = 500;
+  const SEUIL_OR = 2000;
+  const prochain =
+    niveau === NiveauFidelite.OR
+      ? null
+      : niveau === NiveauFidelite.ARGENT
+        ? { libelle: 'OR', seuil: SEUIL_OR }
+        : { libelle: 'ARGENT', seuil: SEUIL_ARGENT };
+  const progress = prochain
+    ? Math.min(100, Math.round((pointsCumules / prochain.seuil) * 100))
+    : 100;
+  const restant = prochain ? Math.max(0, prochain.seuil - pointsCumules) : 0;
+
+  function crediter(nb: number) {
+    if (!Number.isInteger(nb) || nb < 1) {
+      setError('Indiquez un nombre de points entier ≥ 1.');
+      return;
+    }
+    setError(null);
+    credit.mutate(nb);
+  }
 
   return (
-    <div className="client-fiche-fidelite">
-      <dl className="clients-dl">
-        <div>
-          <dt>Palier</dt>
-          <dd>
-            {fidelite?.niveau ?? NiveauFidelite.BRONZE}
-            <InfoTooltip
-              insight={insightFidelite(
-                fidelite?.niveau ?? NiveauFidelite.BRONZE,
-                fidelite?.pointsCumules ?? 0,
-              )}
-            />
-          </dd>
+    <div className="client-fidelite">
+      <div className={`client-fidelite-hero client-fidelite-${niveau.toLowerCase()}`}>
+        <div className="client-fidelite-hero-main">
+          <span className="client-fidelite-tier">{niveau}</span>
+          <InfoTooltip insight={insightFidelite(niveau, pointsCumules)} />
+          <p className="client-fidelite-sub">
+            {niveau === NiveauFidelite.OR
+              ? 'Palier le plus élevé du programme'
+              : niveau === NiveauFidelite.ARGENT
+                ? 'Palier intermédiaire'
+                : "Palier d'entrée du programme"}
+          </p>
         </div>
-        <div>
-          <dt>Points cumulés</dt>
-          <dd>{fidelite?.pointsCumules ?? 0}</dd>
+        <div className="client-fidelite-points">
+          <div className="client-fidelite-points-value">{pointsCumules}</div>
+          <div className="client-fidelite-points-label">points cumulés</div>
         </div>
-      </dl>
+      </div>
+
+      <div className="client-fidelite-progress">
+        <div className="client-fidelite-progress-head">
+          <span>BRONZE</span>
+          <span>ARGENT · {SEUIL_ARGENT}</span>
+          <span>OR · {SEUIL_OR}</span>
+        </div>
+        <div
+          className="client-fidelite-progress-bar"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Progression vers le prochain palier"
+        >
+          <div style={{ width: `${progress}%` }} />
+        </div>
+        <p className="lead">
+          {prochain
+            ? `Encore ${restant} point(s) pour atteindre ${prochain.libelle}.`
+            : 'Palier maximum atteint.'}
+        </p>
+      </div>
 
       {peutAdmin && (
         <form
-          className="client-fiche-form"
+          className="client-fiche-form client-fidelite-credit"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!Number.isInteger(Number(points)) || Number(points) < 1) {
-              setError('Indiquez un nombre de points entier ≥ 1.');
-              return;
-            }
-            setError(null);
-            credit.mutate();
+            crediter(Number(points));
           }}
         >
           <h3>Créditer des points</h3>
+          <p className="lead">Réservé au Responsable CRM — crédit uniquement (pas de débit).</p>
+          <div className="client-fidelite-rapides">
+            {[10, 50, 100].map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={credit.isPending}
+                onClick={() => {
+                  setPoints(String(n));
+                  crediter(n);
+                }}
+              >
+                +{n}
+              </button>
+            ))}
+          </div>
           <div className="form-grid-2">
             <div className="form-field">
               <label htmlFor="pts">Points</label>
@@ -424,7 +562,7 @@ function FideliteSection({
                 id="motif"
                 value={motif}
                 onChange={(e) => setMotif(e.target.value)}
-                placeholder="Optionnel"
+                placeholder="Ex. geste commercial"
               />
             </div>
           </div>
@@ -442,6 +580,22 @@ function FideliteSection({
   );
 }
 
+const LIBELLE_TYPE_INTERACTION: Record<(typeof TYPES_INTERACTION)[number], string> = {
+  RELANCE: 'Relance',
+  SAV: 'SAV',
+  PROSPECTION: 'Prospection',
+  SUIVI: 'Suivi',
+  AUTRE: 'Autre',
+};
+
+const LIBELLE_CANAL: Record<CanalInteraction, string> = {
+  [CanalInteraction.APPEL]: 'Appel',
+  [CanalInteraction.SMS]: 'SMS',
+  [CanalInteraction.WHATSAPP]: 'WhatsApp',
+  [CanalInteraction.VISITE]: 'Visite',
+  [CanalInteraction.CAMPAGNE]: 'Campagne',
+};
+
 function InteractionsSection({
   clientId,
   peutCreer,
@@ -451,7 +605,7 @@ function InteractionsSection({
 }) {
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useInteractions(clientId);
-  const [type, setType] = useState('RELANCE');
+  const [type, setType] = useState<(typeof TYPES_INTERACTION)[number]>('RELANCE');
   const [canal, setCanal] = useState<CanalInteraction>(CanalInteraction.APPEL);
   const [contenu, setContenu] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -477,42 +631,50 @@ function InteractionsSection({
   });
 
   return (
-    <div className="client-fiche-interactions">
+    <div className="client-interactions">
       {peutCreer && (
         <form
-          className="client-fiche-form"
+          className="client-fiche-form client-interactions-form"
           onSubmit={(e) => {
             e.preventDefault();
             creation.mutate();
           }}
         >
           <h3>Nouvelle interaction</h3>
-          <div className="form-grid-2">
-            <div className="form-field">
-              <label htmlFor="inter-type">Type</label>
-              <select id="inter-type" value={type} onChange={(e) => setType(e.target.value)}>
-                {TYPES_INTERACTION.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-field">
-              <label htmlFor="inter-canal">Canal</label>
-              <select
-                id="inter-canal"
-                value={canal}
-                onChange={(e) => setCanal(e.target.value as CanalInteraction)}
-              >
-                {Object.values(CanalInteraction).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+          <p className="lead">Tracer un contact CRM (appel, SMS, visite…).</p>
+
+          <div className="form-field">
+            <span className="client-chip-label">Type</span>
+            <div className="client-chip-row" role="group" aria-label="Type d'interaction">
+              {TYPES_INTERACTION.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={type === t ? 'actif' : ''}
+                  onClick={() => setType(t)}
+                >
+                  {LIBELLE_TYPE_INTERACTION[t]}
+                </button>
+              ))}
             </div>
           </div>
+
+          <div className="form-field">
+            <span className="client-chip-label">Canal</span>
+            <div className="client-chip-row" role="group" aria-label="Canal">
+              {Object.values(CanalInteraction).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={canal === c ? 'actif' : ''}
+                  onClick={() => setCanal(c)}
+                >
+                  {LIBELLE_CANAL[c]}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="form-field">
             <label htmlFor="inter-contenu">Compte-rendu</label>
             <textarea
@@ -520,7 +682,7 @@ function InteractionsSection({
               rows={3}
               value={contenu}
               onChange={(e) => setContenu(e.target.value)}
-              placeholder="Optionnel"
+              placeholder="Résumé du contact (optionnel)"
             />
           </div>
           {error && (
@@ -529,32 +691,54 @@ function InteractionsSection({
             </p>
           )}
           <button type="submit" className="btn-primary" disabled={creation.isPending}>
-            {creation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+            {creation.isPending ? 'Enregistrement…' : 'Enregistrer l’interaction'}
           </button>
         </form>
       )}
 
-      {isLoading && <LoadingState label="Chargement des interactions..." />}
-      {isError && <p role="alert">Erreur lors du chargement des interactions.</p>}
-      {data && data.length === 0 && <p className="lead">Aucune interaction enregistrée.</p>}
-      {data && data.length > 0 && (
-        <ul className="client-interactions-liste">
-          {data.map((i) => (
-            <li key={i.id}>
-              <div className="client-interaction-meta">
-                <strong>
-                  {i.type} · {i.canal}
-                </strong>
-                <time dateTime={i.date}>{new Date(i.date).toLocaleString()}</time>
-              </div>
-              {i.contenu && <p>{i.contenu}</p>}
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="client-interactions-timeline">
+        <h3>Historique</h3>
+        {isLoading && <LoadingState label="Chargement des interactions..." />}
+        {isError && <p role="alert">Erreur lors du chargement des interactions.</p>}
+        {data && data.length === 0 && (
+          <div className="client-interactions-empty">
+            <p className="lead">Aucune interaction enregistrée pour ce client.</p>
+            {peutCreer && (
+              <p className="lead">Utilisez le formulaire ci-dessus pour tracer le premier contact.</p>
+            )}
+          </div>
+        )}
+        {data && data.length > 0 && (
+          <ul className="client-interactions-liste">
+            {data.map((i) => (
+              <li key={i.id}>
+                <div className="client-interaction-meta">
+                  <div className="client-interaction-badges">
+                    <span className="badge badge-accent">
+                      {LIBELLE_TYPE_INTERACTION[
+                        i.type as (typeof TYPES_INTERACTION)[number]
+                      ] ?? i.type}
+                    </span>
+                    <span className="badge badge-neutral">
+                      {LIBELLE_CANAL[i.canal] ?? i.canal}
+                    </span>
+                  </div>
+                  <time dateTime={i.date}>{new Date(i.date).toLocaleString()}</time>
+                </div>
+                {i.contenu ? (
+                  <p className="client-interaction-contenu">{i.contenu}</p>
+                ) : (
+                  <p className="client-interaction-contenu muted">Sans compte-rendu</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
+
 
 export function FicheClient({
   clientId,
@@ -754,6 +938,32 @@ export function FicheClient({
                   </div>
                 </dl>
               </div>
+            </div>
+
+            <div className="panel client-workspace-card">
+              <h3>Points de vente fréquentés</h3>
+              <p className="lead">
+                Boutiques où ce client a déjà acheté — fiche unique réseau, pas de
+                rattachement unique.
+              </p>
+              <PointsDeVenteFromTdb clientId={client.id} />
+            </div>
+
+            <div className="panel client-workspace-card">
+              <div className="client-section-head">
+                <h3>Historique des achats</h3>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setOnglet('achats');
+                    setEdition(false);
+                  }}
+                >
+                  Voir tout
+                </button>
+              </div>
+              <AchatsSection clientId={client.id} limite={5} />
             </div>
           </div>
         )}
