@@ -60,6 +60,10 @@ export type RoleLibelle = (typeof RoleLibelle)[keyof typeof RoleLibelle];
 // Rôles habilités à réceptionner/valider une transaction (§6.4, règle imperative).
 // La Direction Générale n'est PAS ici : elle ne valide que les montants
 // au-dessus du seuil exceptionnel (voir assertValidationSeuilDg).
+// Décision confirmée : le §6.4 dit "Caissier Central uniquement" pour Réceptionnée,
+// mais le tableau des rôles §4 place le DAF en validation niveau 2 sur le réseau
+// entier — le DAF reste donc habilité, en cohérence avec §4 plutôt que la lecture
+// littérale isolée de §6.4 (choix utilisateur, ne pas restreindre au Caissier Central seul).
 export const ROLES_VALIDATION_CAISSE_CENTRALE: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
   RoleLibelle.DAF,
@@ -88,6 +92,10 @@ export const ROLES_MISE_EN_TRANSIT: RoleLibelle[] = [
 ];
 
 // Initiation SORTIE_FONDS magasin → centrale (plan GS : Responsable boutique).
+// Décision confirmée : le §6.4 mentionne aussi le Caissier boutique pour Initiée,
+// mais le Caissier boutique reste volontairement exclu ici pour préserver la
+// séparation des tâches (celui qui encaisse ne doit pas aussi initier un
+// bordereau de versement) — choix utilisateur, ne pas ouvrir au Caissier boutique.
 export const ROLES_INITIATION_SORTIE_FONDS: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
