@@ -78,6 +78,8 @@ import {
   clearHolds,
   formatNumeroAttente,
   loadHolds,
+  holdsDepuisApi,
+  payloadReservation,
   prochainNumero,
   quantiteParquee,
   saveHolds,
@@ -357,6 +359,84 @@ function useTemoinsEligibles(enabled: boolean) {
 }
 
 const FONDS_RAPIDES = [0, 5_000, 10_000, 20_000, 50_000];
+const DENOMINATIONS_FCFA = [
+  10_000, 5_000, 2_000, 1_000, 500, 250, 200, 100, 50, 25, 10, 5,
+] as const;
+
+function ComptageDenominations({
+  onTotalChange,
+}: {
+  onTotalChange: (total: number) => void;
+}) {
+  const [counts, setCounts] = useState<Record<number, number>>({});
+  const [ouvert, setOuvert] = useState(false);
+
+  function maj(denom: number, raw: string) {
+    const n = Math.max(0, Math.floor(Number(raw) || 0));
+    const next = { ...counts, [denom]: n };
+    setCounts(next);
+    const total = DENOMINATIONS_FCFA.reduce(
+      (s, d) => s + d * (next[d] ?? 0),
+      0,
+    );
+    onTotalChange(total);
+  }
+
+  function reset() {
+    setCounts({});
+    onTotalChange(0);
+  }
+
+  if (!ouvert) {
+    return (
+      <button
+        type="button"
+        className="pos-open-detail-toggle"
+        onClick={() => setOuvert(true)}
+      >
+        Comptage billets / pièces…
+      </button>
+    );
+  }
+
+  return (
+    <div className="pos-denoms">
+      <div className="pos-denoms-head">
+        <span>Coupures</span>
+        <button type="button" className="pos-btn-ghost" onClick={reset}>
+          Remise à zéro
+        </button>
+        <button
+          type="button"
+          className="pos-btn-ghost"
+          onClick={() => setOuvert(false)}
+        >
+          Masquer
+        </button>
+      </div>
+      <div className="pos-denoms-grid">
+        {DENOMINATIONS_FCFA.map((d) => (
+          <label key={d} className="pos-denom-row">
+            <span>{d.toLocaleString('fr-FR')} F</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              value={counts[d] ?? ''}
+              placeholder="0"
+              onChange={(e) => maj(d, e.target.value)}
+            />
+            <em className="money">
+              {((counts[d] ?? 0) * d).toLocaleString('fr-FR')}
+            </em>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const FOND_STORAGE_KEY = 'pos.fondInitial';
 
 function lireFondMemorise(caisseId: string): string {
@@ -580,6 +660,9 @@ function OuvertureSessionForm({
               </button>
             ))}
           </div>
+          <ComptageDenominations
+            onTotalChange={(total) => setFondInitial(String(total))}
+          />
           <label htmlFor="fondInitial">Montant compté (FCFA)</label>
           <input
             id="fondInitial"
@@ -969,6 +1052,9 @@ function CloturePanel({
                 </button>
               ))}
             </div>
+            <ComptageDenominations
+              onTotalChange={(total) => setFondCompteCloture(String(total))}
+            />
             <label htmlFor="fondCompteCloture">Fond compté (FCFA)</label>
             <input
               id="fondCompteCloture"
@@ -1301,6 +1387,7 @@ function PaiementScreen({
   clients,
   clientId,
   holdId,
+  besoinDerogationRemise,
   onClientChange,
   onAnnuler,
   onMettreEnAttente,
@@ -1311,12 +1398,15 @@ function PaiementScreen({
   clients: ClientDto[];
   clientId: string;
   holdId: string | null;
+  besoinDerogationRemise?: boolean;
   onClientChange: (id: string) => void;
   onAnnuler: () => void;
   onMettreEnAttente: () => void;
   onVente: (vente: VenteDto, client: ClientDto | null) => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: temoins } = useTemoinsEligibles(true);
+  const chefs = (temoins ?? []).filter((t) => t.role === 'RESPONSABLE_BOUTIQUE');
   const [parts, setParts] = useState<{ mode: ModePaiement; montant: string }[]>([
     { mode: ModePaiement.ESPECES, montant: String(Math.round(totalNet(panier))) },
   ]);
@@ -1326,7 +1416,11 @@ function PaiementScreen({
     motifs: Array<'REMISE_PLAFOND' | 'STOCK_INSUFFISANT'>;
     login: string;
     password: string;
-  } | null>(null);
+  } | null>(
+    besoinDerogationRemise
+      ? { motifs: ['REMISE_PLAFOND'], login: '', password: '' }
+      : null,
+  );
   const total = totalNet(panier);
   const recuNum = Number(recu) || 0;
   const partsNum = parts.map((p) => ({
@@ -1619,32 +1713,67 @@ function PaiementScreen({
               {derogation.motifs.includes('REMISE_PLAFOND')
                 ? 'Remise au-dessus du plafond 20 %.'
                 : 'Stock insuffisant.'}{' '}
-              Login et mot de passe du Responsable boutique (pas vous).
+              Le Responsable boutique saisit son mot de passe (pas vous).
             </p>
-            <label htmlFor="chef-login">Login responsable</label>
-            <input
-              id="chef-login"
-              value={derogation.login}
-              onChange={(e) =>
-                setDerogation((d) => (d ? { ...d, login: e.target.value } : d))
-              }
-              autoComplete="off"
-              autoFocus
-            />
-            <label htmlFor="chef-password">Mot de passe</label>
-            <input
-              id="chef-password"
-              type="password"
-              value={derogation.password}
-              onChange={(e) =>
-                setDerogation((d) => (d ? { ...d, password: e.target.value } : d))
-              }
-              autoComplete="off"
-            />
+            {chefs.length > 0 ? (
+              <div className="pos-open-temoins" role="listbox" aria-label="Responsable">
+                {chefs.map((c) => {
+                  const actif = derogation.login === c.login;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="option"
+                      aria-selected={actif}
+                      className={actif ? 'actif' : ''}
+                      onClick={() =>
+                        setDerogation((d) =>
+                          d ? { ...d, login: c.login, password: '' } : d,
+                        )
+                      }
+                    >
+                      <strong>
+                        {c.prenom} {c.nom}
+                      </strong>
+                      <span>Responsable magasin</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <>
+                <label htmlFor="chef-login">Login responsable</label>
+                <input
+                  id="chef-login"
+                  value={derogation.login}
+                  onChange={(e) =>
+                    setDerogation((d) => (d ? { ...d, login: e.target.value } : d))
+                  }
+                  autoComplete="off"
+                />
+              </>
+            )}
+            {derogation.login && (
+              <>
+                <label htmlFor="chef-password">Mot de passe responsable</label>
+                <input
+                  id="chef-password"
+                  type="password"
+                  value={derogation.password}
+                  onChange={(e) =>
+                    setDerogation((d) => (d ? { ...d, password: e.target.value } : d))
+                  }
+                  autoComplete="off"
+                  autoFocus
+                />
+              </>
+            )}
             <div className="pos-receipt-actions">
-              <button type="button" onClick={() => setDerogation(null)}>
-                Annuler
-              </button>
+              {!besoinDerogationRemise && (
+                <button type="button" onClick={() => setDerogation(null)}>
+                  Annuler
+                </button>
+              )}
               <button
                 type="button"
                 className="pos-btn-primary"
@@ -1680,10 +1809,20 @@ function PaiementScreen({
         <button
           type="button"
           className="pos-pay-btn"
-          disabled={!especeOk || !mixteOk || mutation.isPending}
+          disabled={
+            !especeOk ||
+            !mixteOk ||
+            mutation.isPending ||
+            (derogation != null &&
+              (!derogation.login || !derogation.password))
+          }
           onClick={valider}
         >
-          {mutation.isPending ? 'Validation…' : `Valider · ${formatMontant(total)}`}
+          {mutation.isPending
+            ? 'Validation…'
+            : derogation
+              ? `Valider avec dérogation · ${formatMontant(total)}`
+              : `Valider · ${formatMontant(total)}`}
         </button>
       </aside>
     </div>
@@ -1752,6 +1891,26 @@ function PosCaisse({
   }, [holds, session.id]);
 
   useEffect(() => {
+    if (!online) return;
+    let cancelled = false;
+    void apiFetch<unknown>(`/ventes/sessions/${session.id}/reservations`)
+      .then((raw) => {
+        if (cancelled) return;
+        const serveur = holdsDepuisApi(raw);
+        if (serveur.length === 0) return;
+        setHolds((local) => {
+          const byId = new Map(local.map((h) => [h.id, h]));
+          for (const t of serveur) byId.set(t.id, t);
+          return [...byId.values()].sort((a, b) => a.numero - b.numero);
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [online, session.id]);
+
+  useEffect(() => {
     if (!online || holds.length === 0) return;
     let cancelled = false;
     async function syncReservations() {
@@ -1759,13 +1918,7 @@ function PosCaisse({
         try {
           await apiFetch(`/ventes/sessions/${session.id}/reservations`, {
             method: 'PUT',
-            body: JSON.stringify({
-              holdId: hold.id,
-              lignes: hold.panier.map((l) => ({
-                produitId: l.produitId,
-                quantite: l.quantite,
-              })),
-            }),
+            body: JSON.stringify(payloadReservation(hold)),
           });
         } catch {
           // Park local conservé si le serveur refuse (stock déjà pris, hors-ligne).
@@ -1827,8 +1980,8 @@ function PosCaisse({
   const brut = totalBrut(panier);
   const remise = Number(remisePanier) || 0;
   const plafond = plafondRemise(brut);
-  const remiseDepasse = remise > plafond;
-  const net = Math.max(0, brut - (remiseDepasse ? 0 : remise));
+  const remiseDepasse = remise > plafond + 1e-9;
+  const net = Math.max(0, brut - remise);
   const caSession = ventes.reduce((s, v) => s + Number(v.montantTotal), 0);
   const dureeMinutes = Math.max(
     0,
@@ -1921,13 +2074,7 @@ function PosCaisse({
     if (navigator.onLine) {
       void apiFetch(`/ventes/sessions/${session.id}/reservations`, {
         method: 'PUT',
-        body: JSON.stringify({
-          holdId: hold.id,
-          lignes: hold.panier.map((l) => ({
-            produitId: l.produitId,
-            quantite: l.quantite,
-          })),
-        }),
+        body: JSON.stringify(payloadReservation(hold)),
       })
         .then(() => queryClient.invalidateQueries({ queryKey: ['stocks'] }))
         .catch(() => undefined);
@@ -1980,13 +2127,7 @@ function PosCaisse({
       if (navigator.onLine) {
         void apiFetch(`/ventes/sessions/${session.id}/reservations`, {
           method: 'PUT',
-          body: JSON.stringify({
-            holdId: courant.id,
-            lignes: courant.panier.map((l) => ({
-              produitId: l.produitId,
-              quantite: l.quantite,
-            })),
-          }),
+          body: JSON.stringify(payloadReservation(courant)),
         }).catch(() => undefined);
       }
     } else {
@@ -2007,7 +2148,7 @@ function PosCaisse({
   }
 
   function allerPaiement() {
-    if (panier.length === 0 || remiseDepasse) return;
+    if (panier.length === 0) return;
     setPanier((prev) => distribuerRemise(prev, Number(remisePanier) || 0));
     setEtape('paiement');
   }
@@ -2099,7 +2240,7 @@ function PosCaisse({
       }
       if ((e.key === 'Enter' && e.ctrlKey) || e.key === 'F4') {
         e.preventDefault();
-        if (panier.length === 0 || remiseDepasse) return;
+        if (panier.length === 0) return;
         setPanier((prev) => distribuerRemise(prev, Number(remisePanier) || 0));
         setEtape('paiement');
       }
@@ -2591,8 +2732,9 @@ function PosCaisse({
               disabled={panier.length === 0}
             />
             {remiseDepasse && (
-              <p className="pos-warn" role="alert">
-                Remise au-dessus du plafond 20 % — encaissement bloqué.
+              <p className="pos-warn" role="status">
+                Remise au-dessus du plafond 20 % — dérogation responsable requise
+                au paiement.
               </p>
             )}
             <div className="pos-order-totals">
@@ -2600,9 +2742,9 @@ function PosCaisse({
                 <span>Sous-total</span>
                 <span className="money">{formatMontant(brut)}</span>
               </div>
-              {remise > 0 && !remiseDepasse && (
+              {remise > 0 && (
                 <div>
-                  <span>Remise</span>
+                  <span>Remise{remiseDepasse ? ' (!)' : ''}</span>
                   <span className="money">−{formatMontant(remise)}</span>
                 </div>
               )}
@@ -2633,7 +2775,7 @@ function PosCaisse({
             <button
               type="button"
               className="pos-pay-btn"
-              disabled={panier.length === 0 || remiseDepasse}
+              disabled={panier.length === 0}
               onClick={allerPaiement}
             >
               Paiement{panier.length > 0 ? ` · ${formatMontant(net)}` : ''}

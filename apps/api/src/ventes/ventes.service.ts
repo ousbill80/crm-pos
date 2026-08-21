@@ -293,6 +293,9 @@ export class VentesService {
           await tx.reservationStock.deleteMany({
             where: { sessionCaisseId: session.id, holdId: dto.holdId },
           });
+          await tx.ticketAttente.deleteMany({
+            where: { id: dto.holdId, sessionCaisseId: session.id },
+          });
         }
         return created;
       });
@@ -890,6 +893,9 @@ export class VentesService {
         await tx.reservationStock.deleteMany({
           where: { sessionCaisseId: session.id, holdId: dto.holdId },
         });
+        await tx.ticketAttente.deleteMany({
+          where: { id: dto.holdId, sessionCaisseId: session.id },
+        });
         return [];
       }
       for (const [produitId, quantite] of lignes) {
@@ -924,6 +930,38 @@ export class VentesService {
           quantite,
         })),
       });
+      if (dto.panier && dto.panier.length > 0) {
+        const panier = dto.panier.map((l) => ({
+          produitId: l.produitId,
+          designation: l.designation,
+          reference: l.reference ?? null,
+          prixUnitaire: l.prixUnitaire,
+          stock: l.stock,
+          quantite: l.quantite,
+          remise: l.remise,
+        }));
+        await tx.ticketAttente.upsert({
+          where: { id: dto.holdId },
+          create: {
+            id: dto.holdId,
+            sessionCaisseId: session.id,
+            numero: dto.numero ?? 1,
+            libelle: dto.libelle?.trim() || 'Ticket',
+            motif: dto.motif ?? 'AUTRE',
+            clientId: dto.clientId || null,
+            remisePanier: dto.remisePanier ?? '',
+            panier,
+          },
+          update: {
+            numero: dto.numero ?? 1,
+            libelle: dto.libelle?.trim() || 'Ticket',
+            motif: dto.motif ?? 'AUTRE',
+            clientId: dto.clientId || null,
+            remisePanier: dto.remisePanier ?? '',
+            panier,
+          },
+        });
+      }
       return tx.reservationStock.findMany({
         where: { sessionCaisseId: session.id, holdId: dto.holdId },
       });
@@ -955,6 +993,9 @@ export class VentesService {
     await this.prisma.reservationStock.deleteMany({
       where: { sessionCaisseId: session.id, holdId },
     });
+    await this.prisma.ticketAttente.deleteMany({
+      where: { id: holdId, sessionCaisseId: session.id },
+    });
     await this.audit.record({
       utilisateurId: utilisateur.userId,
       action: 'STOCK_RESERVATION_LIBEREE',
@@ -963,6 +1004,28 @@ export class VentesService {
       details: JSON.stringify({ sessionCaisseId: session.id }),
     });
     return { holdId };
+  }
+
+  async listerTicketsAttente(
+    sessionId: string,
+    utilisateur: AuthenticatedUser,
+  ) {
+    const session = await this.trouverSessionOuEchouer(sessionId);
+    this.verifierPerimetreBoutique(session, utilisateur);
+    const tickets = await this.prisma.ticketAttente.findMany({
+      where: { sessionCaisseId: session.id },
+      orderBy: { numero: 'asc' },
+    });
+    return tickets.map((t) => ({
+      id: t.id,
+      numero: t.numero,
+      libelle: t.libelle,
+      motif: t.motif,
+      clientId: t.clientId,
+      remisePanier: t.remisePanier,
+      panier: t.panier,
+      createdAt: t.createdAt.toISOString(),
+    }));
   }
 
   private normaliserPaiements(

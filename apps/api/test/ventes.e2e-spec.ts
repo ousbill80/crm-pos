@@ -1186,5 +1186,67 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         .set(auth(tokens.caissierB1))
         .expect(200);
     });
+
+    it('persiste le snapshot du ticket : GET reprend la file après un PUT', async () => {
+      const holdId = 'c3c3c3c3-d4d4-4e5e-a6f6-a7a7a7a7a7a7';
+      const put = await request(app.getHttpServer())
+        .put(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          holdId,
+          numero: 7,
+          libelle: 'Mme Diallo',
+          motif: 'OUBLI_PAIEMENT',
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+          panier: [
+            {
+              produitId: produitMixteId,
+              designation: 'Article mixte',
+              prixUnitaire: '1000.00',
+              stock: 8,
+              quantite: 1,
+              remise: 0,
+            },
+          ],
+        });
+      expect(put.status).toBe(200);
+
+      const liste = await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierB1))
+        .expect(200)
+        .then(
+          (r) =>
+            r.body as Array<{
+              id: string;
+              numero: number;
+              libelle: string;
+              panier: Array<{ produitId: string; quantite: number }>;
+            }>,
+        );
+      const ticket = liste.find((t) => t.id === holdId);
+      expect(ticket).toMatchObject({
+        numero: 7,
+        libelle: 'Mme Diallo',
+      });
+      expect(ticket?.panier[0]?.quantite).toBe(1);
+
+      await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierCentral))
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/ventes/sessions/${sessionId}/reservations/${holdId}`)
+        .set(auth(tokens.caissierB1))
+        .expect(200);
+
+      const apres = await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/reservations`)
+        .set(auth(tokens.caissierB1))
+        .expect(200)
+        .then((r) => r.body as Array<{ id: string }>);
+      expect(apres.find((t) => t.id === holdId)).toBeUndefined();
+    });
   });
 });

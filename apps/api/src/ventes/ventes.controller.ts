@@ -92,6 +92,15 @@ export class VentesController {
     return this.ventesService.upsertReservation(id, dto, utilisateur);
   }
 
+  @Get('sessions/:id/reservations')
+  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  listerTicketsAttente(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    return this.ventesService.listerTicketsAttente(id, utilisateur);
+  }
+
   @Delete('sessions/:id/reservations/:holdId')
   @Roles(...ROLES_PERIMETRE_BOUTIQUE)
   libererReservation(

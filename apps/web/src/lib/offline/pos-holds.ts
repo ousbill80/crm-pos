@@ -110,6 +110,29 @@ export function quantiteParquee(
   }, 0);
 }
 
+export function holdsDepuisApi(raw: unknown): CommandeEnAttente[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(normalizeHold)
+    .filter((h): h is CommandeEnAttente => h !== null);
+}
+
+export function payloadReservation(hold: CommandeEnAttente) {
+  return {
+    holdId: hold.id,
+    numero: hold.numero,
+    libelle: hold.libelle,
+    motif: hold.motif,
+    clientId: hold.clientId,
+    remisePanier: hold.remisePanier,
+    lignes: hold.panier.map((l) => ({
+      produitId: l.produitId,
+      quantite: l.quantite,
+    })),
+    panier: hold.panier,
+  };
+}
+
 export function prochainNumero(holds: CommandeEnAttente[]): number {
   return Math.max(0, ...holds.map((h) => h.numero)) + 1;
 }

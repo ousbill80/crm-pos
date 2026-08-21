@@ -750,6 +750,7 @@ model SessionCaisse {
   ventes                 Vente[]
   retours                RetourVente[]
   reservations           ReservationStock[]
+  ticketsAttente         TicketAttente[]
 
   @@map("session_caisse")
 }
@@ -807,6 +808,26 @@ model ReservationStock {
   @@index([entrepotId, produitId])
   @@map("reservation_stock")
 }
+
+// Ticket POS en attente (file de caisse) — snapshot pour reprise après
+// refresh. Ce n'est PAS une Vente : aucun encaissement. Le stock est
+// seulement réservé via ReservationStock.
+model TicketAttente {
+  id              String        @id
+  sessionCaisse   SessionCaisse @relation(fields: [sessionCaisseId], references: [id], onDelete: Cascade)
+  sessionCaisseId String
+  numero          Int
+  libelle         String
+  motif           String
+  clientId        String?
+  remisePanier    String        @default("")
+  panier          Json
+  createdAt       DateTime      @default(now())
+
+  @@index([sessionCaisseId])
+  @@map("ticket_attente")
+}
+
 
 // Extension nécessaire au socle MCD pour un POS fonctionnel (détail des articles vendus)
 model LigneVente {
