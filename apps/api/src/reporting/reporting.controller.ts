@@ -3,7 +3,10 @@ import type { Response } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
-import { ROLES_LECTURE_CAISSES } from '../caisses/access-scope.constants';
+import {
+  ROLES_LECTURE_CAISSES,
+  ROLES_RESEAU_TRESORERIE,
+} from '../caisses/access-scope.constants';
 import { ReportingService } from './reporting.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { VentesQuotidiennesQueryDto } from './dto/ventes-quotidiennes-query.dto';
@@ -20,6 +23,32 @@ export class ReportingController {
     @Query() query: DashboardQueryDto,
   ) {
     return this.reportingService.getDashboard(user, query);
+  }
+
+  /** Cockpit Finance DAF — pôle central (résultat + stocks + trésorerie). */
+  @Get('daf')
+  @Roles(...ROLES_RESEAU_TRESORERIE)
+  getDaf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardQueryDto,
+  ) {
+    return this.reportingService.getDaf(user, query);
+  }
+
+  @Get('daf/export.csv')
+  @Roles(...ROLES_RESEAU_TRESORERIE)
+  async exportDafCsv(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardQueryDto,
+    @Res() res: Response,
+  ) {
+    const csv = await this.reportingService.getDafCsv(user, query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="finance-daf.csv"',
+    );
+    res.send(csv);
   }
 
   @Get('ventes-quotidiennes')

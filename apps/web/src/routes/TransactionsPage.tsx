@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Landmark, Scale, Wallet } from 'lucide-react';
 import {
   RoleLibelle,
   ROLES_INITIATION_SORTIE_FONDS,
@@ -24,6 +25,16 @@ import {
   outboxCount,
 } from '../lib/offline/outbox';
 import type { CaisseDto, TransactionDto } from '../lib/types';
+
+function labelCaisseOption(c: CaisseDto): string {
+  if (c.type === TypeCaisse.MAGASIN) {
+    return `Magasin · ${c.libelle ?? c.id.slice(0, 8)}`;
+  }
+  if (c.type === TypeCaisse.TIROIR) {
+    return `Tiroir · ${c.code ?? ''} ${c.libelle ?? ''}`.trim();
+  }
+  return `Centrale · ${c.libelle ?? c.id.slice(0, 8)}`;
+}
 
 const STATUTS_EN_COURS: StatutTransaction[] = [
   StatutTransaction.INITIEE,
@@ -81,7 +92,6 @@ function NouvelleTransactionForm({
   const queryClient = useQueryClient();
   const magasins = caisses.filter((c) => c.type === TypeCaisse.MAGASIN);
   const [caisseId, setCaisseId] = useState(magasins[0]?.id ?? '');
-  const [type] = useState<TypeTransaction>(TypeTransaction.SORTIE_FONDS);
   const [montant, setMontant] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -141,11 +151,11 @@ function NouvelleTransactionForm({
 
   return (
     <form onSubmit={handleSubmit} className="stack-form">
-      <label htmlFor="caisseId">Caisse magasin</label>
+      <label htmlFor="caisseId">Caisse magasin (cash office)</label>
       <select id="caisseId" value={caisseId} onChange={(e) => setCaisseId(e.target.value)}>
         {magasins.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.libelle ?? `MAGASIN · ${c.id.slice(0, 8)}`}
+            {labelCaisseOption(c)}
           </option>
         ))}
       </select>
@@ -353,6 +363,7 @@ export function TransactionsPage() {
   const [searchParams] = useSearchParams();
   const enCours = searchParams.get('enCours') === '1';
   const ageingBucket = searchParams.get('ageing');
+  const caisseIdParam = searchParams.get('caisseId') ?? '';
   const peutInitier =
     user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
   useTresorerieRealtime(user !== null);
@@ -360,7 +371,7 @@ export function TransactionsPage() {
   const [filters, setFilters] = useState({
     statut: '',
     type: '',
-    caisseId: '',
+    caisseId: caisseIdParam,
     from: '',
     to: '',
   });
@@ -368,6 +379,14 @@ export function TransactionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [rapprocherTx, setRapprocherTx] = useState<TransactionDto | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (caisseIdParam) {
+      setFilters((f) =>
+        f.caisseId === caisseIdParam ? f : { ...f, caisseId: caisseIdParam },
+      );
+    }
+  }, [caisseIdParam]);
 
   useEffect(() => {
     async function sync() {
@@ -437,7 +456,7 @@ export function TransactionsPage() {
   });
 
   return (
-    <div>
+    <div className="treso-module">
       <PageHeader
         title="Transactions"
         subtitle={
@@ -449,6 +468,17 @@ export function TransactionsPage() {
         }
         actions={
           <>
+            <nav className="circuit-nav" aria-label="Circuit trésorerie">
+              <Link className="circuit-nav-item" to="/tresorerie">
+                <Wallet size={14} /> Trésorerie
+              </Link>
+              <Link className="circuit-nav-item" to="/litiges">
+                <Scale size={14} /> Litiges
+              </Link>
+              <Link className="circuit-nav-item" to="/caisses">
+                <Landmark size={14} /> Caisses
+              </Link>
+            </nav>
             {pendingOffline > 0 ? (
               <span className="badge badge-warning">
                 {pendingOffline} en file hors-ligne
@@ -524,7 +554,7 @@ export function TransactionsPage() {
               <option value="">Toutes</option>
               {(caisses ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.type} · {c.id.slice(0, 8)}
+                  {labelCaisseOption(c)}
                 </option>
               ))}
             </select>

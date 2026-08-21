@@ -45,8 +45,8 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
 
   let boutique1Id: string;
   let boutique2Id: string;
-  let caisse1Id: string; // AUXILIAIRE, boutique 1
-  let caisse2Id: string; // AUXILIAIRE, boutique 2
+  let caisse1Id: string; // MAGASIN (cash office), boutique 1 — ventes via TIROIR
+  let caisse2Id: string; // MAGASIN (cash office), boutique 2
   let caisseCentraleId: string;
   let produitStock5Id: string; // prix 1000, stock 5
   let produitStock2Id: string; // prix 500, stock 2
@@ -97,11 +97,12 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     caisseId: string,
     fondInitial: number,
     temoinLogin: string,
+    temoinPassword: string = MOT_DE_PASSE,
   ) {
     return request(app.getHttpServer())
       .post('/ventes/sessions')
       .set(auth(token))
-      .send({ caisseId, fondInitial, temoinLogin });
+      .send({ caisseId, fondInitial, temoinLogin, temoinPassword });
   }
 
   beforeAll(async () => {
@@ -271,10 +272,43 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
   // ---------------------------------------------------------------------
   // Ouverture de session — règles métier §5.1.
   // ---------------------------------------------------------------------
+  describe('GET /ventes/temoins-eligibles', () => {
+    it('liste les coéquipiers éligibles de la boutique (hors soi)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/ventes/temoins-eligibles')
+        .set(auth(tokens.caissierB1))
+        .expect(200);
+      expect(Array.isArray(response.body)).toBe(true);
+      const temoins = response.body as Array<{ login: string }>;
+      expect(temoins.every((t) => t.login !== 'caissier-b1')).toBe(true);
+      expect(temoins.some((t) => t.login === 'resp-b1')).toBe(true);
+    });
+
+    it('refuse un rôle hors périmètre boutique', async () => {
+      await request(app.getHttpServer())
+        .get('/ventes/temoins-eligibles')
+        .set(auth(tokens.daf))
+        .expect(403);
+    });
+  });
+
   describe('Ouverture de session (§5.1)', () => {
+    it('refuse un mot de passe confirmateur incorrect (§5.1)', async () => {
+      await request(app.getHttpServer())
+        .post('/ventes/sessions')
+        .set(auth(tokens.caissierB1))
+        .send({
+          caisseId: caisse1Id,
+          fondInitial: 1000,
+          temoinLogin: 'resp-b1',
+          temoinPassword: 'mauvais-mot-de-passe',
+        })
+        .expect(400);
+    });
+
     it('refuse (400) l’ouverture d’une session sur une caisse CENTRALE', async () => {
       // caissier-b1 est bien dans le périmètre boutique (RBAC OK) : le rejet
-      // vient ici de la règle métier "caisse AUXILIAIRE uniquement", pas du
+      // vient ici de la règle métier "caisse TIROIR uniquement", pas du
       // RBAC — le témoin n'a pas d'importance, la vérification du type de
       // caisse est faite avant la résolution du témoin.
       await ouvrirSession(
@@ -563,7 +597,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/cloture`)
           .set(auth(tokens.daf))
-          .send({ fondCompteCloture: 7000, temoinLogin: 'resp-b1' })
+          .send({
+            fondCompteCloture: 7000,
+            temoinLogin: 'resp-b1',
+            temoinPassword: MOT_DE_PASSE,
+          })
           .expect(403);
       });
 
@@ -571,7 +609,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/cloture`)
           .set(auth(tokens.caissierB1))
-          .send({ fondCompteCloture: 7000, temoinLogin: 'caissier-b1' })
+          .send({
+            fondCompteCloture: 7000,
+            temoinLogin: 'caissier-b1',
+            temoinPassword: MOT_DE_PASSE,
+          })
           .expect(400);
       });
 
@@ -581,7 +623,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         const response = await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/cloture`)
           .set(auth(tokens.caissierB1))
-          .send({ fondCompteCloture: 7000, temoinLogin: 'resp-b1' })
+          .send({
+            fondCompteCloture: 7000,
+            temoinLogin: 'resp-b1',
+            temoinPassword: MOT_DE_PASSE,
+          })
           .expect(201);
 
         const body = response.body as ClotureResponseDto;
@@ -616,7 +662,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         await request(app.getHttpServer())
           .post(`/ventes/sessions/${sessionBoutique1Id}/cloture`)
           .set(auth(tokens.caissierB1))
-          .send({ fondCompteCloture: 7000, temoinLogin: 'resp-b1' })
+          .send({
+            fondCompteCloture: 7000,
+            temoinLogin: 'resp-b1',
+            temoinPassword: MOT_DE_PASSE,
+          })
           .expect(400);
       });
 
@@ -711,7 +761,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       const cloture = await request(app.getHttpServer())
         .post(`/ventes/sessions/${sessionId}/cloture`)
         .set(auth(tokens.caissierB2))
-        .send({ fondCompteCloture: 1000, temoinLogin: 'resp-b2' })
+        .send({
+          fondCompteCloture: 1000,
+          temoinLogin: 'resp-b2',
+          temoinPassword: MOT_DE_PASSE,
+        })
         .expect(201);
 
       const body = cloture.body as ClotureResponseDto;
@@ -833,13 +887,25 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       entrepotId = entrepot.id;
 
       const mixte = await env.prisma.produit.create({
-        data: { designation: 'Article mixte', prixUnitaire: '1000.00', stock: 10 },
+        data: {
+          designation: 'Article mixte',
+          prixUnitaire: '1000.00',
+          stock: 10,
+        },
       });
       const reserve = await env.prisma.produit.create({
-        data: { designation: 'Article réservé', prixUnitaire: '800.00', stock: 5 },
+        data: {
+          designation: 'Article réservé',
+          prixUnitaire: '800.00',
+          stock: 5,
+        },
       });
       const rupture = await env.prisma.produit.create({
-        data: { designation: 'Article rupture', prixUnitaire: '200.00', stock: 1 },
+        data: {
+          designation: 'Article rupture',
+          prixUnitaire: '200.00',
+          stock: 1,
+        },
       });
       produitMixteId = mixte.id;
       produitReserveId = reserve.id;
@@ -864,9 +930,9 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
           .get('/ventes/sessions')
           .set(auth(tokens.caissierB1))
           .expect(200);
-        const ouverte = (
-          sessions.body as SessionCaisseDto[]
-        ).find((s) => s.caisseId === caisse1Id && s.statut === 'OUVERTE');
+        const ouverte = (sessions.body as SessionCaisseDto[]).find(
+          (s) => s.caisseId === caisse1Id && s.statut === 'OUVERTE',
+        );
         if (!ouverte) throw new Error('session B1 introuvable');
         sessionId = ouverte.id;
       } else {
@@ -887,7 +953,12 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
           ],
         })
         .expect(201)
-        .then((r) => r.body as VenteDto & { paiements: { modePaiement: string; montant: string }[] });
+        .then(
+          (r) =>
+            r.body as VenteDto & {
+              paiements: { modePaiement: string; montant: string }[];
+            },
+        );
 
       expect(Number(body.montantTotal)).toBe(1000);
       expect(body.paiements).toEqual(
@@ -1103,7 +1174,11 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       await request(app.getHttpServer())
         .post(`/ventes/sessions/${sessionId}/cloture`)
         .set(auth(tokens.caissierB1))
-        .send({ fondCompteCloture: 2000, temoinLogin: 'resp-b1' })
+        .send({
+          fondCompteCloture: 2000,
+          temoinLogin: 'resp-b1',
+          temoinPassword: MOT_DE_PASSE,
+        })
         .expect(400);
 
       await request(app.getHttpServer())

@@ -286,7 +286,11 @@ describe('Stocks synthèse (e2e)', () => {
         .get(`/stocks/mouvements/${mouvementVenteId}`)
         .set(auth(tokens.caissierA))
         .expect(200);
-      const body = response.body as { id: string; type: string; produitId: string };
+      const body = response.body as {
+        id: string;
+        type: string;
+        produitId: string;
+      };
       expect(body.id).toBe(mouvementVenteId);
       expect(body.type).toBe('VENTE');
       expect(body.produitId).toBe(produitId);

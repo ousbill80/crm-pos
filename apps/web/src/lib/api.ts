@@ -11,6 +11,18 @@ export class ApiError extends Error {
   }
 }
 
+// mustChangePassword n'est jamais mis dans le JWT (§6.7, décision produit :
+// éviter un token périmé après un reset en cours de session côté serveur).
+// Après un rechargement de page, l'état ne peut donc être ressuscité que via
+// le premier 403 { code: 'MUST_CHANGE_PASSWORD' } renvoyé par
+// PasswordChangeRequiredGuard sur n'importe quel endpoint protégé — d'où ce
+// point d'écoute global, réarmé par AuthProvider.
+let mustChangePasswordListener: (() => void) | null = null;
+
+export function setMustChangePasswordListener(listener: (() => void) | null) {
+  mustChangePasswordListener = listener;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
 
@@ -25,6 +37,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 403 && body.includes('MUST_CHANGE_PASSWORD')) {
+      mustChangePasswordListener?.();
+    }
     throw new ApiError(res.status, body || res.statusText);
   }
 

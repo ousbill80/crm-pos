@@ -47,6 +47,7 @@ export interface StockSyntheseDto {
       quantite: number;
       statut: StatutStockLigne;
     }>;
+    stockPrevu: number;
   }>;
   suggestionsTransfert: Array<{
     produitId: string;

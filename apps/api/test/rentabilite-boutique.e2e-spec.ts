@@ -197,6 +197,7 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
         caisseId: caisse1Id,
         fondInitial: 0,
         temoinLogin: 'rent-temoin-b1',
+        temoinPassword: MOT_DE_PASSE,
       })
       .expect(201);
     const sessionId = (session.body as { id: string }).id;

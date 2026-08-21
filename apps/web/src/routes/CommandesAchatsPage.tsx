@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
@@ -7,12 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
-import type {
-  CommandeAchatDto,
-  EntrepotDto,
-  FournisseurDto,
-  ProduitDto,
-} from '../lib/types';
+import type { CommandeAchatDto, FournisseurDto, ProduitDto } from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
@@ -31,12 +26,6 @@ const ROLES_COMMANDE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
-const ROLES_RECEPTION: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-];
-
 const STATUT: Record<CommandeAchatDto['statut'], string> = {
   BROUILLON: 'Brouillon',
   CONFIRMEE: 'Confirmée',
@@ -47,7 +36,7 @@ const STATUT: Record<CommandeAchatDto['statut'], string> = {
 };
 
 function badge(statut: CommandeAchatDto['statut']) {
-  if (statut === 'ANNULEE') return 'badge';
+  if (statut === 'ANNULEE') return 'badge badge-neutral';
   if (statut === 'CLOTUREE' || statut === 'RECEPTIONNEE') return 'badge badge-ok';
   if (statut === 'PARTIELLEMENT_RECEPTIONNEE') return 'badge badge-warning';
   return 'badge';
@@ -61,12 +50,12 @@ type LigneForm = { produitId: string; quantite: string; prixUnitaire: string };
 
 export function CommandesAchatsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
-  const peutRecevoir = user !== null && ROLES_RECEPTION.includes(user.role);
 
-  const [selectionId, setSelectionId] = useState<string | null>(null);
+  const [filtreStatut, setFiltreStatut] = useState<CommandeAchatDto['statut'] | ''>('');
   const [modalNouveau, setModalNouveau] = useState(false);
   const [fournisseurId, setFournisseurId] = useState('');
   const [notes, setNotes] = useState('');
@@ -74,20 +63,11 @@ export function CommandesAchatsPage() {
     { produitId: '', quantite: '1', prixUnitaire: '' },
   ]);
   const [formErr, setFormErr] = useState<string | null>(null);
-  const [ligneReception, setLigneReception] = useState<string | null>(null);
-  const [qtyRec, setQtyRec] = useState('1');
-  const [prixRec, setPrixRec] = useState('');
-  const [entrepotId, setEntrepotId] = useState('');
 
   const commandes = useQuery({
     queryKey: ['achats-commandes'],
     queryFn: () => apiFetch<CommandeAchatDto[]>('/achats/commandes'),
     enabled: peutLire,
-  });
-  const detail = useQuery({
-    queryKey: ['achats-commandes', selectionId],
-    queryFn: () => apiFetch<CommandeAchatDto>(`/achats/commandes/${selectionId}`),
-    enabled: peutLire && selectionId !== null,
   });
   const fournisseurs = useQuery({
     queryKey: ['fournisseurs'],
@@ -99,11 +79,6 @@ export function CommandesAchatsPage() {
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
     enabled: peutCommander,
   });
-  const entrepots = useQuery({
-    queryKey: ['entrepots'],
-    queryFn: () => apiFetch<EntrepotDto[]>('/entrepots'),
-    enabled: peutRecevoir,
-  });
 
   const actifs = useMemo(
     () => (produits.data ?? []).filter((p) => p.actif),
@@ -113,13 +88,13 @@ export function CommandesAchatsPage() {
     () => (fournisseurs.data ?? []).filter((f) => f.actif),
     [fournisseurs.data],
   );
-
-  function invalider() {
-    void queryClient.invalidateQueries({ queryKey: ['achats-commandes'] });
-    void queryClient.invalidateQueries({ queryKey: ['fournisseurs-synthese'] });
-    void queryClient.invalidateQueries({ queryKey: ['produits'] });
-    void queryClient.invalidateQueries({ queryKey: ['stocks'] });
-  }
+  const liste = useMemo(
+    () =>
+      (commandes.data ?? []).filter((c) =>
+        filtreStatut ? c.statut === filtreStatut : true,
+      ),
+    [commandes.data, filtreStatut],
+  );
 
   const creer = useMutation({
     mutationFn: () =>
@@ -139,57 +114,15 @@ export function CommandesAchatsPage() {
       }),
     onSuccess: (c) => {
       setModalNouveau(false);
-      setSelectionId(c.id);
       setFormErr(null);
-      invalider();
+      void queryClient.invalidateQueries({ queryKey: ['achats-commandes'] });
+      void queryClient.invalidateQueries({ queryKey: ['fournisseurs-synthese'] });
+      navigate(`/achats/commandes/${c.id}`);
     },
     onError: (e) => setFormErr(messageDepuisApi(e, 'Création refusée.')),
   });
 
-  function action(path: string) {
-    return apiFetch<CommandeAchatDto>(path, { method: 'POST' });
-  }
-
-  const confirmer = useMutation({
-    mutationFn: () => action(`/achats/commandes/${selectionId}/confirmer`),
-    onSuccess: invalider,
-  });
-  const annuler = useMutation({
-    mutationFn: () => action(`/achats/commandes/${selectionId}/annuler`),
-    onSuccess: invalider,
-  });
-  const cloturer = useMutation({
-    mutationFn: () => action(`/achats/commandes/${selectionId}/cloturer`),
-    onSuccess: invalider,
-  });
-
-  const receptionner = useMutation({
-    mutationFn: () => {
-      const ligne = detail.data?.lignes.find((l) => l.id === ligneReception);
-      return apiFetch(`/fournisseurs/${detail.data!.fournisseurId}/receptions`, {
-        method: 'POST',
-        body: JSON.stringify({
-          produitId: ligne!.produitId,
-          quantite: Number(qtyRec),
-          prixAchat: Number(prixRec),
-          ligneCommandeId: ligneReception,
-          ...(entrepotId ? { entrepotId } : {}),
-        }),
-      });
-    },
-    onSuccess: () => {
-      setLigneReception(null);
-      invalider();
-      if (selectionId) {
-        void queryClient.invalidateQueries({ queryKey: ['achats-commandes', selectionId] });
-      }
-    },
-    onError: (e) => setFormErr(messageDepuisApi(e, 'Réception refusée.')),
-  });
-
   if (!peutLire) return <p>Vous n’avez pas accès aux commandes d’achat.</p>;
-
-  const c = detail.data;
 
   return (
     <div>
@@ -225,140 +158,99 @@ export function CommandesAchatsPage() {
       {commandes.isError && <p role="alert">Erreur de chargement des commandes.</p>}
 
       {commandes.data && (
-        <div
-          className="dash-layout"
-          style={{ gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)' }}
-        >
+        <>
+          <div className="toolbar">
+            <div>
+              <label htmlFor="filtre-bc-statut">Statut</label>
+              <select
+                id="filtre-bc-statut"
+                value={filtreStatut}
+                onChange={(e) =>
+                  setFiltreStatut(e.target.value as CommandeAchatDto['statut'] | '')
+                }
+              >
+                <option value="">Tous</option>
+                {(Object.keys(STATUT) as CommandeAchatDto['statut'][]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUT[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="lead">
+              {liste.length} commande(s)
+              {filtreStatut ? ` · ${STATUT[filtreStatut]}` : ''}
+            </p>
+          </div>
           <ListPanel title="Commandes">
             {commandes.data.length === 0 ? (
               <EmptyState
                 title="Aucune commande"
                 description="Créez un bon de commande puis confirmez-le avant de réceptionner."
               />
+            ) : liste.length === 0 ? (
+              <EmptyState
+                title="Aucun résultat"
+                description="Aucune commande ne correspond à ce statut."
+              />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>N°</th>
-                    <th>Fournisseur</th>
-                    <th>Statut</th>
-                    <th>Montant</th>
-                    <th>Réception</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {commandes.data.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => setSelectionId(row.id)}
-                      style={{
-                        cursor: 'pointer',
-                        background:
-                          row.id === selectionId ? 'var(--surface-muted, #f4f4f5)' : undefined,
-                      }}
-                    >
-                      <td>{row.numero}</td>
-                      <td>{row.fournisseur.nom}</td>
-                      <td>
-                        <span className={badge(row.statut)}>{STATUT[row.statut]}</span>
-                      </td>
-                      <td className="money">{fmt(row.montant)} FCFA</td>
-                      <td>
-                        {row.quantiteRecue}/{row.quantite}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </ListPanel>
-
-          <ListPanel title={c ? c.numero : 'Détail'}>
-            {!selectionId && (
-              <EmptyState title="Sélectionnez une commande" description="Cliquez une ligne." />
-            )}
-            {selectionId && detail.isLoading && <LoadingState label="Chargement..." />}
-            {c && (
-              <>
-                <p className="lead">
-                  {c.fournisseur.nom} · {STATUT[c.statut]} · {fmt(c.montant)} FCFA
-                </p>
-                {c.notes && <p>{c.notes}</p>}
-                <div className="table-actions">
-                  {peutCommander && c.statut === 'BROUILLON' && (
-                    <>
-                      <button type="button" className="btn-primary" onClick={() => confirmer.mutate()}>
-                        Confirmer
-                      </button>
-                      <button type="button" onClick={() => annuler.mutate()}>
-                        Annuler
-                      </button>
-                    </>
-                  )}
-                  {peutCommander && c.statut === 'CONFIRMEE' && c.quantiteRecue === 0 && (
-                    <button type="button" onClick={() => annuler.mutate()}>
-                      Annuler
-                    </button>
-                  )}
-                  {peutCommander && c.statut === 'RECEPTIONNEE' && (
-                    <button type="button" onClick={() => cloturer.mutate()}>
-                      Clôturer
-                    </button>
-                  )}
-                  <Link to="/achats/factures">Facturer les réceptions →</Link>
-                </div>
+              <div className="clients-table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Article</th>
-                      <th>Commandé</th>
-                      <th>Reçu</th>
-                      <th>Reste</th>
-                      <th>Prix</th>
-                      <th></th>
+                      <th>N°</th>
+                      <th>Fournisseur</th>
+                      <th>Statut</th>
+                      <th>Date</th>
+                      <th>Montant</th>
+                      <th>Réception</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {c.lignes.map((l) => (
-                      <tr key={l.id}>
+                    {liste.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="produit-row"
+                        tabIndex={0}
+                        role="link"
+                        aria-label={`Ouvrir ${row.numero}`}
+                        onClick={() => navigate(`/achats/commandes/${row.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate(`/achats/commandes/${row.id}`);
+                          }
+                        }}
+                      >
                         <td>
-                          {l.designation}
-                          {l.reference ? ` · ${l.reference}` : ''}
+                          <strong>{row.numero}</strong>
                         </td>
-                        <td>{l.quantite}</td>
-                        <td>{l.quantiteRecue}</td>
-                        <td>{l.quantiteRestante}</td>
-                        <td className="money">{fmt(l.prixUnitaire)}</td>
+                        <td>{row.fournisseur.nom}</td>
                         <td>
-                          {peutRecevoir &&
-                            l.quantiteRestante > 0 &&
-                            (c.statut === 'CONFIRMEE' ||
-                              c.statut === 'PARTIELLEMENT_RECEPTIONNEE') && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setLigneReception(l.id);
-                                  setQtyRec(String(l.quantiteRestante));
-                                  setPrixRec(l.prixUnitaire);
-                                  setFormErr(null);
-                                }}
-                              >
-                                Réceptionner
-                              </button>
-                            )}
+                          <span className={badge(row.statut)}>{STATUT[row.statut]}</span>
+                        </td>
+                        <td>{new Date(row.dateCommande).toLocaleDateString('fr-FR')}</td>
+                        <td className="money">{fmt(row.montant)} FCFA</td>
+                        <td>
+                          {row.quantiteRecue}/{row.quantite}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </>
+              </div>
             )}
           </ListPanel>
-        </div>
+        </>
       )}
 
       {peutCommander && (
-        <Modal open={modalNouveau} onClose={() => setModalNouveau(false)} title="Nouveau bon de commande">
+        <Modal
+          open={modalNouveau}
+          onClose={() => setModalNouveau(false)}
+          title="Nouveau bon de commande"
+          size="lg"
+        >
           <form
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
@@ -442,56 +334,15 @@ export function CommandesAchatsPage() {
             </button>
             <div>
               <label htmlFor="bc-notes">Notes</label>
-              <textarea id="bc-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <textarea
+                id="bc-notes"
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
             <button type="submit" className="btn-primary" disabled={creer.isPending}>
               Enregistrer le brouillon
-            </button>
-            {formErr && <p role="alert">{formErr}</p>}
-          </form>
-        </Modal>
-      )}
-
-      {c && ligneReception && (
-        <Modal
-          open
-          onClose={() => setLigneReception(null)}
-          title="Réception sur commande"
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              receptionner.mutate();
-            }}
-          >
-            <p className="lead">La quantité ne peut pas dépasser le reste commandé.</p>
-            <div>
-              <label>Quantité</label>
-              <input type="number" min="1" value={qtyRec} onChange={(e) => setQtyRec(e.target.value)} />
-            </div>
-            <div>
-              <label>Prix d’achat réel</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={prixRec}
-                onChange={(e) => setPrixRec(e.target.value)}
-              />
-            </div>
-            <div>
-              <label>Entrepôt</label>
-              <select value={entrepotId} onChange={(e) => setEntrepotId(e.target.value)}>
-                <option value="">Défaut</option>
-                {(entrepots.data ?? []).map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nom}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button type="submit" className="btn-primary" disabled={receptionner.isPending}>
-              Enregistrer
             </button>
             {formErr && <p role="alert">{formErr}</p>}
           </form>

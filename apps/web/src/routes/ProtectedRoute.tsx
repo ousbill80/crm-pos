@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Package,
+  PieChart,
   ShoppingCart,
   Truck,
   Users,
@@ -13,10 +14,11 @@ import {
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
+import { RoleLibelle } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
 import { TopbarSystray } from '../components/Topbar';
 
-type AppMenu = { to: string; label: string };
+type AppMenu = { to: string; label: string; roles?: RoleLibelle[] };
 
 type AppDef = {
   id: string;
@@ -26,6 +28,8 @@ type AppDef = {
   home: string;
   match: string[];
   menus: AppMenu[];
+  /** Si défini, l'app n'apparaît que pour ces rôles. */
+  roles?: RoleLibelle[];
 };
 
 /**
@@ -89,6 +93,28 @@ const APPS: AppDef[] = [
     menus: [{ to: '/clients', label: 'Clients' }],
   },
   {
+    id: 'finance',
+    name: 'Finance',
+    color: '#1B4F72',
+    icon: PieChart,
+    home: '/finance',
+    match: ['/finance'],
+    roles: [
+      RoleLibelle.DAF,
+      RoleLibelle.DIRECTION_GENERALE,
+      RoleLibelle.CAISSIER_CENTRAL,
+      RoleLibelle.CONTROLEUR_INTERNE,
+    ],
+    menus: [
+      { to: '/finance', label: 'Vue DAF' },
+      { to: '/finance?tab=resultat', label: 'Compte de résultat' },
+      { to: '/finance?tab=stocks', label: 'Stocks & valorisation' },
+      { to: '/finance?tab=tresorerie', label: 'Trésorerie' },
+      { to: '/achats/factures', label: 'Factures fournisseurs' },
+      { to: '/achats/commandes', label: 'Commandes' },
+    ],
+  },
+  {
     id: 'treasury',
     name: 'Trésorerie',
     color: '#017E84',
@@ -120,8 +146,29 @@ const APPS: AppDef[] = [
     color: '#6C757D',
     icon: Building2,
     home: '/entreprise',
-    match: ['/entreprise'],
-    menus: [{ to: '/entreprise', label: 'Entreprise' }],
+    match: ['/entreprise', '/utilisateurs', '/audit'],
+    menus: [
+      { to: '/entreprise', label: 'Entreprise' },
+      {
+        to: '/utilisateurs',
+        label: 'Utilisateurs',
+        roles: [
+          RoleLibelle.RESPONSABLE_SI,
+          RoleLibelle.DIRECTION_GENERALE,
+          RoleLibelle.DAF,
+          RoleLibelle.CONTROLEUR_INTERNE,
+        ],
+      },
+      {
+        to: '/audit',
+        label: "Journal d'audit",
+        roles: [
+          RoleLibelle.RESPONSABLE_SI,
+          RoleLibelle.DAF,
+          RoleLibelle.CONTROLEUR_INTERNE,
+        ],
+      },
+    ],
   },
 ];
 
@@ -135,7 +182,7 @@ function resolveApp(pathname: string): AppDef {
 }
 
 export function ProtectedRoute() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, mustChangePassword, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [appsOpen, setAppsOpen] = useState(false);
@@ -147,6 +194,22 @@ export function ProtectedRoute() {
     () => resolveApp(location.pathname),
     [location.pathname],
   );
+  const visibleApps = useMemo(() => {
+    const role = user?.role;
+    return APPS.filter(
+      (app) =>
+        !app.roles ||
+        (role !== undefined && app.roles.includes(role as RoleLibelle)),
+    );
+  }, [user?.role]);
+  const visibleMenus = useMemo(() => {
+    const role = user?.role;
+    return currentApp.menus.filter(
+      (menu) =>
+        !menu.roles ||
+        (role !== undefined && menu.roles.includes(role as RoleLibelle)),
+    );
+  }, [currentApp, user?.role]);
   const isPos = location.pathname.startsWith('/pos');
 
   useEffect(() => {
@@ -171,6 +234,14 @@ export function ProtectedRoute() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  if (location.pathname === '/changer-mot-de-passe') {
+    return <Outlet />;
+  }
+
+  if (mustChangePassword) {
+    return <Navigate to="/changer-mot-de-passe" replace />;
   }
 
   if (isPos) {
@@ -208,7 +279,7 @@ export function ProtectedRoute() {
               <div className="odoo-apps-menu" role="dialog" aria-label="Applications">
                 <div className="odoo-apps-menu-title">Applications</div>
                 <div className="odoo-apps-grid">
-                  {APPS.map((app) => {
+                  {visibleApps.map((app) => {
                     const Icon = app.icon;
                     const active = app.id === currentApp.id;
                     return (
@@ -251,15 +322,15 @@ export function ProtectedRoute() {
             <span>{currentApp.name}</span>
           </button>
 
-          {currentApp.menus.length > 0 && (
+          {visibleMenus.length > 0 && (
             <nav className="odoo-menus" aria-label={`Menus ${currentApp.name}`}>
-              {currentApp.menus.map((menu) => (
+              {visibleMenus.map((menu) => (
                 <NavLink
                   key={menu.to}
                   to={menu.to}
                   end={
                     menu.to === currentApp.home &&
-                    !['/produits', '/clients', '/stocks'].includes(menu.to)
+                    !['/produits', '/clients', '/stocks', '/fournisseurs'].includes(menu.to)
                   }
                 >
                   {menu.label}

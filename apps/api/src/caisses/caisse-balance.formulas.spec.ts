@@ -1,5 +1,10 @@
-import { Prisma } from '@prisma/client';
-import { soldeDepuisAgregats, zero } from './caisse-balance.formulas';
+import { Prisma, TypeTransaction } from '@prisma/client';
+import {
+  libelleEcriture,
+  sensEcriture,
+  soldeDepuisAgregats,
+  zero,
+} from './caisse-balance.formulas';
 
 describe('soldeDepuisAgregats (tiroirs / magasin / centrale)', () => {
   it('crédite VENTE et débit SORTIE_FONDS', () => {
@@ -40,5 +45,52 @@ describe('soldeDepuisAgregats (tiroirs / magasin / centrale)', () => {
       transfertsEntrants: new Prisma.Decimal(800),
     });
     expect(s.toString()).toBe('500');
+  });
+});
+
+describe('sensEcriture / libelleEcriture', () => {
+  it('VENTE = crédit', () => {
+    expect(
+      sensEcriture({ type: TypeTransaction.VENTE, transactionSourceId: null }),
+    ).toBe('CREDIT');
+  });
+
+  it('SORTIE_FONDS = débit', () => {
+    expect(
+      sensEcriture({
+        type: TypeTransaction.SORTIE_FONDS,
+        transactionSourceId: null,
+      }),
+    ).toBe('DEBIT');
+  });
+
+  it('TRANSFERT source = débit, miroir = crédit', () => {
+    expect(
+      sensEcriture({
+        type: TypeTransaction.TRANSFERT_INTERNE,
+        transactionSourceId: null,
+      }),
+    ).toBe('DEBIT');
+    expect(
+      sensEcriture({
+        type: TypeTransaction.TRANSFERT_INTERNE,
+        transactionSourceId: 'src-1',
+      }),
+    ).toBe('CREDIT');
+  });
+
+  it('libellés métier', () => {
+    expect(
+      libelleEcriture({
+        type: TypeTransaction.TRANSFERT_INTERNE,
+        transactionSourceId: null,
+      }),
+    ).toMatch(/sortant/i);
+    expect(
+      libelleEcriture({
+        type: TypeTransaction.TRANSFERT_INTERNE,
+        transactionSourceId: 'x',
+      }),
+    ).toMatch(/reçu/i);
   });
 });

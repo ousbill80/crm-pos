@@ -2,6 +2,7 @@ import type {
   CanalInteraction,
   ModePaiement,
   NiveauFidelite,
+  RoleLibelle,
   SegmentClient,
   StatutSessionCaisse,
   StatutTransaction,
@@ -9,6 +10,38 @@ import type {
   TypeClient,
   TypeTransaction,
 } from '@caisse-crm/shared';
+
+export interface UtilisateurDto {
+  id: string;
+  login: string;
+  nom: string;
+  prenom: string;
+  actif: boolean;
+  role: { id: string; libelle: RoleLibelle };
+  boutiqueId: string | null;
+  mustChangePassword: boolean;
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
+  createdAt: string;
+}
+
+export interface JournalAuditDto {
+  id: string;
+  action: string;
+  entite: string;
+  entiteId: string;
+  details: string | null;
+  dateHeure: string;
+  utilisateurId: string;
+  utilisateur: { id: string; login: string; nom: string; prenom: string };
+}
+
+export interface JournalAuditPageDto {
+  data: JournalAuditDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
 
 export interface TransactionDto {
   id: string;
@@ -54,6 +87,29 @@ export interface CaisseDto {
   libelle?: string | null;
   actif?: boolean;
   ordreAffichage?: number;
+}
+
+/** Ligne enrichie du grand livre GET /caisses/:id/mouvements */
+export interface MouvementCaisseDto {
+  id: string;
+  type: TypeTransaction;
+  montant: string;
+  dateHeure: string;
+  statut: StatutTransaction;
+  caisseId: string;
+  initiateurId: string;
+  transactionSourceId: string | null;
+  sens: 'CREDIT' | 'DEBIT';
+  debit: string;
+  credit: string;
+  soldeApres: string;
+  libelle: string;
+  initiateur: {
+    id: string;
+    login: string;
+    prenom: string;
+    nom: string;
+  };
 }
 
 export interface FideliteDto {
@@ -143,6 +199,7 @@ export interface ProduitDto {
   methodeCout?: 'CMP' | 'FIFO' | 'STANDARD';
   strategieSortie?: 'FIFO' | 'FEFO';
   attributs?: string | null;
+  imageUrl?: string | null;
 }
 
 export interface ProduitsSyntheseDto {
@@ -162,7 +219,12 @@ export interface ProduitAnalyseDto {
     entrepotId: string;
     nom: string;
     code: string;
+    usage?: string;
+    virtuel?: boolean;
+    boutique?: string | null;
     quantite: number;
+    valeur?: string;
+    statut?: StatutStock;
   }>;
   performance30j: {
     quantiteVendue: number;
@@ -175,6 +237,13 @@ export interface ProduitAnalyseDto {
     necessaire: boolean;
     quantiteSuggeree: number;
     motif: string;
+  };
+  stockPrevu?: {
+    physique: number;
+    reserve: number;
+    aRecevoir: number;
+    enTransit: number;
+    prevu: number;
   };
 }
 
@@ -301,6 +370,7 @@ export interface VenteHistoriqueDto {
   };
   clientId: string | null;
   lignes: LigneVenteDto[];
+  paiements?: PaiementVenteDto[];
   /** Caissier ayant enregistré la vente (journal d'audit VENTE_ENREGISTREE). */
   enregistrePar: { id: string; prenom: string; nom: string } | null;
 }
@@ -474,6 +544,7 @@ export interface CommandeAchatDto {
   quantite: number;
   quantiteRecue: number;
   boutique: { id: string; nom: string } | null;
+  initiateur?: { id: string; nom: string; prenom: string } | null;
   lignes: CommandeAchatLigneDto[];
 }
 
@@ -622,6 +693,7 @@ export interface StockSyntheseDto {
       quantite: number;
       statut: StatutStockLigne;
     }>;
+    stockPrevu?: number;
   }>;
   suggestionsTransfert: Array<{
     produitId: string;

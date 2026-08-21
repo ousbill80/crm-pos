@@ -46,8 +46,8 @@ describe('Caisses / Zones / Boutiques (e2e)', () => {
   let boutique1Id: string;
   let boutique2Id: string;
   let boutique3Id: string;
-  let caisse1Id: string; // AUXILIAIRE, boutique1 (zone A)
-  let caisse2Id: string; // AUXILIAIRE, boutique2 (zone A)
+  let caisse1Id: string; // MAGASIN, boutique1 (zone A)
+  let caisse2Id: string; // MAGASIN, boutique2 (zone A)
   let caisseCentraleId: string; // CENTRALE, sans boutique
 
   // Tokens JWT réels, obtenus via /auth/login pour chaque profil.
@@ -90,7 +90,7 @@ describe('Caisses / Zones / Boutiques (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
-    // --- Organisation : 2 zones, 3 boutiques, 2 caisses AUXILIAIRE + 1 CENTRALE ---
+    // --- Organisation : 2 zones, 3 boutiques, 2 caisses MAGASIN + 1 CENTRALE ---
     const zoneA = await env.prisma.zone.create({ data: { nomZone: 'Zone A' } });
     const zoneB = await env.prisma.zone.create({ data: { nomZone: 'Zone B' } });
     zoneAId = zoneA.id;

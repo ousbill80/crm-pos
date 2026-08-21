@@ -50,7 +50,10 @@ export class BonsStockController {
 
   @Post('bons')
   @Roles(...ROLES_BON_STOCK_PILOTE)
-  creer(@Body() dto: CreateBonStockDto, @CurrentUser() user: AuthenticatedUser) {
+  creer(
+    @Body() dto: CreateBonStockDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.bons.creer(dto, user);
   }
 
@@ -127,7 +130,7 @@ export class BonsStockController {
   @Roles(...ROLES_LECTURE_STRUCTURE)
   prevu(
     @Query('produitId') produitId: string,
-    @Query('entrepotId') entrepotId: string,
+    @Query('entrepotId') entrepotId?: string,
   ) {
     return this.bons.stockPrevu(produitId, entrepotId);
   }

@@ -1,13 +1,20 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AlertesPage } from './routes/AlertesPage';
+import { AuditPage } from './routes/AuditPage';
+import { ChangePasswordPage } from './routes/ChangePasswordPage';
+import { UtilisateursPage } from './routes/UtilisateursPage';
 import { CaissesPage } from './routes/CaissesPage';
 import { ClientDetailPage } from './routes/ClientDetailPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
 import { DashboardPage } from './routes/DashboardPage';
 import { EntreprisePage } from './routes/EntreprisePage';
 import { FournisseursPage } from './routes/FournisseursPage';
+import { FournisseurDetailPage } from './routes/FournisseurDetailPage';
 import { CommandesAchatsPage } from './routes/CommandesAchatsPage';
+import { CommandeAchatDetailPage } from './routes/CommandeAchatDetailPage';
 import { FacturesFournisseurPage } from './routes/FacturesFournisseurPage';
+import { FactureFournisseurDetailPage } from './routes/FactureFournisseurDetailPage';
+import { FinancePage } from './routes/FinancePage';
 import { LitigesPage } from './routes/LitigesPage';
 import { InventairesPage } from './routes/InventairesPage';
 import { InventaireDetailPage } from './routes/InventaireDetailPage';
@@ -34,6 +41,7 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/alertes" element={<AlertesPage />} />
         <Route path="/tresorerie" element={<TresoreriePage />} />
+        <Route path="/finance" element={<FinancePage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
         <Route path="/litiges" element={<LitigesPage />} />
@@ -50,9 +58,15 @@ function App() {
         <Route path="/inventaires" element={<InventairesPage />} />
         <Route path="/inventaires/:sessionId" element={<InventaireDetailPage />} />
         <Route path="/fournisseurs" element={<FournisseursPage />} />
+        <Route path="/fournisseurs/:fournisseurId" element={<FournisseurDetailPage />} />
         <Route path="/achats/commandes" element={<CommandesAchatsPage />} />
+        <Route path="/achats/commandes/:commandeId" element={<CommandeAchatDetailPage />} />
         <Route path="/achats/factures" element={<FacturesFournisseurPage />} />
+        <Route path="/achats/factures/:factureId" element={<FactureFournisseurDetailPage />} />
         <Route path="/entreprise" element={<EntreprisePage />} />
+        <Route path="/utilisateurs" element={<UtilisateursPage />} />
+        <Route path="/audit" element={<AuditPage />} />
+        <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
         <Route path="/pos" element={<PosPage />} />
       </Route>
     </Routes>

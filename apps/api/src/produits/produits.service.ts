@@ -7,6 +7,7 @@ import { Prisma, type Produit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StockService } from '../stocks/stock.service';
+import { BonsStockService } from '../stocks/bons-stock.service';
 import type { AuthenticatedUser } from '../auth/types';
 import { toCsv } from '../common/csv.util';
 import { CreateProduitDto } from './dto/create-produit.dto';
@@ -38,6 +39,7 @@ export class ProduitsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly stockService: StockService,
+    private readonly bonsStock: BonsStockService,
   ) {}
 
   async create(
@@ -73,13 +75,20 @@ export class ProduitsService {
     }
 
     if (stockInitial > 0) {
-      const entrepot = await this.prisma.entrepot.findFirst({
-        where: { type: 'PRINCIPAL', actif: true, reseau: false, usage: 'STOCK' },
-        orderBy: { nom: 'asc' },
-      }) ?? await this.prisma.entrepot.findFirst({
-        where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
-        orderBy: { nom: 'asc' },
-      });
+      const entrepot =
+        (await this.prisma.entrepot.findFirst({
+          where: {
+            type: 'PRINCIPAL',
+            actif: true,
+            reseau: false,
+            usage: 'STOCK',
+          },
+          orderBy: { nom: 'asc' },
+        })) ??
+        (await this.prisma.entrepot.findFirst({
+          where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
+          orderBy: { nom: 'asc' },
+        }));
       if (!entrepot) {
         throw new NotFoundException(
           'Aucun entrepôt PRINCIPAL : créez une boutique/entrepôt avant de stocker.',
@@ -273,6 +282,8 @@ export class ProduitsService {
             id: true,
             dateVente: true,
             modePaiement: true,
+            montantTotal: true,
+            paiements: { select: { modePaiement: true, montant: true } },
             caisse: {
               select: { boutique: { select: { nom: true } } },
             },
@@ -292,7 +303,12 @@ export class ProduitsService {
         venteId: ligne.vente.id,
         dateVente: ligne.vente.dateVente,
         boutique: ligne.vente.caisse.boutique?.nom ?? null,
-        modePaiement: ligne.vente.modePaiement,
+        modePaiement:
+          ligne.vente.paiements.length > 0
+            ? ligne.vente.paiements
+                .map((p) => `${p.modePaiement} ${p.montant.toFixed(2)}`)
+                .join(' + ')
+            : ligne.vente.modePaiement,
         quantite: ligne.quantite,
         prixUnitaire: money(new Prisma.Decimal(ligne.prixUnitaire)),
         remise: money(new Prisma.Decimal(ligne.remise)),
@@ -362,7 +378,16 @@ export class ProduitsService {
       this.prisma.stockQuant.findMany({
         where: { produitId: id },
         include: {
-          entrepot: { select: { id: true, nom: true, code: true } },
+          entrepot: {
+            select: {
+              id: true,
+              nom: true,
+              code: true,
+              usage: true,
+              virtuel: true,
+              boutique: { select: { nom: true } },
+            },
+          },
         },
         orderBy: { entrepot: { nom: 'asc' } },
       }),
@@ -437,13 +462,26 @@ export class ProduitsService {
       ? quantitePourSortirAlerte(produit)
       : 0;
 
+    const stockPrevu = await this.bonsStock.stockPrevu(id);
+
     return {
       produit,
+      stockPrevu,
       repartitionStock: quants.map((q) => ({
         entrepotId: q.entrepot.id,
         nom: q.entrepot.nom,
         code: q.entrepot.code,
+        usage: q.entrepot.usage,
+        virtuel: q.entrepot.virtuel,
+        boutique: q.entrepot.boutique?.nom ?? null,
         quantite: q.quantite,
+        valeur: money(
+          new Prisma.Decimal(produit.coutMoyenPondere).times(q.quantite),
+        ),
+        statut: statutStockOf({
+          stock: q.quantite,
+          seuilReappro: produit.seuilReappro,
+        }),
       })),
       performance30j: {
         quantiteVendue: quantiteNette,
@@ -488,6 +526,7 @@ export class ProduitsService {
           uniteMesure: dto.uniteMesure,
           methodeCout: dto.methodeCout,
           strategieSortie: dto.strategieSortie,
+          imageUrl: dto.imageUrl,
         },
       });
     } catch (error) {
@@ -504,7 +543,15 @@ export class ProduitsService {
       action: 'PRODUIT_UPDATED',
       entite: 'Produit',
       entiteId: produit.id,
-      details: JSON.stringify(dto),
+      details: JSON.stringify({
+        ...dto,
+        imageUrl:
+          dto.imageUrl === undefined
+            ? undefined
+            : dto.imageUrl
+              ? 'photo-mise-a-jour'
+              : null,
+      }),
     });
 
     return enrichirProduit(produit);
@@ -515,7 +562,14 @@ export class ProduitsService {
     return this.prisma.mouvementStock.findMany({
       where: { produitId: id },
       include: {
-        entrepot: { select: { nom: true, code: true } },
+        entrepot: {
+          select: {
+            nom: true,
+            code: true,
+            boutique: { select: { nom: true } },
+          },
+        },
+        utilisateur: { select: { prenom: true, nom: true } },
       },
       orderBy: { dateHeure: 'desc' },
       take: 200,

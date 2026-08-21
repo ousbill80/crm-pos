@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModePaiementFournisseur, RoleLibelle } from '@caisse-crm/shared';
+import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
@@ -25,11 +26,6 @@ const ROLES_FACTURE: RoleLibelle[] = [
   RoleLibelle.DAF,
 ];
 
-const ROLES_PAIEMENT: RoleLibelle[] = [
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-];
-
 const STATUT: Record<FactureFournisseurDto['statut'], string> = {
   BROUILLON: 'Brouillon',
   COMPTABILISEE: 'Comptabilisée',
@@ -40,8 +36,10 @@ const STATUT: Record<FactureFournisseurDto['statut'], string> = {
 
 function badge(statut: FactureFournisseurDto['statut']) {
   if (statut === 'PAYEE') return 'badge badge-ok';
-  if (statut === 'PARTIELLEMENT_PAYEE' || statut === 'COMPTABILISEE') return 'badge badge-warning';
-  if (statut === 'ANNULEE') return 'badge';
+  if (statut === 'PARTIELLEMENT_PAYEE' || statut === 'COMPTABILISEE') {
+    return 'badge badge-warning';
+  }
+  if (statut === 'ANNULEE') return 'badge badge-neutral';
   return 'badge';
 }
 
@@ -51,32 +49,25 @@ function fmt(n: string | number) {
 
 export function FacturesFournisseurPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutFacturer = user !== null && ROLES_FACTURE.includes(user.role);
-  const peutPayer = user !== null && ROLES_PAIEMENT.includes(user.role);
 
-  const [selectionId, setSelectionId] = useState<string | null>(null);
+  const [filtreStatut, setFiltreStatut] = useState<FactureFournisseurDto['statut'] | ''>(
+    '',
+  );
   const [modalNouveau, setModalNouveau] = useState(false);
-  const [modalPaiement, setModalPaiement] = useState(false);
   const [fournisseurId, setFournisseurId] = useState('');
   const [reference, setReference] = useState('');
   const [echeance, setEcheance] = useState('');
   const [selectionReceptions, setSelectionReceptions] = useState<string[]>([]);
-  const [montantPaye, setMontantPaye] = useState('');
-  const [mode, setMode] = useState<ModePaiementFournisseur>('VIREMENT');
-  const [refPaiement, setRefPaiement] = useState('');
   const [formErr, setFormErr] = useState<string | null>(null);
 
   const factures = useQuery({
     queryKey: ['achats-factures'],
     queryFn: () => apiFetch<FactureFournisseurDto[]>('/achats/factures'),
     enabled: peutLire,
-  });
-  const detail = useQuery({
-    queryKey: ['achats-factures', selectionId],
-    queryFn: () => apiFetch<FactureFournisseurDto>(`/achats/factures/${selectionId}`),
-    enabled: peutLire && selectionId !== null,
   });
   const aFacturer = useQuery({
     queryKey: ['achats-a-facturer', fournisseurId],
@@ -102,11 +93,13 @@ export function FacturesFournisseurPage() {
     return map;
   }, [aFacturer.data]);
 
-  function invalider() {
-    void queryClient.invalidateQueries({ queryKey: ['achats-factures'] });
-    void queryClient.invalidateQueries({ queryKey: ['achats-a-facturer'] });
-    void queryClient.invalidateQueries({ queryKey: ['fournisseurs-synthese'] });
-  }
+  const liste = useMemo(
+    () =>
+      (factures.data ?? []).filter((f) =>
+        filtreStatut ? f.statut === filtreStatut : true,
+      ),
+    [factures.data, filtreStatut],
+  );
 
   const creer = useMutation({
     mutationFn: () =>
@@ -121,52 +114,20 @@ export function FacturesFournisseurPage() {
       }),
     onSuccess: (f) => {
       setModalNouveau(false);
-      setSelectionId(f.id);
       setFormErr(null);
-      invalider();
+      void queryClient.invalidateQueries({ queryKey: ['achats-factures'] });
+      void queryClient.invalidateQueries({ queryKey: ['achats-a-facturer'] });
+      void queryClient.invalidateQueries({ queryKey: ['fournisseurs-synthese'] });
+      navigate(`/achats/factures/${f.id}`);
     },
     onError: (e) => setFormErr(messageDepuisApi(e, 'Facture refusée.')),
   });
 
-  const comptabiliser = useMutation({
-    mutationFn: () =>
-      apiFetch<FactureFournisseurDto>(`/achats/factures/${selectionId}/comptabiliser`, {
-        method: 'POST',
-      }),
-    onSuccess: invalider,
-  });
-  const annuler = useMutation({
-    mutationFn: () =>
-      apiFetch<FactureFournisseurDto>(`/achats/factures/${selectionId}/annuler`, {
-        method: 'POST',
-      }),
-    onSuccess: invalider,
-  });
-  const payer = useMutation({
-    mutationFn: () =>
-      apiFetch<FactureFournisseurDto>(`/achats/factures/${selectionId}/paiements`, {
-        method: 'POST',
-        body: JSON.stringify({
-          montant: Number(montantPaye),
-          mode,
-          reference: refPaiement.trim() || undefined,
-        }),
-      }),
-    onSuccess: () => {
-      setModalPaiement(false);
-      setFormErr(null);
-      invalider();
-      if (selectionId) {
-        void queryClient.invalidateQueries({ queryKey: ['achats-factures', selectionId] });
-      }
-    },
-    onError: (e) => setFormErr(messageDepuisApi(e, 'Paiement refusé.')),
-  });
-
   if (!peutLire) return <p>Vous n’avez pas accès aux factures fournisseur.</p>;
 
-  const f = detail.data;
-  const receptionsFourn = fournisseurId ? parFournisseur.get(fournisseurId) ?? [] : aFacturer.data ?? [];
+  const receptionsFourn = fournisseurId
+    ? parFournisseur.get(fournisseurId) ?? []
+    : aFacturer.data ?? [];
 
   return (
     <div>
@@ -197,145 +158,108 @@ export function FacturesFournisseurPage() {
       {factures.isError && <p role="alert">Erreur de chargement des factures.</p>}
 
       {factures.data && (
-        <div
-          className="dash-layout"
-          style={{ gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1fr)' }}
-        >
+        <>
+          <div className="toolbar">
+            <div>
+              <label htmlFor="filtre-fa-statut">Statut</label>
+              <select
+                id="filtre-fa-statut"
+                value={filtreStatut}
+                onChange={(e) =>
+                  setFiltreStatut(e.target.value as FactureFournisseurDto['statut'] | '')
+                }
+              >
+                <option value="">Tous</option>
+                {(Object.keys(STATUT) as FactureFournisseurDto['statut'][]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUT[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="lead">
+              {liste.length} facture(s)
+              {filtreStatut ? ` · ${STATUT[filtreStatut]}` : ''}
+            </p>
+          </div>
           <ListPanel title="Factures">
             {factures.data.length === 0 ? (
               <EmptyState
                 title="Aucune facture"
                 description="Facturez des réceptions de stock déjà enregistrées."
               />
+            ) : liste.length === 0 ? (
+              <EmptyState
+                title="Aucun résultat"
+                description="Aucune facture ne correspond à ce statut."
+              />
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>N°</th>
-                    <th>Fournisseur</th>
-                    <th>Statut</th>
-                    <th>Montant</th>
-                    <th>Reste</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {factures.data.map((row) => (
-                    <tr
-                      key={row.id}
-                      onClick={() => setSelectionId(row.id)}
-                      style={{
-                        cursor: 'pointer',
-                        background:
-                          row.id === selectionId ? 'var(--surface-muted, #f4f4f5)' : undefined,
-                      }}
-                    >
-                      <td>{row.numero}</td>
-                      <td>{row.fournisseur.nom}</td>
-                      <td>
-                        <span className={badge(row.statut)}>{STATUT[row.statut]}</span>
-                      </td>
-                      <td className="money">{fmt(row.montant)} FCFA</td>
-                      <td className="money">{fmt(row.resteAPayer)} FCFA</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </ListPanel>
-
-          <ListPanel title={f ? f.numero : 'Détail'}>
-            {!selectionId && <EmptyState title="Sélectionnez une facture" />}
-            {selectionId && detail.isLoading && <LoadingState label="Chargement..." />}
-            {f && (
-              <>
-                <p className="lead">
-                  {f.fournisseur.nom}
-                  {f.referenceFournisseur ? ` · n° fournisseur ${f.referenceFournisseur}` : ''}
-                </p>
-                <p className="lead">
-                  {fmt(f.montant)} FCFA · payé {fmt(f.montantPaye)} · reste {fmt(f.resteAPayer)}
-                </p>
-                <div className="table-actions">
-                  {peutFacturer && f.statut === 'BROUILLON' && (
-                    <>
-                      <button type="button" className="btn-primary" onClick={() => comptabiliser.mutate()}>
-                        Comptabiliser
-                      </button>
-                      <button type="button" onClick={() => annuler.mutate()}>
-                        Annuler le brouillon
-                      </button>
-                    </>
-                  )}
-                  {peutPayer &&
-                    (f.statut === 'COMPTABILISEE' || f.statut === 'PARTIELLEMENT_PAYEE') && (
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={() => {
-                          setMontantPaye(f.resteAPayer);
-                          setMode('VIREMENT');
-                          setRefPaiement('');
-                          setFormErr(null);
-                          setModalPaiement(true);
-                        }}
-                      >
-                        Enregistrer un paiement
-                      </button>
-                    )}
-                </div>
+              <div className="clients-table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Article</th>
-                      <th>Qté</th>
-                      <th>Prix</th>
+                      <th>N°</th>
+                      <th>Fournisseur</th>
+                      <th>Statut</th>
+                      <th>Date</th>
+                      <th>Échéance</th>
                       <th>Montant</th>
+                      <th>Reste</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {f.lignes.map((l) => (
-                      <tr key={l.id}>
-                        <td>{l.produit.designation}</td>
-                        <td>{l.quantite}</td>
-                        <td className="money">{fmt(l.prixUnitaire)}</td>
-                        <td className="money">{fmt(l.montant)}</td>
+                    {liste.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="produit-row"
+                        tabIndex={0}
+                        role="link"
+                        aria-label={`Ouvrir ${row.numero}`}
+                        onClick={() => navigate(`/achats/factures/${row.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate(`/achats/factures/${row.id}`);
+                          }
+                        }}
+                      >
+                        <td>
+                          <strong>{row.numero}</strong>
+                          {row.referenceFournisseur ? (
+                            <div className="kpi-hint" style={{ margin: 0 }}>
+                              n° {row.referenceFournisseur}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>{row.fournisseur.nom}</td>
+                        <td>
+                          <span className={badge(row.statut)}>{STATUT[row.statut]}</span>
+                        </td>
+                        <td>{new Date(row.dateFacture).toLocaleDateString('fr-FR')}</td>
+                        <td>
+                          {row.dateEcheance
+                            ? new Date(row.dateEcheance).toLocaleDateString('fr-FR')
+                            : '—'}
+                        </td>
+                        <td className="money">{fmt(row.montant)} FCFA</td>
+                        <td className="money">{fmt(row.resteAPayer)} FCFA</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {f.paiements.length > 0 && (
-                  <>
-                    <h3>Règlements</h3>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Mode</th>
-                          <th>Montant</th>
-                          <th>Réf.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {f.paiements.map((p) => (
-                          <tr key={p.id}>
-                            <td>{new Date(p.datePaiement).toLocaleString('fr-FR')}</td>
-                            <td>{p.mode}</td>
-                            <td className="money">{fmt(p.montant)} FCFA</td>
-                            <td>{p.reference ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </>
+              </div>
             )}
           </ListPanel>
-        </div>
+        </>
       )}
 
       {peutFacturer && (
-        <Modal open={modalNouveau} onClose={() => setModalNouveau(false)} title="Nouvelle facture">
+        <Modal
+          open={modalNouveau}
+          onClose={() => setModalNouveau(false)}
+          title="Nouvelle facture"
+          size="lg"
+        >
           <form
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
@@ -365,7 +289,11 @@ export function FacturesFournisseurPage() {
             </div>
             <div>
               <label>Échéance (optionnel)</label>
-              <input type="date" value={echeance} onChange={(e) => setEcheance(e.target.value)} />
+              <input
+                type="date"
+                value={echeance}
+                onChange={(e) => setEcheance(e.target.value)}
+              />
             </div>
             <p className="lead">Réceptions non encore facturées</p>
             {receptionsFourn.length === 0 ? (
@@ -389,7 +317,9 @@ export function FacturesFournisseurPage() {
                           checked={selectionReceptions.includes(r.id)}
                           onChange={(e) => {
                             setSelectionReceptions((prev) =>
-                              e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                              e.target.checked
+                                ? [...prev, r.id]
+                                : prev.filter((id) => id !== r.id),
                             );
                           }}
                         />
@@ -410,49 +340,6 @@ export function FacturesFournisseurPage() {
               disabled={creer.isPending || selectionReceptions.length === 0}
             >
               Créer le brouillon
-            </button>
-            {formErr && <p role="alert">{formErr}</p>}
-          </form>
-        </Modal>
-      )}
-
-      {f && (
-        <Modal open={modalPaiement} onClose={() => setModalPaiement(false)} title="Paiement fournisseur">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              payer.mutate();
-            }}
-          >
-            <p className="lead">Reste à payer : {fmt(f.resteAPayer)} FCFA</p>
-            <div>
-              <label>Montant</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={montantPaye}
-                onChange={(e) => setMontantPaye(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label>Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as ModePaiementFournisseur)}
-              >
-                <option value="VIREMENT">Virement</option>
-                <option value="ESPECES">Espèces</option>
-                <option value="MOBILE_MONEY">Mobile money</option>
-              </select>
-            </div>
-            <div>
-              <label>Référence</label>
-              <input value={refPaiement} onChange={(e) => setRefPaiement(e.target.value)} />
-            </div>
-            <button type="submit" className="btn-primary" disabled={payer.isPending}>
-              Enregistrer
             </button>
             {formErr && <p role="alert">{formErr}</p>}
           </form>

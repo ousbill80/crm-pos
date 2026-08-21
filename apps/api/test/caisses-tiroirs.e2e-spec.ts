@@ -111,8 +111,9 @@ describe('Caisses tiroirs grande surface (e2e)', () => {
         ordreAffichage: 1,
       })
       .expect(201);
-    expect(res.body.type).toBe('TIROIR');
-    expect(res.body.code).toBe('T01');
+    const body = res.body as { type: string; code: string };
+    expect(body.type).toBe('TIROIR');
+    expect(body.code).toBe('T01');
   });
 
   it('Responsable boutique reçoit 403 sur création tiroir', async () => {

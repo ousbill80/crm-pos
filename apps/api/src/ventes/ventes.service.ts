@@ -12,7 +12,6 @@ import {
   StatutSessionCaisse,
   StatutTransaction,
   TypeCaisse,
-  TypeTransaction,
 } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
@@ -100,6 +99,7 @@ export class VentesService {
 
     const temoin = await this.resoudreTemoin(
       dto.temoinLogin,
+      dto.temoinPassword,
       utilisateur,
       boutiqueId,
     );
@@ -463,7 +463,11 @@ export class VentesService {
       ModePaiement,
       { total: Prisma.Decimal; nombreVentes: number }
     >();
-    const bump = (mode: ModePaiement, montant: Prisma.Decimal, ticket: boolean) => {
+    const bump = (
+      mode: ModePaiement,
+      montant: Prisma.Decimal,
+      ticket: boolean,
+    ) => {
       const actuel = totaux.get(mode) ?? {
         total: new Prisma.Decimal(0),
         nombreVentes: 0,
@@ -562,6 +566,7 @@ export class VentesService {
     const boutiqueId = requireOwnBoutiqueId(utilisateur);
     const temoin = await this.resoudreTemoin(
       dto.temoinLogin,
+      dto.temoinPassword,
       utilisateur,
       boutiqueId,
     );
@@ -807,10 +812,10 @@ export class VentesService {
 
   // Comptage contradictoire (§5.1) : le témoin doit être un utilisateur actif
   // de la même boutique, éligible (caissier/responsable boutique), différent
-  // de l'acteur principal. Résolu par login, sans ré-authentification —
-  // simplification assumée (cf. plan de la tâche).
+  // de l'acteur principal, et prouver sa présence par mot de passe.
   private async resoudreTemoin(
     temoinLogin: string,
+    temoinPassword: string,
     acteur: AuthenticatedUser,
     boutiqueId: string,
   ) {
@@ -838,6 +843,13 @@ export class VentesService {
     ) {
       throw new BadRequestException(
         'Témoin invalide : le rôle doit être Caissier boutique ou Responsable boutique.',
+      );
+    }
+
+    const ok = await bcrypt.compare(temoinPassword, temoin.passwordHash);
+    if (!ok) {
+      throw new BadRequestException(
+        'Témoin invalide : mot de passe du confirmateur incorrect.',
       );
     }
 
@@ -881,7 +893,9 @@ export class VentesService {
         return [];
       }
       for (const [produitId, quantite] of lignes) {
-        const produit = await tx.produit.findUnique({ where: { id: produitId } });
+        const produit = await tx.produit.findUnique({
+          where: { id: produitId },
+        });
         if (!produit?.actif) {
           throw new NotFoundException(`Produit ${produitId} introuvable.`);
         }
@@ -1023,7 +1037,9 @@ export class VentesService {
     }
     const ok = await bcrypt.compare(password, chef.passwordHash);
     if (!ok) {
-      throw new BadRequestException('Dérogation refusée : identifiants invalides.');
+      throw new BadRequestException(
+        'Dérogation refusée : identifiants invalides.',
+      );
     }
     return chef;
   }

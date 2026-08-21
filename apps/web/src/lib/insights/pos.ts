@@ -19,15 +19,16 @@ export function insightRemisePos(remise: number, brut: number): Insight {
   if (remise <= 0) {
     return {
       title: 'Remise',
-      interpretation: `Plafond serveur : 20 % du montant brut, soit ${fmt(plafond)} FCFA. Au-delà, l'encaissement est refusé.`,
+      interpretation: `Plafond serveur : 20 % du montant brut, soit ${fmt(plafond)} FCFA. Au-delà, il faut une dérogation du Responsable boutique.`,
       severity: 'info',
     };
   }
   if (remise > plafond) {
     return {
       title: 'Remise au-dessus du plafond',
-      interpretation: `${fmt(remise)} FCFA dépasse le plafond de 20 % (${fmt(plafond)} FCFA). L'API refusera l'encaissement.`,
-      recommendation: 'Réduire la remise au plus au plafond avant d’encaisser.',
+      interpretation: `${fmt(remise)} FCFA dépasse le plafond de 20 % (${fmt(plafond)} FCFA). Sans dérogation, l'API refuse l'encaissement.`,
+      recommendation:
+        'Réduire la remise, ou faire saisir login et mot de passe du Responsable boutique (pas le caissier) pour une dérogation journalisée.',
       severity: 'critical',
     };
   }
@@ -147,7 +148,7 @@ export function insightTemoinOuverture(): Insight {
   return {
     title: 'Confirmateur d’ouverture',
     interpretation:
-      'Double contrôle terrain (§5.1) : un coéquipier ou le responsable magasin présent valide l’ouverture (ou la clôture). Il doit être de la même boutique et distinct du caissier au poste — comme un chef de caisse qui atteste le fond du tiroir.',
+      'Double contrôle terrain (§5.1) : un coéquipier ou le responsable magasin présent valide l’ouverture (ou la clôture) avec son mot de passe. Il doit être de la même boutique et distinct du caissier au poste.',
     severity: 'info',
   };
 }
@@ -156,12 +157,37 @@ export function insightCommandeEnAttente(count: number): Insight {
   return {
     title: 'File d’attente caisse',
     interpretation:
-      'Comme en grande surface : le ticket est parqué sur cette caisse (nom + motif), sans encaissement ni mouvement de stock. Le client suivant passe ; la reprise se fait par n° de file. Un coupon de reprise peut être imprimé — ce n’est pas un ticket de caisse.',
+      'Comme en grande surface : le ticket est parqué (nom + motif). Le stock boutique est réservé côté serveur pour que l’autre caisse ne vende pas le dernier exemplaire. Ce n’est pas un encaissement : aucun ticket, aucun mouvement de grand livre tant que le client ne paie pas.',
     recommendation:
       count > 0
         ? `${count} ticket(s) en file — reprendre ou abandonner avant la clôture.`
         : 'F3 parque. La file (barre du haut) rappelle le plus ancien en premier.',
     severity: count > 0 ? 'info' : 'neutral',
+  };
+}
+
+export function insightPaiementMixte(reste: number, nbModes: number): Insight {
+  if (nbModes <= 1) {
+    return {
+      title: 'Règlement',
+      interpretation:
+        'Un seul mode : le total alimente ce mode. Un second mode (carte + espèces) répartit le ticket ; seule la part espèces entre dans le tiroir et le bordereau de clôture.',
+      severity: 'neutral',
+    };
+  }
+  if (Math.abs(reste) >= 0.5) {
+    return {
+      title: 'Paiement mixte incomplet',
+      interpretation: `La somme des règlements doit égaler le total du ticket (reste ${Math.round(reste).toLocaleString('fr-FR')} FCFA).`,
+      recommendation: 'Saisir les montants ou « Reste » sur le dernier mode.',
+      severity: 'warning',
+    };
+  }
+  return {
+    title: 'Paiement mixte',
+    interpretation:
+      'Un ticket, plusieurs modes. Le stock n’est décrémenté qu’une fois. Le Z et le bordereau ne prennent que la part espèces.',
+    severity: 'info',
   };
 }
 

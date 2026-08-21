@@ -28,7 +28,19 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { apiDownload, apiFetch, codeDepuisApi, estErreurReseau, messageDepuisApi } from '../lib/api';
+import {
+  debitEspecesRetours,
+  libellePaiements,
+  paiementsEffectifs,
+  partEspeces,
+} from '../lib/paiement-vente';
+import {
+  apiDownload,
+  apiFetch,
+  codeDepuisApi,
+  estErreurReseau,
+  messageDepuisApi,
+} from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { LoadingState } from '../components/LoadingState';
@@ -40,6 +52,7 @@ import {
   insightEcartCloture,
   insightHorsLignePos,
   insightMonnaiePos,
+  insightPaiementMixte,
   insightRemisePos,
   insightSessionPos,
   insightTemoinOuverture,
@@ -169,15 +182,24 @@ function venteOptimiste(
   modePaiement: ModePaiement,
   clientId: string | null,
   clientOperationId: string,
+  paiements?: Array<{ modePaiement: ModePaiement; montant: number }>,
 ): VenteDto {
+  const total = String(totalNet(panier));
   return {
     id: clientOperationId,
     dateVente: new Date().toISOString(),
-    montantTotal: String(totalNet(panier)),
+    montantTotal: total,
     modePaiement,
     caisseId: session.caisseId,
     sessionCaisseId: session.id,
     clientId,
+    paiements: (paiements && paiements.length > 0
+      ? paiements
+      : [{ modePaiement, montant: Number(total) }]
+    ).map((p) => ({
+      modePaiement: p.modePaiement,
+      montant: String(p.montant),
+    })),
     lignes: panier.map((l, index) => ({
       id: `${clientOperationId}-l${index}`,
       venteId: clientOperationId,
@@ -335,21 +357,117 @@ function useTemoinsEligibles(enabled: boolean) {
 }
 
 const FONDS_RAPIDES = [0, 5_000, 10_000, 20_000, 50_000];
+const FOND_STORAGE_KEY = 'pos.fondInitial';
+
+function lireFondMemorise(caisseId: string): string {
+  try {
+    const raw = localStorage.getItem(`${FOND_STORAGE_KEY}.${caisseId}`);
+    if (raw != null && raw !== '' && Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+      return String(Number(raw));
+    }
+  } catch {
+    /* ignore */
+  }
+  return '0';
+}
+
+function memoriserFond(caisseId: string, fond: string) {
+  try {
+    localStorage.setItem(`${FOND_STORAGE_KEY}.${caisseId}`, fond);
+  } catch {
+    /* ignore */
+  }
+}
+
+function libelleRoleTemoin(role: string | null) {
+  return role === 'RESPONSABLE_BOUTIQUE' ? 'Responsable magasin' : 'Caissier';
+}
+
+function TemoinsPicker({
+  temoins,
+  value,
+  onChange,
+  loading,
+}: {
+  temoins: TemoinEligibleDto[] | undefined;
+  value: string;
+  onChange: (login: string) => void;
+  loading?: boolean;
+}) {
+  if (loading) {
+    return <LoadingState label="Chargement des coéquipiers…" />;
+  }
+  if (!temoins || temoins.length === 0) {
+    return (
+      <p role="alert">
+        Aucun coéquipier éligible sur cette boutique. Un autre caissier ou le
+        responsable magasin doit être créé et rattaché.
+      </p>
+    );
+  }
+  return (
+    <div className="pos-open-temoins" role="listbox" aria-label="Confirmateur">
+      {temoins.map((t) => {
+        const actif = value === t.login;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="option"
+            aria-selected={actif}
+            className={actif ? 'actif' : ''}
+            onClick={() => onChange(t.login)}
+          >
+            <strong>
+              {t.prenom} {t.nom}
+            </strong>
+            <span>{libelleRoleTemoin(t.role)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function OuvertureSessionForm({
   caisseId,
   tiroirLabel,
   boutiqueNom,
+  caissierLogin,
+  tiroirs,
+  onSelectTiroir,
 }: {
   caisseId: string;
   tiroirLabel: string;
   boutiqueNom?: string;
+  caissierLogin?: string;
+  tiroirs: CaisseDto[];
+  onSelectTiroir: (id: string) => void;
 }) {
   const queryClient = useQueryClient();
   const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
-  const [fondInitial, setFondInitial] = useState('0');
+  const [etape, setEtape] = useState<1 | 2>(1);
+  const [fondInitial, setFondInitial] = useState(() => lireFondMemorise(caisseId));
   const [temoinLogin, setTemoinLogin] = useState('');
+  const [temoinPassword, setTemoinPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFondInitial(lireFondMemorise(caisseId));
+    setTemoinLogin('');
+    setTemoinPassword('');
+    setEtape(1);
+    setError(null);
+  }, [caisseId]);
+
+  useEffect(() => {
+    if (!temoins || temoins.length !== 1) return;
+    setTemoinLogin(temoins[0].login);
+  }, [temoins]);
+
+  const temoinChoisi = temoins?.find((t) => t.login === temoinLogin);
+  const fondNum = Number(fondInitial);
+  const fondOk = Number.isFinite(fondNum) && fondNum >= 0 && fondInitial !== '';
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -357,26 +475,46 @@ function OuvertureSessionForm({
         method: 'POST',
         body: JSON.stringify({
           caisseId,
-          fondInitial: Number(fondInitial),
+          fondInitial: fondNum,
           temoinLogin,
+          temoinPassword,
         }),
       }),
     onSuccess: () => {
-      setFondInitial('0');
-      setTemoinLogin('');
+      memoriserFond(caisseId, String(fondNum));
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ['ventes-sessions'] });
     },
     onError: (err) =>
       setError(
-        messageDepuisApi(err, 'Échec ouverture : fond de tiroir ou confirmateur invalide.'),
+        messageDepuisApi(
+          err,
+          'Échec ouverture : fond de tiroir ou confirmateur invalide.',
+        ),
       ),
   });
 
+  function allerConfirmateur() {
+    if (!fondOk) {
+      setError('Indiquez le fond compté dans le tiroir.');
+      return;
+    }
+    setError(null);
+    setEtape(2);
+  }
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (etape === 1) {
+      allerConfirmateur();
+      return;
+    }
     if (!temoinLogin) {
       setError('Sélectionnez le coéquipier qui confirme l’ouverture.');
+      return;
+    }
+    if (!temoinPassword) {
+      setError('Le confirmateur doit saisir son mot de passe.');
       return;
     }
     mutation.mutate();
@@ -384,89 +522,157 @@ function OuvertureSessionForm({
 
   return (
     <form className="pos-gate-card pos-open-card" onSubmit={onSubmit}>
-      <div className="pos-gate-brand">CaissePOS</div>
+      <div className="pos-open-top">
+        <div className="pos-gate-brand">CaissePOS</div>
+        <div className="pos-open-steps" aria-label="Étapes">
+          <span className={etape === 1 ? 'actif' : 'fait'}>1 Fond</span>
+          <span className="pos-open-steps-sep" />
+          <span className={etape === 2 ? 'actif' : ''}>2 Confirmateur</span>
+        </div>
+      </div>
+
       <h1>Ouvrir le poste</h1>
       <p className="pos-gate-hint">
         {boutiqueNom ? `${boutiqueNom} · ` : ''}
         {tiroirLabel}
-      </p>
-      <p className="lead">
-        Comme en magasin : compter le fond du tiroir, puis faire confirmer
-        l’ouverture par un coéquipier / responsable présent.
-        <InfoTooltip insight={insightTemoinOuverture()} />
+        {caissierLogin ? ` · ${caissierLogin}` : ''}
       </p>
 
-      <fieldset className="pos-open-fieldset">
-        <legend>1. Fond de tiroir</legend>
-        <div className="pos-open-fonds">
-          {FONDS_RAPIDES.map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={Number(fondInitial) === n ? 'actif' : ''}
-              onClick={() => setFondInitial(String(n))}
-            >
-              {n === 0 ? 'Vide' : `${n.toLocaleString('fr-FR')} F`}
-            </button>
-          ))}
-        </div>
-        <label htmlFor="fondInitial">Montant compté (FCFA)</label>
-        <input
-          id="fondInitial"
-          type="number"
-          min="0"
-          step="1"
-          inputMode="numeric"
-          value={fondInitial}
-          onChange={(e) => setFondInitial(e.target.value)}
-          required
-        />
-      </fieldset>
-
-      <fieldset className="pos-open-fieldset">
-        <legend>2. Confirmateur présent</legend>
-        {loadingTemoins && <LoadingState label="Chargement des coéquipiers…" />}
-        {!loadingTemoins && temoins && temoins.length === 0 && (
-          <p role="alert">
-            Aucun coéquipier éligible sur cette boutique. Un autre caissier ou
-            le responsable magasin doit être créé et rattaché.
-          </p>
-        )}
-        {!loadingTemoins && temoins && temoins.length > 0 && (
-          <div className="pos-open-temoins" role="listbox" aria-label="Confirmateur">
-            {temoins.map((t) => {
-              const actif = temoinLogin === t.login;
+      {tiroirs.length > 1 && (
+        <fieldset className="pos-open-fieldset">
+          <legend>Tiroir</legend>
+          <div className="pos-open-tiroirs">
+            {tiroirs.map((t) => {
+              const label = t.code
+                ? `${t.code}${t.libelle ? ` — ${t.libelle}` : ''}`
+                : (t.libelle ?? t.id.slice(0, 8));
+              const actif = t.id === caisseId;
               return (
                 <button
                   key={t.id}
                   type="button"
-                  role="option"
-                  aria-selected={actif}
                   className={actif ? 'actif' : ''}
-                  onClick={() => setTemoinLogin(t.login)}
+                  onClick={() => onSelectTiroir(t.id)}
                 >
-                  <strong>
-                    {t.prenom} {t.nom}
-                  </strong>
-                  <span>
-                    {t.role === 'RESPONSABLE_BOUTIQUE'
-                      ? 'Responsable magasin'
-                      : 'Caissier'}
-                  </span>
+                  {label}
                 </button>
               );
             })}
           </div>
-        )}
-      </fieldset>
+        </fieldset>
+      )}
 
-      <button
-        type="submit"
-        className="pos-btn-primary"
-        disabled={mutation.isPending || !temoinLogin}
-      >
-        {mutation.isPending ? 'Ouverture…' : 'Démarrer les ventes'}
-      </button>
+      {etape === 1 && (
+        <fieldset className="pos-open-fieldset">
+          <legend>Fond de tiroir</legend>
+          <p className="pos-open-help">
+            Comptez les espèces déjà dans le tiroir avant la première vente.
+          </p>
+          <div className="pos-open-fonds">
+            {FONDS_RAPIDES.map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={fondNum === n ? 'actif' : ''}
+                onClick={() => setFondInitial(String(n))}
+              >
+                {n === 0 ? 'Vide' : `${n.toLocaleString('fr-FR')} F`}
+              </button>
+            ))}
+          </div>
+          <label htmlFor="fondInitial">Montant compté (FCFA)</label>
+          <input
+            id="fondInitial"
+            className="pos-open-montant"
+            type="number"
+            min="0"
+            step="1"
+            inputMode="numeric"
+            value={fondInitial}
+            onChange={(e) => setFondInitial(e.target.value)}
+            required
+            autoFocus
+          />
+          {fondOk && (
+            <p className="pos-open-montant-preview money" aria-live="polite">
+              {fondNum.toLocaleString('fr-FR')} FCFA
+            </p>
+          )}
+        </fieldset>
+      )}
+
+      {etape === 2 && (
+        <fieldset className="pos-open-fieldset">
+          <legend>Confirmateur présent</legend>
+          <p className="pos-open-help">
+            Un coéquipier ou le responsable magasin atteste le fond
+            <InfoTooltip insight={insightTemoinOuverture()} />
+          </p>
+          <div className="pos-open-recap">
+            <span>Fond</span>
+            <strong className="money">
+              {fondNum.toLocaleString('fr-FR')} FCFA
+            </strong>
+          </div>
+          <TemoinsPicker
+            temoins={temoins}
+            value={temoinLogin}
+            onChange={(login) => {
+              setTemoinLogin(login);
+              setTemoinPassword('');
+            }}
+            loading={loadingTemoins}
+          />
+          {temoinLogin && (
+            <>
+              <label htmlFor="temoinPassword">
+                Mot de passe de {temoinChoisi?.prenom ?? 'confirmateur'}
+              </label>
+              <input
+                id="temoinPassword"
+                type="password"
+                autoComplete="current-password"
+                value={temoinPassword}
+                onChange={(e) => setTemoinPassword(e.target.value)}
+                required
+                autoFocus
+              />
+            </>
+          )}
+        </fieldset>
+      )}
+
+      <div className="pos-open-actions">
+        {etape === 2 && (
+          <button
+            type="button"
+            className="pos-open-back"
+            onClick={() => {
+              setError(null);
+              setEtape(1);
+            }}
+          >
+            ← Fond
+          </button>
+        )}
+        <button
+          type="submit"
+          className="pos-btn-primary"
+          disabled={
+            mutation.isPending ||
+            (etape === 1 && !fondOk) ||
+            (etape === 2 && (!temoinLogin || !temoinPassword))
+          }
+        >
+          {mutation.isPending
+            ? 'Ouverture…'
+            : etape === 1
+              ? 'Continuer'
+              : temoinChoisi
+                ? `Démarrer · ${temoinChoisi.prenom}`
+                : 'Démarrer les ventes'}
+        </button>
+      </div>
       {error && <p role="alert">{error}</p>}
       <Link to="/dashboard" className="pos-back-link">
         ← Tableau de bord
@@ -499,6 +705,7 @@ function TicketVente({
   }, [onSuite]);
 
   const mode = MODE_META[vente.modePaiement];
+  const parts = paiementsEffectifs(vente);
 
   return (
     <div className="pos-receipt">
@@ -532,7 +739,18 @@ function TicketVente({
             {client.fidelite ? ` · ${client.fidelite.niveau}` : ''}
           </p>
         )}
-        <p className="pos-receipt-pay">{mode.label}</p>
+        {parts.length > 1 ? (
+          <ul className="pos-receipt-paiements">
+            {parts.map((p) => (
+              <li key={p.modePaiement}>
+                <span>{MODE_META[p.modePaiement]?.label ?? p.modePaiement}</span>
+                <span className="money">{formatMontant(p.montant)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="pos-receipt-pay">{mode.label}</p>
+        )}
         <p className="pos-receipt-total money">
           {formatMontant(Number(vente.montantTotal))} FCFA
         </p>
@@ -571,23 +789,27 @@ function CloturePanel({
   onFermer: () => void;
 }) {
   const queryClient = useQueryClient();
-  const { data: temoins } = useTemoinsEligibles(true);
+  const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
+  const [etape, setEtape] = useState<1 | 2>(1);
   const [fondCompteCloture, setFondCompteCloture] = useState('');
   const [temoinLogin, setTemoinLogin] = useState('');
+  const [temoinPassword, setTemoinPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [resultat, setResultat] = useState<ClotureSessionResponseDto | null>(null);
 
-  const caEspeces = ventes
-    .filter((v) => v.modePaiement === ModePaiement.ESPECES)
-    .reduce((s, v) => s + Number(v.montantTotal), 0);
-  const retoursEspeces = retours
-    .filter((r) => {
-      const v = ventes.find((x) => x.id === r.venteId);
-      return v?.modePaiement === ModePaiement.ESPECES;
-    })
-    .reduce((s, r) => s + Number(r.montantRembourse), 0);
+  useEffect(() => {
+    if (!temoins || temoins.length !== 1) return;
+    setTemoinLogin(temoins[0].login);
+  }, [temoins]);
+
+  const caEspeces = ventes.reduce((s, v) => s + partEspeces(v), 0);
+  const retoursEspeces = debitEspecesRetours(ventes, retours);
   const fondTheorique = Number(session.fondInitial) + caEspeces - retoursEspeces;
   const fondCompteNum = fondCompteCloture === '' ? null : Number(fondCompteCloture);
+  const fondOk =
+    fondCompteNum != null && Number.isFinite(fondCompteNum) && fondCompteNum >= 0;
+  const ecart = fondOk ? fondCompteNum - fondTheorique : null;
+  const temoinChoisi = temoins?.find((t) => t.login === temoinLogin);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -596,6 +818,7 @@ function CloturePanel({
         body: JSON.stringify({
           fondCompteCloture: Number(fondCompteCloture),
           temoinLogin,
+          temoinPassword,
         }),
       }),
     onSuccess: (data) => {
@@ -604,18 +827,46 @@ function CloturePanel({
       void queryClient.invalidateQueries({ queryKey: ['ventes-sessions'] });
     },
     onError: (err) =>
-      setError(messageDepuisApi(err, 'Échec clôture : fond compté ou témoin invalide.')),
+      setError(
+        messageDepuisApi(err, 'Échec clôture : fond compté ou confirmateur invalide.'),
+      ),
   });
+
+  function allerConfirmateur() {
+    if (commandesEnAttente > 0) {
+      setError('Reprendre ou abandonner les tickets en file avant de clôturer.');
+      return;
+    }
+    if (!fondOk) {
+      setError('Indiquez le fond compté dans le tiroir.');
+      return;
+    }
+    setError(null);
+    setEtape(2);
+  }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (etape === 1) {
+      allerConfirmateur();
+      return;
+    }
+    if (!temoinLogin) {
+      setError('Sélectionnez le coéquipier qui confirme la clôture.');
+      return;
+    }
+    if (!temoinPassword) {
+      setError('Le confirmateur doit saisir son mot de passe.');
+      return;
+    }
     mutation.mutate();
   }
 
   if (resultat) {
     return (
       <div className="pos-modal-backdrop">
-        <div className="pos-modal ticket">
+        <div className="pos-modal ticket pos-cloture-card">
+          <div className="pos-gate-brand">CaissePOS</div>
           <h2>Session clôturée</h2>
           <ul className="pos-cloture-releve">
             {resultat.releve.map((r) => (
@@ -655,8 +906,25 @@ function CloturePanel({
 
   return (
     <div className="pos-modal-backdrop" onClick={onFermer} role="presentation">
-      <form className="pos-modal" onSubmit={onSubmit} onClick={(e) => e.stopPropagation()}>
-        <h2>Clôturer la session</h2>
+      <form
+        className="pos-modal pos-cloture-card"
+        onSubmit={onSubmit}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="pos-open-top">
+          <div className="pos-gate-brand">CaissePOS</div>
+          <div className="pos-open-steps" aria-label="Étapes">
+            <span className={etape === 1 ? 'actif' : 'fait'}>1 Comptage</span>
+            <span className="pos-open-steps-sep" />
+            <span className={etape === 2 ? 'actif' : ''}>2 Confirmateur</span>
+          </div>
+        </div>
+        <h2>Fermer le poste</h2>
+        <p className="pos-open-help">
+          Comme en magasin : compter le tiroir, puis faire confirmer par un
+          coéquipier.
+        </p>
+
         {panierNonVide && (
           <p className="pos-warn" role="status">
             La commande en cours n’est pas encaissée et sera perdue.
@@ -665,70 +933,149 @@ function CloturePanel({
         {commandesEnAttente > 0 && (
           <p className="pos-warn" role="status">
             {commandesEnAttente} ticket(s) en file d’attente — reprendre ou
-            abandonner avant de clôturer (rien n’a été encaissé).
+            abandonner avant de clôturer.
             <InfoTooltip insight={insightCommandeEnAttente(commandesEnAttente)} />
           </p>
         )}
-        <p className="pos-cloture-theo">
-          Fond théorique {formatMontant(fondTheorique)} FCFA
-          <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
-        </p>
-        <label htmlFor="fondCompteCloture">Fond compté en tiroir</label>
-        <input
-          id="fondCompteCloture"
-          type="number"
-          min="0"
-          step="1"
-          inputMode="numeric"
-          value={fondCompteCloture}
-          onChange={(e) => setFondCompteCloture(e.target.value)}
-          required
-          autoFocus
-        />
-        <div className="form-field">
-          <span className="client-chip-label">
-            Confirmateur présent
-            <InfoTooltip insight={insightTemoinOuverture()} />
-          </span>
-          {temoins && temoins.length > 0 ? (
-            <div className="pos-open-temoins" role="listbox" aria-label="Confirmateur">
-              {temoins.map((t) => {
-                const actif = temoinLogin === t.login;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="option"
-                    aria-selected={actif}
-                    className={actif ? 'actif' : ''}
-                    onClick={() => setTemoinLogin(t.login)}
-                  >
-                    <strong>
-                      {t.prenom} {t.nom}
-                    </strong>
-                    <span>
-                      {t.role === 'RESPONSABLE_BOUTIQUE'
-                        ? 'Responsable magasin'
-                        : 'Caissier'}
-                    </span>
-                  </button>
-                );
-              })}
+
+        {etape === 1 && (
+          <fieldset className="pos-open-fieldset">
+            <legend>Comptage du tiroir</legend>
+            <div className="pos-open-recap">
+              <span>
+                Attendu
+                <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
+              </span>
+              <strong className="money">
+                {formatMontant(fondTheorique)} FCFA
+              </strong>
             </div>
+            <div className="pos-open-fonds">
+              <button
+                type="button"
+                className={fondCompteNum === fondTheorique ? 'actif' : ''}
+                onClick={() => setFondCompteCloture(String(Math.round(fondTheorique)))}
+              >
+                = Attendu
+              </button>
+              {FONDS_RAPIDES.filter((n) => n > 0).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={fondCompteNum === n ? 'actif' : ''}
+                  onClick={() => setFondCompteCloture(String(n))}
+                >
+                  {n.toLocaleString('fr-FR')} F
+                </button>
+              ))}
+            </div>
+            <label htmlFor="fondCompteCloture">Fond compté (FCFA)</label>
+            <input
+              id="fondCompteCloture"
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              value={fondCompteCloture}
+              onChange={(e) => setFondCompteCloture(e.target.value)}
+              required
+              autoFocus
+            />
+            {ecart != null && (
+              <p
+                className={
+                  ecart === 0
+                    ? 'pos-cloture-ecart ok'
+                    : 'pos-cloture-ecart warn'
+                }
+                role="status"
+              >
+                {ecart === 0
+                  ? 'Tiroir juste — aucun écart'
+                  : `Écart ${ecart > 0 ? '+' : ''}${formatMontant(ecart)} FCFA`}
+              </p>
+            )}
+          </fieldset>
+        )}
+
+        {etape === 2 && (
+          <fieldset className="pos-open-fieldset">
+            <legend>Confirmateur présent</legend>
+            <div className="pos-open-recap">
+              <span>Compté</span>
+              <strong className="money">
+                {formatMontant(fondCompteNum ?? 0)} FCFA
+              </strong>
+            </div>
+            {ecart != null && ecart !== 0 && (
+              <p className="pos-cloture-ecart warn" role="status">
+                Écart {ecart > 0 ? '+' : ''}
+                {formatMontant(ecart)} FCFA vs attendu
+                <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
+              </p>
+            )}
+            <TemoinsPicker
+              temoins={temoins}
+              value={temoinLogin}
+              onChange={(login) => {
+                setTemoinLogin(login);
+                setTemoinPassword('');
+              }}
+              loading={loadingTemoins}
+            />
+            {temoinLogin && (
+              <>
+                <label htmlFor="temoinPasswordCloture">
+                  Mot de passe de {temoinChoisi?.prenom ?? 'confirmateur'}
+                </label>
+                <input
+                  id="temoinPasswordCloture"
+                  type="password"
+                  autoComplete="current-password"
+                  value={temoinPassword}
+                  onChange={(e) => setTemoinPassword(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </>
+            )}
+          </fieldset>
+        )}
+
+        <div className="pos-open-actions">
+          {etape === 2 ? (
+            <button
+              type="button"
+              className="pos-open-back"
+              onClick={() => {
+                setError(null);
+                setEtape(1);
+              }}
+            >
+              ← Comptage
+            </button>
           ) : (
-            <p className="lead">Aucun coéquipier éligible pour confirmer.</p>
+            <button type="button" className="pos-open-back" onClick={onFermer}>
+              Annuler
+            </button>
           )}
-        </div>
-        <div className="pos-receipt-actions">
-          <button type="button" onClick={onFermer}>
-            Annuler
-          </button>
           <button
             type="submit"
             className="pos-btn-primary"
-            disabled={mutation.isPending || commandesEnAttente > 0 || !temoinLogin}
+            disabled={
+              mutation.isPending ||
+              commandesEnAttente > 0 ||
+              (etape === 1 && !fondOk) ||
+              (etape === 2 && (!temoinLogin || !temoinPassword))
+            }
           >
-            Clôturer
+            {mutation.isPending
+              ? 'Clôture…'
+              : etape === 1
+                ? 'Continuer'
+                : temoinChoisi
+                  ? `Clôturer · ${temoinChoisi.prenom}`
+                  : 'Clôturer'}
           </button>
         </div>
         {error && <p role="alert">{error}</p>}
@@ -1009,7 +1356,7 @@ function PaiementScreen({
         ...(l.remise > 0 ? { remise: l.remise } : {}),
       })),
       modePaiement: modePrincipal,
-      ...(paiements.length > 1 ? { paiements } : {}),
+      ...(paiements.length > 0 ? { paiements } : {}),
       ...(clientId ? { clientId } : {}),
       ...(holdId ? { holdId } : {}),
       ...(derogation
@@ -1037,6 +1384,9 @@ function PaiementScreen({
           modePrincipal,
           clientId || null,
           clientOperationId,
+          partsNum
+            .filter((p) => p.montant > 0)
+            .map((p) => ({ modePaiement: p.mode, montant: p.montant })),
         );
       }
       try {
@@ -1061,6 +1411,9 @@ function PaiementScreen({
             modePrincipal,
             clientId || null,
             clientOperationId,
+            partsNum
+            .filter((p) => p.montant > 0)
+            .map((p) => ({ modePaiement: p.mode, montant: p.montant })),
           );
         }
         throw err;
@@ -1162,6 +1515,7 @@ function PaiementScreen({
           {mixteOk
             ? 'Répartition complète'
             : `Reste à répartir : ${formatMontant(reste)} FCFA`}
+          <InfoTooltip insight={insightPaiementMixte(reste, parts.length)} />
         </p>
         <div className="pos-payment-methods">
           {Object.values(ModePaiement).map((m) => {
@@ -1396,6 +1750,37 @@ function PosCaisse({
   useEffect(() => {
     saveHolds(session.id, holds);
   }, [holds, session.id]);
+
+  useEffect(() => {
+    if (!online || holds.length === 0) return;
+    let cancelled = false;
+    async function syncReservations() {
+      for (const hold of holds) {
+        try {
+          await apiFetch(`/ventes/sessions/${session.id}/reservations`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              holdId: hold.id,
+              lignes: hold.panier.map((l) => ({
+                produitId: l.produitId,
+                quantite: l.quantite,
+              })),
+            }),
+          });
+        } catch {
+          // Park local conservé si le serveur refuse (stock déjà pris, hors-ligne).
+        }
+        if (cancelled) return;
+      }
+      if (!cancelled) {
+        void queryClient.invalidateQueries({ queryKey: ['stocks'] });
+      }
+    }
+    void syncReservations();
+    return () => {
+      cancelled = true;
+    };
+  }, [online, session.id, holds, queryClient]);
 
   useEffect(() => {
     async function sync() {
@@ -2060,6 +2445,9 @@ function PosCaisse({
                     disabled={epuise}
                     onClick={() => ajouter(p)}
                   >
+                    {p.imageUrl ? (
+                      <img className="pos-tile-img" src={p.imageUrl} alt="" />
+                    ) : null}
                     {p.categorie && <span className="pos-tile-cat">{p.categorie}</span>}
                     <span className="pos-tile-name">{p.designation}</span>
                     {p.reference && <span className="pos-tile-sku">{p.reference}</span>}
@@ -2273,7 +2661,7 @@ function PosCaisse({
                     <div className="pos-orders-list-head">
                       <span>
                         {new Date(vente.dateVente).toLocaleTimeString('fr-FR')} ·{' '}
-                        {MODE_META[vente.modePaiement].label}
+                        {libellePaiements(vente)}
                       </span>
                       <strong className="money">
                         {formatMontant(Number(vente.montantTotal))}
@@ -2488,22 +2876,6 @@ export function PosPage() {
   if (!session) {
     return (
       <div className="pos-gate">
-        {tiroirs.length > 1 && (
-          <label className="stack-form" style={{ marginBottom: 16, maxWidth: 360 }}>
-            Tiroir
-            <select
-              value={caisse.id}
-              onChange={(e) => setTiroirId(e.target.value)}
-            >
-              {tiroirs.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code ? `${t.code} — ` : ''}
-                  {t.libelle ?? t.id.slice(0, 8)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <OuvertureSessionForm
           caisseId={caisse.id}
           tiroirLabel={
@@ -2512,6 +2884,9 @@ export function PosPage() {
               : (caisse.libelle ?? 'Tiroir')
           }
           boutiqueNom={boutiqueNom}
+          caissierLogin={user?.login}
+          tiroirs={tiroirs}
+          onSelectTiroir={setTiroirId}
         />
       </div>
     );

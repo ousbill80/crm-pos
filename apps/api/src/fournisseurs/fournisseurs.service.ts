@@ -471,7 +471,9 @@ export class FournisseursService {
     });
     if (quai) return quai.id;
     if (user.boutiqueId) {
-      return this.stockService.trouverEntrepotPrincipalBoutique(user.boutiqueId);
+      return this.stockService.trouverEntrepotPrincipalBoutique(
+        user.boutiqueId,
+      );
     }
     const premier = await this.prisma.entrepot.findFirst({
       where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },

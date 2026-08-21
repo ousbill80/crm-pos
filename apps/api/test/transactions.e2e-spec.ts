@@ -33,9 +33,9 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   let boutique1Id: string;
   let boutique2Id: string;
   let boutique3Id: string; // zone B — sert à prouver l'étanchéité entre zones
-  let caisseBoutique1Id: string; // AUXILIAIRE, boutique 1 (zone A)
-  let caisseBoutique2Id: string; // AUXILIAIRE, boutique 2 (zone A)
-  let caisseBoutique3Id: string; // AUXILIAIRE, boutique 3 (zone B)
+  let caisseBoutique1Id: string; // MAGASIN, boutique 1 (zone A)
+  let caisseBoutique2Id: string; // MAGASIN, boutique 2 (zone A)
+  let caisseBoutique3Id: string; // MAGASIN, boutique 3 (zone B)
   let caisseCentraleId: string; // CENTRALE
 
   const tokens: Record<string, string> = {};
@@ -300,7 +300,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('transitions illégales', () => {
     it('refuse de réceptionner une transaction encore INITIEE (saute EN_TRANSIT)', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         200,
       );
@@ -313,7 +313,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse de repasser EN_TRANSIT une transaction déjà EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         200,
       );
@@ -330,7 +330,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse toute transition depuis un état terminal VALIDEE', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         150,
       );
@@ -370,7 +370,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('séparation des tâches — RBAC serveur non contournable', () => {
     it('refuse (403) qu’un CAISSIER_BOUTIQUE réceptionne une transaction', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -387,7 +387,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE valide (rapprochement) une transaction', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -409,7 +409,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un RESPONSABLE_BOUTIQUE réceptionne une transaction', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -426,7 +426,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CONTROLEUR_INTERNE (lecture/audit seul) réceptionne ou valide', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -467,7 +467,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CAISSIER_BOUTIQUE fasse passer une transaction EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         300,
       );
@@ -520,17 +520,17 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('lecture scopée par rôle (§6.2)', () => {
     it('un rôle réseau trésorerie (DAF) voit les transactions des trois boutiques', async () => {
       const t1 = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         111,
       );
       const t2 = await initierTransaction(
-      tokens.respB2,
+        tokens.respB2,
         caisseBoutique2Id,
         222,
       );
       const t3 = await initierTransaction(
-      tokens.respB3,
+        tokens.respB3,
         caisseBoutique3Id,
         333,
       );
@@ -545,16 +545,8 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     });
 
     it('un CAISSIER_BOUTIQUE ne voit que les transactions de sa propre boutique', async () => {
-      const t1 = await initierTransaction(
-      tokens.respB1,
-        caisseBoutique1Id,
-        50,
-      );
-      const t2 = await initierTransaction(
-      tokens.respB2,
-        caisseBoutique2Id,
-        60,
-      );
+      const t1 = await initierTransaction(tokens.respB1, caisseBoutique1Id, 50);
+      const t2 = await initierTransaction(tokens.respB2, caisseBoutique2Id, 60);
 
       const response = await request(app.getHttpServer())
         .get('/transactions')
@@ -567,21 +559,9 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
     });
 
     it('un SUPERVISEUR_ZONE voit les transactions de sa zone (boutiques 1 et 2) mais pas celles de la zone B (boutique 3)', async () => {
-      const t1 = await initierTransaction(
-      tokens.respB1,
-        caisseBoutique1Id,
-        71,
-      );
-      const t2 = await initierTransaction(
-      tokens.respB2,
-        caisseBoutique2Id,
-        72,
-      );
-      const t3 = await initierTransaction(
-      tokens.respB3,
-        caisseBoutique3Id,
-        73,
-      );
+      const t1 = await initierTransaction(tokens.respB1, caisseBoutique1Id, 71);
+      const t2 = await initierTransaction(tokens.respB2, caisseBoutique2Id, 72);
+      const t3 = await initierTransaction(tokens.respB3, caisseBoutique3Id, 73);
 
       const response = await request(app.getHttpServer())
         .get('/transactions')
@@ -595,7 +575,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — un CAISSIER_BOUTIQUE peut consulter le détail de sa propre transaction', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         90,
       );
@@ -610,7 +590,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — refuse (403) qu’un CAISSIER_BOUTIQUE consulte une transaction d’une autre boutique', async () => {
       const transaction = await initierTransaction(
-      tokens.respB2,
+        tokens.respB2,
         caisseBoutique2Id,
         90,
       );
@@ -623,7 +603,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id — refuse (403) qu’un SUPERVISEUR_ZONE consulte une transaction hors de sa zone', async () => {
       const transaction = await initierTransaction(
-      tokens.respB3,
+        tokens.respB3,
         caisseBoutique3Id,
         90,
       );
@@ -857,7 +837,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('GET /transactions/:id inclut bordereau et caisse', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         42,
       );
@@ -878,7 +858,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   describe('convoyeur, seuil DG et hors-ligne (§4 / §5.2 / §6.7)', () => {
     it('autorise un CONVOYEUR à passer une transaction EN_TRANSIT', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         120,
       );
@@ -891,7 +871,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
 
     it('refuse (403) qu’un CONVOYEUR réceptionne ou rapproche', async () => {
       const transaction = await initierTransaction(
-      tokens.respB1,
+        tokens.respB1,
         caisseBoutique1Id,
         130,
       );

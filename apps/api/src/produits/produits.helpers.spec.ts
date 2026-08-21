@@ -1,4 +1,4 @@
-import { Prisma, type Produit } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import {
   enrichirProduit,
   quantitePourSortirAlerte,
@@ -32,6 +32,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       reference: 'T-1',
       categorie: 'Audio',
       description: null,
+      imageUrl: null,
       actif: true,
       prixUnitaire: new Prisma.Decimal('1000.00'),
       stock: 10,
@@ -45,7 +46,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       methodeCout: 'CMP',
       coutStandard: new Prisma.Decimal(0),
       strategieSortie: 'FIFO',
-    } as Produit);
+    });
     expect(enrichi.margeUnitaire).toBe('600.00');
     expect(enrichi.tauxMarge).toBe('60.0');
     expect(enrichi.valeurStock).toBe('4000.00');

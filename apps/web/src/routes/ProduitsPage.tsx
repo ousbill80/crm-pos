@@ -725,12 +725,23 @@ export function ProduitsPage() {
                         }}
                       >
                         <td>
-                          <strong>{p.designation}</strong>
-                          <div className="produit-ref">
-                            {p.reference ?? '—'}
-                            {!p.actif && (
-                              <span className="badge badge-neutral">Inactif</span>
-                            )}
+                          <div className="produit-cell-nom">
+                            {p.imageUrl ? (
+                              <img
+                                className="produit-thumb"
+                                src={p.imageUrl}
+                                alt=""
+                              />
+                            ) : null}
+                            <div>
+                              <strong>{p.designation}</strong>
+                              <div className="produit-ref">
+                                {p.reference ?? '—'}
+                                {!p.actif && (
+                                  <span className="badge badge-neutral">Inactif</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td>{p.categorie ?? '—'}</td>

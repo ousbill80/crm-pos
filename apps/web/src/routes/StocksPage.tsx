@@ -146,6 +146,7 @@ function exporterInventaireCsv(
     'Statut',
     'Seuil',
     'Réseau',
+    'Prévu',
     'Valeur CMP',
     'Couverture jours',
     ...entrepots.map((e) => `${e.code} (${e.nomBoutique})`),
@@ -158,6 +159,7 @@ function exporterInventaireCsv(
     l.statut,
     l.seuilReappro ?? '',
     l.stockReseau,
+    l.stockPrevu ?? '',
     l.valeur,
     l.couvertureJours ?? '',
     ...entrepots.map((e) => qtyAt(l, e.entrepotId)?.quantite ?? ''),
@@ -1110,6 +1112,7 @@ export function StocksPage() {
                     <th>Catégorie</th>
                     <th>Statut</th>
                     <th>Réseau</th>
+                    <th>Prévu</th>
                     <th>Seuil</th>
                     <th>Valeur</th>
                     <th>Ventes {data.fenetreVentesJours} j</th>
@@ -1170,6 +1173,9 @@ export function StocksPage() {
                             ligne.seuilReappro,
                           )}
                         />
+                      </td>
+                      <td title="Physique − réservations POS + commandes confirmées">
+                        {ligne.stockPrevu ?? ligne.stockReseau}
                       </td>
                       <td>{ligne.seuilReappro ?? '—'}</td>
                       <td className="money">{formatFcfa(ligne.valeur)}</td>

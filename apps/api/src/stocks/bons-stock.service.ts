@@ -23,12 +23,37 @@ import {
 } from './dto/create-bon-stock.dto';
 
 const INCLUDE_BON = {
-  entrepotSource: { select: { id: true, nom: true, code: true, usage: true, reseau: true, boutiqueId: true } },
-  entrepotDest: { select: { id: true, nom: true, code: true, usage: true, reseau: true, boutiqueId: true } },
+  entrepotSource: {
+    select: {
+      id: true,
+      nom: true,
+      code: true,
+      usage: true,
+      reseau: true,
+      boutiqueId: true,
+    },
+  },
+  entrepotDest: {
+    select: {
+      id: true,
+      nom: true,
+      code: true,
+      usage: true,
+      reseau: true,
+      boutiqueId: true,
+    },
+  },
   initiateur: { select: { id: true, nom: true, prenom: true } },
   lignes: {
     include: {
-      produit: { select: { id: true, designation: true, reference: true, codeBarres: true } },
+      produit: {
+        select: {
+          id: true,
+          designation: true,
+          reference: true,
+          codeBarres: true,
+        },
+      },
       lot: true,
     },
   },
@@ -71,7 +96,9 @@ export class BonsStockService {
             quantiteOk: l.quantiteOk,
             quantiteRebut: l.quantiteRebut,
             numeroLot: l.numeroLot?.trim() || null,
-            dateExpiration: l.dateExpiration ? new Date(l.dateExpiration) : null,
+            dateExpiration: l.dateExpiration
+              ? new Date(l.dateExpiration)
+              : null,
           })),
         },
       },
@@ -89,7 +116,7 @@ export class BonsStockService {
 
   async lister(user: AuthenticatedUser) {
     const bons = await this.prisma.bonStock.findMany({
-      where: await this.scopeWhere(user),
+      where: this.scopeWhere(user),
       include: INCLUDE_BON,
       orderBy: { dateCreation: 'desc' },
     });
@@ -189,7 +216,9 @@ export class BonsStockService {
       data: {
         numero: this.numero(TypeOperationStock.RECEPTION),
         type: TypeOperationStock.RECEPTION,
-        statut: params.autoFait ? StatutBonStock.FAIT : StatutBonStock.BROUILLON,
+        statut: params.autoFait
+          ? StatutBonStock.FAIT
+          : StatutBonStock.BROUILLON,
         entrepotDestId: dest.id,
         receptionId: params.receptionId,
         initiateurId: params.utilisateurId,
@@ -210,7 +239,9 @@ export class BonsStockService {
     return this.prisma.regleReappro.findMany({
       include: {
         produit: { select: { id: true, designation: true, reference: true } },
-        entrepot: { select: { id: true, nom: true, code: true, boutiqueId: true } },
+        entrepot: {
+          select: { id: true, nom: true, code: true, boutiqueId: true },
+        },
       },
       orderBy: { produit: { designation: 'asc' } },
     });
@@ -222,7 +253,10 @@ export class BonsStockService {
     }
     const regle = await this.prisma.regleReappro.upsert({
       where: {
-        produitId_entrepotId: { produitId: dto.produitId, entrepotId: dto.entrepotId },
+        produitId_entrepotId: {
+          produitId: dto.produitId,
+          entrepotId: dto.entrepotId,
+        },
       },
       update: { min: dto.min, max: dto.max },
       create: dto,
@@ -240,34 +274,135 @@ export class BonsStockService {
   async lancerReappro(user: AuthenticatedUser) {
     const central = await this.stocks.trouverEntrepotCentralStock();
     const regles = await this.prisma.regleReappro.findMany();
-    const crees: string[] = [];
+    const bonsIds: string[] = [];
+    const commandesIds: string[] = [];
+    const propositions: Array<{
+      produitId: string;
+      entrepotId: string;
+      besoin: number;
+      route: 'TRANSFERER' | 'ACHETER' | 'MIXTE';
+      quantiteTransfert: number;
+      quantiteAchat: number;
+      bonId?: string;
+      commandeId?: string;
+    }> = [];
+
     for (const r of regles) {
       const q = await this.stocks.getQuantite(r.produitId, r.entrepotId);
       if (q >= r.min) continue;
       const besoin = r.max - q;
-      const dispoCentral = await this.stocks.getQuantite(r.produitId, central.id);
-      if (dispoCentral <= 0) continue;
-      const qty = Math.min(besoin, dispoCentral);
-      const bon = await this.creer(
-        {
-          type: TypeOperationStock.TRANSFERT_INTERNE,
-          entrepotSourceId: central.id,
-          entrepotDestId: r.entrepotId,
-          notes: `Réappro auto min=${r.min} max=${r.max}`,
-          lignes: [{ produitId: r.produitId, quantite: qty }],
-        },
-        user,
+      const dispoCentral = await this.stocks.getQuantite(
+        r.produitId,
+        central.id,
       );
-      crees.push(bon.id);
+      const qtyTransfert = Math.min(besoin, Math.max(0, dispoCentral));
+      const qtyAchat = besoin - qtyTransfert;
+      let bonId: string | undefined;
+      let commandeId: string | undefined;
+
+      if (qtyTransfert > 0) {
+        const bon = await this.creer(
+          {
+            type: TypeOperationStock.TRANSFERT_INTERNE,
+            entrepotSourceId: central.id,
+            entrepotDestId: r.entrepotId,
+            notes: `Réappro Transférer min=${r.min} max=${r.max}`,
+            lignes: [{ produitId: r.produitId, quantite: qtyTransfert }],
+          },
+          user,
+        );
+        bonId = bon.id;
+        bonsIds.push(bon.id);
+      }
+
+      if (qtyAchat > 0) {
+        const commande = await this.creerCommandeReappro(
+          r.produitId,
+          qtyAchat,
+          user,
+        );
+        if (commande) {
+          commandeId = commande.id;
+          commandesIds.push(commande.id);
+        }
+      }
+
+      propositions.push({
+        produitId: r.produitId,
+        entrepotId: r.entrepotId,
+        besoin,
+        route:
+          qtyTransfert > 0 && qtyAchat > 0
+            ? 'MIXTE'
+            : qtyAchat > 0
+              ? 'ACHETER'
+              : 'TRANSFERER',
+        quantiteTransfert: qtyTransfert,
+        quantiteAchat: qtyAchat,
+        bonId,
+        commandeId,
+      });
     }
+
     await this.audit.record({
       utilisateurId: user.userId,
       action: 'REAPPRO_LANCE',
       entite: 'RegleReappro',
       entiteId: central.id,
-      details: JSON.stringify({ bons: crees.length }),
+      details: JSON.stringify({
+        bons: bonsIds.length,
+        commandes: commandesIds.length,
+      }),
     });
-    return { bonsCrees: crees.length, ids: crees };
+    return {
+      bonsCrees: bonsIds.length,
+      commandesCrees: commandesIds.length,
+      ids: bonsIds,
+      commandesIds,
+      propositions,
+    };
+  }
+
+  private async creerCommandeReappro(
+    produitId: string,
+    quantite: number,
+    user: AuthenticatedUser,
+  ) {
+    const derniere = await this.prisma.receptionStock.findFirst({
+      where: { produitId },
+      orderBy: { dateReception: 'desc' },
+    });
+    let fournisseurId = derniere?.fournisseurId ?? null;
+    if (!fournisseurId) {
+      const f = await this.prisma.fournisseur.findFirst({
+        where: { actif: true },
+      });
+      if (!f) return null;
+      fournisseurId = f.id;
+    }
+    const produit = await this.prisma.produit.findUniqueOrThrow({
+      where: { id: produitId },
+    });
+    const prix =
+      derniere?.prixAchat ??
+      (produit.coutMoyenPondere.greaterThan(0)
+        ? produit.coutMoyenPondere
+        : produit.prixUnitaire);
+    return this.prisma.commandeAchat.create({
+      data: {
+        numero: `BC-RA-${Date.now().toString(36).toUpperCase()}`,
+        fournisseurId,
+        notes: `Réappro Acheter — central insuffisant (${quantite} u.)`,
+        initiateurId: user.userId,
+        lignes: {
+          create: {
+            produitId,
+            quantite,
+            prixUnitaire: prix,
+          },
+        },
+      },
+    });
   }
 
   async creerLot(dto: CreateLotDto, user: AuthenticatedUser) {
@@ -275,7 +410,9 @@ export class BonsStockService {
       data: {
         produitId: dto.produitId,
         numero: dto.numero.trim(),
-        dateExpiration: dto.dateExpiration ? new Date(dto.dateExpiration) : null,
+        dateExpiration: dto.dateExpiration
+          ? new Date(dto.dateExpiration)
+          : null,
         createurId: user.userId,
       },
     });
@@ -289,7 +426,10 @@ export class BonsStockService {
     });
   }
 
-  async ajouterCoutLogistique(dto: CreateCoutLogistiqueDto, user: AuthenticatedUser) {
+  async ajouterCoutLogistique(
+    dto: CreateCoutLogistiqueDto,
+    user: AuthenticatedUser,
+  ) {
     const created = await this.prisma.coutLogistique.create({
       data: {
         produitId: dto.produitId,
@@ -319,13 +459,29 @@ export class BonsStockService {
     return created;
   }
 
-  async stockPrevu(produitId: string, entrepotId: string) {
-    const physique = await this.stocks.getQuantite(produitId, entrepotId);
-    const reserve = await this.stocks.getQuantiteReservee(produitId, entrepotId);
+  async stockPrevu(produitId: string, entrepotId?: string) {
+    let physique: number;
+    let reserve: number;
+    if (entrepotId) {
+      physique = await this.stocks.getQuantite(produitId, entrepotId);
+      reserve = await this.stocks.getQuantiteReservee(produitId, entrepotId);
+    } else {
+      const produit = await this.prisma.produit.findUniqueOrThrow({
+        where: { id: produitId },
+      });
+      physique = produit.stock;
+      const agg = await this.prisma.reservationStock.aggregate({
+        where: { produitId },
+        _sum: { quantite: true },
+      });
+      reserve = agg._sum.quantite ?? 0;
+    }
     const commandes = await this.prisma.ligneCommandeAchat.findMany({
       where: {
         produitId,
-        commande: { statut: { in: ['CONFIRMEE', 'PARTIELLEMENT_RECEPTIONNEE'] } },
+        commande: {
+          statut: { in: ['CONFIRMEE', 'PARTIELLEMENT_RECEPTIONNEE'] },
+        },
       },
       include: { receptions: { select: { quantite: true } } },
     });
@@ -338,14 +494,21 @@ export class BonsStockService {
       where: {
         produitId,
         bon: {
-          statut: { in: ['BROUILLON', 'PRET'] },
-          OR: [{ entrepotDestId: entrepotId }, { entrepotSourceId: entrepotId }],
+          statut: 'PRET',
+          OR: entrepotId
+            ? [{ entrepotDestId: entrepotId }, { entrepotSourceId: entrepotId }]
+            : undefined,
         },
       },
       include: { bon: true },
     });
     let enTransit = 0;
     for (const l of bons) {
+      if (!entrepotId) {
+        if (l.bon.entrepotDestId) enTransit += l.quantite;
+        if (l.bon.entrepotSourceId) enTransit -= l.quantite;
+        continue;
+      }
       if (l.bon.entrepotDestId === entrepotId) enTransit += l.quantite;
       if (l.bon.entrepotSourceId === entrepotId) enTransit -= l.quantite;
     }
@@ -444,7 +607,9 @@ export class BonsStockService {
     utilisateurId: string,
   ) {
     if (!bon.entrepotSourceId || !bon.entrepotDestId) {
-      throw new BadRequestException('Transfert : source et destination obligatoires.');
+      throw new BadRequestException(
+        'Transfert : source et destination obligatoires.',
+      );
     }
     await this.stocks.appliquerMouvement(
       {
@@ -482,8 +647,9 @@ export class BonsStockService {
     if (!bon.entrepotSourceId) {
       throw new BadRequestException('Rebut : entrepôt source obligatoire.');
     }
-    const perte = bon.entrepotDestId
-      ?? (await this.stocks.trouverEmplacementUsage('PERTE', true)).id;
+    const perte =
+      bon.entrepotDestId ??
+      (await this.stocks.trouverEmplacementUsage('PERTE', true)).id;
     await this.stocks.appliquerMouvement(
       {
         produitId: ligne.produitId,
@@ -545,7 +711,10 @@ export class BonsStockService {
     if (!ligne.numeroLot?.trim()) return null;
     const existant = await tx.lot.findUnique({
       where: {
-        produitId_numero: { produitId: ligne.produitId, numero: ligne.numeroLot.trim() },
+        produitId_numero: {
+          produitId: ligne.produitId,
+          numero: ligne.numeroLot.trim(),
+        },
       },
     });
     if (existant) return existant;
@@ -571,7 +740,9 @@ export class BonsStockService {
   private assertLignes(dto: CreateBonStockDto) {
     if (dto.type === TypeOperationStock.TRANSFERT_INTERNE) {
       if (!dto.entrepotSourceId || !dto.entrepotDestId) {
-        throw new BadRequestException('Transfert interne : source et destination obligatoires.');
+        throw new BadRequestException(
+          'Transfert interne : source et destination obligatoires.',
+        );
       }
     }
     if (dto.type === TypeOperationStock.RECEPTION && !dto.entrepotDestId) {
@@ -589,7 +760,7 @@ export class BonsStockService {
     }
   }
 
-  private async scopeWhere(user: AuthenticatedUser): Promise<Prisma.BonStockWhereInput> {
+  private scopeWhere(user: AuthenticatedUser): Prisma.BonStockWhereInput {
     if (user.role === RoleLibelle.RESPONSABLE_BOUTIQUE && user.boutiqueId) {
       return {
         OR: [
@@ -615,7 +786,9 @@ export class BonsStockService {
       user.role !== RoleLibelle.RESPONSABLE_SI &&
       user.role !== RoleLibelle.DIRECTION_GENERALE
     ) {
-      throw new ForbiddenException('Seul SI / Direction peut mettre un bon en prêt.');
+      throw new ForbiddenException(
+        'Seul SI / Direction peut mettre un bon en prêt.',
+      );
     }
   }
 
@@ -648,7 +821,13 @@ export class BonsStockService {
 
   private numero(type: TypeOperationStock) {
     const p =
-      type === 'RECEPTION' ? 'IN' : type === 'TRANSFERT_INTERNE' ? 'INT' : type === 'REBUT' ? 'SCR' : 'OUT';
+      type === 'RECEPTION'
+        ? 'IN'
+        : type === 'TRANSFERT_INTERNE'
+          ? 'INT'
+          : type === 'REBUT'
+            ? 'SCR'
+            : 'OUT';
     return `${p}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
   }
 

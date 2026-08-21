@@ -290,6 +290,24 @@
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.pos-tile-img {
+  position: absolute;
+  inset: 0 0 42%;
+  width: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+}
+
+.pos-tile:has(.pos-tile-img) {
+  padding-top: 72px;
+}
+
+.pos-tile > *:not(.pos-tile-img) {
+  position: relative;
+  z-index: 1;
 }
 
 .pos-tile:hover:not(:disabled) {
@@ -1335,6 +1353,19 @@ form.pos-gate-card {
   font-size: 13px;
 }
 
+.pos-receipt-paiements {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border);
+}
+
+.pos-receipt-paiements li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
 .pos-receipt-total {
   font-size: 1.5rem;
   margin: 12px 0;
@@ -1460,8 +1491,42 @@ form.pos-gate-card {
 /* Ouverture poste — style magasin */
 
 .pos-open-card {
-  width: min(520px, 100%);
+  width: min(540px, 100%);
   gap: 14px;
+}
+
+.pos-open-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pos-open-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-open-steps .actif {
+  color: var(--accent);
+}
+
+.pos-open-steps .fait {
+  color: var(--text);
+  opacity: 0.7;
+}
+
+.pos-open-steps-sep {
+  width: 18px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
 }
 
 .pos-open-fieldset {
@@ -1484,13 +1549,33 @@ form.pos-gate-card {
   color: var(--text-muted);
 }
 
-.pos-open-fonds {
+.pos-open-help {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.pos-open-recap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  font-size: 13px;
+}
+
+.pos-open-fonds,
+.pos-open-tiroirs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.pos-open-fonds button {
+.pos-open-fonds button,
+.pos-open-tiroirs button {
   align-self: auto;
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -1501,7 +1586,8 @@ form.pos-gate-card {
   font-size: 13px;
 }
 
-.pos-open-fonds button.actif {
+.pos-open-fonds button.actif,
+.pos-open-tiroirs button.actif {
   border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--accent);
@@ -1541,8 +1627,75 @@ form.pos-gate-card {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.pos-open-actions {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pos-open-actions .pos-btn-primary {
+  flex: 1;
+}
+
+.pos-open-back {
+  align-self: auto;
+  min-width: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+
 @media (max-width: 520px) {
   .pos-open-temoins {
     grid-template-columns: 1fr;
   }
+  .pos-open-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+
+.pos-cloture-card {
+  width: min(520px, 100%);
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pos-cloture-ecart {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.pos-cloture-ecart.ok {
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+  color: #15803d;
+}
+
+.pos-cloture-ecart.warn {
+  background: color-mix(in srgb, #ca8a04 14%, transparent);
+  color: #a16207;
+}
+
+
+.pos-open-montant {
+  font-size: 1.35rem !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-open-montant-preview {
+  margin: 0;
+  text-align: right;
+  font-size: 1.1rem;
+  color: var(--accent);
 }

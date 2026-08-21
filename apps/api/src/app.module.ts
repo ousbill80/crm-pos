@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { PasswordChangeRequiredGuard } from './auth/guards/password-change-required.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CaissesModule } from './caisses/caisses.module';
 import { ZonesModule } from './zones/zones.module';
@@ -22,10 +24,20 @@ import { StocksModule } from './stocks/stocks.module';
 import { InventairesModule } from './inventaires/inventaires.module';
 import { EntrepotsModule } from './entrepots/entrepots.module';
 import { EntrepriseModule } from './entreprise/entreprise.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Rate limiting générique (§6.7) : limite globale généreuse, resserrée
+    // spécifiquement sur /auth/login et /auth/change-password via @Throttle.
+    // Jest force NODE_ENV=test par défaut ; les suites e2e enchaînent
+    // largement plus de 20 requêtes/minute sur un même process serveur
+    // (beforeAll partagé par fichier de test) — on desserre donc la limite
+    // globale en test uniquement, jamais en production.
+    ThrottlerModule.forRoot([
+      { ttl: 60_000, limit: process.env.NODE_ENV === 'test' ? 100_000 : 20 },
+    ]),
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -43,6 +55,7 @@ import { EntrepriseModule } from './entreprise/entreprise.module';
     InventairesModule,
     EntrepotsModule,
     EntrepriseModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [
@@ -50,7 +63,9 @@ import { EntrepriseModule } from './entreprise/entreprise.module';
     // Guards globaux : toute route est protégée par défaut (secure by
     // default). Utiliser @Public() pour une exception explicite, @Roles(...)
     // pour restreindre à des rôles précis (§6.2, §6.4).
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeRequiredGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })

@@ -2,11 +2,11 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CanalInteraction,
-  ModePaiement,
   NiveauFidelite,
   SegmentClient,
   TypeClient,
 } from '@caisse-crm/shared';
+import { libellePaiements } from '../lib/paiement-vente';
 import { apiFetch } from '../lib/api';
 import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
@@ -291,12 +291,6 @@ function ApercuSection({ clientId }: { clientId: string }) {
   );
 }
 
-const LIBELLE_MODE_PAIEMENT: Record<ModePaiement, string> = {
-  [ModePaiement.ESPECES]: 'Espèces',
-  [ModePaiement.CARTE]: 'Carte',
-  [ModePaiement.MOBILE_MONEY]: 'Mobile Money',
-};
-
 function libelleCaisse(v: VenteHistoriqueDto) {
   const boutique = v.caisse.boutique?.nom;
   const type = v.caisse.type === 'MAGASIN' ? 'Caisse boutique' : 'Caisse';
@@ -398,7 +392,7 @@ function AchatsSection({
                 <span
                   className={`badge badge-paiement badge-paiement-${v.modePaiement.toLowerCase()}`}
                 >
-                  {LIBELLE_MODE_PAIEMENT[v.modePaiement] ?? v.modePaiement}
+                  {libellePaiements(v)}
                 </span>
               </td>
               <td>{libelleEnregistreur(v)}</td>

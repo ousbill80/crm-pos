@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, MapPin, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -79,6 +79,8 @@ export function OperationsStockPage() {
   const [regleEntrepotId, setRegleEntrepotId] = useState('');
   const [regleMin, setRegleMin] = useState(0);
   const [regleMax, setRegleMax] = useState(0);
+  const [scan, setScan] = useState('');
+  const [lancerResultat, setLancerResultat] = useState<string | null>(null);
 
   const bonsQ = useQuery({
     queryKey: ['stocks', 'bons'],
@@ -148,8 +150,18 @@ export function OperationsStockPage() {
   });
 
   const lancer = useMutation({
-    mutationFn: () => apiFetch('/stocks/reappro/lancer', { method: 'POST' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['stocks'] }),
+    mutationFn: () =>
+      apiFetch<{
+        bonsCrees: number;
+        commandesCrees: number;
+        propositions: Array<{ route: string; quantiteTransfert: number; quantiteAchat: number }>;
+      }>('/stocks/reappro/lancer', { method: 'POST' }),
+    onSuccess: (res) => {
+      void qc.invalidateQueries({ queryKey: ['stocks'] });
+      setLancerResultat(
+        `${res.bonsCrees} transfert(s) · ${res.commandesCrees} commande(s) d’achat (route Transférer / Acheter).`,
+      );
+    },
     onError: (e) => setErreur(messageErreur(e)),
   });
 
@@ -205,9 +217,8 @@ export function OperationsStockPage() {
             <LoadingState label="Chargement des bons…" />
           ) : bons.length === 0 ? (
             <EmptyState
-              icon={ClipboardList}
               title="Aucun bon"
-              hint="Les réceptions Achats et les transferts centraux apparaissent ici."
+              description="Les réceptions Achats et les transferts centraux apparaissent ici."
             />
           ) : (
             <ListPanel>
@@ -379,10 +390,14 @@ export function OperationsStockPage() {
               </button>
             </form>
           ) : null}
+          {lancerResultat ? <p className="lead">{lancerResultat}</p> : null}
           {reapproQ.isLoading ? (
             <LoadingState label="Chargement…" />
           ) : (reapproQ.data ?? []).length === 0 ? (
-            <EmptyState icon={MapPin} title="Aucune règle" hint="Définissez un min/max par magasin." />
+            <EmptyState
+              title="Aucune règle"
+              description="Définissez un min/max par magasin."
+            />
           ) : (
             <ListPanel>
               <table className="data-table">
@@ -454,6 +469,21 @@ export function OperationsStockPage() {
           </label>
           <label>
             Produit
+            <input
+              value={scan}
+              onChange={(ev) => {
+                const v = ev.target.value;
+                setScan(v);
+                const match = produits.find(
+                  (p) =>
+                    p.codeBarres === v.trim() ||
+                    p.reference === v.trim() ||
+                    p.id === v.trim(),
+                );
+                if (match) setProduitId(match.id);
+              }}
+              placeholder="Scanner code-barres ou choisir ci-dessous"
+            />
             <select
               value={produitId}
               onChange={(ev) => setProduitId(ev.target.value)}

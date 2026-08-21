@@ -155,6 +155,7 @@ export class ClientsService {
       where: { clientId },
       include: {
         lignes: { include: { produit: true } },
+        paiements: true,
         caisse: { include: { boutique: true } },
         // Repli si l'audit VENTE_ENREGISTREE est absent (vente seed / legacy) :
         // caissier qui a ouvert la session — moins précis qu'un audit dédié.

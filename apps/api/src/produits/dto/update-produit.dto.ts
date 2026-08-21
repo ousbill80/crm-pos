@@ -43,6 +43,12 @@ export class UpdateProduitDto {
   description?: string | null;
 
   @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(400000)
+  imageUrl?: string | null;
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   prixUnitaire?: number;

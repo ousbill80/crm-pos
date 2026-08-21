@@ -128,6 +128,11 @@ model Utilisateur {
   actif        Boolean   @default(true)
   createdAt    DateTime  @default(now())
 
+  // Sécurité authentification (§6.7)
+  mustChangePassword  Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
   transactionsInitiees TransactionCaisse[]   @relation("Initiateur")
   receptionsValidees   ReceptionValidation[] @relation("Validateur")
   entreesAudit         JournalAudit[]
@@ -275,6 +280,9 @@ model Produit {
   // le cahier des charges ne prescrit pas de nomenclature.
   categorie        String?
   description      String?
+  // Photo catalogue (data URL compressée ou URL). Optionnelle — le POS et
+  // la fiche affichent les initiales si absente.
+  imageUrl         String?
   // Désactivation sans suppression : l'historique des ventes reste intact
   // (cohérent avec le grand livre append-only). Un produit inactif ne peut
   // plus être encaissé et n'alimente plus l'alerte STOCK_BAS.
@@ -772,7 +780,7 @@ model Vente {
 // sur Vente.modePaiement (conservé comme mode principal pour l'historique).
 model PaiementVente {
   id           String       @id @default(uuid())
-  vente        Vente        @relation(fields: [venteId], references: [id])
+  vente        Vente        @relation(fields: [venteId], references: [id], onDelete: Cascade)
   venteId      String
   modePaiement ModePaiement
   montant      Decimal      @db.Decimal(14, 2)
@@ -785,7 +793,7 @@ model PaiementVente {
 // Disponible POS = StockQuant.quantite − somme(ReservationStock).
 model ReservationStock {
   id              String        @id @default(uuid())
-  sessionCaisse   SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisse   SessionCaisse @relation(fields: [sessionCaisseId], references: [id], onDelete: Cascade)
   sessionCaisseId String
   holdId          String
   produit         Produit       @relation(fields: [produitId], references: [id])

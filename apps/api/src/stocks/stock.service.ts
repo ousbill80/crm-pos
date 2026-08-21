@@ -479,7 +479,7 @@ export class StockService {
             : {}),
       },
       include: {
-    produit: { select: { designation: true, reference: true } },
+        produit: { select: { designation: true, reference: true } },
         entrepot: { select: { code: true, nom: true } },
         utilisateur: { select: { prenom: true, nom: true } },
       },
@@ -680,6 +680,7 @@ export class StockService {
         couvertureJours,
         statut: statutProduit,
         parEntrepot: cellules,
+        stockPrevu: unitesProduit,
       });
 
       const besoins = cellules
@@ -762,6 +763,15 @@ export class StockService {
       return a.designation.localeCompare(b.designation, 'fr');
     });
 
+    const prevuMap = await this.prevuReseauParProduit(
+      lignes.map((l) => l.produitId),
+    );
+    for (const ligne of lignes) {
+      const extra = prevuMap.get(ligne.produitId);
+      ligne.stockPrevu =
+        ligne.stockReseau - (extra?.reserve ?? 0) + (extra?.aRecevoir ?? 0);
+    }
+
     const sante =
       ruptures > 0 ? 'CRITIQUE' : sousSeuil > 0 ? 'VIGILANCE' : 'OK';
 
@@ -800,5 +810,42 @@ export class StockService {
       suggestionsTransfert: suggestions.slice(0, 20),
       suggestionsReappro: reappros.slice(0, 20),
     };
+  }
+
+  private async prevuReseauParProduit(
+    produitIds: string[],
+  ): Promise<Map<string, { reserve: number; aRecevoir: number }>> {
+    const map = new Map<string, { reserve: number; aRecevoir: number }>();
+    if (produitIds.length === 0) return map;
+    const [reserves, lignesPo] = await Promise.all([
+      this.prisma.reservationStock.groupBy({
+        by: ['produitId'],
+        where: { produitId: { in: produitIds } },
+        _sum: { quantite: true },
+      }),
+      this.prisma.ligneCommandeAchat.findMany({
+        where: {
+          produitId: { in: produitIds },
+          commande: {
+            statut: { in: ['CONFIRMEE', 'PARTIELLEMENT_RECEPTIONNEE'] },
+          },
+        },
+        include: { receptions: { select: { quantite: true } } },
+      }),
+    ]);
+    for (const id of produitIds) {
+      map.set(id, { reserve: 0, aRecevoir: 0 });
+    }
+    for (const r of reserves) {
+      const row = map.get(r.produitId);
+      if (row) row.reserve = r._sum.quantite ?? 0;
+    }
+    for (const l of lignesPo) {
+      const row = map.get(l.produitId);
+      if (!row) continue;
+      const recu = l.receptions.reduce((s, x) => s + x.quantite, 0);
+      row.aRecevoir += Math.max(0, l.quantite - recu);
+    }
+    return map;
   }
 }

@@ -318,6 +318,7 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
           caisseId: caisseBoutique1PosId,
           fondInitial: 0,
           temoinLogin: 'exp-temoin-b1',
+          temoinPassword: MOT_DE_PASSE,
         })
         .expect(201);
       sessionId = (ouverture.body as { id: string }).id;
@@ -353,7 +354,11 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
       await request(app.getHttpServer())
         .post(`/ventes/sessions/${sessionId}/cloture`)
         .set('Authorization', `Bearer ${tokens.caissierB1}`)
-        .send({ fondCompteCloture: 4000, temoinLogin: 'exp-temoin-b1' })
+        .send({
+          fondCompteCloture: 4000,
+          temoinLogin: 'exp-temoin-b1',
+          temoinPassword: MOT_DE_PASSE,
+        })
         .expect(201);
 
       const response = await request(app.getHttpServer())

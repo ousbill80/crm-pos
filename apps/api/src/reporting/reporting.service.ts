@@ -16,6 +16,7 @@ import {
 import { CaisseBalanceService } from '../caisses/caisse-balance.service';
 import { CaissesService } from '../caisses/caisses.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StockService } from '../stocks/stock.service';
 import { toCsv } from '../common/csv.util';
 
 export interface PeriodeFiltre {
@@ -114,6 +115,58 @@ export interface TresoreriePilotageDto {
   };
 }
 
+export type DafAlerteSeverite = 'critical' | 'warning' | 'info';
+
+/** Cockpit Finance DAF — pôle central (§6.2 / §6.3.4). */
+export interface ReportingDafDto {
+  perimetre: 'RESEAU';
+  genereAt: string;
+  periode: { dateFrom: string | null; dateTo: string | null };
+  resultat: {
+    caNet: string;
+    cmv: string;
+    margeBrute: string;
+    tauxMarge: string;
+    parBoutique: ReportingDashboardDto['rentabiliteParBoutique'];
+    parModePaiement: ReportingDashboardDto['chiffreAffaires']['parModePaiement'];
+  };
+  stocks: {
+    valeurTotale: string;
+    ruptures: number;
+    sousSeuil: number;
+    couvertureMediane: number | null;
+    sante: string;
+    parBoutique: Array<{
+      boutiqueId: string;
+      nomBoutique: string;
+      unites: number;
+      valeur: string;
+      ruptures: number;
+      sousSeuil: number;
+    }>;
+  };
+  tresorerie: {
+    soldeMagasins: string;
+    soldeTiroirs: string;
+    soldeCentrale: string;
+    cashConseille: string;
+    versementsEnCours: string;
+    ageing: TresoreriePilotageDto['ageing'];
+    litiges: { nombre: number; montantEcartsAbsolus: string };
+    courbe: TresoreriePilotageDto['courbe'];
+    meta: TresoreriePilotageDto['meta'];
+  };
+  analyse: {
+    margeSurStock: string | null;
+    rotationIndicateur: string | null;
+    alertes: Array<{
+      code: string;
+      message: string;
+      severite: DafAlerteSeverite;
+    }>;
+  };
+}
+
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 const zero = () => new Prisma.Decimal(0);
 
@@ -123,6 +176,7 @@ export class ReportingService {
     private readonly prisma: PrismaService,
     private readonly caissesService: CaissesService,
     private readonly caisseBalanceService: CaisseBalanceService,
+    private readonly stockService: StockService,
   ) {}
 
   async getDashboard(
@@ -302,6 +356,220 @@ export class ReportingService {
     };
   }
 
+  /**
+   * Cockpit Finance DAF — pôle central (§6.2 / §6.3.4).
+   * Lecture seule : consolide résultat ventes, stocks.synthese et pilotage trésorerie.
+   */
+  async getDaf(
+    user: AuthenticatedUser,
+    periode?: PeriodeFiltre,
+  ): Promise<ReportingDafDto> {
+    if (!ROLES_RESEAU_TRESORERIE.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité au cockpit Finance DAF (pôle central).`,
+      );
+    }
+
+    const [dashboard, pilotage, entrepots] = await Promise.all([
+      this.getDashboard(user, periode),
+      this.getTresoreriePilotage(user),
+      this.prisma.entrepot.findMany({
+        where: { actif: true },
+        select: { id: true },
+      }),
+    ]);
+    const synthese = await this.stockService.synthese(
+      entrepots.map((e) => e.id),
+    );
+
+    let caNet = zero();
+    let cmv = zero();
+    let margeBrute = zero();
+    for (const r of dashboard.rentabiliteParBoutique) {
+      caNet = caNet.plus(r.chiffreAffairesNet);
+      cmv = cmv.plus(r.coutDesVentes);
+      margeBrute = margeBrute.plus(r.margeBrute);
+    }
+    const tauxMarge = caNet.greaterThan(0)
+      ? margeBrute.div(caNet).times(100).toFixed(2)
+      : '0.00';
+
+    const parBoutiqueStock = new Map<
+      string,
+      {
+        boutiqueId: string;
+        nomBoutique: string;
+        unites: number;
+        valeur: Prisma.Decimal;
+        ruptures: number;
+        sousSeuil: number;
+      }
+    >();
+    for (const e of synthese.parEntrepot) {
+      const courant = parBoutiqueStock.get(e.boutiqueId) ?? {
+        boutiqueId: e.boutiqueId,
+        nomBoutique: e.nomBoutique,
+        unites: 0,
+        valeur: zero(),
+        ruptures: 0,
+        sousSeuil: 0,
+      };
+      courant.unites += e.unites;
+      courant.valeur = courant.valeur.plus(e.valeur);
+      courant.ruptures += e.ruptures;
+      courant.sousSeuil += e.sousSeuil;
+      parBoutiqueStock.set(e.boutiqueId, courant);
+    }
+
+    let soldeMagasins = zero();
+    let soldeTiroirs = zero();
+    let soldeCentrale = zero();
+    for (const c of dashboard.tresorerie.caisses) {
+      const solde = new Prisma.Decimal(c.solde);
+      if (c.type === TypeCaisse.MAGASIN)
+        soldeMagasins = soldeMagasins.plus(solde);
+      else if (c.type === TypeCaisse.TIROIR)
+        soldeTiroirs = soldeTiroirs.plus(solde);
+      else if (c.type === TypeCaisse.CENTRALE)
+        soldeCentrale = soldeCentrale.plus(solde);
+    }
+
+    const valeurStock = new Prisma.Decimal(synthese.kpis.valeurStock);
+    const margeSurStock = valeurStock.greaterThan(0)
+      ? money(margeBrute.div(valeurStock))
+      : null;
+    const rotationIndicateur = valeurStock.greaterThan(0)
+      ? money(cmv.div(valeurStock))
+      : null;
+
+    const alertes: ReportingDafDto['analyse']['alertes'] = [];
+    if (dashboard.ecarts.nombreLitiges > 0) {
+      alertes.push({
+        code: 'LITIGES_OUVERTS',
+        message: `${dashboard.ecarts.nombreLitiges} litige(s) ouverts · écarts ${dashboard.ecarts.montantEcartsAbsolus} FCFA`,
+        severite: 'critical',
+      });
+    }
+    if (dashboard.versements.enRetard24h > 0) {
+      alertes.push({
+        code: 'VERSEMENTS_RETARD',
+        message: `${dashboard.versements.enRetard24h} versement(s) boutique → centrale > 24 h`,
+        severite: 'warning',
+      });
+    }
+    if (synthese.kpis.ruptures > 0) {
+      alertes.push({
+        code: 'STOCK_RUPTURES',
+        message: `${synthese.kpis.ruptures} rupture(s) stock sur le réseau`,
+        severite: 'critical',
+      });
+    } else if (synthese.kpis.sousSeuil > 0) {
+      alertes.push({
+        code: 'STOCK_SOUS_SEUIL',
+        message: `${synthese.kpis.sousSeuil} SKU sous seuil de réappro`,
+        severite: 'warning',
+      });
+    }
+    if (soldeMagasins.plus(soldeTiroirs).greaterThan(soldeCentrale.times(2))) {
+      alertes.push({
+        code: 'CASH_BLOQUE_BOUTIQUES',
+        message:
+          'Cash boutiques (magasins + tiroirs) nettement supérieur à la centrale — accélérer les versements.',
+        severite: 'info',
+      });
+    }
+
+    return {
+      perimetre: 'RESEAU',
+      genereAt: new Date().toISOString(),
+      periode: {
+        dateFrom: periode?.dateFrom ?? null,
+        dateTo: periode?.dateTo ?? null,
+      },
+      resultat: {
+        caNet: money(caNet),
+        cmv: money(cmv),
+        margeBrute: money(margeBrute),
+        tauxMarge,
+        parBoutique: dashboard.rentabiliteParBoutique,
+        parModePaiement: dashboard.chiffreAffaires.parModePaiement,
+      },
+      stocks: {
+        valeurTotale: synthese.kpis.valeurStock,
+        ruptures: synthese.kpis.ruptures,
+        sousSeuil: synthese.kpis.sousSeuil,
+        couvertureMediane: synthese.kpis.couvertureJoursMediane,
+        sante: synthese.sante,
+        parBoutique: [...parBoutiqueStock.values()]
+          .map((b) => ({
+            boutiqueId: b.boutiqueId,
+            nomBoutique: b.nomBoutique,
+            unites: b.unites,
+            valeur: money(b.valeur),
+            ruptures: b.ruptures,
+            sousSeuil: b.sousSeuil,
+          }))
+          .sort((a, b) => a.nomBoutique.localeCompare(b.nomBoutique)),
+      },
+      tresorerie: {
+        soldeMagasins: money(soldeMagasins),
+        soldeTiroirs: money(soldeTiroirs),
+        soldeCentrale: money(soldeCentrale),
+        cashConseille: pilotage.position.cashConseille,
+        versementsEnCours: pilotage.position.versementsEnCours,
+        ageing: pilotage.ageing,
+        litiges: {
+          nombre: dashboard.ecarts.nombreLitiges,
+          montantEcartsAbsolus: dashboard.ecarts.montantEcartsAbsolus,
+        },
+        courbe: pilotage.courbe,
+        meta: pilotage.meta,
+      },
+      analyse: {
+        margeSurStock,
+        rotationIndicateur,
+        alertes,
+      },
+    };
+  }
+
+  async getDafCsv(
+    user: AuthenticatedUser,
+    periode?: PeriodeFiltre,
+  ): Promise<string> {
+    const daf = await this.getDaf(user, periode);
+    const stockByBoutique = new Map(
+      daf.stocks.parBoutique.map((b) => [b.boutiqueId, b]),
+    );
+    return toCsv(
+      daf.resultat.parBoutique.map((r) => {
+        const stock = stockByBoutique.get(r.boutiqueId);
+        return {
+          boutique: r.nomBoutique,
+          caNet: r.chiffreAffairesNet,
+          cmv: r.coutDesVentes,
+          margeBrute: r.margeBrute,
+          tauxMarge: r.tauxMarge,
+          valeurStock: stock?.valeur ?? r.valeurStock,
+          unitesStock: stock?.unites ?? 0,
+          ruptures: stock?.ruptures ?? 0,
+          sousSeuil: stock?.sousSeuil ?? 0,
+        };
+      }),
+      [
+        { key: 'boutique', header: 'Boutique' },
+        { key: 'caNet', header: 'CA net' },
+        { key: 'cmv', header: 'CMV' },
+        { key: 'margeBrute', header: 'Marge brute' },
+        { key: 'tauxMarge', header: 'Taux marge (%)' },
+        { key: 'valeurStock', header: 'Valeur stock' },
+        { key: 'unitesStock', header: 'Unités stock' },
+        { key: 'ruptures', header: 'Ruptures' },
+        { key: 'sousSeuil', header: 'Sous seuil' },
+      ],
+    );
+  }
+
   // Série temporelle du CA journalier (§6.3.4) — graphique d'évolution,
   // scopée au même périmètre de caisses que le tableau de bord.
   async ventesQuotidiennes(
@@ -390,6 +658,7 @@ export class ReportingService {
         modePaiement: true,
         caisseId: true,
         clientId: true,
+        paiements: { select: { modePaiement: true, montant: true } },
       },
     });
 
@@ -398,7 +667,12 @@ export class ReportingService {
         id: v.id,
         date: v.dateVente,
         montant: v.montantTotal.toFixed(2),
-        modePaiement: v.modePaiement,
+        modePaiement:
+          v.paiements.length > 0
+            ? v.paiements
+                .map((p) => `${p.modePaiement} ${p.montant.toFixed(2)}`)
+                .join(' + ')
+            : v.modePaiement,
         caisseId: v.caisseId,
         clientId: v.clientId,
       })),

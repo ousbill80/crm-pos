@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { RoleLibelle } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
 import { ApiError } from '../lib/api';
 
@@ -8,13 +9,26 @@ const COMPTES_DEMO = [
   { login: 'demo-pos-caissier', libelle: 'Caissier (POS)' },
   { login: 'demo-pos-temoin', libelle: 'Responsable magasin (témoin)' },
   { login: 'demo-respsi', libelle: 'Admin catalogue / Achats' },
-  { login: 'demo-daf', libelle: 'DAF (factures / paiements)' },
+  { login: 'demo-daf', libelle: 'DAF (Finance / factures)' },
   { login: 'demo-central', libelle: 'Caissier central (paiements)' },
 ];
 const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
 
+const ROLES_LANDING_FINANCE: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.CAISSIER_CENTRAL,
+  RoleLibelle.CONTROLEUR_INTERNE,
+];
+
+function homeForRole(role: RoleLibelle): string {
+  if (ROLES_LANDING_FINANCE.includes(role)) return '/finance';
+  if (role === RoleLibelle.CAISSIER_BOUTIQUE) return '/pos';
+  return '/dashboard';
+}
+
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, user, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -23,9 +37,9 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (isAuthenticated) {
-    const from = (location.state as { from?: string } | null)?.from ?? '/dashboard';
-    return <Navigate to={from} replace />;
+  if (isAuthenticated && user) {
+    const from = (location.state as { from?: string } | null)?.from;
+    return <Navigate to={from ?? homeForRole(user.role)} replace />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -33,8 +47,8 @@ export function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(loginValue, password);
-      navigate('/dashboard', { replace: true });
+      const next = await login(loginValue, password);
+      navigate(homeForRole(next.role), { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError

@@ -103,7 +103,12 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/ventes/sessions')
       .set(auth(token))
-      .send({ caisseId, fondInitial, temoinLogin })
+      .send({
+        caisseId,
+        fondInitial,
+        temoinLogin,
+        temoinPassword: MOT_DE_PASSE,
+      })
       .expect(201);
     return (response.body as SessionCaisseDto).id;
   }
@@ -368,7 +373,11 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
       await request(app.getHttpServer())
         .post(`/ventes/sessions/${sessionId}/cloture`)
         .set(auth(tokens.caissierB1))
-        .send({ fondCompteCloture: 5000, temoinLogin: 'resp-b1' })
+        .send({
+          fondCompteCloture: 5000,
+          temoinLogin: 'resp-b1',
+          temoinPassword: MOT_DE_PASSE,
+        })
         .expect(201);
 
       await request(app.getHttpServer())
@@ -400,7 +409,11 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
       const cloture = await request(app.getHttpServer())
         .post(`/ventes/sessions/${sessionId}/cloture`)
         .set(auth(tokens.caissierB1))
-        .send({ fondCompteCloture: 4000, temoinLogin: 'resp-b1' })
+        .send({
+          fondCompteCloture: 4000,
+          temoinLogin: 'resp-b1',
+          temoinPassword: MOT_DE_PASSE,
+        })
         .expect(201);
 
       const body = cloture.body as ClotureResponseDto;

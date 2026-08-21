@@ -4,8 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Caisse, TransactionCaisse } from '@prisma/client';
-import { StatutTransaction, TypeCaisse } from '@prisma/client';
+import type { Caisse } from '@prisma/client';
+import { Prisma, StatutTransaction, TypeCaisse } from '@prisma/client';
 import { ROLES_CONFIG_TIROIRS } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthenticatedUser } from '../auth/types';
@@ -26,6 +26,7 @@ import {
   CreateTiroirDto,
   UpdateTiroirDto,
 } from './dto/create-caisse.dto';
+import { libelleEcriture, sensEcriture } from './caisse-balance.formulas';
 
 type CaisseAvecBoutique = Caisse & { boutique: { zoneId: string } | null };
 
@@ -239,13 +240,65 @@ export class CaissesService {
   async getMouvements(
     id: string,
     user: AuthenticatedUser,
-  ): Promise<TransactionCaisse[]> {
+  ): Promise<
+    Array<{
+      id: string;
+      type: string;
+      montant: string;
+      dateHeure: Date;
+      statut: string;
+      caisseId: string;
+      initiateurId: string;
+      transactionSourceId: string | null;
+      sens: 'CREDIT' | 'DEBIT';
+      debit: string;
+      credit: string;
+      soldeApres: string;
+      libelle: string;
+      initiateur: {
+        id: string;
+        login: string;
+        prenom: string;
+        nom: string;
+      };
+    }>
+  > {
     await this.findOne(id, user);
-    return this.prisma.transactionCaisse.findMany({
+    const rows = await this.prisma.transactionCaisse.findMany({
       where: { caisseId: id, statut: StatutTransaction.VALIDEE },
-      orderBy: { dateHeure: 'desc' },
-      take: 200,
+      orderBy: [{ dateHeure: 'asc' }, { id: 'asc' }],
+      take: 500,
+      include: {
+        initiateur: {
+          select: { id: true, login: true, prenom: true, nom: true },
+        },
+      },
     });
+
+    let solde = new Prisma.Decimal(0);
+    const chronologique = rows.map((tx) => {
+      const sens = sensEcriture(tx);
+      const montant = new Prisma.Decimal(tx.montant);
+      solde = sens === 'CREDIT' ? solde.plus(montant) : solde.minus(montant);
+      return {
+        id: tx.id,
+        type: tx.type,
+        montant: montant.toFixed(2),
+        dateHeure: tx.dateHeure,
+        statut: tx.statut,
+        caisseId: tx.caisseId,
+        initiateurId: tx.initiateurId,
+        transactionSourceId: tx.transactionSourceId,
+        sens,
+        debit: sens === 'DEBIT' ? montant.toFixed(2) : '0.00',
+        credit: sens === 'CREDIT' ? montant.toFixed(2) : '0.00',
+        soldeApres: solde.toFixed(2),
+        libelle: libelleEcriture(tx),
+        initiateur: tx.initiateur,
+      };
+    });
+
+    return chronologique.reverse();
   }
 
   private async assertCaisseInScope(

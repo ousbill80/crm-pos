@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowRightLeft,
   Banknote,
   Clock,
+  Landmark,
   Scale,
   TrendingUp,
   Wallet,
@@ -34,6 +36,7 @@ import {
 } from '../lib/insights/dashboard';
 import { useAuth } from '../context/AuthContext';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
+import { outboxCount } from '../lib/offline/outbox';
 import type { Insight } from '../lib/insights/types';
 import type { ReportingDashboard } from './DashboardPage';
 
@@ -103,6 +106,7 @@ function insightRunway(jours: number | null, moyenneCa: string): Insight {
 export function TresoreriePage() {
   const { user } = useAuth();
   useTresorerieRealtime(user !== null);
+  const pendingOffline = outboxCount();
 
   const dashboard = useQuery({
     queryKey: ['reporting', 'dashboard', 'tresorerie'],
@@ -150,32 +154,67 @@ export function TresoreriePage() {
   const loading = dashboard.isLoading || pilotage.isLoading;
   const error = dashboard.isError || pilotage.isError;
 
+  const nbLitiges = data?.ecarts.nombreLitiges ?? 0;
+  const nbRetards = data?.versements.enRetard24h ?? 0;
+  const santeOk = nbLitiges === 0 && nbRetards === 0 && alertesTreso.length === 0;
+
   return (
-    <div>
+    <div className="treso-module">
       <PageHeader
         title="Trésorerie"
-        subtitle="Cash position & prévision indicative — grand livre append-only (inspiration Agicap)"
+        subtitle="Cash consolidé & projection indicative — grand livre append-only"
         actions={
-          <div className="page-header-actions">
-            <Link className="btn-secondary" to="/transactions?enCours=1">
-              En cours
+          <nav className="circuit-nav" aria-label="Circuit trésorerie">
+            <Link className="circuit-nav-item" to="/transactions?enCours=1">
+              <ArrowRightLeft size={14} /> En cours
             </Link>
-            <Link className="btn-secondary" to="/litiges">
-              Litiges
+            <Link className="circuit-nav-item" to="/litiges">
+              <Scale size={14} /> Litiges
+              {nbLitiges > 0 ? (
+                <span className="circuit-nav-count">{nbLitiges}</span>
+              ) : null}
             </Link>
-            <Link className="btn-primary" to="/caisses">
-              Caisses
+            <Link className="circuit-nav-item circuit-nav-primary" to="/caisses">
+              <Landmark size={14} /> Caisses
             </Link>
-          </div>
+          </nav>
         }
       />
+
+      {data && (
+        <section
+          className={`dash-sante ${santeOk ? 'dash-sante-ok' : nbLitiges > 0 ? 'dash-sante-critical' : 'dash-sante-warning'}`}
+          aria-label="Santé trésorerie"
+        >
+          <div className="dash-sante-main">
+            <span className="dash-sante-badge">
+              {santeOk ? 'Sain' : nbLitiges > 0 ? 'Litiges ouverts' : 'Vigilance'}
+            </span>
+            <p>
+              {nbLitiges} litige(s) · {nbRetards} versement(s) &gt; 24 h
+              {pendingOffline > 0
+                ? ` · ${pendingOffline} opération(s) hors-ligne en file`
+                : ''}
+              {data.genereAt
+                ? ` · actualisé ${new Date(data.genereAt).toLocaleString('fr-FR')}`
+                : ''}
+            </p>
+          </div>
+          <div className="dash-sante-meta treso-sante-links">
+            {!santeOk && nbLitiges > 0 ? <Link to="/litiges">Traiter litiges</Link> : null}
+            {nbRetards > 0 ? (
+              <Link to="/transactions?enCours=1">Circuit en cours</Link>
+            ) : null}
+            <Link to="/caisses">Voir caisses</Link>
+          </div>
+        </section>
+      )}
 
       {loading && <LoadingState label="Chargement du pilotage trésorerie..." />}
       {error && <p role="alert">Impossible de charger le pilotage trésorerie.</p>}
 
       {pilot && data && (
         <>
-          {/* Hero cash position — Agicap */}
           <div className="kpi-grid dash-kpi-grid">
             <article className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
@@ -188,7 +227,7 @@ export function TresoreriePage() {
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.cashConseille)}
               </div>
-              <div className="kpi-hint">Auxiliaires + centrale</div>
+              <div className="kpi-hint">Magasins / tiroirs + centrale</div>
             </article>
 
             <article className="kpi-card dash-kpi">
@@ -204,17 +243,17 @@ export function TresoreriePage() {
                   )}
                 />
               </div>
-              <div className="kpi-label">Auxiliaires</div>
+              <div className="kpi-label">Magasins / tiroirs</div>
               <div className="kpi-value money">
                 {formatFcfa(pilot.position.soldeAuxiliaires)}
               </div>
-              <div className="kpi-hint">Boutiques</div>
+              <div className="kpi-hint">Cash boutiques</div>
             </article>
 
             <article className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
-                  <Wallet size={16} />
+                  <Landmark size={16} />
                 </span>
               </div>
               <div className="kpi-label">Centrale</div>

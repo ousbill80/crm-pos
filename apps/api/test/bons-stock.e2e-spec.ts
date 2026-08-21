@@ -62,7 +62,9 @@ describe('Inventory réseau — bons de stock (e2e)', () => {
 
   beforeAll(async () => {
     await env.start();
-    const zone = await env.prisma.zone.create({ data: { nomZone: 'Zone Inv' } });
+    const zone = await env.prisma.zone.create({
+      data: { nomZone: 'Zone Inv' },
+    });
     const boutique = await env.prisma.boutique.create({
       data: { nom: 'Boutique Inv', adresse: 'Adr', zoneId: zone.id },
     });
@@ -208,8 +210,9 @@ describe('Inventory réseau — bons de stock (e2e)', () => {
       .get('/stocks/bons')
       .set(auth(tokens.si))
       .expect(200);
-    const bon = (bons.body as Array<{ id: string; receptionId: string; statut: string }>)
-      .find((b) => b.receptionId === (rec.body as { id: string }).id);
+    const bon = (
+      bons.body as Array<{ id: string; receptionId: string; statut: string }>
+    ).find((b) => b.receptionId === (rec.body as { id: string }).id);
     expect(bon?.statut).toBe('BROUILLON');
 
     await request(app.getHttpServer())
@@ -286,10 +289,18 @@ describe('Inventory réseau — bons de stock (e2e)', () => {
     expect(src?.quantite).toBe(2);
     expect(dest?.quantite).toBe(8);
     const out = await env.prisma.mouvementStock.count({
-      where: { produitId, type: 'TRANSFERT_OUT', reference: (created.body as { numero: string }).numero },
+      where: {
+        produitId,
+        type: 'TRANSFERT_OUT',
+        reference: (created.body as { numero: string }).numero,
+      },
     });
     const inn = await env.prisma.mouvementStock.count({
-      where: { produitId, type: 'TRANSFERT_IN', reference: (created.body as { numero: string }).numero },
+      where: {
+        produitId,
+        type: 'TRANSFERT_IN',
+        reference: (created.body as { numero: string }).numero,
+      },
     });
     expect(out).toBe(1);
     expect(inn).toBe(1);
@@ -343,6 +354,7 @@ describe('Inventory réseau — bons de stock (e2e)', () => {
         caisseId: caisseTiroirId,
         fondInitial: 0,
         temoinLogin: 'resp-inv',
+        temoinPassword: MOT_DE_PASSE,
       })
       .expect(201);
 
@@ -418,7 +430,12 @@ describe('Inventory réseau — bons de stock (e2e)', () => {
       .post('/stocks/reappro/lancer')
       .set(auth(tokens.si))
       .expect(201);
-    expect((launched.body as { bonsCrees: number }).bonsCrees).toBeGreaterThanOrEqual(1);
+    const body = launched.body as {
+      bonsCrees: number;
+      commandesCrees: number;
+    };
+    expect(body.bonsCrees).toBeGreaterThanOrEqual(1);
+    expect(body.commandesCrees).toBeGreaterThanOrEqual(1);
   });
 
   it('stock prévu = physique − réservé + commandes + bons PRET', async () => {
