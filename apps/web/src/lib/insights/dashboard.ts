@@ -248,3 +248,43 @@ export function insightSegmentClient(segment: string, nombre: number, totalClien
     severity: 'info',
   };
 }
+
+export function insightCashConseille(cashConseille: string): Insight {
+  return {
+    title: 'Cash consolidé',
+    interpretation: `${cashConseille} FCFA = soldes auxiliaires + caisse centrale, recalculés depuis le grand livre (visibilité groupe type Agicap).`,
+    severity: 'info',
+  };
+}
+
+export function insightProjectionLiquidite(
+  horizon: 'J+7' | 'J+30',
+  montant: string,
+  moyenneCa: string,
+): Insight {
+  return {
+    title: `Projection ${horizon}`,
+    interpretation: `${montant} FCFA — projection indicative = cash consolidé + moyenne CA journalier (${moyenneCa} FCFA) × horizon. Ce n'est pas un solde comptable futur.`,
+    recommendation: 'Comparer avec les versements en cours et les litiges avant toute décision de financement.',
+    severity: 'info',
+  };
+}
+
+export function insightAgeingVersements(bucket: string, nombre: number): Insight {
+  const labels: Record<string, string> = {
+    '0_24h': 'moins de 24 h',
+    '24_48h': '24 à 48 h',
+    '48_72h': '48 à 72 h',
+    plus_72h: 'plus de 72 h',
+  };
+  const critique = bucket === 'plus_72h' || bucket === '48_72h';
+  return {
+    title: `Ageing ${labels[bucket] ?? bucket}`,
+    interpretation: `${nombre} versement(s) encore dans le circuit (initié / transit / réceptionné) depuis ${labels[bucket] ?? bucket}.`,
+    recommendation: critique
+      ? 'Prioriser la réception / le rapprochement — risque de retard §6.7.'
+      : undefined,
+    severity: critique ? 'warning' : 'info',
+  };
+}
+

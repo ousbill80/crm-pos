@@ -31,6 +31,12 @@ export class ReportingController {
     return this.reportingService.ventesQuotidiennes(user, query.jours ?? 30);
   }
 
+  @Get('tresorerie-pilotage')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  getTresoreriePilotage(@CurrentUser() user: AuthenticatedUser) {
+    return this.reportingService.getTresoreriePilotage(user);
+  }
+
   @Get('dashboard/export.csv')
   @Roles(...ROLES_LECTURE_CAISSES)
   async exportDashboardCsv(

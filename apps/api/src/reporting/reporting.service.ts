@@ -75,6 +75,43 @@ export interface ReportingDashboardDto {
     nombreClients: number;
     parSegment: Array<{ segment: string; nombre: number }>;
   };
+  rentabiliteParBoutique: Array<{
+    boutiqueId: string;
+    nomBoutique: string;
+    chiffreAffairesNet: string;
+    coutDesVentes: string;
+    margeBrute: string;
+    tauxMarge: string;
+    valeurStock: string;
+  }>;
+}
+
+export type AgeingBucket = '0_24h' | '24_48h' | '48_72h' | 'plus_72h';
+
+// Pilotage Agicap-like — lecture pure, projections indicatives (pas d'écriture).
+export interface TresoreriePilotageDto {
+  position: {
+    soldeAuxiliaires: string;
+    soldeCentrale: string;
+    cashConseille: string;
+    versementsEnCours: string;
+  };
+  ageing: Array<{
+    bucket: AgeingBucket;
+    nombre: number;
+    montant: string;
+  }>;
+  courbe: Array<{
+    jourOffset: number;
+    date: string;
+    cashBase: string;
+    cashHaut: string;
+    cashBas: string;
+  }>;
+  meta: {
+    moyenneCaJournalier30j: string;
+    methode: 'MOYENNE_CA_30J';
+  };
 }
 
 const money = (value: Prisma.Decimal) => value.toFixed(2);
@@ -109,13 +146,14 @@ export class ReportingService {
       ),
     ];
 
-    const [chiffreAffaires, versements, ecarts, tresorerie, crm] =
+    const [chiffreAffaires, versements, ecarts, tresorerie, crm, rentabiliteParBoutique] =
       await Promise.all([
         this.aggreguerChiffreAffaires(caisseIds, periode),
         this.aggreguerVersements(caisseIds),
         this.aggreguerEcarts(caisseIds),
         this.aggreguerTresorerie(caisses),
         this.aggreguerCrm(boutiqueIds, perimetre),
+        this.aggreguerRentabiliteParBoutique(caisseIds, boutiqueIds, periode),
       ]);
 
     return {
@@ -126,6 +164,135 @@ export class ReportingService {
       ecarts,
       tresorerie,
       crm,
+      rentabiliteParBoutique,
+    };
+  }
+
+  // Cash position + ageing + courbe 30 j (patterns Agicap / Kyriba).
+  // Projections = moyenne CA 30 j × horizon — indicatives, jamais écrites.
+  async getTresoreriePilotage(
+    user: AuthenticatedUser,
+  ): Promise<TresoreriePilotageDto> {
+    if (!ROLES_LECTURE_CAISSES.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité à consulter le reporting trésorerie.`,
+      );
+    }
+
+    const caisses = await this.caissesService.findAll(user);
+    const caisseIds = caisses.map((c) => c.id);
+    const tresorerie = await this.aggreguerTresorerie(caisses);
+
+    let soldeAuxiliaires = zero();
+    let soldeCentrale = zero();
+    for (const c of tresorerie.caisses) {
+      const solde = new Prisma.Decimal(c.solde);
+      if (c.type === TypeCaisse.AUXILIAIRE) {
+        soldeAuxiliaires = soldeAuxiliaires.plus(solde);
+      } else if (c.type === TypeCaisse.CENTRALE) {
+        soldeCentrale = soldeCentrale.plus(solde);
+      }
+    }
+    const cashConseille = soldeAuxiliaires.plus(soldeCentrale);
+
+    const enCoursStatuts: StatutTransaction[] = [
+      StatutTransaction.INITIEE,
+      StatutTransaction.EN_TRANSIT,
+      StatutTransaction.RECEPTIONNEE,
+    ];
+
+    const enCours =
+      caisseIds.length === 0
+        ? []
+        : await this.prisma.transactionCaisse.findMany({
+            where: {
+              caisseId: { in: caisseIds },
+              statut: { in: enCoursStatuts },
+            },
+            select: { montant: true, dateHeure: true },
+          });
+
+    let versementsEnCours = zero();
+    const buckets: Record<
+      AgeingBucket,
+      { nombre: number; montant: Prisma.Decimal }
+    > = {
+      '0_24h': { nombre: 0, montant: zero() },
+      '24_48h': { nombre: 0, montant: zero() },
+      '48_72h': { nombre: 0, montant: zero() },
+      plus_72h: { nombre: 0, montant: zero() },
+    };
+    const now = Date.now();
+    const H = 60 * 60 * 1000;
+    for (const t of enCours) {
+      versementsEnCours = versementsEnCours.plus(t.montant);
+      const ageH = (now - t.dateHeure.getTime()) / H;
+      let bucket: AgeingBucket;
+      if (ageH < 24) bucket = '0_24h';
+      else if (ageH < 48) bucket = '24_48h';
+      else if (ageH < 72) bucket = '48_72h';
+      else bucket = 'plus_72h';
+      buckets[bucket].nombre += 1;
+      buckets[bucket].montant = buckets[bucket].montant.plus(t.montant);
+    }
+
+    const depuis = new Date();
+    depuis.setHours(0, 0, 0, 0);
+    depuis.setDate(depuis.getDate() - 29);
+    const ventes =
+      caisseIds.length === 0
+        ? []
+        : await this.prisma.vente.findMany({
+            where: {
+              caisseId: { in: caisseIds },
+              dateVente: { gte: depuis },
+            },
+            select: { montantTotal: true },
+          });
+    const totalCa30j = ventes.reduce(
+      (acc, v) => acc.plus(v.montantTotal),
+      zero(),
+    );
+    const moyenneCa = totalCa30j.div(30);
+
+    const courbe: TresoreriePilotageDto['courbe'] = [];
+    const aujourdhui = new Date();
+    aujourdhui.setHours(0, 0, 0, 0);
+    for (let d = 0; d <= 30; d++) {
+      const jour = new Date(aujourdhui);
+      jour.setDate(aujourdhui.getDate() + d);
+      const pente = moyenneCa.mul(d);
+      const cashBase = cashConseille.plus(pente);
+      const cashHaut = cashConseille.plus(pente.mul(1.1));
+      const cashBas = cashConseille.plus(pente.mul(0.9));
+      courbe.push({
+        jourOffset: d,
+        date: jour.toISOString().slice(0, 10),
+        cashBase: money(cashBase),
+        cashHaut: money(cashHaut),
+        cashBas: money(cashBas),
+      });
+    }
+
+    return {
+      position: {
+        soldeAuxiliaires: money(soldeAuxiliaires),
+        soldeCentrale: money(soldeCentrale),
+        cashConseille: money(cashConseille),
+        versementsEnCours: money(versementsEnCours),
+      },
+      ageing: (
+        ['0_24h', '24_48h', '48_72h', 'plus_72h'] as AgeingBucket[]
+      ).map((bucket) => ({
+        bucket,
+        nombre: buckets[bucket].nombre,
+        montant: money(buckets[bucket].montant),
+      })),
+      courbe,
+      meta: {
+        moyenneCaJournalier30j: money(moyenneCa),
+        methode: 'MOYENNE_CA_30J',
+      },
     };
   }
 
@@ -478,5 +645,149 @@ export class ReportingService {
         .map(([segment, nombre]) => ({ segment, nombre }))
         .sort((a, b) => a.segment.localeCompare(b.segment)),
     };
+  }
+
+  // Rentabilité par boutique — priorité explicite (marge, pas seulement CA).
+  // CA net et coût des ventes (CMV) sont calculés indépendamment du CA brut
+  // de aggreguerChiffreAffaires (qui ne déduit pas les retours) pour que
+  // marge = CA net − CMV net reste cohérent en interne. LigneVente.coutUnitaire
+  // est un snapshot du CMP au moment de la vente — jamais recalculé
+  // rétroactivement (cohérence grand livre) ; les ventes antérieures à
+  // l'introduction de ce suivi (coutUnitaire null) sont exclues du CMV,
+  // jamais approximées avec une valeur fabriquée.
+  private async aggreguerRentabiliteParBoutique(
+    caisseIds: string[],
+    boutiqueIds: string[],
+    periode?: PeriodeFiltre,
+  ): Promise<ReportingDashboardDto['rentabiliteParBoutique']> {
+    if (boutiqueIds.length === 0) {
+      return [];
+    }
+
+    const boutiques = await this.prisma.boutique.findMany({
+      where: { id: { in: boutiqueIds } },
+      select: { id: true, nom: true },
+    });
+    const nomBoutiqueById = new Map(boutiques.map((b) => [b.id, b.nom]));
+
+    interface Cumul {
+      caBrut: Prisma.Decimal;
+      cmvBrut: Prisma.Decimal;
+      retoursMontant: Prisma.Decimal;
+      retoursCout: Prisma.Decimal;
+      valeurStock: Prisma.Decimal;
+    }
+    const cumulParBoutique = new Map<string, Cumul>();
+    const cumul = (boutiqueId: string): Cumul => {
+      let entry = cumulParBoutique.get(boutiqueId);
+      if (!entry) {
+        entry = {
+          caBrut: zero(),
+          cmvBrut: zero(),
+          retoursMontant: zero(),
+          retoursCout: zero(),
+          valeurStock: zero(),
+        };
+        cumulParBoutique.set(boutiqueId, entry);
+      }
+      return entry;
+    };
+
+    if (caisseIds.length > 0) {
+      const dateVente = periodeWhere(periode);
+      const caisses = await this.prisma.caisse.findMany({
+        where: { id: { in: caisseIds } },
+        select: { id: true, boutiqueId: true },
+      });
+      const boutiqueIdByCaisseId = new Map(
+        caisses.map((c) => [c.id, c.boutiqueId]),
+      );
+
+      const lignes = await this.prisma.ligneVente.findMany({
+        where: { vente: { caisseId: { in: caisseIds }, dateVente } },
+        select: {
+          quantite: true,
+          prixUnitaire: true,
+          remise: true,
+          coutUnitaire: true,
+          vente: { select: { caisseId: true } },
+        },
+      });
+      for (const ligne of lignes) {
+        const boutiqueId = boutiqueIdByCaisseId.get(ligne.vente.caisseId);
+        if (!boutiqueId) continue;
+        const entry = cumul(boutiqueId);
+        entry.caBrut = entry.caBrut.plus(
+          ligne.prixUnitaire.times(ligne.quantite).minus(ligne.remise),
+        );
+        if (ligne.coutUnitaire !== null) {
+          entry.cmvBrut = entry.cmvBrut.plus(
+            ligne.coutUnitaire.times(ligne.quantite),
+          );
+        }
+      }
+
+      const retours = await this.prisma.retourVente.findMany({
+        where: {
+          ligneVente: { vente: { caisseId: { in: caisseIds }, dateVente } },
+        },
+        select: {
+          quantite: true,
+          montantRembourse: true,
+          ligneVente: {
+            select: { coutUnitaire: true, vente: { select: { caisseId: true } } },
+          },
+        },
+      });
+      for (const retour of retours) {
+        const boutiqueId = boutiqueIdByCaisseId.get(
+          retour.ligneVente.vente.caisseId,
+        );
+        if (!boutiqueId) continue;
+        const entry = cumul(boutiqueId);
+        entry.retoursMontant = entry.retoursMontant.plus(retour.montantRembourse);
+        if (retour.ligneVente.coutUnitaire !== null) {
+          entry.retoursCout = entry.retoursCout.plus(
+            retour.ligneVente.coutUnitaire.times(retour.quantite),
+          );
+        }
+      }
+    }
+
+    const quants = await this.prisma.stockQuant.findMany({
+      where: { entrepot: { boutiqueId: { in: boutiqueIds } } },
+      select: {
+        quantite: true,
+        produit: { select: { coutMoyenPondere: true } },
+        entrepot: { select: { boutiqueId: true } },
+      },
+    });
+    for (const quant of quants) {
+      const entry = cumul(quant.entrepot.boutiqueId);
+      entry.valeurStock = entry.valeurStock.plus(
+        quant.produit.coutMoyenPondere.times(quant.quantite),
+      );
+    }
+
+    return boutiqueIds
+      .map((boutiqueId) => {
+        const c = cumulParBoutique.get(boutiqueId) ?? cumul(boutiqueId);
+        const caNet = c.caBrut.minus(c.retoursMontant);
+        const cmvNet = c.cmvBrut.minus(c.retoursCout);
+        const margeBrute = caNet.minus(cmvNet);
+        const tauxMarge = caNet.greaterThan(0)
+          ? margeBrute.div(caNet).times(100).toFixed(2)
+          : '0.00';
+        return {
+          boutiqueId,
+          nomBoutique: nomBoutiqueById.get(boutiqueId) ?? boutiqueId,
+          chiffreAffairesNet: money(caNet),
+          coutDesVentes: money(cmvNet),
+          margeBrute: money(margeBrute),
+          tauxMarge,
+          valeurStock: money(c.valeurStock),
+        };
+      })
+      .sort((a, b) => a.nomBoutique.localeCompare(b.nomBoutique));
   }
 }

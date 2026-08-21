@@ -339,4 +339,61 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
       ),
     ).toBe(true);
   });
+
+  describe('GET /reporting/tresorerie-pilotage (Agicap-like)', () => {
+    it('refuse RESPONSABLE_CRM → 403', async () => {
+      await request(app.getHttpServer())
+        .get('/reporting/tresorerie-pilotage')
+        .set('Authorization', `Bearer ${tokens.crm}`)
+        .expect(403);
+    });
+
+    it('renvoie cash position, ageing et courbe 0..30', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/reporting/tresorerie-pilotage')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+
+      const body = response.body as {
+        position: {
+          soldeAuxiliaires: string;
+          soldeCentrale: string;
+          cashConseille: string;
+          versementsEnCours: string;
+        };
+        ageing: Array<{ bucket: string; nombre: number; montant: string }>;
+        courbe: Array<{
+          jourOffset: number;
+          cashBase: string;
+          cashHaut: string;
+          cashBas: string;
+        }>;
+        meta: { methode: string; moyenneCaJournalier30j: string };
+      };
+
+      expect(body.meta.methode).toBe('MOYENNE_CA_30J');
+      expect(body.courbe).toHaveLength(31);
+      expect(body.courbe[0].jourOffset).toBe(0);
+      expect(body.courbe[30].jourOffset).toBe(30);
+      expect(Number(body.position.cashConseille)).toBeCloseTo(
+        Number(body.position.soldeAuxiliaires) +
+          Number(body.position.soldeCentrale),
+        2,
+      );
+      expect(body.ageing.map((a) => a.bucket)).toEqual([
+        '0_24h',
+        '24_48h',
+        '48_72h',
+        'plus_72h',
+      ]);
+      // Transaction INITIEE datée -48h dans le seed → bucket 24_48h ou 48_72h
+      const totalAgeing = body.ageing.reduce((n, a) => n + a.nombre, 0);
+      expect(totalAgeing).toBeGreaterThanOrEqual(1);
+      expect(Number(body.position.versementsEnCours)).toBeGreaterThan(0);
+      // Scénario : haut ≥ base ≥ bas sur la pente (jour 30)
+      const j30 = body.courbe[30];
+      expect(Number(j30.cashHaut)).toBeGreaterThanOrEqual(Number(j30.cashBase));
+      expect(Number(j30.cashBase)).toBeGreaterThanOrEqual(Number(j30.cashBas));
+    });
+  });
 });

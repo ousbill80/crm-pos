@@ -1,12 +1,34 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, Scale, Wallet } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
+  Scale,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { apiFetch } from '../lib/api';
 import { PageHeader, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
+  insightAgeingVersements,
+  insightCashConseille,
   insightLitiges,
+  insightProjectionLiquidite,
   insightTresorerie,
   insightVersementsEnRetard,
 } from '../lib/insights/dashboard';
@@ -15,7 +37,44 @@ import type { ReportingDashboard } from './DashboardPage';
 interface AlerteDto {
   type: string;
   message: string;
-  severite?: string;
+}
+
+interface TresoreriePilotage {
+  position: {
+    soldeAuxiliaires: string;
+    soldeCentrale: string;
+    cashConseille: string;
+    versementsEnCours: string;
+  };
+  ageing: Array<{
+    bucket: '0_24h' | '24_48h' | '48_72h' | 'plus_72h';
+    nombre: number;
+    montant: string;
+  }>;
+  courbe: Array<{
+    jourOffset: number;
+    date: string;
+    cashBase: string;
+    cashHaut: string;
+    cashBas: string;
+  }>;
+  meta: {
+    moyenneCaJournalier30j: string;
+    methode: 'MOYENNE_CA_30J';
+  };
+}
+
+const AGEING_LABELS: Record<string, string> = {
+  '0_24h': '0–24 h',
+  '24_48h': '24–48 h',
+  '48_72h': '48–72 h',
+  plus_72h: '+72 h',
+};
+
+function formatFcfa(value: string | number): string {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (Number.isNaN(n)) return String(value);
+  return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
 }
 
 export function TresoreriePage() {
@@ -24,12 +83,18 @@ export function TresoreriePage() {
     queryFn: () => apiFetch<ReportingDashboard>('/reporting/dashboard'),
   });
 
+  const pilotage = useQuery({
+    queryKey: ['reporting', 'tresorerie-pilotage'],
+    queryFn: () => apiFetch<TresoreriePilotage>('/reporting/tresorerie-pilotage'),
+  });
+
   const alertes = useQuery({
     queryKey: ['alertes', 'tresorerie'],
     queryFn: () => apiFetch<AlerteDto[]>('/alertes'),
   });
 
   const data = dashboard.data;
+  const pilot = pilotage.data;
   const alertesTreso = (alertes.data ?? []).filter(
     (a) =>
       a.type === 'ECART_CAISSE' ||
@@ -37,11 +102,32 @@ export function TresoreriePage() {
       a.type === 'ACCES_REFUSE',
   );
 
+  const courbeChart = (pilot?.courbe ?? []).map((p) => ({
+    jour: `J+${p.jourOffset}`,
+    date: p.date,
+    Base: Number(p.cashBase),
+    Haut: Number(p.cashHaut),
+    Bas: Number(p.cashBas),
+  }));
+
+  const ageingChart = (pilot?.ageing ?? []).map((a) => ({
+    bucket: AGEING_LABELS[a.bucket] ?? a.bucket,
+    key: a.bucket,
+    nombre: a.nombre,
+    montant: Number(a.montant),
+  }));
+
+  const proj7 = pilot?.courbe[7];
+  const proj30 = pilot?.courbe[30];
+
+  const loading = dashboard.isLoading || pilotage.isLoading;
+  const error = dashboard.isError || pilotage.isError;
+
   return (
     <div>
       <PageHeader
         title="Trésorerie"
-        subtitle="Soldes, pipeline de versements et litiges — grand livre append-only (§6.4)"
+        subtitle="Cash position & prévision indicative — grand livre append-only (inspiration Agicap)"
         actions={
           <div className="page-header-actions">
             <Link className="btn-secondary" to="/transactions">
@@ -57,39 +143,110 @@ export function TresoreriePage() {
         }
       />
 
-      {dashboard.isLoading && <LoadingState label="Chargement de la trésorerie..." />}
-      {dashboard.isError && (
-        <p role="alert">Impossible de charger le tableau de trésorerie.</p>
-      )}
+      {loading && <LoadingState label="Chargement du pilotage trésorerie..." />}
+      {error && <p role="alert">Impossible de charger le pilotage trésorerie.</p>}
 
-      {data && (
+      {pilot && data && (
         <>
+          {/* Hero cash position — Agicap */}
           <div className="kpi-grid dash-kpi-grid">
             <article className="kpi-card dash-kpi">
               <div className="dash-kpi-top">
                 <span className="dash-kpi-icon">
                   <Wallet size={16} />
                 </span>
+                <InfoTooltip insight={insightCashConseille(pilot.position.cashConseille)} />
+              </div>
+              <div className="kpi-label">Cash consolidé</div>
+              <div className="kpi-value money">
+                {formatFcfa(pilot.position.cashConseille)}
+              </div>
+              <div className="kpi-hint">Auxiliaires + centrale</div>
+            </article>
+
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Banknote size={16} />
+                </span>
                 <InfoTooltip
                   insight={insightTresorerie(
-                    data.tresorerie.totalSoldesAuxiliaires,
-                    data.tresorerie.caisses.length,
+                    pilot.position.soldeAuxiliaires,
+                    data.tresorerie.caisses.filter((c) => c.type === 'AUXILIAIRE')
+                      .length,
                   )}
                 />
               </div>
-              <div className="kpi-label">Soldes auxiliaires</div>
+              <div className="kpi-label">Auxiliaires</div>
               <div className="kpi-value money">
-                {data.tresorerie.totalSoldesAuxiliaires} FCFA
+                {formatFcfa(pilot.position.soldeAuxiliaires)}
               </div>
-              <div className="kpi-hint">
-                {
-                  data.tresorerie.caisses.filter((c) => c.type === 'AUXILIAIRE')
-                    .length
-                }{' '}
-                caisses boutique
-              </div>
+              <div className="kpi-hint">Boutiques</div>
             </article>
 
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Wallet size={16} />
+                </span>
+              </div>
+              <div className="kpi-label">Centrale</div>
+              <div className="kpi-value money">
+                {formatFcfa(pilot.position.soldeCentrale)}
+              </div>
+              <div className="kpi-hint">Contreparties validées</div>
+            </article>
+
+            <article className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <TrendingUp size={16} />
+                </span>
+              </div>
+              <div className="kpi-label">En cours</div>
+              <div className="kpi-value money">
+                {formatFcfa(pilot.position.versementsEnCours)}
+              </div>
+              <div className="kpi-hint">Initié / transit / réceptionné</div>
+            </article>
+          </div>
+
+          {/* Horizon J+7 / J+30 + litiges / retards */}
+          <div className="kpi-grid dash-kpi-grid">
+            {proj7 && (
+              <article className="kpi-card dash-kpi">
+                <div className="dash-kpi-top">
+                  <InfoTooltip
+                    insight={insightProjectionLiquidite(
+                      'J+7',
+                      proj7.cashBase,
+                      pilot.meta.moyenneCaJournalier30j,
+                    )}
+                  />
+                </div>
+                <div className="kpi-label">Projection J+7</div>
+                <div className="kpi-value money">{formatFcfa(proj7.cashBase)}</div>
+                <div className="kpi-hint">Indicative — scénario base</div>
+              </article>
+            )}
+            {proj30 && (
+              <article className="kpi-card dash-kpi">
+                <div className="dash-kpi-top">
+                  <InfoTooltip
+                    insight={insightProjectionLiquidite(
+                      'J+30',
+                      proj30.cashBase,
+                      pilot.meta.moyenneCaJournalier30j,
+                    )}
+                  />
+                </div>
+                <div className="kpi-label">Projection J+30</div>
+                <div className="kpi-value money">{formatFcfa(proj30.cashBase)}</div>
+                <div className="kpi-hint">
+                  CA moy. {formatFcfa(pilot.meta.moyenneCaJournalier30j)}/j
+                </div>
+              </article>
+            )}
             <article
               className={
                 data.ecarts.nombreLitiges > 0
@@ -114,7 +271,6 @@ export function TresoreriePage() {
                 Écarts abs. {data.ecarts.montantEcartsAbsolus} FCFA
               </div>
             </article>
-
             <article
               className={
                 data.versements.enRetard24h > 0
@@ -137,6 +293,107 @@ export function TresoreriePage() {
           </div>
 
           <div className="panel-grid-2">
+            <ListPanel title="Courbe de liquidité 30 j (scénarios)">
+              <p className="lead">
+                Base / Haut (+10&nbsp;% pente) / Bas (−10&nbsp;% pente) — projection
+                indicative, pas un solde comptable.
+              </p>
+              <div style={{ width: '100%', height: 280 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={courbeChart}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
+                    <XAxis dataKey="jour" tick={{ fontSize: 11 }} interval={4} />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v: number) =>
+                        `${(v / 1000).toFixed(0)}k`
+                      }
+                    />
+                    <Tooltip
+                      formatter={(value) =>
+                        formatFcfa(typeof value === 'number' ? value : Number(value))
+                      }
+                    />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="Haut"
+                      stroke="#0d9488"
+                      fill="#0d9488"
+                      fillOpacity={0.12}
+                      strokeWidth={1.5}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="Base"
+                      stroke="#0f766e"
+                      fill="#0f766e"
+                      fillOpacity={0.25}
+                      strokeWidth={2}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="Bas"
+                      stroke="#b45309"
+                      fill="#b45309"
+                      fillOpacity={0.1}
+                      strokeWidth={1.5}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </ListPanel>
+
+            <ListPanel title="Ageing des versements en cours">
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={ageingChart}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(value, name) =>
+                        name === 'montant'
+                          ? formatFcfa(typeof value === 'number' ? value : Number(value))
+                          : value
+                      }
+                    />
+                    <Bar dataKey="nombre" name="Nombre" fill="#017E84" radius={4} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                    <th>Nb</th>
+                    <th>Montant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pilot.ageing.map((a) => (
+                    <tr key={a.bucket}>
+                      <td>
+                        {AGEING_LABELS[a.bucket]}{' '}
+                        <InfoTooltip
+                          insight={insightAgeingVersements(a.bucket, a.nombre)}
+                        />
+                      </td>
+                      <td>{a.nombre}</td>
+                      <td className="money">{formatFcfa(a.montant)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="lead">
+                <Link to="/transactions">
+                  Ouvrir les transactions <ArrowRight size={14} />
+                </Link>
+              </p>
+            </ListPanel>
+          </div>
+
+          <div className="panel-grid-2">
             <ListPanel title="Pipeline des versements">
               <table>
                 <thead>
@@ -156,76 +413,31 @@ export function TresoreriePage() {
                       <td className="money">{row.montant} FCFA</td>
                     </tr>
                   ))}
-                  {data.versements.parStatut.length === 0 && (
-                    <tr>
-                      <td colSpan={3}>Aucun versement sur la période.</td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
-              <p className="lead">
-                <Link to="/transactions">
-                  Voir toutes les transactions <ArrowRight size={14} />
-                </Link>
-              </p>
             </ListPanel>
 
-            <ListPanel title="Soldes par caisse">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Caisse</th>
-                    <th>Solde</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.tresorerie.caisses.map((c) => (
-                    <tr key={c.caisseId}>
-                      <td>
-                        <span
-                          className={
-                            c.type === 'CENTRALE'
-                              ? 'badge badge-info'
-                              : 'badge badge-neutral'
-                          }
-                        >
-                          {c.type}
-                        </span>{' '}
-                        <code>{c.caisseId.slice(0, 8)}…</code>
-                      </td>
-                      <td className="money">{c.solde} FCFA</td>
-                    </tr>
+            <ListPanel title="Alertes trésorerie">
+              {alertes.isLoading && <LoadingState label="Chargement des alertes..." />}
+              {!alertes.isLoading && alertesTreso.length === 0 && (
+                <p className="lead">Aucune alerte trésorerie active.</p>
+              )}
+              {alertesTreso.length > 0 && (
+                <ul>
+                  {alertesTreso.map((a, i) => (
+                    <li key={`${a.type}-${i}`}>
+                      <span className="badge badge-warning">{a.type}</span> {a.message}
+                    </li>
                   ))}
-                </tbody>
-              </table>
+                </ul>
+              )}
               <p className="lead">
-                <Link to="/caisses">
-                  Grand livre des caisses <ArrowRight size={14} />
+                <Link to="/alertes">
+                  Toutes les alertes <ArrowRight size={14} />
                 </Link>
               </p>
             </ListPanel>
           </div>
-
-          <ListPanel title="Alertes trésorerie">
-            {alertes.isLoading && <LoadingState label="Chargement des alertes..." />}
-            {!alertes.isLoading && alertesTreso.length === 0 && (
-              <p className="lead">Aucune alerte trésorerie active.</p>
-            )}
-            {alertesTreso.length > 0 && (
-              <ul>
-                {alertesTreso.map((a, i) => (
-                  <li key={`${a.type}-${i}`}>
-                    <span className="badge badge-warning">{a.type}</span> {a.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="lead">
-              <Link to="/alertes">
-                Toutes les alertes <ArrowRight size={14} />
-              </Link>
-            </p>
-          </ListPanel>
         </>
       )}
     </div>
