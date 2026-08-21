@@ -10,13 +10,12 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import PDFDocument from 'pdfkit';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   ROLES_LECTURE_CAISSES,
-  ROLES_PERIMETRE_BOUTIQUE,
+  ROLES_POS_ECRITURE,
 } from '../caisses/access-scope.constants';
 import { VentesService } from './ventes.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
@@ -24,23 +23,24 @@ import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
 import { CreateRetourDto } from './dto/create-retour.dto';
 import { UpsertReservationDto } from './dto/paiement-reservation.dto';
+import { dessinerEtatSession } from '../impressions/etat-session.pdf';
+import { pipePdf } from '../impressions/pdf.util';
 
-// Endpoints POS — sessions de caisse et encaissement (§6.3.2, §5.1). Toute
-// écriture est réservée au périmètre boutique (caissier/responsable
-// boutique) : une caisse auxiliaire encaisse et initie, jamais plus (règle
-// de séparation des tâches, cf. CLAUDE.md).
+// Endpoints POS — sessions de caisse et encaissement (§6.3.2, §5.1).
+// Écriture : caissier / responsable boutique uniquement (ROLES_POS_ECRITURE).
+// Le convoyeur n’encaisse pas (§4 / §6.4).
 @Controller('ventes')
 export class VentesController {
   constructor(private readonly ventesService: VentesService) {}
 
   @Get('temoins-eligibles')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   listerTemoinsEligibles(@CurrentUser() utilisateur: AuthenticatedUser) {
     return this.ventesService.listerTemoinsEligibles(utilisateur);
   }
 
   @Post('sessions')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   ouvrirSession(
     @Body() dto: CreateSessionCaisseDto,
     @CurrentUser() utilisateur: AuthenticatedUser,
@@ -73,7 +73,7 @@ export class VentesController {
   }
 
   @Post('sessions/:id/ventes')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   encaisserVente(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateVenteDto,
@@ -83,7 +83,7 @@ export class VentesController {
   }
 
   @Put('sessions/:id/reservations')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   upsertReservation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpsertReservationDto,
@@ -93,7 +93,7 @@ export class VentesController {
   }
 
   @Get('sessions/:id/reservations')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   listerTicketsAttente(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() utilisateur: AuthenticatedUser,
@@ -102,7 +102,7 @@ export class VentesController {
   }
 
   @Delete('sessions/:id/reservations/:holdId')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   libererReservation(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('holdId', ParseUUIDPipe) holdId: string,
@@ -112,7 +112,7 @@ export class VentesController {
   }
 
   @Post('sessions/:id/retours')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   creerRetour(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateRetourDto,
@@ -122,13 +122,37 @@ export class VentesController {
   }
 
   @Post('sessions/:id/cloture')
-  @Roles(...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_POS_ECRITURE)
   cloturerSession(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ClotureSessionCaisseDto,
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.ventesService.cloturerSession(id, dto, utilisateur);
+  }
+
+  @Get('sessions/:id/etat')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  async etatSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+  ) {
+    const { etat } = await this.ventesService.chargerEtatSession(
+      id,
+      utilisateur,
+    );
+    return {
+      ...etat,
+      ouvertureDateHeure: etat.ouvertureDateHeure.toISOString(),
+      clotureDateHeure: etat.clotureDateHeure
+        ? etat.clotureDateHeure.toISOString()
+        : null,
+      imprimeAt: etat.imprimeAt.toISOString(),
+      ventes: etat.ventes.map((v) => ({
+        ...v,
+        dateVente: v.dateVente.toISOString(),
+      })),
+    };
   }
 
   @Get('sessions/:id/cloture/pdf')
@@ -138,44 +162,16 @@ export class VentesController {
     @CurrentUser() utilisateur: AuthenticatedUser,
     @Res() res: Response,
   ) {
-    const { session, releve } = await this.ventesService.genererReleveCloture(
+    const { etat } = await this.ventesService.genererReleveCloture(
       id,
       utilisateur,
     );
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="releve-session-${session.id}.pdf"`,
+    const prefix = etat.typeEtat === 'Z' ? 'etat-z' : 'etat-x';
+    pipePdf(
+      res,
+      `${prefix}-session-${etat.sessionId}.pdf`,
+      (doc) => dessinerEtatSession(doc, etat),
+      `${prefix === 'etat-z' ? 'État Z' : 'État X'} · document de caisse §6.3.4`,
     );
-
-    const doc = new PDFDocument({ margin: 50 });
-    doc.pipe(res);
-
-    doc.fontSize(16).text('Relevé de clôture de session de caisse', {
-      align: 'center',
-    });
-    doc.moveDown();
-    doc.fontSize(10);
-    doc.text(`Session : ${session.id}`);
-    doc.text(`Statut : ${session.statut}`);
-    doc.text(`Ouverture : ${session.ouvertureDateHeure.toISOString()}`);
-    if (session.clotureDateHeure) {
-      doc.text(`Clôture : ${session.clotureDateHeure.toISOString()}`);
-    }
-    doc.moveDown();
-
-    doc.fontSize(12).text('Répartition par mode de paiement', {
-      underline: true,
-    });
-    doc.moveDown(0.5);
-    doc.fontSize(10);
-    for (const ligne of releve) {
-      doc.text(
-        `${ligne.modePaiement} — ${ligne.nombreVentes} vente(s) — ${ligne.total}`,
-      );
-    }
-
-    doc.end();
   }
 }

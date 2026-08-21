@@ -239,6 +239,7 @@ describe('Campagnes CRM et tableau de bord client (e2e)', () => {
             prenom: c.prenom,
             segment: c.segment,
             contact: c.contact,
+            consentementMarketing: true,
           },
         });
         await env.prisma.fidelite.create({
@@ -338,6 +339,16 @@ describe('Campagnes CRM et tableau de bord client (e2e)', () => {
       const campagnes = body<CampagneResponseBody[]>(response);
       expect(campagnes.length).toBeGreaterThanOrEqual(2);
     });
+
+    it.each<RoleLibelle>(['CAISSIER_BOUTIQUE', 'RESPONSABLE_BOUTIQUE'])(
+      'refuse (403) la lecture des campagnes au rôle %s',
+      async (role) => {
+        await request(app.getHttpServer())
+          .get('/crm/campagnes')
+          .set('Authorization', authHeader(role))
+          .expect(403);
+      },
+    );
   });
 
   // ---------------------------------------------------------------------

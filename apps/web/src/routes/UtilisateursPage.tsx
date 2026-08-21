@@ -1,33 +1,15 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ShieldAlert, UserPlus } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
+import { RoleLibelle, labelPerimetre, labelProfil, profilOf, ROLES_ADMIN_UTILISATEURS, ROLES_LECTURE_UTILISATEURS } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { SelectProfil } from '../components/SelectProfil';
 import type { BoutiqueDto, UtilisateurDto } from '../lib/types';
-
-// Administration des comptes utilisateurs (§4, §6.2) — miroir des
-// constantes access-scope.constants.ts côté API.
-const ROLES_ADMIN: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-];
-const ROLES_LECTURE: RoleLibelle[] = [
-  ...ROLES_ADMIN,
-  RoleLibelle.DAF,
-  RoleLibelle.CONTROLEUR_INTERNE,
-];
-const ROLES_BOUTIQUE_REQUISE: RoleLibelle[] = [
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-  RoleLibelle.CONVOYEUR,
-];
-const TOUS_LES_ROLES: RoleLibelle[] = Object.values(RoleLibelle);
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -65,10 +47,13 @@ function useBoutiques() {
 
 export function UtilisateursPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutAdmin = user !== null && ROLES_ADMIN.includes(user.role);
+  const peutLire =
+    user !== null && ROLES_LECTURE_UTILISATEURS.includes(user.role);
+  const peutAdmin =
+    user !== null && ROLES_ADMIN_UTILISATEURS.includes(user.role);
 
   const [modalNouveau, setModalNouveau] = useState(false);
   const [fiche, setFiche] = useState<FicheForm>(FICHE_VIDE);
@@ -98,7 +83,7 @@ export function UtilisateursPage() {
           nom: fiche.nom.trim(),
           prenom: fiche.prenom.trim(),
           role: fiche.role,
-          boutiqueId: ROLES_BOUTIQUE_REQUISE.includes(fiche.role)
+          boutiqueId: profilOf(fiche.role).boutiqueRequise
             ? fiche.boutiqueId || undefined
             : undefined,
           password: fiche.password.trim() || undefined,
@@ -115,24 +100,43 @@ export function UtilisateursPage() {
     onError: (err) => setFormErr(messageDepuisApi(err, "Échec de la création de l'utilisateur.")),
   });
 
-  const boutiqueRequisePourFiche = ROLES_BOUTIQUE_REQUISE.includes(fiche.role);
+  const boutiqueRequisePourFiche = profilOf(fiche.role).boutiqueRequise;
 
-  const lignes = useMemo(() => liste.data ?? [], [liste.data]);
+  const filtreProfil = searchParams.get('profil') as RoleLibelle | null;
+
+  const lignes = useMemo(() => {
+    const all = liste.data ?? [];
+    if (!filtreProfil) return all;
+    return all.filter((u) => u.role.libelle === filtreProfil);
+  }, [liste.data, filtreProfil]);
 
   if (!peutLire) {
-    return <p>Vous n’avez pas accès à la gestion des utilisateurs.</p>;
+    return (
+      <div className="panel" role="status">
+        <p>
+          La création de comptes est réservée au <strong>Responsable SI</strong>{' '}
+          et à la <strong>Direction générale</strong> (§4).
+        </p>
+        <p className="lead">
+          Démo : connectez-vous avec <code>demo-respsi</code> / MotDePasse!123,
+          puis ouvrez l’app <strong>Configuration</strong> →{' '}
+          <strong>Utilisateurs</strong> (grille en haut à gauche).
+        </p>
+      </div>
+    );
   }
 
   return (
     <div>
       <PageHeader
         title="Utilisateurs"
-        subtitle="Comptes, rôles et sécurité des accès — administration réservée Responsable SI / Direction Générale (§4, §6.2)"
+        subtitle="Comptes rattachés à un profil métier figé (§4, §6.2) — administration SI / Direction Générale"
         actions={
           peutAdmin && (
             <button
               type="button"
               className="btn-primary"
+              data-testid="users-create-btn"
               onClick={() => {
                 setFiche(FICHE_VIDE);
                 setFormErr(null);
@@ -144,6 +148,14 @@ export function UtilisateursPage() {
           )
         }
       />
+
+      {!peutAdmin && (
+        <p className="lead" role="status">
+          Lecture seule pour votre profil. Pour créer un compte, reconnectez-vous
+          en <strong>Responsable SI</strong> (<code>demo-respsi</code>) ou
+          Direction générale (<code>demo-dg</code>).
+        </p>
+      )}
 
       {motDePasseTemporaire && (
         <div className="panel" role="alert" style={{ borderColor: 'var(--warning)' }}>
@@ -165,7 +177,29 @@ export function UtilisateursPage() {
       {liste.isError && <p role="alert">Erreur lors du chargement des utilisateurs.</p>}
 
       {!liste.isLoading && !liste.isError && (
-        <ListPanel title="Annuaire des comptes">
+        <ListPanel
+          title="Annuaire des comptes"
+          toolbar={
+            <label className="profils-filtre">
+              Profil
+              <select
+                value={filtreProfil ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) setSearchParams({});
+                  else setSearchParams({ profil: v });
+                }}
+              >
+                <option value="">Tous</option>
+                {Object.values(RoleLibelle).map((r) => (
+                  <option key={r} value={r}>
+                    {labelProfil(r)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        >
           {lignes.length === 0 ? (
             <EmptyState title="Aucun utilisateur" description="Créez le premier compte." />
           ) : (
@@ -174,7 +208,8 @@ export function UtilisateursPage() {
                 <thead>
                   <tr>
                     <th>Utilisateur</th>
-                    <th>Rôle</th>
+                    <th>Profil</th>
+                    <th>Périmètre</th>
                     <th>Boutique</th>
                     <th>Statut</th>
                     <th>Créé le</th>
@@ -203,7 +238,12 @@ export function UtilisateursPage() {
                         <br />
                         <span className="lead">{u.login}</span>
                       </td>
-                      <td>{u.role.libelle}</td>
+                      <td>
+                        <strong>{labelProfil(u.role.libelle)}</strong>
+                        <br />
+                        <span className="lead">{u.role.libelle}</span>
+                      </td>
+                      <td>{labelPerimetre(profilOf(u.role.libelle).perimetre)}</td>
                       <td>{boutiques?.find((b) => b.id === u.boutiqueId)?.nom ?? '—'}</td>
                       <td>
                         {!u.actif && <span className="badge">Inactif</span>}{' '}
@@ -266,18 +306,13 @@ export function UtilisateursPage() {
               />
             </div>
             <div>
-              <label htmlFor="user-role">Rôle</label>
-              <select
+              <label htmlFor="user-role">Profil</label>
+              <SelectProfil
                 id="user-role"
                 value={fiche.role}
-                onChange={(e) => setFiche({ ...fiche, role: e.target.value as RoleLibelle })}
-              >
-                {TOUS_LES_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+                onChange={(role) => setFiche({ ...fiche, role, boutiqueId: '' })}
+              />
+              <p className="lead">{profilOf(fiche.role).resume}</p>
             </div>
             {boutiqueRequisePourFiche && (
               <div>

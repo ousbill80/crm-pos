@@ -87,6 +87,17 @@ export function insightContactClient(contact: string): Insight {
   };
 }
 
+export function insightAdresseClient(adresse: string): Insight {
+  const vide = adresse.trim().length === 0;
+  return {
+    title: 'Adresse',
+    interpretation: vide
+      ? 'Champ optionnel. Utile pour les livraisons et le suivi commercial de proximité.'
+      : `Adresse renseignée : « ${adresse.trim()} ».`,
+    severity: vide ? 'neutral' : 'ok',
+  };
+}
+
 export function insightDateNaissanceClient(dateNaissance: string): Insight {
   if (!dateNaissance) {
     return {

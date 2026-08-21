@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -26,13 +26,19 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { RoleLibelle } from '@caisse-crm/shared';
+import { RoleLibelle, profilOf } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  restreindreSyntheseAuMagasin,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import {
   insightCouvertureJours,
   insightSanteStock,
@@ -137,6 +143,7 @@ function csvCell(value: string | number | boolean | null | undefined): string {
 function exporterInventaireCsv(
   lignes: StockSyntheseDto['lignes'],
   entrepots: StockSyntheseDto['parEntrepot'],
+  colonneStock: string,
 ) {
   const headers = [
     'Produit',
@@ -145,7 +152,7 @@ function exporterInventaireCsv(
     'Actif',
     'Statut',
     'Seuil',
-    'Réseau',
+    colonneStock,
     'Prévu',
     'Valeur CMP',
     'Couverture jours',
@@ -189,6 +196,14 @@ export function StocksPage() {
   const peutEcrire = user !== null && ROLES_ECRITURE.includes(user.role);
   const peutAjusterLibre =
     user !== null && ROLES_AJUSTEMENT_LIBRE.includes(user.role);
+  const magasin = useFiltreMagasinSiege();
+  const libelleStockColonne =
+    magasin.boutiqueId ||
+    (user &&
+      profilOf(user.role).perimetre !== 'RESEAU' &&
+      profilOf(user.role).perimetre !== 'SYSTEME')
+      ? 'Stock'
+      : 'Réseau';
 
   const [filtreEntrepot, setFiltreEntrepot] = useState('');
   const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>('TOUS');
@@ -237,8 +252,27 @@ export function StocksPage() {
     enabled: peutLire,
   });
 
-  const entrepotCols = synthese.data?.parEntrepot ?? [];
-  const entrepotOptions = entrepots.data ?? [];
+  const entrepotOptions = useMemo(() => {
+    const all = entrepots.data ?? [];
+    if (!magasin.boutiqueId) return all;
+    return all.filter((e) => e.boutiqueId === magasin.boutiqueId);
+  }, [entrepots.data, magasin.boutiqueId]);
+
+  useEffect(() => {
+    if (!magasin.boutiqueId || !filtreEntrepot) return;
+    if (!entrepotOptions.some((e) => e.id === filtreEntrepot)) {
+      setFiltreEntrepot('');
+    }
+  }, [magasin.boutiqueId, filtreEntrepot, entrepotOptions]);
+
+  const syntheseAffichee = useMemo(() => {
+    const raw = synthese.data;
+    if (!raw) return undefined;
+    if (!magasin.boutiqueId || filtreEntrepot) return raw;
+    return restreindreSyntheseAuMagasin(raw, magasin.boutiqueId);
+  }, [synthese.data, magasin.boutiqueId, filtreEntrepot]);
+
+  const entrepotCols = syntheseAffichee?.parEntrepot ?? [];
 
   const [ajProduit, setAjProduit] = useState('');
   const [ajEntrepot, setAjEntrepot] = useState('');
@@ -303,7 +337,7 @@ export function StocksPage() {
 
   const lignesFiltrees = useMemo(() => {
     const q = recherche.trim().toLowerCase();
-    return (synthese.data?.lignes ?? []).filter((ligne) => {
+    return (syntheseAffichee?.lignes ?? []).filter((ligne) => {
       if (!voirInactifs && !ligne.actif) return false;
       if (filtreStatut !== 'TOUS' && ligne.statut !== filtreStatut) return false;
       if (filtreCategorie && ligne.categorie !== filtreCategorie) return false;
@@ -319,7 +353,7 @@ export function StocksPage() {
       return true;
     });
   }, [
-    synthese.data?.lignes,
+    syntheseAffichee?.lignes,
     filtreStatut,
     filtreCategorie,
     recherche,
@@ -329,7 +363,11 @@ export function StocksPage() {
 
   const mouvementsFiltres = useMemo(() => {
     const q = recherche.trim().toLowerCase();
+    const idsMagasin = magasin.boutiqueId
+      ? new Set(entrepotOptions.map((e) => e.id))
+      : null;
     return (mouvements.data ?? []).filter((m) => {
+      if (idsMagasin && m.entrepotId && !idsMagasin.has(m.entrepotId)) return false;
       if (filtreTypeMvt && m.type !== filtreTypeMvt) return false;
       if (!q) return true;
       const designation =
@@ -338,10 +376,17 @@ export function StocksPage() {
         '';
       return designation.toLowerCase().includes(q);
     });
-  }, [mouvements.data, filtreTypeMvt, recherche, produits.data]);
+  }, [
+    mouvements.data,
+    filtreTypeMvt,
+    recherche,
+    produits.data,
+    magasin.boutiqueId,
+    entrepotOptions,
+  ]);
 
   const statutChart = useMemo(() => {
-    const data = synthese.data;
+    const data = syntheseAffichee;
     if (!data) return [];
     const ok = Math.max(
       0,
@@ -354,7 +399,7 @@ export function StocksPage() {
       { key: 'SOUS_SEUIL' as const, label: 'Sous seuil', value: data.kpis.sousSeuil },
       { key: 'OK' as const, label: 'OK', value: ok },
     ].filter((d) => d.value > 0);
-  }, [synthese.data]);
+  }, [syntheseAffichee]);
 
   const qtyActuelleAjustement = useMemo(() => {
     const ligne = synthese.data?.lignes.find((l) => l.produitId === ajProduit);
@@ -432,13 +477,13 @@ export function StocksPage() {
 
   const categoriesStock = useMemo(() => {
     const set = new Set<string>();
-    for (const l of synthese.data?.lignes ?? []) {
+    for (const l of syntheseAffichee?.lignes ?? []) {
       if (l.categorie) set.add(l.categorie);
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
-  }, [synthese.data?.lignes]);
+  }, [syntheseAffichee?.lignes]);
 
-  const valeurNulle = (synthese.data?.parEntrepot ?? []).every(
+  const valeurNulle = (syntheseAffichee?.parEntrepot ?? []).every(
     (e) => Number(e.valeur) === 0,
   );
   const totalEmplacements = statutChart.reduce((n, s) => n + s.value, 0);
@@ -462,20 +507,37 @@ export function StocksPage() {
     return <p>Vous n’avez pas accès aux stocks.</p>;
   }
 
-  const data = synthese.data;
+  const data = syntheseAffichee;
   const sante = data?.sante ?? 'OK';
+  const prioritesMagasin = (prioritesInventaire.data ?? []).filter(
+    (p) =>
+      !magasin.boutiqueId ||
+      p.boutiqueId === magasin.boutiqueId ||
+      entrepotOptions.some((e) => e.id === p.entrepotId),
+  );
 
   return (
     <div className="stock-module">
       <PageHeader
         title="Stocks"
-        subtitle="Niveaux par entrepôt, valorisation CMP, couverture et transferts"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau: 'Niveaux par entrepôt, valorisation CMP, couverture et transferts',
+          texteBoutique: 'Stock du magasin — niveaux par entrepôt local',
+        })}
         actions={
           <>
             {data ? (
               <button
                 type="button"
-                onClick={() => exporterInventaireCsv(lignesFiltrees, data.parEntrepot)}
+                onClick={() =>
+                  exporterInventaireCsv(
+                    lignesFiltrees,
+                    data.parEntrepot,
+                    libelleStockColonne,
+                  )
+                }
               >
                 <Download size={15} /> Export CSV
               </button>
@@ -504,12 +566,12 @@ export function StocksPage() {
       {synthese.isLoading && <LoadingState label="Chargement de l’inventaire..." />}
       {synthese.isError && <p role="alert">Erreur de chargement de l’inventaire.</p>}
 
-      {(prioritesInventaire.data ?? []).some((p) => p.aInventorier) && (
+      {(prioritesMagasin).some((p) => p.aInventorier) && (
         <section className="dash-sante dash-sante-warning">
           <div className="dash-sante-main">
             <span className="dash-sante-badge">Inventaire en retard</span>
             <p>
-              {(prioritesInventaire.data ?? []).filter((p) => p.aInventorier).length}{' '}
+              {prioritesMagasin.filter((p) => p.aInventorier).length}{' '}
               entrepôt(s) sans inventaire validé depuis 30 jours.
             </p>
           </div>
@@ -1001,6 +1063,7 @@ export function StocksPage() {
       )}
 
       <div className="toolbar stock-toolbar">
+        <FiltreMagasinSiege id="stock-filtre-magasin" />
         <div className="stock-search">
           <label htmlFor="stock-q">Recherche</label>
           <div className="stock-search-field">
@@ -1119,7 +1182,7 @@ export function StocksPage() {
                     <th>Produit</th>
                     <th>Catégorie</th>
                     <th>Statut</th>
-                    <th>Réseau</th>
+                    <th>{libelleStockColonne}</th>
                     <th>Prévu</th>
                     <th>Seuil</th>
                     <th>Valeur</th>

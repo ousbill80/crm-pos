@@ -11,6 +11,7 @@ import type { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, setMustChangePasswordListener } from '../lib/api';
 import { clearToken, getToken, setToken } from '../lib/auth-storage';
 import { decodeJwt, isExpired } from '../lib/jwt';
+import { useOfflineAutoSync } from '../lib/offline/auto-sync';
 
 export interface AuthUser {
   userId: string;
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userFromToken(getToken()),
   );
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  useOfflineAutoSync(user !== null);
 
   // Réarmé à chaque render de l'app : capte le 403 MUST_CHANGE_PASSWORD que
   // n'importe quel appel API peut renvoyer (utile après un rechargement de

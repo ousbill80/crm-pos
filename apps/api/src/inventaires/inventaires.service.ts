@@ -100,6 +100,7 @@ export class InventairesService {
         entrepotId: e.id,
         code: e.code,
         nom: e.nom,
+        boutiqueId: e.boutiqueId,
         nomBoutique: e.boutique.nom,
         dernierInventaireAt: dernier?.toISOString() ?? null,
         joursDepuis,

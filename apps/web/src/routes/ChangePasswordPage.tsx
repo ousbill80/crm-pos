@@ -53,57 +53,64 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <div className="login-screen">
-      <form onSubmit={handleSubmit} className="login-card">
-        <div className="login-brand">
-          <div className="login-brand-mark">
-            <KeyRound size={18} />
+    <div className="login-screen login-screen--solo">
+      <main className="login-panel">
+        <form onSubmit={handleSubmit} className="login-card">
+          <div className="login-brand">
+            <p className="login-brand-mark login-brand-mark--icon">
+              <KeyRound size={16} aria-hidden /> CaissePOS
+            </p>
+            <h2>Changement de mot de passe</h2>
+            <p className="login-brand-sub">
+              Votre mot de passe temporaire doit être remplacé avant tout accès
+              à l’application.
+            </p>
           </div>
-          <h1>Changement de mot de passe obligatoire</h1>
-          <p className="lead" style={{ color: 'var(--text-muted)', margin: 0 }}>
-            Votre mot de passe temporaire doit être remplacé avant tout accès à l’application.
-          </p>
-        </div>
-        <div>
-          <label htmlFor="old-password">Mot de passe temporaire</label>
-          <input
-            id="old-password"
-            type="password"
-            value={oldPassword}
-            onChange={(e) => setOldPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="new-password">Nouveau mot de passe</label>
-          <input
-            id="new-password"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-            minLength={8}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="confirm-password">Confirmer le nouveau mot de passe</label>
-          <input
-            id="confirm-password"
-            type="password"
-            value={confirmation}
-            onChange={(e) => setConfirmation(e.target.value)}
-            autoComplete="new-password"
-            minLength={8}
-            required
-          />
-        </div>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Changement...' : 'Changer le mot de passe'}
-        </button>
-      </form>
+          <div className="login-fields">
+            <label htmlFor="old-password">Mot de passe temporaire</label>
+            <input
+              id="old-password"
+              type="password"
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+            <label htmlFor="new-password">Nouveau mot de passe</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+            <label htmlFor="confirm-password">Confirmer le nouveau mot de passe</label>
+            <input
+              id="confirm-password"
+              type="password"
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </div>
+          {error && (
+            <p className="login-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            className="btn-primary login-submit"
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? 'Changement…' : 'Changer le mot de passe'}
+          </button>
+        </form>
+      </main>
     </div>
   );
 }

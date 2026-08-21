@@ -516,6 +516,99 @@ describe('Caisses / Zones / Boutiques (e2e)', () => {
       });
       expect(entreeAudit).not.toBeNull();
       expect(entreeAudit?.action).toBe('BOUTIQUE_CREATED');
+
+      const entrepot = await env.prisma.entrepot.findFirst({
+        where: { boutiqueId: body.id, code: 'PRINCIPAL' },
+      });
+      expect(entrepot).not.toBeNull();
+      const magasin = await env.prisma.caisse.findFirst({
+        where: { boutiqueId: body.id, type: 'MAGASIN' },
+      });
+      expect(magasin).not.toBeNull();
+      const tiroir = await env.prisma.caisse.findFirst({
+        where: { boutiqueId: body.id, type: 'TIROIR', code: 'T01' },
+      });
+      expect(tiroir).not.toBeNull();
+    });
+
+    it('crée le nombre de tiroirs demandé (sans reparamétrage lourd §6.7)', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/boutiques')
+        .set(auth(tokens.respsi))
+        .send({
+          nom: 'Grande surface auto',
+          adresse: 'Adresse GS',
+          zoneId: zoneAId,
+          nombreTiroirs: 3,
+        })
+        .expect(201);
+      const body = response.body as BoutiqueDto;
+      const tiroirs = await env.prisma.caisse.findMany({
+        where: { boutiqueId: body.id, type: 'TIROIR' },
+        orderBy: { code: 'asc' },
+      });
+      expect(tiroirs.map((t) => t.code)).toEqual(['T01', 'T02', 'T03']);
+    });
+
+    it('complète un magasin existant (entrepôt, caisse, tiroir)', async () => {
+      const orpheline = await env.prisma.boutique.create({
+        data: {
+          nom: 'Magasin incomplet',
+          adresse: 'Adr incomplet',
+          zoneId: zoneAId,
+        },
+      });
+      await request(app.getHttpServer())
+        .post(`/boutiques/${orpheline.id}/completer-poste`)
+        .set(auth(tokens.respsi))
+        .send({ nombreTiroirs: 1 })
+        .expect(201);
+      const magasin = await env.prisma.caisse.findFirst({
+        where: { boutiqueId: orpheline.id, type: 'MAGASIN' },
+      });
+      expect(magasin).not.toBeNull();
+      const tiroir = await env.prisma.caisse.findFirst({
+        where: { boutiqueId: orpheline.id, type: 'TIROIR', code: 'T01' },
+      });
+      expect(tiroir).not.toBeNull();
+    });
+
+    it('complète tous les magasins incomplets du réseau', async () => {
+      await env.prisma.boutique.create({
+        data: {
+          nom: 'Orphelin A',
+          adresse: 'Adr A',
+          zoneId: zoneAId,
+        },
+      });
+      await env.prisma.boutique.create({
+        data: {
+          nom: 'Orphelin B',
+          adresse: 'Adr B',
+          zoneId: zoneAId,
+        },
+      });
+      const res = await request(app.getHttpServer())
+        .post('/boutiques/completer-tous')
+        .set(auth(tokens.respsi))
+        .send({})
+        .expect(201);
+      const body = res.body as {
+        magasinsTraites: number;
+        caissesCreees: number;
+        tiroirsCrees: number;
+      };
+      expect(body.magasinsTraites).toBeGreaterThanOrEqual(2);
+      expect(body.caissesCreees).toBeGreaterThanOrEqual(2);
+      expect(body.tiroirsCrees).toBeGreaterThanOrEqual(2);
+    });
+
+    it('refuse completer-tous pour un rôle boutique (403)', () => {
+      return request(app.getHttpServer())
+        .post('/boutiques/completer-tous')
+        .set(auth(tokens.caissierBoutique2))
+        .send({})
+        .expect(403);
     });
 
     it('refuse la création de boutique sur une zone inexistante (400)', () => {

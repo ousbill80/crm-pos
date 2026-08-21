@@ -196,19 +196,19 @@ export function insightHorsLignePos(pending: number, online: boolean): Insight {
     return {
       title: 'Caisse hors ligne',
       interpretation:
-        'Les encaissements sont mis en file locale et seront synchronisés à la reconnexion (append serveur, sans modifier une vente déjà enregistrée).',
+        'Les encaissements sont mis en file locale. Dès que le réseau revient, l’envoi au serveur se fait tout seul (append, sans modifier une vente déjà enregistrée).',
       recommendation:
         pending > 0
-          ? `${pending} ticket(s) en attente — ne pas clôturer la session tant que la file n'est pas vide.`
-          : 'Vous pouvez encaisser ; la clôture reste bloquée tant qu’une vente n’est pas synchronisée.',
+          ? `${pending} ticket(s) en file — la clôture reste bloquée jusqu’à l’envoi automatique.`
+          : 'Vous pouvez encaisser ; rien à lancer à la reconnexion.',
       severity: 'warning',
     };
   }
   if (pending > 0) {
     return {
-      title: 'Synchronisation en cours',
-      interpretation: `${pending} encaissement(s) encore en file d'attente. La synchro reprend dès que le réseau répond.`,
-      recommendation: 'Ne pas clôturer la session tant que la file n’est pas vide — le bordereau espèces doit inclure toutes les ventes.',
+      title: 'Envoi automatique en cours',
+      interpretation: `${pending} encaissement(s) encore en file. La caisse réessaie toute seule jusqu’à ce que le serveur confirme.`,
+      recommendation: 'Ne pas clôturer tant que la file n’est pas vide — le bordereau espèces doit inclure toutes les ventes.',
       severity: 'warning',
     };
   }

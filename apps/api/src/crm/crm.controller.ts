@@ -30,16 +30,18 @@ export class ClientsController {
   @Post()
   @Roles(...CRM_ROLES_CREATION)
   create(@Body() dto: CreateClientDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.clientsService.create(dto, user.userId);
+    return this.clientsService.create(dto, user);
   }
 
-  // Primitive de ciblage ("campagnes ciblées", §6.6) : filtre par segment
-  // et/ou palier de fidélité. La gestion complète de campagnes est hors
-  // périmètre de cette itération backend.
+  // Sans `q` : liste magasin pour les rôles boutique. Avec `q` : recherche
+  // réseau (POS). La fiche (GET :id) reste unique réseau (§6.6).
   @Get()
   @Roles(...CRM_ROLES_LECTURE)
-  findAll(@Query() query: ListClientsQueryDto) {
-    return this.clientsService.findAll(query);
+  findAll(
+    @Query() query: ListClientsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.clientsService.findAll(query, user);
   }
 
   @Get(':id')

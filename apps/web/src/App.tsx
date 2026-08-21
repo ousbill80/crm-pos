@@ -3,11 +3,13 @@ import { AlertesPage } from './routes/AlertesPage';
 import { AuditPage } from './routes/AuditPage';
 import { ChangePasswordPage } from './routes/ChangePasswordPage';
 import { UtilisateurDetailPage } from './routes/UtilisateurDetailPage';
+import { ProfilsPage } from './routes/ProfilsPage';
 import { UtilisateursPage } from './routes/UtilisateursPage';
 import { CaissesPage } from './routes/CaissesPage';
 import { CaisseDetailPage } from './routes/CaisseDetailPage';
 import { ClientDetailPage } from './routes/ClientDetailPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
+import { CrmCampagnesPage } from './routes/CrmCampagnesPage';
 import { DashboardPage } from './routes/DashboardPage';
 import { EntreprisePage } from './routes/EntreprisePage';
 import { FournisseursPage } from './routes/FournisseursPage';
@@ -33,6 +35,7 @@ import { MouvementStockDetailPage } from './routes/MouvementStockDetailPage';
 import { TransactionsPage } from './routes/TransactionsPage';
 import { TransactionDetailPage } from './routes/TransactionDetailPage';
 import { TresoreriePage } from './routes/TresoreriePage';
+import { VentesPage } from './routes/VentesPage';
 import './App.css';
 import './pos-screen.css';
 
@@ -46,6 +49,7 @@ function App() {
         <Route path="/alertes" element={<AlertesPage />} />
         <Route path="/tresorerie" element={<TresoreriePage />} />
         <Route path="/finance" element={<FinancePage />} />
+        <Route path="/ventes" element={<VentesPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
@@ -53,6 +57,7 @@ function App() {
         <Route path="/litiges" element={<LitigesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
+        <Route path="/campagnes" element={<CrmCampagnesPage />} />
         <Route path="/produits" element={<ProduitsPage />} />
         <Route path="/produits/:produitId" element={<ProduitDetailPage />} />
         <Route path="/stocks" element={<StocksPage />} />
@@ -73,6 +78,7 @@ function App() {
         <Route path="/entreprise" element={<EntreprisePage />} />
         <Route path="/utilisateurs" element={<UtilisateursPage />} />
         <Route path="/utilisateurs/:userId" element={<UtilisateurDetailPage />} />
+        <Route path="/profils" element={<ProfilsPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
         <Route path="/pos" element={<PosPage />} />

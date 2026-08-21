@@ -33,12 +33,20 @@ export class EntrepriseService {
       where: { id: current.id },
       data: dto,
     });
+    const { logoUrl, ...rest } = dto;
     await this.audit.record({
       utilisateurId: user.userId,
       action: 'ENTREPRISE_UPDATED',
       entite: 'Societe',
       entiteId: updated.id,
-      details: JSON.stringify(dto),
+      details: JSON.stringify({
+        ...rest,
+        logoUrl: logoUrl
+          ? logoUrl.startsWith('data:')
+            ? '[image]'
+            : logoUrl
+          : logoUrl,
+      }),
     });
     return updated;
   }

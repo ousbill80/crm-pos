@@ -331,6 +331,41 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
     });
   });
 
+  describe('Exports PDF §6.3.4', () => {
+    it('GET /reporting/dashboard/export.pdf renvoie un PDF', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/reporting/dashboard/export.pdf')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+
+      expect(response.headers['content-type']).toBe('application/pdf');
+      expect(response.headers['content-disposition']).toContain(
+        'tableau-de-bord.pdf',
+      );
+      expect((response.body as Buffer).length).toBeGreaterThan(200);
+    });
+
+    it('GET /reporting/daf/export.pdf est réservé au pôle trésorerie', async () => {
+      const ok = await request(app.getHttpServer())
+        .get('/reporting/daf/export.pdf')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      expect(ok.headers['content-type']).toBe('application/pdf');
+
+      await request(app.getHttpServer())
+        .get('/reporting/daf/export.pdf')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(403);
+    });
+
+    it('refuse RESPONSABLE_CRM sur les PDF (403)', async () => {
+      await request(app.getHttpServer())
+        .get('/reporting/dashboard/export.pdf')
+        .set('Authorization', `Bearer ${tokens.crm}`)
+        .expect(403);
+    });
+  });
+
   describe('GET /ventes/sessions/:id/cloture/pdf', () => {
     let sessionId: string;
 
@@ -357,13 +392,30 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .expect(201);
     });
 
-    it('génère un PDF pour une session OUVERTE (relevé live)', async () => {
+    it('GET /ventes/sessions/:id/etat renvoie l’État X JSON (aperçu POS)', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/ventes/sessions/${sessionId}/etat`)
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(200);
+
+      const body = response.body as {
+        typeEtat: string;
+        nombreVentes: number;
+        ventes: unknown[];
+      };
+      expect(body.typeEtat).toBe('X');
+      expect(body.nombreVentes).toBeGreaterThan(0);
+      expect(body.ventes.length).toBe(body.nombreVentes);
+    });
+
+    it('génère un PDF État X pour une session OUVERTE (relevé live)', async () => {
       const response = await request(app.getHttpServer())
         .get(`/ventes/sessions/${sessionId}/cloture/pdf`)
         .set('Authorization', `Bearer ${tokens.caissierB1}`)
         .expect(200);
 
       expect(response.headers['content-type']).toBe('application/pdf');
+      expect(response.headers['content-disposition']).toContain('etat-x-');
       expect((response.body as Buffer).length).toBeGreaterThan(100);
     });
 
@@ -391,6 +443,7 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         .expect(200);
 
       expect(response.headers['content-type']).toBe('application/pdf');
+      expect(response.headers['content-disposition']).toContain('etat-z-');
     });
 
     it('404 sur une session inexistante', async () => {

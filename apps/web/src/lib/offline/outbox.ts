@@ -15,15 +15,23 @@ export type { OutboxOp };
 export type OutboxTransactionOp = OutboxOp;
 
 let cached: OutboxOp[] = [];
+let onMutate: (() => void) | null = null;
+
+export function setOutboxMutateListener(fn: (() => void) | null): void {
+  onMutate = fn;
+}
 
 function persist(next: OutboxOp[]): void {
   cached = next;
-  void getOfflineStore().replaceOutbox(next);
+  void getOfflineStore()
+    .replaceOutbox(cached)
+    .then(() => onMutate?.());
 }
 
 export async function hydrateOutbox(): Promise<void> {
   await hydrateOffline();
   cached = await getOfflineStore().listOutbox();
+  onMutate?.();
 }
 
 function append(partial: Omit<OutboxOp, 'id' | 'createdAt'> & { id?: string }): OutboxOp {
@@ -143,7 +151,7 @@ export async function flushOutbox(
     method?: OutboxMethod,
   ) => Promise<unknown>,
 ): Promise<{ flushed: number; remaining: number }> {
-  await hydrateOutbox();
+  await getOfflineStore().replaceOutbox(cached);
   const result = await flushStore(getOfflineStore(), (op) =>
     send(op.path, op.body, op.method),
   );

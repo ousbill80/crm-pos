@@ -26,6 +26,7 @@ export class PostgresTestEnvironment {
 
     const databaseUrl = this.container.getConnectionUri();
     process.env.DATABASE_URL = databaseUrl;
+    process.env.CLIENT_DATA_ENCRYPTION_KEY ??= '0'.repeat(64);
 
     execSync('npx prisma migrate deploy', {
       cwd: `${__dirname}/../..`,

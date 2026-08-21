@@ -82,8 +82,12 @@ export const ROLES_REGULARISATION_LITIGE_INTERNE: RoleLibelle[] = [
   RoleLibelle.DAF,
 ];
 
-// Configuration dynamique des tiroirs (grande surface) : DAF uniquement.
-export const ROLES_CONFIG_TIROIRS: RoleLibelle[] = [RoleLibelle.DAF];
+// Configuration des tiroirs POS : DAF (paramétrage) + SI / DG (ouverture magasin, §6.7).
+export const ROLES_CONFIG_TIROIRS: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+];
 
 // INITIEE → EN_TRANSIT (§6.4) : responsable boutique ou convoyeur.
 export const ROLES_MISE_EN_TRANSIT: RoleLibelle[] = [

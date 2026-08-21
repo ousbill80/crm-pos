@@ -99,5 +99,5 @@ function cellToString(value: unknown): string {
   if (typeof value === 'object' && value !== null && 'result' in value) {
     return cellToString(value.result);
   }
-  return String(value);
+  return '';
 }

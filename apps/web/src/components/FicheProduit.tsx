@@ -2,7 +2,6 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  BarChart3,
   BookOpen,
   Camera,
   IdCard,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { ModePaiement } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
+import { compresserImage } from '../lib/compress-image';
 import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
 import {
@@ -94,40 +94,16 @@ function formatFcfa(value: string | number): string {
   return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
 }
 
+function initialesProduit(designation: string): string {
+  const parts = designation.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0] ?? ''}${parts[1]![0] ?? ''}`.toUpperCase();
+  }
+  return designation.slice(0, 2).toUpperCase();
+}
+
 function compresserPhoto(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      reject(new Error('Fichier image attendu (JPEG, PNG, WebP).'));
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      reject(new Error('Photo trop lourde (max. 8 Mo avant compression).'));
-      return;
-    }
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const max = 480;
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        reject(new Error('Impossible de compresser la photo.'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', 0.78));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Image illisible.'));
-    };
-    img.src = url;
-  });
+  return compresserImage(file, 480);
 }
 
 function useAnalyse(produitId: string) {
@@ -384,7 +360,7 @@ function PhotoHero({
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
-  const initiales = produit.designation.slice(0, 2).toUpperCase();
+  const initiales = initialesProduit(produit.designation);
 
   const photo = useMutation({
     mutationFn: (imageUrl: string | null) =>
@@ -808,6 +784,131 @@ function MouvementsSection({ produitId }: { produitId: string }) {
   );
 }
 
+function Performance30jCard({
+  performance,
+  cmpZero,
+  onVoirVentes,
+}: {
+  performance: ProduitAnalyseDto['performance30j'];
+  cmpZero: boolean;
+  onVoirVentes: () => void;
+}) {
+  const ca = Number(performance.chiffreAffaires);
+  const marge = Number(performance.margeBrute);
+  const taux = ca > 0 ? ((marge / ca) * 100).toFixed(1) : null;
+  const sansVente = performance.quantiteVendue <= 0;
+
+  return (
+    <div className="panel client-workspace-card">
+      <div className="fiche-card-head">
+        <h3>Performance 30 jours</h3>
+        <button type="button" className="btn-ghost" onClick={onVoirVentes}>
+          Ventes
+        </button>
+      </div>
+      {sansVente ? (
+        <p className="fiche-card-empty">
+          Aucune vente nette sur 30 jours — couverture et rotation non estimables.
+          {cmpZero
+            ? ' Le CMP est à 0 : une réception fournisseur posera le coût des ventes.'
+            : ''}
+        </p>
+      ) : null}
+      <dl className={`fiche-perf-dl${sansVente ? ' is-muted' : ''}`}>
+        <div>
+          <dt>Quantité nette</dt>
+          <dd>{performance.quantiteVendue} u.</dd>
+        </div>
+        <div>
+          <dt>CA net</dt>
+          <dd className="money">{formatFcfa(performance.chiffreAffaires)}</dd>
+        </div>
+        <div>
+          <dt>Coût des ventes</dt>
+          <dd className="money">{formatFcfa(performance.coutDesVentes)}</dd>
+        </div>
+        <div>
+          <dt>Marge brute</dt>
+          <dd className="money">
+            {formatFcfa(performance.margeBrute)}
+            {taux ? <small> · {taux} %</small> : null}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function RepartitionStockCard({
+  lignes,
+  stockReseau,
+  onVoirStock,
+}: {
+  lignes: ProduitAnalyseDto['repartitionStock'];
+  stockReseau: number;
+  onVoirStock: () => void;
+}) {
+  const total = Math.max(stockReseau, 0);
+  const tries = [...lignes].sort((a, b) => b.quantite - a.quantite);
+  const visible = tries.slice(0, 5);
+  const reste = tries.length - visible.length;
+
+  return (
+    <div className="panel client-workspace-card">
+      <div className="fiche-card-head">
+        <h3>Répartition stock</h3>
+        <button type="button" className="btn-ghost" onClick={onVoirStock}>
+          Détail
+        </button>
+      </div>
+      {tries.length === 0 ? (
+        <p className="fiche-card-empty">
+          Aucune quantité affectée à un emplacement. Une réception ou un transfert
+          créera les lignes magasin.
+        </p>
+      ) : (
+        <ul className="fiche-repartition">
+          {visible.map((q) => {
+            const part = total > 0 ? Math.round((q.quantite / total) * 100) : 0;
+            const statut = q.statut ?? 'OK';
+            const magasin = q.boutique ?? q.nom;
+            const emplacement =
+              q.boutique && q.nom !== q.boutique ? q.nom : q.code;
+            return (
+              <li key={q.entrepotId}>
+                <div className="fiche-repartition-main">
+                  <Link to={`/stocks/entrepots/${q.entrepotId}`}>{magasin}</Link>
+                  <small>
+                    {emplacement}
+                    {q.usage && q.usage !== 'STOCK'
+                      ? ` · ${USAGE_LABEL[q.usage] ?? q.usage}`
+                      : ''}
+                    {q.virtuel ? ' · virtuel' : ''}
+                  </small>
+                  <div className="stock-share" title={`${part} % du réseau`}>
+                    <span className="stock-share-bar" style={{ width: `${part}%` }} />
+                  </div>
+                </div>
+                <div className="fiche-repartition-qty">
+                  <strong>{q.quantite}</strong>
+                  <span className={STATUT_BADGE[statut]}>{STATUT_LABEL[statut]}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {reste > 0 ? (
+        <p className="fiche-card-more">
+          <button type="button" className="btn-ghost" onClick={onVoirStock}>
+            + {reste} emplacement(s)
+          </button>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function FicheProduit({
   produitId,
   peutGerer,
@@ -910,10 +1011,13 @@ export function FicheProduit({
         <div className="client-workspace-hero-main">
           <h1>{produit.designation}</h1>
           <p className="client-workspace-hero-sub">
-            {produit.reference ?? 'Sans SKU'}
-            {produit.categorie ? ` · ${produit.categorie}` : ''}
-            {produit.codeBarres ? ` · EAN ${produit.codeBarres}` : ''}
+            {produit.reference ? (
+              <code>{produit.reference}</code>
+            ) : (
+              <span>Sans référence SKU</span>
+            )}
             {produit.uniteMesure ? ` · ${produit.uniteMesure}` : ''}
+            {produit.codeBarres ? ` · EAN ${produit.codeBarres}` : ''}
           </p>
           <div className="client-workspace-chips">
             <span className={STATUT_BADGE[produit.statutStock]}>
@@ -930,8 +1034,11 @@ export function FicheProduit({
             {produit.categorie && (
               <span className="badge badge-neutral">{produit.categorie}</span>
             )}
+            {!produit.reference && (
+              <span className="badge badge-warning">Sans SKU</span>
+            )}
             {Number(produit.coutMoyenPondere) <= 0 && (
-              <span className="badge badge-warning">CMP à 0</span>
+              <span className="badge badge-warning">CMP à 0 — pas encore de réception</span>
             )}
           </div>
           <div className="client-workspace-meta">
@@ -1050,52 +1157,16 @@ export function FicheProduit({
             )}
 
             <div className="client-workspace-split">
-              <div className="panel client-workspace-card">
-                <h3>Performance 30 jours</h3>
-                <dl className="clients-dl">
-                  <div>
-                    <dt>Quantité nette</dt>
-                    <dd>{performance30j.quantiteVendue}</dd>
-                  </div>
-                  <div>
-                    <dt>CA net</dt>
-                    <dd className="money">{formatFcfa(performance30j.chiffreAffaires)}</dd>
-                  </div>
-                  <div>
-                    <dt>Coût des ventes</dt>
-                    <dd className="money">{formatFcfa(performance30j.coutDesVentes)}</dd>
-                  </div>
-                  <div>
-                    <dt>Marge brute</dt>
-                    <dd className="money">{formatFcfa(performance30j.margeBrute)}</dd>
-                  </div>
-                </dl>
-              </div>
-              <div className="panel client-workspace-card">
-                <h3>
-                  Répartition stock <BarChart3 size={14} aria-hidden />
-                </h3>
-                {repartitionStock.length === 0 ? (
-                  <p className="lead">Aucune quantité affectée à un entrepôt.</p>
-                ) : (
-                  <ul className="produits-repartition">
-                    {[...repartitionStock]
-                      .sort((a, b) => b.quantite - a.quantite)
-                      .map((q) => (
-                        <li key={q.entrepotId}>
-                          <span>
-                            <Link to={`/stocks/entrepots/${q.entrepotId}`}>{q.nom}</Link>
-                            <small>
-                              {q.code}
-                              {q.boutique ? ` · ${q.boutique}` : ''}
-                            </small>
-                          </span>
-                          <strong>{q.quantite}</strong>
-                        </li>
-                      ))}
-                  </ul>
-                )}
-              </div>
+              <Performance30jCard
+                performance={performance30j}
+                cmpZero={Number(produit.coutMoyenPondere) <= 0}
+                onVoirVentes={() => setOnglet('ventes')}
+              />
+              <RepartitionStockCard
+                lignes={repartitionStock}
+                stockReseau={produit.stock}
+                onVoirStock={() => setOnglet('stock')}
+              />
             </div>
           </div>
         )}

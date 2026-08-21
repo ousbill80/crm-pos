@@ -14,6 +14,11 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import type { TransactionDto } from '../lib/types';
 
 function estLitigeInterne(t: TransactionDto): boolean {
@@ -32,6 +37,7 @@ type FiltreCategorie = 'tous' | 'interne' | 'centrale';
 export function LitigesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   useTresorerieRealtime(user !== null);
   const [filtre, setFiltre] = useState<FiltreCategorie>('tous');
   const [q, setQ] = useState('');
@@ -49,15 +55,20 @@ export function LitigesPage() {
   });
 
   const { internes, centrales } = useMemo(() => {
-    const rows = litiges ?? [];
+    const rows = (litiges ?? []).filter(
+      (t) =>
+        !magasin.boutiqueId ||
+        t.caisse?.boutiqueId === magasin.boutiqueId ||
+        t.caisse?.boutique?.id === magasin.boutiqueId,
+    );
     return {
       internes: rows.filter(estLitigeInterne),
       centrales: rows.filter((t) => !estLitigeInterne(t)),
     };
-  }, [litiges]);
+  }, [litiges, magasin.boutiqueId]);
 
   const filtered = useMemo(() => {
-    let rows = litiges ?? [];
+    let rows = [...internes, ...centrales];
     if (filtre === 'interne') rows = internes;
     if (filtre === 'centrale') rows = centrales;
     const needle = q.trim().toLowerCase();
@@ -66,7 +77,7 @@ export function LitigesPage() {
       const hay = `${t.type} ${t.montant} ${t.caisseId} ${t.id}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [litiges, internes, centrales, filtre, q]);
+  }, [internes, centrales, filtre, q]);
 
   const montantInterne = internes.reduce((s, t) => s + Number(t.montant), 0);
   const montantCentrale = centrales.reduce((s, t) => s + Number(t.montant), 0);
@@ -120,7 +131,12 @@ export function LitigesPage() {
     <div className="litiges-module">
       <PageHeader
         title="Litiges"
-        subtitle="Internes (tiroir→magasin) · Centrale §6.4 — cliquez une ligne pour régulariser sur la fiche transaction"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Internes (tiroir→magasin) · Centrale §6.4 — cliquez une ligne pour régulariser sur la fiche transaction',
+        })}
         actions={
           <nav className="circuit-nav" aria-label="Circuit trésorerie">
             <Link className="circuit-nav-item" to="/tresorerie">
@@ -139,7 +155,7 @@ export function LitigesPage() {
       <section className="litiges-kpis" aria-label="Synthèse litiges">
         <article className="litiges-kpi">
           <div className="litiges-kpi-label">Total ouverts</div>
-          <div className="litiges-kpi-value">{(litiges ?? []).length}</div>
+          <div className="litiges-kpi-value">{internes.length + centrales.length}</div>
         </article>
         <article className="litiges-kpi">
           <div className="litiges-kpi-label">Internes</div>
@@ -172,6 +188,7 @@ export function LitigesPage() {
       {litiges && (
         <>
           <div className="toolbar litiges-toolbar">
+            <FiltreMagasinSiege id="litiges-filtre-magasin" />
             <div className="dash-presets" role="group" aria-label="Catégorie">
               {(
                 [
@@ -205,7 +222,7 @@ export function LitigesPage() {
             title="Litiges ouverts"
             toolbar={<span className="dash-panel-meta">{filtered.length} affiché(s)</span>}
           >
-            {(litiges ?? []).length === 0 ? (
+            {(internes.length + centrales.length) === 0 ? (
               <EmptyState
                 title="Aucun litige"
                 description="Aucun écart bloqué sur votre périmètre. Le circuit §6.4 et les transferts internes sont sains."

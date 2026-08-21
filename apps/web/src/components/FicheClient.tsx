@@ -11,6 +11,7 @@ import { apiFetch } from '../lib/api';
 import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
 import {
+  insightAdresseClient,
   insightConsentementMarketing,
   insightContactClient,
   insightDateNaissanceClient,
@@ -77,6 +78,7 @@ function IdentiteForm({ client, onDone }: { client: ClientDto; onDone: () => voi
   const [nom, setNom] = useState(client.nom);
   const [prenom, setPrenom] = useState(client.prenom ?? '');
   const [contact, setContact] = useState(client.contact ?? '');
+  const [adresse, setAdresse] = useState(client.adresse ?? '');
   const [dateNaissance, setDateNaissance] = useState(
     client.dateNaissance ? client.dateNaissance.slice(0, 10) : '',
   );
@@ -94,6 +96,7 @@ function IdentiteForm({ client, onDone }: { client: ClientDto; onDone: () => voi
           nom: nom.trim(),
           prenom: prenom.trim() || undefined,
           contact: contact.trim() || undefined,
+          adresse: adresse.trim() || undefined,
           dateNaissance: morale ? undefined : dateNaissance || undefined,
           consentementMarketing,
           segment,
@@ -159,6 +162,12 @@ function IdentiteForm({ client, onDone }: { client: ClientDto; onDone: () => voi
           Contact <InfoTooltip insight={insightContactClient(contact)} />
         </label>
         <input id="edit-contact" value={contact} onChange={(e) => setContact(e.target.value)} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="edit-adresse">
+          Adresse <InfoTooltip insight={insightAdresseClient(adresse)} />
+        </label>
+        <input id="edit-adresse" value={adresse} onChange={(e) => setAdresse(e.target.value)} />
       </div>
       {!morale && (
         <div className="form-field">
@@ -889,6 +898,10 @@ export function FicheClient({
                     <dt>Contact</dt>
                     <dd>{client.contact ?? '—'}</dd>
                   </div>
+                  <div>
+                    <dt>Adresse</dt>
+                    <dd>{client.adresse ?? '—'}</dd>
+                  </div>
                   {!morale && (
                     <div>
                       <dt>Date de naissance</dt>
@@ -983,6 +996,10 @@ export function FicheClient({
                   <div>
                     <dt>Contact</dt>
                     <dd>{client.contact ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Adresse</dt>
+                    <dd>{client.adresse ?? '—'}</dd>
                   </div>
                   {!morale && (
                     <div>

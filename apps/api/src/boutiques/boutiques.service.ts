@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma, TypeCaisse, TypeEntrepot } from '@prisma/client';
 import type { Boutique } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -17,12 +18,84 @@ import {
   requireOwnBoutiqueId,
   resolveZoneScopeForSuperviseur,
 } from './boutique-scope.util';
-import { CreateBoutiqueDto } from './dto/create-boutique.dto';
+import {
+  CompleterPosteBoutiqueDto,
+  CreateBoutiqueDto,
+} from './dto/create-boutique.dto';
 import { UpdateBoutiqueDto } from './dto/update-boutique.dto';
 
-// Service Boutique (§3, §4, §6.2 du cahier des charges) : création réservée
-// aux profils d'administration structurelle, lecture filtrée au périmètre de
-// l'utilisateur (réseau entier / sa zone / sa boutique).
+type Tx = Prisma.TransactionClient;
+
+const TIROIRS_DEFAUT = 1;
+const TIROIRS_MAX = 8;
+
+function codeTiroir(index: number): string {
+  return `T${String(index).padStart(2, '0')}`;
+}
+
+async function provisionnerPoste(
+  tx: Tx,
+  boutique: { id: string; nom: string },
+  nombreTiroirs: number,
+): Promise<{ entrepot: boolean; magasin: boolean; tiroirs: string[] }> {
+  const created = { entrepot: false, magasin: false, tiroirs: [] as string[] };
+  const n = Math.min(TIROIRS_MAX, Math.max(TIROIRS_DEFAUT, nombreTiroirs));
+
+  const principal = await tx.entrepot.findUnique({
+    where: {
+      boutiqueId_code: { boutiqueId: boutique.id, code: 'PRINCIPAL' },
+    },
+  });
+  if (!principal) {
+    await tx.entrepot.create({
+      data: {
+        nom: `Principal — ${boutique.nom}`,
+        code: 'PRINCIPAL',
+        type: TypeEntrepot.PRINCIPAL,
+        boutiqueId: boutique.id,
+      },
+    });
+    created.entrepot = true;
+  }
+
+  const magasin = await tx.caisse.findFirst({
+    where: { boutiqueId: boutique.id, type: TypeCaisse.MAGASIN },
+  });
+  if (!magasin) {
+    await tx.caisse.create({
+      data: {
+        type: TypeCaisse.MAGASIN,
+        boutiqueId: boutique.id,
+        libelle: `Caisse magasin — ${boutique.nom}`,
+      },
+    });
+    created.magasin = true;
+  }
+
+  for (let i = 1; i <= n; i += 1) {
+    const code = codeTiroir(i);
+    const existant = await tx.caisse.findFirst({
+      where: { boutiqueId: boutique.id, code },
+    });
+    if (existant) continue;
+    await tx.caisse.create({
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique.id,
+        code,
+        libelle: `Tiroir ${i}`,
+        actif: true,
+        ordreAffichage: i,
+      },
+    });
+    created.tiroirs.push(code);
+  }
+
+  return created;
+}
+
+// Service Boutique (§3, §4, §6.2) : création = magasin + entrepôt PRINCIPAL
+// + caisse MAGASIN + tiroirs POS (§6.7 sans reparamétrage lourd).
 @Injectable()
 export class BoutiquesService {
   constructor(
@@ -41,18 +114,12 @@ export class BoutiquesService {
       throw new BadRequestException(`Zone ${dto.zoneId} introuvable.`);
     }
 
+    const nombreTiroirs = dto.nombreTiroirs ?? TIROIRS_DEFAUT;
     const boutique = await this.prisma.$transaction(async (tx) => {
       const created = await tx.boutique.create({
         data: { nom: dto.nom, adresse: dto.adresse, zoneId: dto.zoneId },
       });
-      await tx.entrepot.create({
-        data: {
-          nom: `Principal — ${created.nom}`,
-          code: 'PRINCIPAL',
-          type: 'PRINCIPAL',
-          boutiqueId: created.id,
-        },
-      });
+      await provisionnerPoste(tx, created, nombreTiroirs);
       return created;
     });
 
@@ -61,10 +128,82 @@ export class BoutiquesService {
       action: 'BOUTIQUE_CREATED',
       entite: 'Boutique',
       entiteId: boutique.id,
-      details: `nom=${boutique.nom};zoneId=${boutique.zoneId}`,
+      details: JSON.stringify({
+        nom: boutique.nom,
+        zoneId: boutique.zoneId,
+        nombreTiroirs,
+      }),
     });
 
     return boutique;
+  }
+
+  async completerPoste(
+    id: string,
+    dto: CompleterPosteBoutiqueDto,
+    user: AuthenticatedUser,
+  ): Promise<Boutique> {
+    const boutique = await this.findOne(id, user);
+    const nombreTiroirs = dto.nombreTiroirs ?? TIROIRS_DEFAUT;
+    const created = await this.prisma.$transaction((tx) =>
+      provisionnerPoste(tx, boutique, nombreTiroirs),
+    );
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'BOUTIQUE_POSTE_COMPLETE',
+      entite: 'Boutique',
+      entiteId: boutique.id,
+      details: JSON.stringify({ ...created, nombreTiroirs }),
+    });
+    return boutique;
+  }
+
+  async completerTous(
+    dto: CompleterPosteBoutiqueDto,
+    user: AuthenticatedUser,
+  ): Promise<{
+    magasinsTraites: number;
+    entrepotsCrees: number;
+    caissesCreees: number;
+    tiroirsCrees: number;
+  }> {
+    const boutiques = await this.findAll(user);
+    const nombreTiroirs = dto.nombreTiroirs ?? TIROIRS_DEFAUT;
+    const totaux = {
+      magasinsTraites: 0,
+      entrepotsCrees: 0,
+      caissesCreees: 0,
+      tiroirsCrees: 0,
+    };
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const boutique of boutiques) {
+        if (!boutique.actif) continue;
+        const created = await provisionnerPoste(tx, boutique, nombreTiroirs);
+        if (
+          created.entrepot ||
+          created.magasin ||
+          created.tiroirs.length > 0
+        ) {
+          totaux.magasinsTraites += 1;
+          if (created.entrepot) totaux.entrepotsCrees += 1;
+          if (created.magasin) totaux.caissesCreees += 1;
+          totaux.tiroirsCrees += created.tiroirs.length;
+        }
+      }
+    });
+
+    if (totaux.magasinsTraites > 0) {
+      await this.audit.record({
+        utilisateurId: user.userId,
+        action: 'BOUTIQUE_RESEAU_COMPLETE',
+        entite: 'Boutique',
+        entiteId: '*',
+        details: JSON.stringify({ ...totaux, nombreTiroirs }),
+      });
+    }
+
+    return totaux;
   }
 
   async findAll(user: AuthenticatedUser): Promise<Boutique[]> {

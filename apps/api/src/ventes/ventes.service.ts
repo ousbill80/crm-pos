@@ -456,10 +456,23 @@ export class VentesService {
       nombreVentes: number;
     }[];
     totalEspeces: Prisma.Decimal;
+    journal: Array<{
+      id: string;
+      dateVente: Date;
+      montantTotal: string;
+      modePaiement: ModePaiement;
+      paiements: Array<{ modePaiement: ModePaiement; montant: string }>;
+      nbLignes: number;
+    }>;
   }> {
     const ventes = await this.prisma.vente.findMany({
       where: { sessionCaisseId: sessionId },
-      include: { paiements: true, retours: true },
+      include: {
+        paiements: true,
+        retours: true,
+        _count: { select: { lignes: true } },
+      },
+      orderBy: { dateVente: 'asc' },
     });
 
     const totaux = new Map<
@@ -516,12 +529,31 @@ export class VentesService {
     }));
     const totalEspeces =
       totaux.get(ModePaiement.ESPECES)?.total ?? new Prisma.Decimal(0);
-    return { releve, totalEspeces };
+    const journal = ventes.map((vente) => ({
+      id: vente.id,
+      dateVente: vente.dateVente,
+      montantTotal: vente.montantTotal.toFixed(2),
+      modePaiement: vente.modePaiement,
+      paiements: (vente.paiements.length > 0
+        ? vente.paiements
+        : [
+            {
+              modePaiement: vente.modePaiement,
+              montant: vente.montantTotal,
+            },
+          ]
+      ).map((p) => ({
+        modePaiement: p.modePaiement,
+        montant: p.montant.toFixed(2),
+      })),
+      nbLignes: vente._count.lignes,
+    }));
+    return { releve, totalEspeces, journal };
   }
 
-  // Relevé de clôture prêt à imprimer (§6.3.4) — réutilise la même RBAC
-  // que la consultation de session et le même calcul que la clôture.
-  async genererReleveCloture(
+  // Relevé de session (§6.3.4). Lecture seule — l’audit d’export est
+  // déclenché uniquement à la génération PDF, pas à chaque aperçu POS.
+  async chargerEtatSession(
     sessionId: string,
     utilisateur: AuthenticatedUser,
   ): Promise<{
@@ -531,10 +563,98 @@ export class VentesService {
       total: string;
       nombreVentes: number;
     }[];
+    etat: import('../impressions/etat-session.pdf').EtatSessionPdfInput;
   }> {
     const session = await this.findOne(sessionId, utilisateur);
-    const { releve } = await this.calculerReleve(session.id);
-    return { session, releve };
+    const { releve, totalEspeces, journal } = await this.calculerReleve(
+      session.id,
+    );
+
+    const userIds = [
+      session.ouvertureUtilisateurId,
+      session.ouvertureTemoinId,
+      session.clotureUtilisateurId,
+      session.clotureTemoinId,
+    ].filter((id): id is string => Boolean(id));
+
+    const [societe, caisse, utilisateurs] = await Promise.all([
+      this.prisma.societe.findFirst({
+        select: {
+          raisonSociale: true,
+          adresse: true,
+          telephone: true,
+          email: true,
+        },
+      }),
+      this.prisma.caisse.findUnique({
+        where: { id: session.caisseId },
+        include: { boutique: { select: { nom: true } } },
+      }),
+      this.prisma.utilisateur.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, prenom: true, nom: true },
+      }),
+    ]);
+    const nombreVentes = journal.length;
+
+    const nom = (id: string | null) => {
+      if (!id) return null;
+      const u = utilisateurs.find((x) => x.id === id);
+      return u ? `${u.prenom} ${u.nom}` : null;
+    };
+
+    const fondInitial = session.fondInitial;
+    const fondTheorique = fondInitial.plus(totalEspeces);
+    const fondCompte = session.fondCompteCloture;
+    const typeEtat: 'X' | 'Z' =
+      session.statut === StatutSessionCaisse.FERMEE ? 'Z' : 'X';
+    const caisseLibelle = [caisse?.code, caisse?.libelle, caisse?.type]
+      .filter(Boolean)
+      .join(' — ');
+
+    const etat = {
+      typeEtat,
+      sessionId: session.id,
+      statut: session.statut,
+      ouvertureDateHeure: session.ouvertureDateHeure,
+      clotureDateHeure: session.clotureDateHeure,
+      caisseLibelle: caisseLibelle || session.caisseId,
+      boutiqueNom: caisse?.boutique?.nom ?? null,
+      ouvreur: nom(session.ouvertureUtilisateurId),
+      temoinOuverture: nom(session.ouvertureTemoinId),
+      clotureur: nom(session.clotureUtilisateurId),
+      temoinCloture: nom(session.clotureTemoinId),
+      societe,
+      releve,
+      ventes: journal,
+      nombreVentes,
+      fondInitial: fondInitial.toFixed(2),
+      totalEspecesNet: totalEspeces.toFixed(2),
+      fondTheorique: fondTheorique.toFixed(2),
+      fondCompteCloture: fondCompte ? fondCompte.toFixed(2) : null,
+      ecart: fondCompte ? fondCompte.minus(fondTheorique).toFixed(2) : null,
+      imprimeAt: new Date(),
+    };
+
+    return { session, releve, etat };
+  }
+
+  async genererReleveCloture(
+    sessionId: string,
+    utilisateur: AuthenticatedUser,
+  ) {
+    const payload = await this.chargerEtatSession(sessionId, utilisateur);
+    await this.audit.record({
+      utilisateurId: utilisateur.userId,
+      action: 'ETAT_SESSION_EXPORTE',
+      entite: 'SessionCaisse',
+      entiteId: payload.session.id,
+      details: JSON.stringify({
+        typeEtat: payload.etat.typeEtat,
+        statut: payload.session.statut,
+      }),
+    });
+    return payload;
   }
 
   async cloturerSession(
@@ -646,35 +766,61 @@ export class VentesService {
     return { session: sessionFermee, releve, transactionVersementId };
   }
 
-  async findAll(utilisateur: AuthenticatedUser): Promise<SessionCaisse[]> {
+  async findAll(utilisateur: AuthenticatedUser) {
+    let sessions;
     if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
-      return this.prisma.sessionCaisse.findMany({
+      sessions = await this.prisma.sessionCaisse.findMany({
         orderBy: { ouvertureDateHeure: 'desc' },
       });
-    }
-
-    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
+    } else if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
       const zoneId = await resolveZoneScopeForSuperviseur(
         this.prisma,
         utilisateur,
       );
-      return this.prisma.sessionCaisse.findMany({
+      sessions = await this.prisma.sessionCaisse.findMany({
         where: { caisse: { boutique: { zoneId } } },
         orderBy: { ouvertureDateHeure: 'desc' },
       });
-    }
-
-    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
+    } else if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
       const boutiqueId = requireOwnBoutiqueId(utilisateur);
-      return this.prisma.sessionCaisse.findMany({
+      sessions = await this.prisma.sessionCaisse.findMany({
         where: { caisse: { boutiqueId } },
         orderBy: { ouvertureDateHeure: 'desc' },
       });
+    } else {
+      throw new ForbiddenException(
+        `Rôle "${utilisateur.role}" non habilité à consulter les sessions de caisse.`,
+      );
     }
 
-    throw new ForbiddenException(
-      `Rôle "${utilisateur.role}" non habilité à consulter les sessions de caisse.`,
+    if (sessions.length === 0) {
+      return [];
+    }
+
+    const stats = await this.prisma.vente.groupBy({
+      by: ['sessionCaisseId'],
+      where: { sessionCaisseId: { in: sessions.map((s) => s.id) } },
+      _count: { _all: true },
+      _sum: { montantTotal: true },
+    });
+    const bySession = new Map(
+      stats.map((row) => [
+        row.sessionCaisseId,
+        {
+          nombreVentes: row._count._all,
+          caSession: (row._sum.montantTotal ?? new Prisma.Decimal(0)).toFixed(2),
+        },
+      ]),
     );
+
+    return sessions.map((session) => {
+      const s = bySession.get(session.id);
+      return {
+        ...session,
+        nombreVentes: s?.nombreVentes ?? 0,
+        caSession: s?.caSession ?? '0.00',
+      };
+    });
   }
 
   async findOne(

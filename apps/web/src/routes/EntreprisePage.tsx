@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
+  Image as ImageIcon,
   MapPin,
   Plus,
   Search,
@@ -11,8 +12,9 @@ import {
   Warehouse,
   Wallet,
 } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
+import { RoleLibelle, ROLES_CONFIG_TIROIRS } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
+import { compresserImage } from '../lib/compress-image';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
@@ -28,7 +30,6 @@ import {
   insightTypeCaisseConfig,
   insightTypeEntrepot,
   insightZonesCount,
-  insightSanteColonne,
 } from '../lib/insights/entreprise';
 import type {
   BoutiqueDto,
@@ -82,6 +83,21 @@ function boutiqueHasPrincipal(boutiqueId: string, entrepots: EntrepotDto[]) {
   );
 }
 
+function tiroirsBoutique(boutiqueId: string, caisses: CaisseDto[]) {
+  return caisses
+    .filter((c) => c.type === 'TIROIR' && c.boutiqueId === boutiqueId)
+    .sort((a, b) => (a.ordreAffichage ?? 0) - (b.ordreAffichage ?? 0));
+}
+
+function prochainCodeTiroir(boutiqueId: string, caisses: CaisseDto[]): string {
+  const existants = tiroirsBoutique(boutiqueId, caisses).map((t) => t.code ?? '');
+  for (let i = 1; i <= 8; i += 1) {
+    const code = `T${String(i).padStart(2, '0')}`;
+    if (!existants.includes(code)) return code;
+  }
+  return `T${String(existants.length + 1).padStart(2, '0')}`;
+}
+
 function formatSolde(valeur: string | number): string {
   const n = typeof valeur === 'string' ? Number(valeur) : valeur;
   if (!Number.isFinite(n)) return String(valeur);
@@ -126,6 +142,8 @@ export function EntreprisePage() {
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutAdmin = user !== null && ROLES_ADMIN.includes(user.role);
+  const peutConfigTiroirs =
+    user !== null && ROLES_CONFIG_TIROIRS.includes(user.role);
 
   const [onglet, setOnglet] = useState<Onglet>('overview');
   const [modalZone, setModalZone] = useState(false);
@@ -145,6 +163,7 @@ export function EntreprisePage() {
   const [createCaisseErr, setCreateCaisseErr] = useState<string | null>(null);
   const [searchMagasin, setSearchMagasin] = useState('');
   const [filtreEntrepotBoutique, setFiltreEntrepotBoutique] = useState('');
+  const autoCompleteLance = useRef(false);
 
   const societe = useQuery({
     queryKey: ['entreprise'],
@@ -178,6 +197,7 @@ export function EntreprisePage() {
   const [email, setEmail] = useState('');
   const [devise, setDevise] = useState('XOF');
   const [logoUrl, setLogoUrl] = useState('');
+  const [logoErr, setLogoErr] = useState<string | null>(null);
   const [delaiVersementHeures, setDelaiVersementHeures] = useState('24');
   const [msg, setMsg] = useState<string | null>(null);
   const [formHydrated, setFormHydrated] = useState(false);
@@ -204,7 +224,7 @@ export function EntreprisePage() {
           telephone: telephone || undefined,
           email: email || undefined,
           devise: devise || undefined,
-          logoUrl: logoUrl || undefined,
+          logoUrl: logoUrl || null,
           delaiVersementHeures: delaiVersementHeures
             ? Number(delaiVersementHeures)
             : undefined,
@@ -217,6 +237,16 @@ export function EntreprisePage() {
     },
     onError: () => setMsg('Échec de la mise à jour.'),
   });
+
+  async function onLogo(file: File | undefined) {
+    if (!file) return;
+    setLogoErr(null);
+    try {
+      setLogoUrl(await compresserImage(file, 320));
+    } catch (e) {
+      setLogoErr(e instanceof Error ? e.message : 'Image refusée.');
+    }
+  }
 
   const [nomZone, setNomZone] = useState('');
   const createZone = useMutation({
@@ -249,6 +279,7 @@ export function EntreprisePage() {
   const [nomBoutique, setNomBoutique] = useState('');
   const [adresseBoutique, setAdresseBoutique] = useState('');
   const [zoneId, setZoneId] = useState('');
+  const [nombreTiroirs, setNombreTiroirs] = useState(1);
   const createBoutique = useMutation({
     mutationFn: () =>
       apiFetch<BoutiqueDto>('/boutiques', {
@@ -257,21 +288,71 @@ export function EntreprisePage() {
           nom: nomBoutique.trim(),
           adresse: adresseBoutique.trim(),
           zoneId: zoneId || zones.data?.[0]?.id || '',
+          nombreTiroirs,
         }),
       }),
     onSuccess: () => {
       setNomBoutique('');
       setAdresseBoutique('');
+      setNombreTiroirs(1);
       setCreateBoutiqueErr(null);
       setModalBoutique(false);
       void queryClient.invalidateQueries({ queryKey: ['boutiques'] });
       void queryClient.invalidateQueries({ queryKey: ['entrepots'] });
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
       setOnglet('magasins');
     },
     onError: () =>
       setCreateBoutiqueErr(
         'Échec de la création — vérifiez le nom, l’adresse et la zone.',
       ),
+  });
+
+  const completerPoste = useMutation({
+    mutationFn: (payload: { id: string; nombreTiroirs?: number }) =>
+      apiFetch<BoutiqueDto>(`/boutiques/${payload.id}/completer-poste`, {
+        method: 'POST',
+        body: JSON.stringify({
+          nombreTiroirs: payload.nombreTiroirs ?? 1,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['boutiques'] });
+      void queryClient.invalidateQueries({ queryKey: ['entrepots'] });
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+    },
+  });
+
+  const completerTous = useMutation({
+    mutationFn: () =>
+      apiFetch<{ magasinsTraites: number }>('/boutiques/completer-tous', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['boutiques'] });
+      void queryClient.invalidateQueries({ queryKey: ['entrepots'] });
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+    },
+    onError: () => {
+      autoCompleteLance.current = false;
+    },
+  });
+
+  const ajouterTiroir = useMutation({
+    mutationFn: (payload: { boutiqueId: string; code: string }) =>
+      apiFetch<CaisseDto>('/caisses/tiroirs', {
+        method: 'POST',
+        body: JSON.stringify({
+          boutiqueId: payload.boutiqueId,
+          code: payload.code,
+          libelle: `Tiroir ${Number(payload.code.replace(/\D/g, '')) || 1}`,
+          ordreAffichage: Number(payload.code.replace(/\D/g, '')) || 0,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+    },
   });
 
   const updateBoutique = useMutation({
@@ -398,6 +479,32 @@ export function EntreprisePage() {
   const boutiquesSansPrincipal = boutiquesList.filter(
     (b) => b.actif && !boutiqueHasPrincipal(b.id, entrepotsList),
   );
+  const boutiquesSansTiroir = boutiquesList.filter(
+    (b) => b.actif && tiroirsBoutique(b.id, caissesList).length === 0,
+  );
+  const magasinsIncomplets = new Set([
+    ...boutiquesSansCaisse.map((b) => b.id),
+    ...boutiquesSansPrincipal.map((b) => b.id),
+    ...boutiquesSansTiroir.map((b) => b.id),
+  ]).size;
+
+  useEffect(() => {
+    if (!peutAdmin) return;
+    if (!boutiques.isSuccess || !entrepots.isSuccess || !caisses.isSuccess) {
+      return;
+    }
+    if (magasinsIncomplets === 0) return;
+    if (autoCompleteLance.current || completerTous.isPending) return;
+    autoCompleteLance.current = true;
+    completerTous.mutate();
+  }, [
+    peutAdmin,
+    boutiques.isSuccess,
+    entrepots.isSuccess,
+    caisses.isSuccess,
+    magasinsIncomplets,
+    completerTous,
+  ]);
 
   const societeIncomplete =
     !!societe.data && (!societe.data.email || !societe.data.telephone);
@@ -420,20 +527,14 @@ export function EntreprisePage() {
         tab: 'zones',
       });
     }
-    if (boutiquesSansCaisse.length > 0) {
+    if (magasinsIncomplets > 0) {
       alerts.push({
-        id: 'sans-caisse',
-        label: `${boutiquesSansCaisse.length} magasin(s) sans caisse magasin`,
-        severite: 'critique',
-        tab: 'caisses',
-      });
-    }
-    if (boutiquesSansPrincipal.length > 0) {
-      alerts.push({
-        id: 'sans-principal',
-        label: `${boutiquesSansPrincipal.length} magasin(s) sans entrepôt PRINCIPAL`,
-        severite: 'critique',
-        tab: 'entrepots',
+        id: 'incomplets',
+        label: peutAdmin
+          ? `${magasinsIncomplets} magasin(s) : entrepôt, caisse et tiroir se créent automatiquement`
+          : `${magasinsIncomplets} magasin(s) sans poste complet`,
+        severite: 'warning',
+        tab: 'magasins',
       });
     }
     if (magasinsInactifs.length > 0) {
@@ -457,8 +558,8 @@ export function EntreprisePage() {
     societeIncomplete,
     zones.isSuccess,
     zonesList.length,
-    boutiquesSansCaisse.length,
-    boutiquesSansPrincipal.length,
+    magasinsIncomplets,
+    peutAdmin,
     magasinsInactifs.length,
     societe.isSuccess,
   ]);
@@ -485,14 +586,9 @@ export function EntreprisePage() {
       tab: 'magasins' as Onglet,
     },
     {
-      ok: boutiquesSansPrincipal.length === 0 && magasinsActifs.length > 0,
-      label: 'Chaque magasin actif a un entrepôt PRINCIPAL',
-      tab: 'entrepots' as Onglet,
-    },
-    {
-      ok: boutiquesSansCaisse.length === 0 && magasinsActifs.length > 0,
-      label: 'Chaque magasin actif a une caisse magasin',
-      tab: 'caisses' as Onglet,
+      ok: magasinsIncomplets === 0 && magasinsActifs.length > 0,
+      label: 'Chaque magasin a son poste (entrepôt + caisse + tiroir)',
+      tab: 'magasins' as Onglet,
     },
   ];
 
@@ -561,7 +657,7 @@ export function EntreprisePage() {
     <div>
       <PageHeader
         title="Configuration"
-        subtitle="Structure de l'entreprise"
+        subtitle="Un magasin = entrepôt + caisse + tiroir, créés ensemble"
       />
 
       {!loadingAny && (
@@ -902,13 +998,41 @@ export function EntreprisePage() {
                             />
                           </div>
                           <div className="cfg-form-span">
-                            <label htmlFor="logo">URL du logo</label>
-                            <input
-                              id="logo"
-                              value={logoUrl}
-                              onChange={(e) => setLogoUrl(e.target.value)}
-                              placeholder="https://…"
-                            />
+                            <label htmlFor="logo">Logo</label>
+                            <div className="fiche-photo-field">
+                              <div className="fiche-photo-preview" aria-hidden>
+                                {logoUrl ? (
+                                  <img src={logoUrl} alt="" />
+                                ) : (
+                                  <ImageIcon size={28} />
+                                )}
+                              </div>
+                              <div>
+                                <input
+                                  id="logo"
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  onChange={(e) =>
+                                    void onLogo(e.target.files?.[0])
+                                  }
+                                />
+                                <p className="lead">
+                                  JPEG / PNG / WebP — import fichier, pas d’URL.
+                                </p>
+                                {logoUrl ? (
+                                  <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => setLogoUrl('')}
+                                  >
+                                    Retirer le logo
+                                  </button>
+                                ) : null}
+                                {logoErr ? (
+                                  <p role="alert">{logoErr}</p>
+                                ) : null}
+                              </div>
+                            </div>
                           </div>
                           <div>
                             <label htmlFor="delai-versement">
@@ -1075,6 +1199,7 @@ export function EntreprisePage() {
                         setNomBoutique('');
                         setAdresseBoutique('');
                         setZoneId(zones.data?.[0]?.id ?? '');
+                        setNombreTiroirs(1);
                         setModalBoutique(true);
                       }}
                       disabled={(zones.data?.length ?? 0) === 0}
@@ -1119,12 +1244,14 @@ export function EntreprisePage() {
                 <span>
                   <strong>{magasinsActifs.length}</strong> actif(s)
                 </span>
-                <span>
-                  <strong>{boutiquesSansCaisse.length}</strong> sans caisse
-                </span>
-                <span>
-                  <strong>{boutiquesSansPrincipal.length}</strong> sans entrepôt
-                </span>
+                {magasinsIncomplets > 0 && (
+                  <span>
+                    <strong>{magasinsIncomplets}</strong>
+                    {completerTous.isPending
+                      ? ' poste(s) en cours…'
+                      : ' à compléter'}
+                  </span>
+                )}
               </div>
 
               {boutiques.isLoading && (
@@ -1154,7 +1281,7 @@ export function EntreprisePage() {
               {boutiques.data && boutiques.data.length === 0 && (zones.data?.length ?? 0) > 0 && (
                 <EmptyState
                   title="Aucun magasin"
-                  description="Ajoutez le premier magasin du réseau. Un entrepôt PRINCIPAL est créé automatiquement."
+                  description="Ajoutez le premier magasin. Entrepôt, caisse magasin et tiroir POS sont créés automatiquement."
                   action={
                     peutAdmin ? (
                       <button
@@ -1163,7 +1290,8 @@ export function EntreprisePage() {
                         onClick={() => {
                           setCreateBoutiqueErr(null);
                           setZoneId(zones.data?.[0]?.id ?? '');
-                          setModalBoutique(true);
+                          setNombreTiroirs(1);
+                        setModalBoutique(true);
                         }}
                       >
                         <Plus size={14} /> Nouveau magasin
@@ -1179,86 +1307,122 @@ export function EntreprisePage() {
                 />
               )}
               {magasinsFiltres.length > 0 && (
-                <div className="clients-table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Magasin</th>
-                        <th>Zone</th>
-                        <th>
-                          Santé <InfoTooltip insight={insightSanteColonne()} />
-                        </th>
-                        <th>Statut</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {magasinsFiltres.map((b) => {
-                        const hasCaisse = boutiqueHasMagasin(b.id, caissesList);
-                        const hasPrincipal = boutiqueHasPrincipal(
-                          b.id,
-                          entrepotsList,
-                        );
-                        const zoneNom =
-                          zonesList.find((z) => z.id === b.zoneId)?.nomZone ??
-                          '—';
-                        return (
-                          <tr
-                            key={b.id}
-                            className="produit-row"
-                            tabIndex={0}
-                            role="button"
-                            aria-label={`Ouvrir ${b.nom}`}
-                            onClick={() => setBoutiqueEditee({ ...b })}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                setBoutiqueEditee({ ...b });
+                <div className="cfg-poste-grid">
+                  {magasinsFiltres.map((b) => {
+                    const hasCaisse = boutiqueHasMagasin(b.id, caissesList);
+                    const hasPrincipal = boutiqueHasPrincipal(
+                      b.id,
+                      entrepotsList,
+                    );
+                    const tiroirs = tiroirsBoutique(b.id, caissesList);
+                    const hasTiroir = tiroirs.length > 0;
+                    const incomplet =
+                      !hasCaisse || !hasPrincipal || !hasTiroir;
+                    const zoneNom =
+                      zonesList.find((z) => z.id === b.zoneId)?.nomZone ??
+                      '—';
+                    const entrepot = entrepotsList.find(
+                      (e) =>
+                        e.boutiqueId === b.id &&
+                        e.type === 'PRINCIPAL' &&
+                        e.actif,
+                    );
+                    const caisseMag = caissesList.find(
+                      (c) => c.type === 'MAGASIN' && c.boutiqueId === b.id,
+                    );
+                    return (
+                      <article
+                        key={b.id}
+                        className={`cfg-poste-card${incomplet ? ' incomplet' : ''}`}
+                      >
+                        <button
+                          type="button"
+                          className="cfg-poste-card-main"
+                          onClick={() => setBoutiqueEditee({ ...b })}
+                        >
+                          <header>
+                            <strong>{b.nom}</strong>
+                            <span
+                              className={`cfg-badge ${b.actif ? 'ok' : 'muted'}`}
+                            >
+                              {b.actif ? 'Actif' : 'Inactif'}
+                            </span>
+                          </header>
+                          <p className="lead">
+                            {zoneNom}
+                            {b.code ? ` · ${b.code}` : ''}
+                            {b.adresse ? ` · ${b.adresse}` : ''}
+                          </p>
+                        </button>
+                        <ul className="cfg-poste-stack">
+                          <li className={hasPrincipal ? 'ok' : 'manque'}>
+                            <Warehouse size={14} />
+                            {hasPrincipal
+                              ? entrepot?.nom ?? 'Entrepôt PRINCIPAL'
+                              : 'Entrepôt manquant'}
+                          </li>
+                          <li className={hasCaisse ? 'ok' : 'manque'}>
+                            <Wallet size={14} />
+                            {hasCaisse
+                              ? caisseMag?.libelle ?? 'Caisse magasin'
+                              : 'Caisse magasin manquante'}
+                          </li>
+                          <li className={hasTiroir ? 'ok' : 'manque'}>
+                            <Store size={14} />
+                            {hasTiroir
+                              ? tiroirs
+                                  .map((t) => t.code ?? t.libelle)
+                                  .join(' · ')
+                              : 'Aucun tiroir POS'}
+                          </li>
+                        </ul>
+                        <div className="cfg-poste-actions">
+                          {peutAdmin && incomplet && (
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              onClick={() =>
+                                completerPoste.mutate({ id: b.id })
                               }
-                            }}
-                          >
-                            <td>
-                              <strong>{b.nom}</strong>
-                              {b.code ? (
-                                <span className="cfg-code"> {b.code}</span>
-                              ) : null}
-                              <br />
-                              <span className="lead">{b.adresse}</span>
-                            </td>
-                            <td>{zoneNom}</td>
-                            <td>
-                              <div className="cfg-chip-row">
-                                <span
-                                  className={`cfg-badge ${hasCaisse ? 'ok' : 'warn'}`}
-                                >
-                                  {hasCaisse ? 'Caisse OK' : 'Sans caisse'}
-                                </span>
-                                <span
-                                  className={`cfg-badge ${hasPrincipal ? 'ok' : 'warn'}`}
-                                >
-                                  {hasPrincipal
-                                    ? 'Entrepôt OK'
-                                    : 'Sans PRINCIPAL'}
-                                </span>
-                                <InfoTooltip
-                                  insight={insightSanteMagasin(
-                                    hasCaisse,
-                                    hasPrincipal,
-                                  )}
-                                />
-                              </div>
-                            </td>
-                            <td>
-                              <span
-                                className={`cfg-badge ${b.actif ? 'ok' : 'muted'}`}
+                              disabled={
+                                completerPoste.isPending ||
+                                completerTous.isPending
+                              }
+                            >
+                              Compléter le poste
+                            </button>
+                          )}
+                          {peutConfigTiroirs &&
+                            hasCaisse &&
+                            tiroirs.length < 8 && (
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() =>
+                                  ajouterTiroir.mutate({
+                                    boutiqueId: b.id,
+                                    code: prochainCodeTiroir(
+                                      b.id,
+                                      caissesList,
+                                    ),
+                                  })
+                                }
+                                disabled={ajouterTiroir.isPending}
                               >
-                                {b.actif ? 'Actif' : 'Inactif'}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                                <Plus size={14} /> Tiroir
+                              </button>
+                            )}
+                          <InfoTooltip
+                            insight={insightSanteMagasin(
+                              hasCaisse,
+                              hasPrincipal,
+                              hasTiroir,
+                            )}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </ListPanel>
@@ -1470,23 +1634,16 @@ export function EntreprisePage() {
               <ListPanel
                 title="Caisses magasin"
                 toolbar={
-                  peutAdmin ? (
+                  peutAdmin && magasinsIncomplets > 0 ? (
                     <button
                       type="button"
                       className="btn-primary"
-                      onClick={() => {
-                        setCreateCaisseErr(null);
-                        setCaisseBoutiqueId(boutiquesSansCaisse[0]?.id ?? '');
-                        setModalCaisse(true);
-                      }}
-                      disabled={boutiquesSansCaisse.length === 0}
-                      title={
-                        boutiquesSansCaisse.length === 0
-                          ? 'Tous les magasins actifs ont déjà une caisse'
-                          : undefined
-                      }
+                      onClick={() => completerTous.mutate()}
+                      disabled={completerTous.isPending}
                     >
-                      <Plus size={14} /> Nouvelle caisse
+                      {completerTous.isPending
+                        ? 'Complétion…'
+                        : 'Compléter les postes manquants'}
                     </button>
                   ) : undefined
                 }
@@ -1494,19 +1651,16 @@ export function EntreprisePage() {
                 {caissesMagasin.length === 0 && !caisses.isLoading && (
                   <EmptyState
                     title="Aucune caisse magasin"
-                    description="Provisionnez une caisse pour chaque magasin actif (séparation des tâches §6.2)."
+                    description="Les caisses magasin se créent avec chaque magasin. Les magasins incomplets sont complétés automatiquement."
                     action={
-                      peutAdmin && boutiquesSansCaisse.length > 0 ? (
+                      peutAdmin && magasinsIncomplets > 0 ? (
                         <button
                           type="button"
                           className="btn-primary"
-                          onClick={() => {
-                            setCreateCaisseErr(null);
-                            setCaisseBoutiqueId(boutiquesSansCaisse[0]?.id ?? '');
-                            setModalCaisse(true);
-                          }}
+                          onClick={() => completerTous.mutate()}
+                          disabled={completerTous.isPending}
                         >
-                          <Plus size={14} /> Nouvelle caisse
+                          Compléter les postes
                         </button>
                       ) : undefined
                     }
@@ -1870,8 +2024,8 @@ export function EntreprisePage() {
               }}
             >
               <p className="lead">
-                Un entrepôt PRINCIPAL est créé automatiquement. Pensez ensuite à
-                ajouter une caisse magasin dans l’onglet Caisses.
+                Nom, adresse, zone — c’est tout. Entrepôt PRINCIPAL, caisse
+                magasin et tiroir POS sont créés et liés automatiquement.
               </p>
               <div>
                 <label htmlFor="nb">Nom du magasin</label>
@@ -1911,6 +2065,31 @@ export function EntreprisePage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label htmlFor="nt">Tiroirs POS</label>
+                <div className="cfg-qty-row">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={nombreTiroirs <= 1}
+                    onClick={() => setNombreTiroirs((n) => Math.max(1, n - 1))}
+                    aria-label="Retirer un tiroir"
+                  >
+                    −
+                  </button>
+                  <strong id="nt">{nombreTiroirs}</strong>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={nombreTiroirs >= 8}
+                    onClick={() => setNombreTiroirs((n) => Math.min(8, n + 1))}
+                    aria-label="Ajouter un tiroir"
+                  >
+                    +
+                  </button>
+                  <span className="lead">créé(s) avec le magasin</span>
+                </div>
               </div>
               <div className="cfg-form-actions">
                 <button
@@ -1972,7 +2151,7 @@ export function EntreprisePage() {
                     }`}
                   >
                     {boutiqueHasMagasin(boutiqueEditee.id, caissesList)
-                      ? 'Caisse OK'
+                      ? 'Caisse magasin'
                       : 'Sans caisse'}
                   </span>
                   <span
@@ -1983,9 +2162,78 @@ export function EntreprisePage() {
                     }`}
                   >
                     {boutiqueHasPrincipal(boutiqueEditee.id, entrepotsList)
-                      ? 'Entrepôt OK'
+                      ? 'Entrepôt PRINCIPAL'
                       : 'Sans PRINCIPAL'}
                   </span>
+                  <span
+                    className={`cfg-badge ${
+                      tiroirsBoutique(boutiqueEditee.id, caissesList).length > 0
+                        ? 'ok'
+                        : 'warn'
+                    }`}
+                  >
+                    {tiroirsBoutique(boutiqueEditee.id, caissesList).length > 0
+                      ? `${tiroirsBoutique(boutiqueEditee.id, caissesList).length} tiroir(s)`
+                      : 'Sans tiroir'}
+                  </span>
+                </div>
+                {peutAdmin &&
+                  (!boutiqueHasMagasin(boutiqueEditee.id, caissesList) ||
+                    !boutiqueHasPrincipal(boutiqueEditee.id, entrepotsList) ||
+                    tiroirsBoutique(boutiqueEditee.id, caissesList).length ===
+                      0) && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() =>
+                        completerPoste.mutate({ id: boutiqueEditee.id })
+                      }
+                      disabled={completerPoste.isPending}
+                    >
+                      {completerPoste.isPending
+                        ? 'Préparation…'
+                        : 'Compléter le poste (entrepôt + caisse + tiroir)'}
+                    </button>
+                  )}
+                <div>
+                  <p className="cfg-section-label">Tiroirs POS</p>
+                  <div className="cfg-chip-row">
+                    {tiroirsBoutique(boutiqueEditee.id, caissesList).length ===
+                    0 ? (
+                      <span className="lead">Aucun tiroir — le POS ne peut pas ouvrir.</span>
+                    ) : (
+                      tiroirsBoutique(boutiqueEditee.id, caissesList).map((t) => (
+                        <span
+                          key={t.id}
+                          className={`cfg-badge ${t.actif === false ? 'muted' : 'ok'}`}
+                        >
+                          {t.code} {t.libelle}
+                          {t.actif === false ? ' (off)' : ''}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {peutConfigTiroirs &&
+                    tiroirsBoutique(boutiqueEditee.id, caissesList).length <
+                      8 && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ marginTop: 8 }}
+                        onClick={() =>
+                          ajouterTiroir.mutate({
+                            boutiqueId: boutiqueEditee.id,
+                            code: prochainCodeTiroir(
+                              boutiqueEditee.id,
+                              caissesList,
+                            ),
+                          })
+                        }
+                        disabled={ajouterTiroir.isPending}
+                      >
+                        <Plus size={14} /> Ajouter un tiroir
+                      </button>
+                    )}
                 </div>
                 <div>
                   <label htmlFor="edit-bn">Nom</label>
@@ -2048,21 +2296,6 @@ export function EntreprisePage() {
                   </label>
                 )}
                 <div className="cfg-form-actions">
-                  {!boutiqueHasMagasin(boutiqueEditee.id, caissesList) &&
-                    peutAdmin && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => {
-                          setCaisseBoutiqueId(boutiqueEditee.id);
-                          setBoutiqueEditee(null);
-                          setOnglet('caisses');
-                          setModalCaisse(true);
-                        }}
-                      >
-                        Ajouter une caisse
-                      </button>
-                    )}
                   <button
                     type="button"
                     className="btn-secondary"
@@ -2145,8 +2378,8 @@ export function EntreprisePage() {
               }}
             >
               <p className="lead">
-                Une caisse magasin par boutique — elle reçoit les versements des
-                tiroirs POS (séparation des tâches).
+                Un magasin neuf a déjà sa caisse. Cet écran ne sert qu’aux
+                magasins créés avant, encore sans caisse magasin.
               </p>
               <div>
                 <label htmlFor="cb">Magasin</label>

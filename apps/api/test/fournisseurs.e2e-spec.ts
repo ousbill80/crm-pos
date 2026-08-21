@@ -241,13 +241,11 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       fournisseurId = fournisseur.id;
     });
 
-    it('autorise un CAISSIER_BOUTIQUE à lister les fournisseurs', async () => {
-      const response = await request(app.getHttpServer())
+    it('refuse (403) la lecture fournisseurs au CAISSIER_BOUTIQUE', () => {
+      return request(app.getHttpServer())
         .get('/fournisseurs')
         .set(auth(tokens.caissierBoutique))
-        .expect(200);
-      const body = response.body as FournisseurDto[];
-      expect(body.map((f) => f.id)).toContain(fournisseurId);
+        .expect(403);
     });
 
     it('refuse (403) la lecture par RESPONSABLE_CRM (hors périmètre structure)', () => {

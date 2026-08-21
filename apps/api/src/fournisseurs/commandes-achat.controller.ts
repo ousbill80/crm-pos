@@ -4,7 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   ROLES_COMMANDE_ACHAT,
-  ROLES_LECTURE_STRUCTURE,
+  ROLES_LECTURE_ACHATS,
 } from '../caisses/access-scope.constants';
 import { CommandesAchatService } from './commandes-achat.service';
 import { CreateCommandeAchatDto } from './dto/create-commande-achat.dto';
@@ -23,13 +23,13 @@ export class CommandesAchatController {
   }
 
   @Get()
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   lister(@CurrentUser() user: AuthenticatedUser) {
     return this.commandes.lister(user);
   }
 
   @Get(':id')
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   detail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.commandes.detail(id, user);
   }

@@ -8,6 +8,12 @@ import type { Client } from '@prisma/client';
 import { TypeClient } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import type { AuthenticatedUser } from '../auth/types';
+import {
+  ROLES_PERIMETRE_BOUTIQUE,
+} from '../caisses/access-scope.constants';
+import { requireOwnBoutiqueId } from '../boutiques/boutique-scope.util';
+import { hasherContact } from '../prisma/field-crypto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsQueryDto } from './dto/list-clients-query.dto';
@@ -16,10 +22,18 @@ import {
   SEUIL_SEGMENT_VIP_NB_VENTES,
 } from './crm-thresholds.constants';
 
-// Fiche client unique consolidée réseau (§6.6) : ce service n'est
-// délibérément PAS scopé par boutique — à la différence du module Caisses,
-// tout rôle habilité (voir crm-roles.constants.ts) peut consulter/créer un
-// client depuis n'importe quelle boutique.
+type ClientPublic = Omit<Client, 'contactHash'>;
+
+function publierClient<T extends { contactHash?: string | null }>(
+  client: T,
+): Omit<T, 'contactHash'> {
+  const { contactHash: _h, ...reste } = client;
+  return reste;
+}
+
+// Fiche unique réseau (§6.6) : findOne / historique restent réseau.
+// Liste d’exploitation magasin pour les rôles boutique ; `q` = recherche
+// réseau (POS, téléphone / nom) sans recréer une fiche.
 @Injectable()
 export class ClientsService {
   constructor(
@@ -27,7 +41,10 @@ export class ClientsService {
     private readonly audit: AuditService,
   ) {}
 
-  async create(dto: CreateClientDto, utilisateurId: string): Promise<Client> {
+  async create(
+    dto: CreateClientDto,
+    user: AuthenticatedUser,
+  ): Promise<ClientPublic> {
     const typeClient = dto.typeClient ?? TypeClient.PHYSIQUE;
     const prenom = dto.prenom?.trim() || null;
 
@@ -44,11 +61,13 @@ export class ClientsService {
           nom: dto.nom.trim(),
           prenom,
           contact: dto.contact?.trim() || null,
+          adresse: dto.adresse?.trim() || null,
           dateNaissance:
             typeClient === TypeClient.PHYSIQUE && dto.dateNaissance
               ? new Date(dto.dateNaissance)
               : null,
           consentementMarketing: dto.consentementMarketing ?? false,
+          boutiqueOrigineId: user.boutiqueId,
         },
       });
       // Un client est automatiquement inscrit au programme de fidélité dès
@@ -68,27 +87,49 @@ export class ClientsService {
         : `Création fiche client ${client.prenom} ${client.nom}`;
 
     await this.audit.record({
-      utilisateurId,
+      utilisateurId: user.userId,
       action: 'CLIENT_CREE',
       entite: 'Client',
       entiteId: client.id,
       details: libelle,
     });
 
-    return client;
+    return publierClient(client);
   }
 
-  async findAll(query: ListClientsQueryDto): Promise<Client[]> {
-    return this.prisma.client.findMany({
-      where: {
-        segment: query.segment,
-        ...(query.niveauFidelite
-          ? { fidelite: { niveau: query.niveauFidelite } }
-          : {}),
-      },
+  async findAll(query: ListClientsQueryDto, user: AuthenticatedUser) {
+    const where: Prisma.ClientWhereInput = {
+      segment: query.segment,
+      typeClient: query.typeClient,
+      ...(query.consentementMarketing !== undefined
+        ? { consentementMarketing: query.consentementMarketing }
+        : {}),
+      ...(query.niveauFidelite
+        ? { fidelite: { niveau: query.niveauFidelite } }
+        : {}),
+    };
+
+    if (query.q) {
+      const q = query.q;
+      where.OR = [
+        { nom: { contains: q, mode: 'insensitive' } },
+        { prenom: { contains: q, mode: 'insensitive' } },
+        { contactHash: hasherContact(q) },
+      ];
+    } else if (ROLES_PERIMETRE_BOUTIQUE.includes(user.role)) {
+      const boutiqueId = requireOwnBoutiqueId(user);
+      where.OR = [
+        { boutiqueOrigineId: boutiqueId },
+        { ventes: { some: { caisse: { boutiqueId } } } },
+      ];
+    }
+
+    const clients = await this.prisma.client.findMany({
+      where,
       include: { fidelite: true },
       orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
     });
+    return clients.map(publierClient);
   }
 
   async findOne(id: string) {
@@ -99,14 +140,14 @@ export class ClientsService {
     if (!client) {
       throw new NotFoundException(`Client "${id}" introuvable.`);
     }
-    return client;
+    return publierClient(client);
   }
 
   async update(
     id: string,
     dto: UpdateClientDto,
     utilisateurId: string,
-  ): Promise<Client> {
+  ): Promise<ClientPublic> {
     await this.findOne(id);
 
     const client = await this.prisma.client.update({
@@ -116,6 +157,7 @@ export class ClientsService {
         nom: dto.nom,
         prenom: dto.prenom,
         contact: dto.contact,
+        adresse: dto.adresse,
         dateNaissance: dto.dateNaissance
           ? new Date(dto.dateNaissance)
           : undefined,
@@ -132,7 +174,7 @@ export class ClientsService {
       details: JSON.stringify(dto),
     });
 
-    return client;
+    return publierClient(client);
   }
 
   // Historique d'achats réseau du client (§6.6 : "historique d'achats
@@ -288,7 +330,10 @@ export class ClientsService {
   // automatiquement à la création d'une vente, qui est hors périmètre de ce
   // module) et se base sur des seuils codés en dur documentés dans
   // crm-thresholds.constants.ts.
-  async recalculerSegment(id: string, utilisateurId: string): Promise<Client> {
+  async recalculerSegment(
+    id: string,
+    utilisateurId: string,
+  ): Promise<ClientPublic> {
     await this.findOne(id);
 
     const nombreVentes = await this.prisma.vente.count({
@@ -317,6 +362,6 @@ export class ClientsService {
       details: `Segment recalculé sur ${nombreVentes} vente(s) -> ${segment}`,
     });
 
-    return client;
+    return publierClient(client);
   }
 }

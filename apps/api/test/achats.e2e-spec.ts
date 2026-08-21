@@ -188,6 +188,21 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       .expect(403);
   });
 
+  it('refuse (403) la lecture commandes / factures par CAISSIER_BOUTIQUE', async () => {
+    await request(app.getHttpServer())
+      .get('/achats/commandes')
+      .set(auth(tokens.caissier))
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/achats/factures')
+      .set(auth(tokens.caissier))
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/fournisseurs')
+      .set(auth(tokens.caissier))
+      .expect(403);
+  });
+
   it('refuse (403) la création de commande par CAISSIER_BOUTIQUE', () => {
     return request(app.getHttpServer())
       .post('/achats/commandes')

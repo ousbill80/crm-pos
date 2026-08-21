@@ -130,6 +130,38 @@
   place-items: center;
 }
 
+.pos-online-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(134, 239, 172, 0.35);
+  color: #bbf7d0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pos-online-chip.is-off {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(252, 165, 165, 0.4);
+  color: #fecaca;
+}
+
+.pos-online-chip.is-sync {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(252, 211, 77, 0.4);
+  color: #fde68a;
+}
+
+.pos-online-chip .info-tooltip-trigger {
+  color: inherit;
+  opacity: 0.8;
+}
+
 .pos-workspace {
   flex: 1;
   display: grid;
@@ -1294,12 +1326,149 @@ form.pos-gate-card {
   box-shadow: var(--shadow-md);
 }
 
-.pos-receipt-brand {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.pos-receipt-addr {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pos-receipt-rule {
+  height: 0;
+  border-top: 1px dashed var(--border);
+  margin: 10px 0;
+}
+
+.pos-ticket-lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pos-ticket-lines th {
+  font-size: 10px;
   text-transform: uppercase;
-  color: var(--accent);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-align: left;
+  padding-bottom: 4px;
+}
+
+.pos-ticket-lines th:nth-child(2),
+.pos-ticket-lines td:nth-child(2),
+.pos-ticket-lines th:nth-child(3),
+.pos-ticket-lines td:nth-child(3) {
+  text-align: right;
+}
+
+.pos-ticket-lines td {
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  vertical-align: top;
+}
+
+.pos-receipt-thanks {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
+.pos-etat-kicker {
+  margin: 10px 0 4px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.pos-etat-section {
+  margin: 14px 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-etat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 6px 0 10px;
+}
+
+.pos-etat-table th,
+.pos-etat-table td {
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  vertical-align: top;
+}
+
+.pos-etat-table th {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.pos-etat-table th:nth-child(2),
+.pos-etat-table td:nth-child(2),
+.pos-etat-table th:nth-child(3),
+.pos-etat-table td:nth-child(3) {
+  text-align: right;
+}
+
+.pos-etat-journal td:nth-child(2) {
+  text-align: left;
+}
+
+.pos-etat-ticket-id {
+  display: block;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.pos-etat-print .pos-etat-card {
+  width: min(440px, 100%);
+  max-height: calc(100svh - 48px);
+  overflow: auto;
+}
+
+.pos-etat-tiroir {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+
+.pos-etat-tiroir > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pos-etat-tiroir dt {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.pos-etat-tiroir dd {
+  margin: 0;
+}
+
+.pos-btn-ghost-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-h);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .pos-receipt-shop {
@@ -1446,6 +1615,11 @@ form.pos-gate-card {
 }
 
 @media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -1460,6 +1634,15 @@ form.pos-gate-card {
     inset: 0;
     background: #fff;
     padding: 0;
+    width: 72mm;
+  }
+
+  .pos-receipt-card {
+    box-shadow: none;
+    border: none;
+    width: 72mm;
+    max-width: 72mm;
+    font-size: 12px;
   }
 
   .no-print {
@@ -1640,11 +1823,88 @@ form.pos-gate-card {
 
 
 .pos-cloture-card {
-  width: min(520px, 100%);
-  max-width: 520px;
+  width: min(540px, 100%);
+  max-width: 540px;
+  max-height: calc(100svh - 32px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.pos-cloture-head {
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pos-cloture-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.pos-cloture-head .pos-open-help {
+  margin: 0;
+}
+
+.pos-cloture-body {
+  padding: 14px 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+}
+
+.pos-cloture-foot {
+  flex-shrink: 0;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  margin: 0;
+}
+
+.pos-cloture-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.pos-cloture-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.pos-cloture-breakdown strong {
+  color: var(--text-h);
+  font-weight: 650;
+}
+
+.pos-cloture-breakdown-total {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-h) !important;
+  font-weight: 600;
+}
+
+.pos-cloture-breakdown-total span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .pos-cloture-ecart {
@@ -1663,6 +1923,20 @@ form.pos-gate-card {
 .pos-cloture-ecart.warn {
   background: color-mix(in srgb, #ca8a04 14%, transparent);
   color: #a16207;
+}
+
+.pos-cloture-ecart-inline {
+  color: #a16207;
+}
+
+.pos-cloture-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  font-size: 0.9rem;
 }
 
 
@@ -1713,10 +1987,22 @@ form.pos-gate-card {
   color: var(--text-muted);
 }
 
+.pos-denoms-total {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-h);
+}
+
 .pos-denoms-head .pos-btn-ghost {
   margin-left: auto;
   padding: 4px 8px;
   font-size: 12px;
+}
+
+.pos-denoms-head .pos-btn-ghost + .pos-btn-ghost {
+  margin-left: 0;
 }
 
 .pos-denoms-grid {

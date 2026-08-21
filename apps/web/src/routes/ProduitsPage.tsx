@@ -20,6 +20,12 @@ import { Modal } from '../components/Modal';
 import { ImportCatalogueModal } from './ImportCatalogueModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  statutStockDepuisQty,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
+import {
   buildPrioritesCatalogue,
   insightDormant,
   insightMargeUnitaire,
@@ -30,6 +36,7 @@ import type {
   ProduitDto,
   ProduitsSyntheseDto,
   StatutStock,
+  StockQuantDto,
 } from '../lib/types';
 
 const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
@@ -276,6 +283,7 @@ function NouveauProduitForm({
 export function ProduitsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   const peutLire = user !== null && ROLES_LECTURE_STRUCTURE.includes(user.role);
   const peutGerer = user !== null && ROLES_ADMIN_STRUCTURE.includes(user.role);
 
@@ -300,14 +308,39 @@ export function ProduitsPage() {
   const filters = {
     q: qDebounced,
     categorie,
-    statutStock,
+    statutStock: magasin.boutiqueId ? '' : statutStock,
     actif,
     margeNegative,
   };
   const { data: produits, isLoading, isError } = useProduits(peutLire, filters);
+  const stocksMagasin = useQuery({
+    queryKey: ['stocks'],
+    queryFn: () => apiFetch<StockQuantDto[]>('/stocks'),
+    enabled: peutLire && Boolean(magasin.boutiqueId),
+  });
   const synthese = useSynthese(peutLire);
   const categories = useCategories(peutLire);
   const classement = useClassement(peutLire);
+
+  const produitsPerimetre = useMemo(() => {
+    const list = produits ?? [];
+    if (!magasin.boutiqueId) return list;
+    const qty = new Map<string, number>();
+    for (const q of stocksMagasin.data ?? []) {
+      if (q.entrepot.boutiqueId !== magasin.boutiqueId) continue;
+      qty.set(q.produitId, (qty.get(q.produitId) ?? 0) + q.quantite);
+    }
+    const overlay = list.map((p) => {
+      const stock = qty.get(p.id) ?? 0;
+      return {
+        ...p,
+        stock,
+        statutStock: statutStockDepuisQty(stock, p.seuilReappro),
+      };
+    });
+    if (!statutStock) return overlay;
+    return overlay.filter((p) => p.statutStock === statutStock);
+  }, [produits, magasin.boutiqueId, stocksMagasin.data, statutStock]);
 
   const filtresActifs =
     Boolean(recherche.trim()) ||
@@ -317,7 +350,7 @@ export function ProduitsPage() {
     margeNegative;
 
   const produitsTries = useMemo(() => {
-    const list = [...(produits ?? [])];
+    const list = [...produitsPerimetre];
     list.sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1;
       if (sort.key === 'designation') {
@@ -332,7 +365,7 @@ export function ProduitsPage() {
       return dir * (a.stock - b.stock);
     });
     return list;
-  }, [produits, sort]);
+  }, [produitsPerimetre, sort]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) =>
@@ -374,7 +407,13 @@ export function ProduitsPage() {
 
       <PageHeader
         title="Produits"
-        subtitle="Catalogue réseau — stock, marge (prix − CMP) et alertes de réapprovisionnement"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Catalogue réseau — prix communs ; le stock affiché est le réseau (filtre magasin = quantités du magasin)',
+          texteBoutique: 'Catalogue réseau — stock affiché = magasin',
+        })}
         actions={
           <>
             <button
@@ -599,6 +638,7 @@ export function ProduitsPage() {
       {produits && (
         <div>
             <div className="toolbar">
+              <FiltreMagasinSiege id="prod-filtre-magasin" />
               <div>
                 <label htmlFor="filtre-produit">Rechercher</label>
                 <input
@@ -714,7 +754,7 @@ export function ProduitsPage() {
                       </th>
                       <th>
                         <button type="button" className="th-sort" onClick={() => toggleSort('stock')}>
-                          Stock {sort.key === 'stock' ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
+                          Stock{magasin.boutiqueId ? ' magasin' : ''} {sort.key === 'stock' ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
                         </button>
                       </th>
                       <th>Statut</th>

@@ -16,6 +16,7 @@ import {
   ROLES_LECTURE_STRUCTURE,
   ROLES_PERIMETRE_BOUTIQUE,
   ROLES_RESEAU_STRUCTURE,
+  ROLES_STOCK_ECRITURE_BOUTIQUE,
   ROLE_SUPERVISEUR_ZONE,
 } from '../caisses/access-scope.constants';
 import {
@@ -113,7 +114,7 @@ export class StocksController {
   }
 
   @Post('transferts')
-  @Roles(...ROLES_ADMIN_STRUCTURE, ...ROLES_PERIMETRE_BOUTIQUE)
+  @Roles(...ROLES_ADMIN_STRUCTURE, ...ROLES_STOCK_ECRITURE_BOUTIQUE)
   async transferer(
     @Body() dto: TransfererStockDto,
     @CurrentUser() user: AuthenticatedUser,

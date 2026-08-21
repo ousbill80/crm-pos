@@ -6,6 +6,10 @@ import {
   guardLedgerTransactionClient,
   guardTransactionCaisseDelegate,
 } from './ledger-guard';
+import {
+  guardClientDelegate,
+  guardClientTransactionClient,
+} from './client-crypto-guard';
 
 @Injectable()
 export class PrismaService
@@ -24,6 +28,13 @@ export class PrismaService
     });
     Object.defineProperty(this, 'transactionCaisse', {
       value: guardTransactionCaisseDelegate(this.transactionCaisse),
+      configurable: true,
+      enumerable: true,
+    });
+    // Chiffrement des données client sensibles (CLAUDE.md §6.7) : contact et
+    // adresse ne sont jamais écrits/lus en clair via ce delegate.
+    Object.defineProperty(this, 'client', {
+      value: guardClientDelegate(this.client),
       configurable: true,
       enumerable: true,
     });
@@ -66,7 +77,9 @@ export class PrismaService
     if (typeof arg === 'function') {
       return superTransaction(
         (tx: object) =>
-          (arg as (tx: object) => unknown)(guardLedgerTransactionClient(tx)),
+          (arg as (tx: object) => unknown)(
+            guardClientTransactionClient(guardLedgerTransactionClient(tx)),
+          ),
         options,
       );
     }

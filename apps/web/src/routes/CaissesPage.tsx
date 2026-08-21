@@ -19,6 +19,10 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import { insightSoldeCaisse, insightTypeCaisse } from '../lib/insights/caisses';
 import type {
   BoutiqueDto,
@@ -597,8 +601,8 @@ function GestionCaissesView({
         </p>
         {!peutConfigTiroirs && !peutCreerMagasin ? (
           <p className="lead">
-            Lecture seule — configuration tiroirs réservée au DAF ; création
-            magasin réservée au Responsable SI / Direction générale.
+            Lecture seule — création magasin : SI / Direction ; tiroirs : DAF,
+            SI ou Direction.
           </p>
         ) : null}
       </section>
@@ -897,13 +901,16 @@ interface NoeudBoutique {
 export function CaissesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: caisses, isLoading, isError } = useCaisses();
   const { data: boutiques } = useBoutiques();
   const [selectedId, setSelectedId] = useState<string | null>(
     () => searchParams.get('caisseId'),
   );
-  const [filtreBoutique, setFiltreBoutique] = useState('');
+  const [filtreBoutique, setFiltreBoutique] = useState(
+    () => searchParams.get('boutiqueId') ?? '',
+  );
   const typeParam = searchParams.get('type');
   const [filtreType, setFiltreType] = useState<FiltreType>(
     typeParam === TypeCaisse.MAGASIN ||
@@ -930,6 +937,8 @@ export function CaissesPage() {
     }
     const caisseParam = searchParams.get('caisseId');
     if (caisseParam) setSelectedId(caisseParam);
+    const boutiqueParam = searchParams.get('boutiqueId');
+    if (boutiqueParam) setFiltreBoutique(boutiqueParam);
   }, [searchParams]);
 
   useEffect(() => {
@@ -1060,7 +1069,13 @@ export function CaissesPage() {
     <div className="caisses-module">
       <PageHeader
         title="Caisses"
-        subtitle="Circuit TIROIR → MAGASIN → CENTRALE — soldes recalculés depuis le grand livre"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Circuit TIROIR → MAGASIN → CENTRALE — soldes recalculés depuis le grand livre',
+          texteBoutique: 'Caisses du magasin — soldes recalculés depuis le grand livre',
+        })}
         actions={
           <div className="page-header-actions">
             <div className="dash-presets" role="group" aria-label="Vue">
@@ -1379,7 +1394,13 @@ export function CaissesPage() {
                 Boutique
                 <select
                   value={filtreBoutique}
-                  onChange={(e) => setFiltreBoutique(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFiltreBoutique(v);
+                    if (magasin.visible) {
+                      magasin.setBoutiqueId(v === '__centrale' ? '' : v);
+                    }
+                  }}
                 >
                   <option value="">Toutes</option>
                   <option value="__centrale">Centrale (réseau)</option>

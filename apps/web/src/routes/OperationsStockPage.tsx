@@ -17,6 +17,11 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { fmtDateHeure } from '../lib/achats-ui';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import type {
   BonStockDto,
   EntrepotDto,
@@ -94,6 +99,7 @@ export function OperationsStockPage() {
   const role = user?.role as RoleLibelle | undefined;
   const peutPiloter = role ? ROLES_PILOTE.includes(role) : false;
 
+  const magasin = useFiltreMagasinSiege();
   const [type, setType] = useState<BonStockDto['type']>('TRANSFERT_INTERNE');
   const [sourceId, setSourceId] = useState('');
   const [destId, setDestId] = useState('');
@@ -198,9 +204,21 @@ export function OperationsStockPage() {
     onError: (e) => setErreur(messageErreur(e)),
   });
 
-  const entrepots = emplQ.data ?? [];
+  const entrepots = useMemo(() => {
+    const all = emplQ.data ?? [];
+    if (!magasin.boutiqueId) return all;
+    return all.filter((e) => e.boutiqueId === magasin.boutiqueId);
+  }, [emplQ.data, magasin.boutiqueId]);
   const produits = produitsQ.data ?? [];
-  const bons = bonsQ.data ?? [];
+  const bons = useMemo(() => {
+    const all = bonsQ.data ?? [];
+    if (!magasin.boutiqueId) return all;
+    return all.filter(
+      (b) =>
+        b.entrepotSource?.boutiqueId === magasin.boutiqueId ||
+        b.entrepotDest?.boutiqueId === magasin.boutiqueId,
+    );
+  }, [bonsQ.data, magasin.boutiqueId]);
 
   const bonsFiltres = useMemo(() => {
     const q = rechercheBon.trim().toLowerCase();
@@ -267,13 +285,22 @@ export function OperationsStockPage() {
   }, [quantsQ.data]);
 
   const reglesEnrichies = useMemo(() => {
-    return (reapproQ.data ?? []).map((r) => {
+    const ids = magasin.boutiqueId
+      ? new Set(entrepots.map((e) => e.id))
+      : null;
+    return (reapproQ.data ?? [])
+      .filter((r) => {
+        if (!ids) return true;
+        if (r.entrepot.boutiqueId) return r.entrepot.boutiqueId === magasin.boutiqueId;
+        return ids.has(r.entrepotId);
+      })
+      .map((r) => {
       const stock = qtyParCle.get(`${r.produitId}:${r.entrepotId}`) ?? 0;
       const sousMin = stock < r.min;
       const besoin = sousMin ? Math.max(0, r.max - stock) : 0;
       return { ...r, stock, sousMin, besoin };
     });
-  }, [reapproQ.data, qtyParCle]);
+  }, [reapproQ.data, qtyParCle, magasin.boutiqueId, entrepots]);
 
   const aRelancer = reglesEnrichies.filter((r) => r.sousMin);
 
@@ -281,13 +308,16 @@ export function OperationsStockPage() {
     <div className="page-stack stock-module">
       <PageHeader
         title={titre}
-        subtitle={
-          vue === 'operations'
-            ? 'Bons journalisés — le stock vendable ne bouge qu’au statut Fait (BROUILLON → PRÊT → FAIT). Répartition hub → boutiques depuis une commande groupe (Achats).'
-            : vue === 'emplacements'
-              ? 'Carte des emplacements : stock vendable, quais, pertes et virtuels fournisseur/client.'
-              : 'Règles min/max par magasin. Le lanceur crée des bons Transférer et, si le central est à sec, des commandes Acheter.'
-        }
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            vue === 'operations'
+              ? 'Bons journalisés — le stock vendable ne bouge qu’au statut Fait (BROUILLON → PRÊT → FAIT). Répartition hub → boutiques depuis une commande groupe (Achats).'
+              : vue === 'emplacements'
+                ? 'Carte des emplacements : stock vendable, quais, pertes et virtuels fournisseur/client.'
+                : 'Règles min/max par magasin. Le lanceur crée des bons Transférer et, si le central est à sec, des commandes Acheter.',
+        })}
         actions={
           vue === 'operations' && peutPiloter ? (
             <button type="button" className="btn-primary" onClick={() => setFormOpen(true)}>
@@ -341,6 +371,7 @@ export function OperationsStockPage() {
           </div>
 
           <div className="toolbar stock-toolbar">
+            <FiltreMagasinSiege id="ops-filtre-magasin" />
             <div>
               <label htmlFor="rech-bon">Rechercher</label>
               <div className="table-actions">
@@ -488,6 +519,7 @@ export function OperationsStockPage() {
               </article>
             </div>
             <div className="toolbar">
+              <FiltreMagasinSiege id="empl-filtre-magasin" />
               <div>
                 <label htmlFor="rech-empl">Rechercher</label>
                 <div className="table-actions">
@@ -549,6 +581,9 @@ export function OperationsStockPage() {
 
       {vue === 'reappro' ? (
         <>
+          <div className="toolbar stock-toolbar">
+            <FiltreMagasinSiege id="reappro-filtre-magasin" />
+          </div>
           <div className="kpi-grid dash-kpi-grid">
             <article className="kpi-card dash-kpi">
               <div className="kpi-label">Règles</div>

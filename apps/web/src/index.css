@@ -838,9 +838,34 @@ code {
   box-shadow: var(--shadow);
 }
 
-.dash-exports {
+.dash-exports,
+.rapport-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rapport-actions {
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+}
+
+.rapport-actions-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-right: 4px;
+}
+
+.rapport-actions .btn,
+.rapport-actions .btn-ghost {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -2493,6 +2518,54 @@ a.link-button:hover {
   overflow-x: auto;
 }
 
+.crm-clients-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crm-clients-filtres {
+  margin-bottom: 0;
+}
+
+.crm-clients-search {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.crm-clients-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  min-height: 38px;
+}
+
+.crm-clients-search-wrap input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding-left: 0 !important;
+  min-height: 34px;
+  width: 100%;
+}
+
+.crm-clients-search-wrap svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.crm-clients-reset {
+  min-width: auto !important;
+}
+
+.crm-clients-kpis {
+  margin: 0;
+}
+
 .client-interactions-liste {
   list-style: none;
   margin: 0;
@@ -2648,6 +2721,17 @@ a.link-button:hover {
   align-items: center;
   gap: 6px;
   font-size: 0.92rem;
+}
+
+.client-workspace-hero-sub code {
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 0.85rem;
 }
 
 .client-workspace-chips {
@@ -2878,6 +2962,137 @@ a.link-button:hover {
 .client-workspace-card h3 {
   margin: 0 0 12px;
   font-size: 0.95rem;
+}
+
+.fiche-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fiche-card-head h3 {
+  margin: 0;
+}
+
+.fiche-card-head .btn-ghost {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.fiche-card-empty {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.fiche-card-more {
+  margin: 8px 0 0;
+}
+
+.fiche-perf-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin: 0;
+}
+
+.fiche-perf-dl dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.fiche-perf-dl dd {
+  margin: 2px 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.fiche-perf-dl dd small {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.fiche-perf-dl.is-muted dd {
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+.fiche-repartition {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fiche-repartition li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fiche-repartition-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fiche-repartition-main a {
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.fiche-repartition-main small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.fiche-repartition-main .stock-share {
+  display: block;
+  margin-top: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.fiche-repartition-main .stock-share-bar {
+  display: block;
+  height: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: none;
+  background: color-mix(in srgb, var(--accent) 80%, var(--border));
+}
+
+.fiche-repartition-qty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.fiche-repartition-qty strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-h);
+  line-height: 1.1;
 }
 
 .client-workspace-split {
@@ -3989,9 +4204,51 @@ button.client-kpi-card.kpi-actif {
   gap: 6px;
 }
 
+.pl-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.pl-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1b4f72;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+}
+
+.pl-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.pl-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.pl-table tbody tr:hover {
+  background: #eef4f8;
+}
+
+.pl-table tfoot th {
+  padding: 10px 12px;
+  background: #e8eef3;
+  font-weight: 700;
+  border-top: 2px solid #017e84;
+}
+
 .pl-table th.num,
 .pl-table td.num {
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono, ui-monospace, monospace);
 }
 
 
@@ -5174,6 +5431,102 @@ button.client-kpi-card.kpi-actif {
   margin-bottom: 12px;
 }
 
+.cfg-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cfg-qty-row strong {
+  min-width: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cfg-section-label {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.cfg-poste-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.cfg-poste-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cfg-poste-card.incomplet {
+  border-color: var(--warning, #d97706);
+}
+
+.cfg-poste-card-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 14px 16px 8px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.cfg-poste-card-main header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cfg-poste-card-main .lead {
+  margin: 0;
+}
+
+.cfg-poste-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cfg-poste-stack li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.cfg-poste-stack li.ok {
+  color: var(--text);
+}
+
+.cfg-poste-stack li.manque {
+  color: var(--warning, #d97706);
+}
+
+.cfg-poste-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+
 .cfg-check-inline {
   display: flex;
   align-items: center;
@@ -5293,9 +5646,15 @@ button.client-kpi-card.kpi-actif {
 
 /* ——— Bon de commande (document Odoo / QuickBooks / Dolibarr) ——— */
 
-.modal-panel.modal-panel-doc .modal-header {
-  margin-bottom: 8px;
-  padding: 0 4px;
+.bc-list-recept {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 88px;
+}
+
+.bc-list-recept .inventaire-progress {
+  height: 4px;
 }
 
 .modal-panel form.bc-doc {
@@ -5824,5 +6183,173 @@ button.bc-doc-search-item[type='button']:hover:not(:disabled) {
 
   .bc-prix {
     width: 96px;
+  }
+}
+
+@media print {
+  .odoo-navbar,
+  .rapport-actions,
+  .dash-toolbar,
+  .dash-presets,
+  .filtre-periode,
+  .finance-tabs,
+  .circuit-nav,
+  .page-header-actions-row nav,
+  .info-tip,
+  .tooltip,
+  button {
+    display: none !important;
+  }
+
+  .app-shell,
+  .odoo-shell,
+  .odoo-main,
+  .app-main {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .dash-sante,
+  .kpi-card,
+  .panel,
+  .pl-module,
+  .pl-header,
+  .pl-statement {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .pl-table thead th {
+    position: static;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+/* Profils métier §4 */
+.profils-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profils-avertissement {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+}
+
+.profils-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.profils-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.profils-famille h2 {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.profils-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.profils-item strong {
+  font-size: 0.9rem;
+}
+
+.profils-item span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.profils-item.actif {
+  border-color: #017e84;
+  background: #f0fafb;
+}
+
+.profils-fiche-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.profils-fiche-head h2 {
+  margin: 0;
+}
+
+.profils-dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 0 0 16px;
+}
+
+.profils-dl dt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.profils-dl dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.profils-interdit {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fdedec;
+  color: #7b241c;
+}
+
+.profils-apps {
+  margin: 0 0 12px;
+  padding-left: 1.1rem;
+}
+
+.profils-matrice h2 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.profils-filtre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 800px) {
+  .profils-layout,
+  .profils-dl {
+    grid-template-columns: 1fr;
   }
 }

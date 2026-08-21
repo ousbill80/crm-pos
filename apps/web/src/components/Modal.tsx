@@ -31,24 +31,37 @@ export function Modal({
 
   if (!open) return null;
 
+  const doc = size === 'doc';
+
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className={`modal-panel${size === 'lg' ? ' modal-panel-lg' : ''}${size === 'xl' ? ' modal-panel-xl' : ''}${size === 'doc' ? ' modal-panel-doc' : ''}`}
+        className={`modal-panel${size === 'lg' ? ' modal-panel-lg' : ''}${size === 'xl' ? ' modal-panel-xl' : ''}${doc ? ' modal-panel-doc' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
-          <div className="modal-header-text">
-            <h3>{title}</h3>
-            {description ? <p className="modal-description">{description}</p> : null}
-          </div>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">
+        {doc ? (
+          <button
+            type="button"
+            className="modal-close modal-close-float"
+            onClick={onClose}
+            aria-label="Fermer"
+          >
             ×
           </button>
-        </div>
+        ) : (
+          <div className="modal-header">
+            <div className="modal-header-text">
+              <h3>{title}</h3>
+              {description ? <p className="modal-description">{description}</p> : null}
+            </div>
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Fermer">
+              ×
+            </button>
+          </div>
+        )}
         {children}
       </div>
     </div>,

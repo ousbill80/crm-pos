@@ -41,6 +41,11 @@ import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import { outboxCount } from '../lib/offline/outbox';
 import type { Insight } from '../lib/insights/types';
 import type { ReportingDashboard } from './DashboardPage';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 
 interface AlerteDto {
   type: string;
@@ -163,6 +168,7 @@ function insightPipelineStatut(statut: string, nombre: number, montant: string):
 export function TresoreriePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   useTresorerieRealtime(user !== null);
   const pendingOffline = outboxCount();
 
@@ -183,6 +189,12 @@ export function TresoreriePage() {
 
   const data = dashboard.data;
   const pilot = pilotage.data;
+  const caissesPerimetre = (data?.tresorerie.caisses ?? []).filter(
+    (c) => !magasin.boutiqueId || c.boutiqueId === magasin.boutiqueId,
+  );
+  const soldeMagasinsFiltre = caissesPerimetre
+    .filter((c) => c.type === 'MAGASIN' || c.type === 'TIROIR')
+    .reduce((n, c) => n + Number(c.solde), 0);
   const alertesTreso = (alertes.data ?? []).filter(
     (a) =>
       a.type === 'ECART_CAISSE' ||
@@ -240,7 +252,13 @@ export function TresoreriePage() {
     <div className="treso-module">
       <PageHeader
         title="Trésorerie"
-        subtitle="Cash consolidé & projection indicative — grand livre append-only"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Cash consolidé & projection indicative — grand livre append-only',
+          texteBoutique: 'Cash du magasin — grand livre append-only',
+        })}
         actions={
           <nav className="circuit-nav" aria-label="Circuit trésorerie">
             <Link className="circuit-nav-item" to="/transactions?enCours=1">
@@ -258,6 +276,10 @@ export function TresoreriePage() {
           </nav>
         }
       />
+
+      <div className="toolbar">
+        <FiltreMagasinSiege id="treso-filtre-magasin" />
+      </div>
 
       {data && (
         <section
@@ -323,15 +345,20 @@ export function TresoreriePage() {
                 </span>
                 <InfoTooltip
                   insight={insightTresorerie(
-                    pilot.position.soldeAuxiliaires,
-                    data.tresorerie.caisses.filter((c) => c.type === 'MAGASIN')
-                      .length,
+                    magasin.boutiqueId
+                      ? String(soldeMagasinsFiltre)
+                      : pilot.position.soldeAuxiliaires,
+                    caissesPerimetre.filter((c) => c.type === 'MAGASIN').length,
                   )}
                 />
               </div>
               <div className="kpi-label">Magasins / tiroirs</div>
               <div className="kpi-value money">
-                {formatFcfa(pilot.position.soldeAuxiliaires)}
+                {formatFcfa(
+                  magasin.boutiqueId
+                    ? soldeMagasinsFiltre
+                    : pilot.position.soldeAuxiliaires,
+                )}
               </div>
               <div className="kpi-hint">Cash boutiques · cliquer</div>
             </button>

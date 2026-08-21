@@ -1,10 +1,20 @@
-import { IsEnum, IsOptional } from 'class-validator';
-import { SegmentClient, NiveauFidelite } from '@caisse-crm/shared';
+import { Transform } from 'class-transformer';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import {
+  NiveauFidelite,
+  SegmentClient,
+  TypeClient,
+} from '@caisse-crm/shared';
 
-// Primitive backend pour un ciblage de "campagne ciblée" (§6.6) : filtrer
-// les clients par segment et/ou palier de fidélité. La gestion complète de
-// campagnes (création, planification, envoi) est hors périmètre de cette
-// itération backend — voir le rapport de fin de tâche.
+// Ciblage campagne / exploitation magasin (§6.6) : segment, fidélité, type,
+// consentement marketing, recherche nom/téléphone (`q`).
 export class ListClientsQueryDto {
   @IsOptional()
   @IsEnum(SegmentClient)
@@ -13,4 +23,26 @@ export class ListClientsQueryDto {
   @IsOptional()
   @IsEnum(NiveauFidelite)
   niveauFidelite?: NiveauFidelite;
+
+  @IsOptional()
+  @IsEnum(TypeClient)
+  typeClient?: TypeClient;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === true || value === 'true' || value === '1') return true;
+    if (value === false || value === 'false' || value === '0') return false;
+    return undefined;
+  })
+  @IsBoolean()
+  consentementMarketing?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  q?: string;
 }

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { BookOpen, Landmark, Monitor, Store } from 'lucide-react';
+import { BookOpen, Landmark, Monitor, Printer, Store } from 'lucide-react';
 import { RoleLibelle, StatutSessionCaisse, StatutTransaction, TypeCaisse } from '@caisse-crm/shared';
-import { apiFetch } from '../lib/api';
+import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
@@ -178,6 +178,7 @@ export function CaisseDetailPage() {
                   <th>Statut</th>
                   <th>Fond initial</th>
                   <th>Clôture</th>
+                  <th>Impression</th>
                 </tr>
               </thead>
               <tbody>
@@ -200,6 +201,21 @@ export function CaisseDetailPage() {
                       {s.clotureDateHeure
                         ? new Date(s.clotureDateHeure).toLocaleString('fr-FR')
                         : '—'}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() =>
+                          void apiDownload(
+                            `/ventes/sessions/${s.id}/cloture/pdf`,
+                            `${s.statut === StatutSessionCaisse.FERMEE ? 'etat-z' : 'etat-x'}-${s.id}.pdf`,
+                          )
+                        }
+                      >
+                        <Printer size={14} />
+                        {s.statut === StatutSessionCaisse.FERMEE ? 'État Z' : 'État X'}
+                      </button>
                     </td>
                   </tr>
                 ))}

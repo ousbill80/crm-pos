@@ -1,4 +1,9 @@
-import { useMemo, useState } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -8,7 +13,11 @@ import {
   ArrowUpRight,
   Banknote,
   Building2,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  ChevronDown,
   Download,
+  FileText,
   Package,
   Scale,
   ShoppingCart,
@@ -31,9 +40,15 @@ import {
   YAxis,
 } from 'recharts';
 import { apiDownload, apiFetch } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import {
   buildPrioritesDashboard,
   insightChiffreAffaires,
@@ -44,6 +59,85 @@ import {
   insightVersementsEnRetard,
   synthetiserSante,
 } from '../lib/insights/dashboard';
+
+type DashSectionId =
+  | 'ca-evolution'
+  | 'ca-boutiques'
+  | 'modes'
+  | 'rentabilite'
+  | 'pipeline'
+  | 'soldes'
+  | 'segments';
+
+const DASH_SECTIONS: DashSectionId[] = [
+  'ca-evolution',
+  'ca-boutiques',
+  'modes',
+  'rentabilite',
+  'pipeline',
+  'soldes',
+  'segments',
+];
+
+const DASH_OPEN_DEFAULT: Record<DashSectionId, boolean> = {
+  'ca-evolution': true,
+  'ca-boutiques': true,
+  modes: true,
+  rentabilite: true,
+  pipeline: true,
+  soldes: true,
+  segments: true,
+};
+
+function DashSection({
+  id,
+  title,
+  meta,
+  open,
+  onToggle,
+  summary,
+  children,
+  className,
+}: {
+  id: DashSectionId;
+  title: string;
+  meta?: ReactNode;
+  open: boolean;
+  onToggle: (id: DashSectionId) => void;
+  summary?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`panel dash-section ${open ? 'is-open' : 'is-collapsed'}${className ? ` ${className}` : ''}`}
+    >
+      <button
+        type="button"
+        className="dash-section-toggle"
+        aria-expanded={open}
+        aria-controls={`dash-section-${id}`}
+        onClick={() => onToggle(id)}
+      >
+        <span className="dash-section-title-wrap">
+          <h2>{title}</h2>
+          {meta ? <span className="dash-panel-meta">{meta}</span> : null}
+        </span>
+        <span className="dash-section-chevron" aria-hidden>
+          <ChevronDown size={18} />
+        </span>
+      </button>
+      {!open && summary ? (
+        <div className="dash-section-summary">{summary}</div>
+      ) : null}
+      {open ? (
+        <div id={`dash-section-${id}`} className="dash-section-body">
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 // Dashboard Reporting §6.3.4 — source unique : GET /reporting/dashboard.
 export interface ReportingDashboard {
@@ -208,13 +302,52 @@ function tooltipStyle() {
   };
 }
 
+function dashboardPourMagasin(
+  data: ReportingDashboard,
+  boutiqueId: string,
+): ReportingDashboard {
+  const parBoutique = data.chiffreAffaires.parBoutique.filter(
+    (b) => b.boutiqueId === boutiqueId,
+  );
+  const total = parBoutique.reduce((n, b) => n + Number(b.montant), 0);
+  const caisses = data.tresorerie.caisses.filter((c) => c.boutiqueId === boutiqueId);
+  const auxiliaires = caisses.reduce((n, c) => n + Number(c.solde), 0);
+  const rentabilite = data.rentabiliteParBoutique.filter(
+    (r) => r.boutiqueId === boutiqueId,
+  );
+  return {
+    ...data,
+    chiffreAffaires: {
+      ...data.chiffreAffaires,
+      total: String(total),
+      parBoutique,
+    },
+    tresorerie: {
+      ...data.tresorerie,
+      totalSoldesAuxiliaires: String(auxiliaires),
+      caisses,
+    },
+    rentabiliteParBoutique: rentabilite,
+  };
+}
+
 export function DashboardPage() {
+  const { user } = useAuth();
+  const magasin = useFiltreMagasinSiege();
   const initial = rangeForPreset('30j');
   const [preset, setPreset] = useState<PeriodePreset>('30j');
   const [dateFrom, setDateFrom] = useState(initial.from);
   const [dateTo, setDateTo] = useState(initial.to);
-  const { data, isLoading, isError, error, isFetching } = useReportingDashboard(dateFrom, dateTo);
+  const { data: brut, isLoading, isError, error, isFetching } =
+    useReportingDashboard(dateFrom, dateTo);
   const { data: serieQuotidienne } = useVentesQuotidiennes();
+  const data = useMemo(
+    () =>
+      brut && magasin.boutiqueId
+        ? dashboardPourMagasin(brut, magasin.boutiqueId)
+        : brut,
+    [brut, magasin.boutiqueId],
+  );
 
   const priorites = useMemo(
     () =>
@@ -281,13 +414,17 @@ export function DashboardPage() {
     <div className="dash">
       <PageHeader
         title="Tableau de bord"
-        subtitle={
-          data
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau: data
             ? `Périmètre ${data.perimetre} · actualisé ${new Date(data.genereAt).toLocaleString('fr-FR')}`
-            : 'Pilotage CA, trésorerie, rentabilité et CRM'
-        }
+            : 'Pilotage CA, trésorerie, rentabilité et CRM',
+          texteBoutique: 'Pilotage du magasin — CA, trésorerie et rentabilité',
+        })}
         actions={
           <div className="dash-toolbar">
+            <FiltreMagasinSiege id="dash-filtre-magasin" />
             <div className="dash-presets" role="group" aria-label="Période">
               {(
                 [
@@ -337,7 +474,8 @@ export function DashboardPage() {
                 />
               </div>
             )}
-            <div className="dash-exports">
+            <div className="rapport-actions" aria-label="Exports du tableau de bord">
+              <span className="rapport-actions-label">Rapport</span>
               <button
                 type="button"
                 className="btn-ghost"
@@ -345,7 +483,7 @@ export function DashboardPage() {
                   void apiDownload(`/reporting/dashboard/export.csv${query}`, 'tableau-de-bord.csv')
                 }
               >
-                <Download size={14} /> CA boutique
+                <Download size={14} /> CSV boutique
               </button>
               <button
                 type="button"
@@ -353,6 +491,15 @@ export function DashboardPage() {
                 onClick={() => void apiDownload(`/reporting/ventes/export.csv${query}`, 'ventes.csv')}
               >
                 <Download size={14} /> Détail ventes
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() =>
+                  void apiDownload(`/reporting/dashboard/export.pdf${query}`, 'tableau-de-bord.pdf')
+                }
+              >
+                <FileText size={14} /> PDF
               </button>
             </div>
           </div>
@@ -639,15 +786,15 @@ export function DashboardPage() {
               <p className="lead">Aucune boutique dans le périmètre.</p>
             ) : (
               <div className="table-wrap">
-                <table>
+                <table className="pl-table">
                   <thead>
                     <tr>
                       <th>Boutique</th>
-                      <th>CA net</th>
-                      <th>Coût des ventes</th>
-                      <th>Marge brute</th>
-                      <th>Taux</th>
-                      <th>Stock valorisé</th>
+                      <th className="num">CA net</th>
+                      <th className="num">Coût des ventes</th>
+                      <th className="num">Marge brute</th>
+                      <th className="num">Taux</th>
+                      <th className="num">Stock valorisé</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -662,10 +809,10 @@ export function DashboardPage() {
                               <strong>{r.nomBoutique}</strong>{' '}
                               <InfoTooltip insight={insightMargeBrute(r.margeBrute, r.tauxMarge)} />
                             </td>
-                            <td className="money">{formatFcfa(r.chiffreAffairesNet)}</td>
-                            <td className="money">{formatFcfa(r.coutDesVentes)}</td>
-                            <td className="money">{formatFcfa(r.margeBrute)}</td>
-                            <td>
+                            <td className="num">{formatFcfa(r.chiffreAffairesNet)}</td>
+                            <td className="num">{formatFcfa(r.coutDesVentes)}</td>
+                            <td className="num">{formatFcfa(r.margeBrute)}</td>
+                            <td className="num">
                               <span
                                 className={
                                   margeNegative
@@ -684,11 +831,37 @@ export function DashboardPage() {
                                 <span className="badge badge-warning">Faible</span>
                               )}
                             </td>
-                            <td className="money">{formatFcfa(r.valeurStock)}</td>
+                            <td className="num">{formatFcfa(r.valeurStock)}</td>
                           </tr>
                         );
                       })}
                   </tbody>
+                  {margeReseau && (
+                    <tfoot>
+                      <tr>
+                        <th>Total périmètre</th>
+                        <th className="num">{formatFcfa(data.chiffreAffaires.total)}</th>
+                        <th className="num">
+                          {formatFcfa(
+                            data.rentabiliteParBoutique.reduce(
+                              (s, r) => s + Number(r.coutDesVentes),
+                              0,
+                            ),
+                          )}
+                        </th>
+                        <th className="num">{formatFcfa(margeReseau.marge)}</th>
+                        <th className="num">{margeReseau.taux} %</th>
+                        <th className="num">
+                          {formatFcfa(
+                            data.rentabiliteParBoutique.reduce(
+                              (s, r) => s + Number(r.valeurStock),
+                              0,
+                            ),
+                          )}
+                        </th>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             )}

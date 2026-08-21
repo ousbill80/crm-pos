@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowDownRight,
   Download,
+  FileText,
   Landmark,
   Package,
   Scale,
@@ -33,6 +34,11 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import {
   insightAlertesDaf,
   insightCashBoutiquesVsCentrale,
@@ -485,14 +491,46 @@ function CompteResultatPanel({
   );
 }
 
+function dafPourMagasin(data: ReportingDaf, boutiqueId: string): ReportingDaf {
+  const resultatBoutique = data.resultat.parBoutique.filter(
+    (b) => b.boutiqueId === boutiqueId,
+  );
+  const stocksBoutique = data.stocks.parBoutique.filter(
+    (b) => b.boutiqueId === boutiqueId,
+  );
+  const r = resultatBoutique[0];
+  const s = stocksBoutique[0];
+  return {
+    ...data,
+    resultat: {
+      ...data.resultat,
+      caNet: r?.chiffreAffairesNet ?? '0',
+      cmv: r?.coutDesVentes ?? '0',
+      margeBrute: r?.margeBrute ?? '0',
+      tauxMarge: r?.tauxMarge ?? '0',
+      parBoutique: resultatBoutique,
+    },
+    stocks: {
+      ...data.stocks,
+      valeurTotale: s?.valeur ?? data.stocks.valeurTotale,
+      ruptures: s?.ruptures ?? 0,
+      sousSeuil: s?.sousSeuil ?? 0,
+      parBoutique: stocksBoutique,
+    },
+  };
+}
+
 export function FinancePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
   const onglet = (searchParams.get('tab') as Onglet | null) ?? 'vue';
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [boutiqueStockId, setBoutiqueStockId] = useState<string | null>(null);
+  const [boutiqueStockId, setBoutiqueStockId] = useState<string | null>(
+    () => magasin.boutiqueId || null,
+  );
 
   const peutLire =
     user !== null && ROLES_FINANCE.includes(user.role as RoleLibelle);
@@ -504,7 +542,17 @@ export function FinancePage() {
     enabled: peutLire,
   });
 
-  const data = daf.data;
+  const data = useMemo(
+    () =>
+      daf.data && magasin.boutiqueId
+        ? dafPourMagasin(daf.data, magasin.boutiqueId)
+        : daf.data,
+    [daf.data, magasin.boutiqueId],
+  );
+
+  useEffect(() => {
+    if (magasin.boutiqueId) setBoutiqueStockId(magasin.boutiqueId);
+  }, [magasin.boutiqueId]);
 
   const syntheseStock = useQuery({
     queryKey: ['stocks', 'synthese', 'finance'],
@@ -551,7 +599,10 @@ export function FinancePage() {
   }
 
   function setOnglet(tab: Onglet) {
-    setSearchParams(tab === 'vue' ? {} : { tab });
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'vue') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next);
   }
 
   const tabs: Array<{ id: Onglet; label: string }> = [
@@ -565,9 +616,15 @@ export function FinancePage() {
     <div className="finance-module">
       <PageHeader
         title="Finance"
-        subtitle="Pôle central DAF — résultat ventes, stocks, analyse et trésorerie réseau"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Pôle central DAF — résultat ventes, stocks, analyse et trésorerie réseau',
+        })}
         actions={
           <div className="page-header-actions-row">
+            <FiltreMagasinSiege id="finance-filtre-magasin" />
             <nav className="circuit-nav" aria-label="Liens Finance">
               <Link className="circuit-nav-item" to="/achats/factures">
                 <Truck size={14} /> Factures
@@ -582,18 +639,33 @@ export function FinancePage() {
                 <Landmark size={14} /> Circuit caisse
               </Link>
             </nav>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() =>
-                void apiDownload(
-                  `/reporting/daf/export.csv${query}`,
-                  'finance-daf.csv',
-                )
-              }
-            >
-              <Download size={14} /> Export CSV
-            </button>
+            <div className="rapport-actions" aria-label="Exports du rapport Finance">
+              <span className="rapport-actions-label">Rapport</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  void apiDownload(
+                    `/reporting/daf/export.csv${query}`,
+                    'finance-daf.csv',
+                  )
+                }
+              >
+                <Download size={14} /> CSV
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() =>
+                  void apiDownload(
+                    `/reporting/daf/export.pdf${query}`,
+                    'finance-daf.pdf',
+                  )
+                }
+              >
+                <FileText size={14} /> PDF
+              </button>
+            </div>
           </div>
         }
       />
@@ -839,11 +911,15 @@ export function FinancePage() {
                           boutiqueStockId === b.boutiqueId ? 'row-selected' : undefined
                         }
                         style={{ cursor: 'pointer' }}
-                        onClick={() => setBoutiqueStockId(b.boutiqueId)}
+                        onClick={() => {
+                          setBoutiqueStockId(b.boutiqueId);
+                          magasin.setBoutiqueId(b.boutiqueId);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
                             setBoutiqueStockId(b.boutiqueId);
+                            magasin.setBoutiqueId(b.boutiqueId);
                           }
                         }}
                         tabIndex={0}

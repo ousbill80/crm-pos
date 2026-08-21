@@ -1,31 +1,33 @@
-import { useState, type FormEvent } from 'react';
+import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search, UserPlus, X } from 'lucide-react';
 import {
-  CanalInteraction,
   NiveauFidelite,
   RoleLibelle,
   SegmentClient,
   TypeClient,
 } from '@caisse-crm/shared';
-import { apiDownload, apiFetch } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
+import {
+  insightAdresseClient,
   insightConsentementMarketing,
   insightContactClient,
   insightDateNaissanceClient,
   insightFicheReseau,
   insightTypeClient,
 } from '../lib/insights/crm';
-import type {
-  CampagneCrmDto,
-  ClientDto,
-  ContactCampagneDto,
-} from '../lib/types';
+import type { ClientDto } from '../lib/types';
 
 // Miroir de crm-roles.constants.ts (apps/api/src/crm) : ce module n'expose
 // pas ces constantes via @caisse-crm/shared (limite du workspace), la liste
@@ -37,37 +39,49 @@ const ROLES_CREATION_CLIENT: RoleLibelle[] = [
   RoleLibelle.CAISSIER_BOUTIQUE,
 ];
 
-// CRM_ROLES_ADMIN (crm-roles.constants.ts) : seul le Responsable CRM pilote
-// les campagnes (propriétaire fonctionnel du module, §4).
-const ROLES_ADMIN_CRM: RoleLibelle[] = [RoleLibelle.RESPONSABLE_CRM];
+function labelSegment(s: string) {
+  if (s === SegmentClient.VIP) return 'VIP';
+  if (s === SegmentClient.REGULIER) return 'Régulier';
+  if (s === SegmentClient.NOUVEAU) return 'Nouveau';
+  return s;
+}
 
-function useClients(segment: string, niveauFidelite: string) {
+function labelFidelite(n: string) {
+  if (n === NiveauFidelite.OR) return 'Or';
+  if (n === NiveauFidelite.ARGENT) return 'Argent';
+  if (n === NiveauFidelite.BRONZE) return 'Bronze';
+  return n;
+}
+
+type ClientsFiltres = {
+  q: string;
+  segment: string;
+  niveauFidelite: string;
+  typeClient: string;
+  consentement: '' | 'oui' | 'non';
+};
+
+function useClients(filtres: ClientsFiltres) {
+  const q = filtres.q.trim();
   const params = new URLSearchParams();
-  if (segment) params.set('segment', segment);
-  if (niveauFidelite) params.set('niveauFidelite', niveauFidelite);
+  if (filtres.segment) params.set('segment', filtres.segment);
+  if (filtres.niveauFidelite) params.set('niveauFidelite', filtres.niveauFidelite);
+  if (filtres.typeClient) params.set('typeClient', filtres.typeClient);
+  if (filtres.consentement === 'oui') params.set('consentementMarketing', 'true');
+  if (filtres.consentement === 'non') params.set('consentementMarketing', 'false');
+  if (q.length >= 2) params.set('q', q);
   const qs = params.toString();
 
   return useQuery({
-    queryKey: ['crm-clients', segment, niveauFidelite],
+    queryKey: [
+      'crm-clients',
+      filtres.segment,
+      filtres.niveauFidelite,
+      filtres.typeClient,
+      filtres.consentement,
+      q.length >= 2 ? q : '',
+    ],
     queryFn: () => apiFetch<ClientDto[]>(`/crm/clients${qs ? `?${qs}` : ''}`),
-  });
-}
-
-
-
-function useCampagnes() {
-  return useQuery({
-    queryKey: ['crm-campagnes'],
-    queryFn: () => apiFetch<CampagneCrmDto[]>('/crm/campagnes'),
-  });
-}
-
-function useContactsCampagne(campagneId: string | null) {
-  return useQuery({
-    queryKey: ['crm-campagnes', campagneId, 'contacts'],
-    queryFn: () =>
-      apiFetch<ContactCampagneDto[]>(`/crm/campagnes/${campagneId}/contacts`),
-    enabled: campagneId !== null,
   });
 }
 
@@ -83,6 +97,7 @@ function NouveauClientForm({
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [contact, setContact] = useState('');
+  const [adresse, setAdresse] = useState('');
   const [dateNaissance, setDateNaissance] = useState('');
   const [consentementMarketing, setConsentementMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +124,7 @@ function NouveauClientForm({
           nom: nomTrim,
           prenom: prenomTrim || undefined,
           contact: contactTrim || undefined,
+          adresse: adresse.trim() || undefined,
           dateNaissance: estMorale ? undefined : dateNaissance || undefined,
           consentementMarketing,
         }),
@@ -118,6 +134,7 @@ function NouveauClientForm({
       setNom('');
       setPrenom('');
       setContact('');
+      setAdresse('');
       setDateNaissance('');
       setConsentementMarketing(false);
       setError(null);
@@ -297,6 +314,22 @@ function NouveauClientForm({
               </div>
             )}
           </div>
+          <div className="form-field">
+            <label htmlFor="client-adresse">
+              Adresse
+              <InfoTooltip insight={insightAdresseClient(adresse)} />
+            </label>
+            <input
+              id="client-adresse"
+              name="adresse"
+              type="text"
+              autoComplete="street-address"
+              placeholder="ex. Cocody, Abidjan"
+              value={adresse}
+              onChange={(e) => setAdresse(e.target.value)}
+            />
+            <p className="field-hint">Optionnel — livraisons et suivi commercial.</p>
+          </div>
         </fieldset>
 
         <fieldset className="client-form-section">
@@ -356,6 +389,10 @@ function NouveauClientForm({
 
 function ClientRow({ client }: { client: ClientDto }) {
   const navigate = useNavigate();
+  const libelle =
+    client.typeClient === TypeClient.MORALE
+      ? client.nom
+      : `${client.prenom ?? ''} ${client.nom}`.trim();
   return (
     <tr
       className="client-row"
@@ -368,247 +405,112 @@ function ClientRow({ client }: { client: ClientDto }) {
       }}
       tabIndex={0}
       role="link"
-      aria-label={`Ouvrir la fiche de ${client.nom}`}
+      aria-label={`Ouvrir la fiche de ${libelle}`}
     >
       <td>
-        <span className={`badge-type badge-type-${client.typeClient.toLowerCase()}`}>
+        <span
+          className={`badge-type badge-type-${client.typeClient.toLowerCase()}`}
+        >
           {client.typeClient === TypeClient.MORALE ? 'Morale' : 'Physique'}
         </span>
       </td>
-      <td>{client.nom}</td>
-      <td>{client.prenom ?? '—'}</td>
+      <td>
+        <strong>{client.nom}</strong>
+        {client.prenom ? (
+          <div className="lead" style={{ margin: 0 }}>
+            {client.prenom}
+          </div>
+        ) : null}
+      </td>
       <td>{client.contact ?? '—'}</td>
-      <td>{client.segment}</td>
+      <td>
+        <span className="badge badge-neutral">{labelSegment(client.segment)}</span>
+      </td>
       <td>
         {client.fidelite
-          ? `${client.fidelite.niveau} (${client.fidelite.pointsCumules} pts)`
+          ? `${labelFidelite(client.fidelite.niveau)} · ${client.fidelite.pointsCumules} pts`
           : '—'}
+      </td>
+      <td>
+        {client.consentementMarketing ? (
+          <span className="badge badge-ok">Oui</span>
+        ) : (
+          <span className="badge badge-neutral">Non</span>
+        )}
       </td>
     </tr>
   );
 }
 
-function NouvelleCampagneForm({ onSuccess }: { onSuccess?: () => void }) {
-  const queryClient = useQueryClient();
-  const [nom, setNom] = useState('');
-  const [message, setMessage] = useState('');
-  const [segment, setSegment] = useState('');
-  const [niveauFidelite, setNiveauFidelite] = useState('');
-  const [canal, setCanal] = useState<CanalInteraction>(CanalInteraction.SMS);
-  const [error, setError] = useState<string | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch<CampagneCrmDto>('/crm/campagnes', {
-        method: 'POST',
-        body: JSON.stringify({
-          nom,
-          message,
-          canal,
-          ...(segment ? { segment } : {}),
-          ...(niveauFidelite ? { niveauFidelite } : {}),
-        }),
-      }),
-    onSuccess: () => {
-      setNom('');
-      setMessage('');
-      setSegment('');
-      setNiveauFidelite('');
-      setError(null);
-      void queryClient.invalidateQueries({ queryKey: ['crm-campagnes'] });
-      onSuccess?.();
-    },
-    onError: () => setError('Échec de la création de la campagne.'),
-  });
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    mutation.mutate();
-  }
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <label htmlFor="campagne-nom">Nom</label>
-      <input id="campagne-nom" value={nom} onChange={(e) => setNom(e.target.value)} required />
-      <label htmlFor="campagne-message">Message</label>
-      <textarea
-        id="campagne-message"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        required
-      />
-      <label htmlFor="campagne-segment">Segment ciblé</label>
-      <select
-        id="campagne-segment"
-        value={segment}
-        onChange={(e) => setSegment(e.target.value)}
-      >
-        <option value="">Tous segments</option>
-        {Object.values(SegmentClient).map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-      <label htmlFor="campagne-niveau">Palier de fidélité ciblé</label>
-      <select
-        id="campagne-niveau"
-        value={niveauFidelite}
-        onChange={(e) => setNiveauFidelite(e.target.value)}
-      >
-        <option value="">Tous paliers</option>
-        {Object.values(NiveauFidelite).map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
-      <label htmlFor="campagne-canal">Canal</label>
-      <select
-        id="campagne-canal"
-        value={canal}
-        onChange={(e) => setCanal(e.target.value as CanalInteraction)}
-      >
-        {Object.values(CanalInteraction).map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
-      <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-        Créer la campagne
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </form>
-  );
-}
-
-function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
-  const [ouvert, setOuvert] = useState(false);
-  const { data: contacts, isLoading } = useContactsCampagne(ouvert ? campagne.id : null);
-  const [exportError, setExportError] = useState<string | null>(null);
-
-  async function exporter() {
-    try {
-      setExportError(null);
-      await apiDownload(
-        `/crm/campagnes/${campagne.id}/contacts/export.csv`,
-        `campagne-${campagne.nom.replace(/\s+/g, '-')}-contacts.csv`,
-      );
-    } catch {
-      setExportError('Échec de l’export CSV.');
-    }
-  }
-
-  return (
-    <li className="campagne-item">
-      <div>
-        <strong>{campagne.nom}</strong> — {campagne.canal}
-        {campagne.segment && <> · segment {campagne.segment}</>}
-        {campagne.niveauFidelite && <> · palier {campagne.niveauFidelite}</>}
-      </div>
-      <p>{campagne.message}</p>
-      <div className="table-actions">
-        <button type="button" onClick={() => setOuvert((v) => !v)}>
-          {ouvert ? 'Masquer les contacts' : 'Voir les contacts ciblés'}
-        </button>
-        <button type="button" onClick={() => void exporter()}>
-          Exporter CSV
-        </button>
-      </div>
-      {exportError && <p role="alert">{exportError}</p>}
-      {ouvert &&
-        (isLoading ? (
-          <LoadingState label="Chargement des contacts..." />
-        ) : (
-          <ul>
-            {(contacts ?? []).map((c) => (
-              <li key={c.clientId}>
-                {c.nom} {c.prenom} — {c.contact ?? 'sans contact'} ({c.pointsCumules} pts)
-              </li>
-            ))}
-            {(contacts ?? []).length === 0 && <li>Aucun contact ciblé.</li>}
-          </ul>
-        ))}
-    </li>
-  );
-}
-
-function CampagnesSection({ peutGerer }: { peutGerer: boolean }) {
-  const { data: campagnes, isLoading, isError } = useCampagnes();
-  const [modalCampagne, setModalCampagne] = useState(false);
-
-  return (
-    <>
-      <ListPanel
-        title="Campagnes CRM"
-        toolbar={
-          peutGerer ? (
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setModalCampagne(true)}
-            >
-              Nouvelle campagne
-            </button>
-          ) : undefined
-        }
-      >
-        {isLoading && <LoadingState label="Chargement des campagnes..." />}
-        {isError && <p role="alert">Erreur lors du chargement des campagnes.</p>}
-        {campagnes && campagnes.length === 0 && (
-          <EmptyState
-            title="Aucune campagne"
-            description="Aucune campagne créée pour le moment."
-            action={
-              peutGerer ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => setModalCampagne(true)}
-                >
-                  Nouvelle campagne
-                </button>
-              ) : undefined
-            }
-          />
-        )}
-        {campagnes && campagnes.length > 0 && (
-          <ul className="campagnes-liste">
-            {campagnes.map((c) => (
-              <CampagneItem key={c.id} campagne={c} />
-            ))}
-          </ul>
-        )}
-      </ListPanel>
-
-      {peutGerer && (
-        <Modal
-          open={modalCampagne}
-          onClose={() => setModalCampagne(false)}
-          title="Nouvelle campagne"
-        >
-          <NouvelleCampagneForm onSuccess={() => setModalCampagne(false)} />
-        </Modal>
-      )}
-    </>
-  );
-}
-
 export function CrmClientsPage() {
   const { user } = useAuth();
+  const magasin = useFiltreMagasinSiege();
+  const [qInput, setQInput] = useState('');
+  const qDeferred = useDeferredValue(qInput.trim());
   const [segment, setSegment] = useState('');
   const [niveauFidelite, setNiveauFidelite] = useState('');
+  const [typeClient, setTypeClient] = useState('');
+  const [consentement, setConsentement] = useState<'' | 'oui' | 'non'>('');
   const [modalNouveau, setModalNouveau] = useState(false);
-  const { data: clients, isLoading, isError } = useClients(segment, niveauFidelite);
+
+  const filtres: ClientsFiltres = {
+    q: qDeferred,
+    segment,
+    niveauFidelite,
+    typeClient,
+    consentement,
+  };
+
+  const { data: clientsBruts, isLoading, isError, isFetching } =
+    useClients(filtres);
+
+  const clients = useMemo(() => {
+    if (!clientsBruts) return clientsBruts;
+    if (!magasin.boutiqueId) return clientsBruts;
+    return clientsBruts.filter((c) => c.boutiqueOrigineId === magasin.boutiqueId);
+  }, [clientsBruts, magasin.boutiqueId]);
+
   const peutCreer = user !== null && ROLES_CREATION_CLIENT.includes(user.role);
-  const peutAdmin = user !== null && ROLES_ADMIN_CRM.includes(user.role);
+
+  const filtresActifs =
+    Boolean(segment) ||
+    Boolean(niveauFidelite) ||
+    Boolean(typeClient) ||
+    Boolean(consentement) ||
+    qInput.trim().length >= 2 ||
+    Boolean(magasin.boutiqueId);
+
+  const kpis = useMemo(() => {
+    const list = clients ?? [];
+    return {
+      total: list.length,
+      vip: list.filter((c) => c.segment === SegmentClient.VIP).length,
+      marketing: list.filter((c) => c.consentementMarketing).length,
+      morales: list.filter((c) => c.typeClient === TypeClient.MORALE).length,
+    };
+  }, [clients]);
+
+  function resetFiltres() {
+    setQInput('');
+    setSegment('');
+    setNiveauFidelite('');
+    setTypeClient('');
+    setConsentement('');
+    magasin.setBoutiqueId('');
+  }
 
   return (
-    <div>
+    <div className="crm-clients-page">
       <PageHeader
         title="Clients"
-        subtitle="Fichier CRM consolidé — cliquez une ligne pour ouvrir la fiche"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Fichier CRM consolidé réseau — filtrez, puis ouvrez une fiche',
+          texteBoutique:
+            'Clients de la boutique — recherche téléphone sur tout le réseau',
+        })}
         actions={
           peutCreer ? (
             <button
@@ -616,57 +518,131 @@ export function CrmClientsPage() {
               className="btn-primary"
               onClick={() => setModalNouveau(true)}
             >
-              Nouveau client
+              <UserPlus size={16} /> Nouveau client
             </button>
           ) : undefined
         }
       />
 
-      {isLoading && <LoadingState label="Chargement des clients..." />}
+      <div className="toolbar crm-clients-filtres" role="search">
+        <div className="crm-clients-search">
+          <label htmlFor="crm-filtre-q">Recherche</label>
+          <div className="crm-clients-search-wrap">
+            <Search size={16} aria-hidden />
+            <input
+              id="crm-filtre-q"
+              type="search"
+              placeholder="Nom, prénom ou téléphone (2 car. min.)"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        <FiltreMagasinSiege id="crm-filtre-magasin" />
+        <div>
+          <label htmlFor="filtre-type">Type</label>
+          <select
+            id="filtre-type"
+            value={typeClient}
+            onChange={(e) => setTypeClient(e.target.value)}
+          >
+            <option value="">Tous</option>
+            <option value={TypeClient.PHYSIQUE}>Personne physique</option>
+            <option value={TypeClient.MORALE}>Personne morale</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-segment">Segment</label>
+          <select
+            id="filtre-segment"
+            value={segment}
+            onChange={(e) => setSegment(e.target.value)}
+          >
+            <option value="">Tous</option>
+            {Object.values(SegmentClient).map((s) => (
+              <option key={s} value={s}>
+                {labelSegment(s)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-fidelite">Fidélité</label>
+          <select
+            id="filtre-fidelite"
+            value={niveauFidelite}
+            onChange={(e) => setNiveauFidelite(e.target.value)}
+          >
+            <option value="">Tous</option>
+            {Object.values(NiveauFidelite).map((n) => (
+              <option key={n} value={n}>
+                {labelFidelite(n)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-consentement">Marketing</label>
+          <select
+            id="filtre-consentement"
+            value={consentement}
+            onChange={(e) =>
+              setConsentement(e.target.value as '' | 'oui' | 'non')
+            }
+          >
+            <option value="">Tous</option>
+            <option value="oui">Consentement oui</option>
+            <option value="non">Consentement non</option>
+          </select>
+        </div>
+        {filtresActifs && (
+          <div className="crm-clients-reset">
+            <label>&nbsp;</label>
+            <button type="button" className="btn-ghost" onClick={resetFiltres}>
+              <X size={14} /> Réinitialiser
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!isLoading && clients && (
+        <div className="client-kpi-grid crm-clients-kpis">
+          <article className="client-kpi-card">
+            <div className="client-kpi-label">Résultats</div>
+            <div className="client-kpi-value">
+              {kpis.total}
+              {isFetching ? '…' : ''}
+            </div>
+          </article>
+          <article className="client-kpi-card">
+            <div className="client-kpi-label">VIP</div>
+            <div className="client-kpi-value">{kpis.vip}</div>
+          </article>
+          <article className="client-kpi-card">
+            <div className="client-kpi-label">Consentement marketing</div>
+            <div className="client-kpi-value">{kpis.marketing}</div>
+          </article>
+          <article className="client-kpi-card">
+            <div className="client-kpi-label">Personnes morales</div>
+            <div className="client-kpi-value">{kpis.morales}</div>
+          </article>
+        </div>
+      )}
+
+      {isLoading && <LoadingState label="Chargement des clients…" />}
       {isError && <p role="alert">Erreur lors du chargement des clients.</p>}
 
       {clients && (
-        <ListPanel
-          title="Clients"
-          toolbar={
-            <div className="toolbar">
-              <div>
-                <label htmlFor="filtre-segment">Segment</label>
-                <select
-                  id="filtre-segment"
-                  value={segment}
-                  onChange={(e) => setSegment(e.target.value)}
-                >
-                  <option value="">Tous</option>
-                  {Object.values(SegmentClient).map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="filtre-fidelite">Fidélité</label>
-                <select
-                  id="filtre-fidelite"
-                  value={niveauFidelite}
-                  onChange={(e) => setNiveauFidelite(e.target.value)}
-                >
-                  <option value="">Tous</option>
-                  {Object.values(NiveauFidelite).map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          }
-        >
+        <ListPanel title={`Clients (${clients.length})`}>
           {clients.length === 0 ? (
             <EmptyState
               title="Aucun client"
-              description="Aucun client pour ces filtres."
+              description={
+                filtresActifs
+                  ? 'Aucun résultat pour ces filtres — élargissez la recherche.'
+                  : 'Aucun client enregistré pour ce périmètre.'
+              }
               action={
                 peutCreer ? (
                   <button
@@ -680,28 +656,28 @@ export function CrmClientsPage() {
               }
             />
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Nom / Raison sociale</th>
-                  <th>Prénom / Interlocuteur</th>
-                  <th>Contact</th>
-                  <th>Segment</th>
-                  <th>Fidélité</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((c) => (
-                  <ClientRow key={c.id} client={c} />
-                ))}
-              </tbody>
-            </table>
+            <div className="clients-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Identité</th>
+                    <th>Contact</th>
+                    <th>Segment</th>
+                    <th>Fidélité</th>
+                    <th>Marketing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map((c) => (
+                    <ClientRow key={c.id} client={c} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </ListPanel>
       )}
-
-      <CampagnesSection peutGerer={peutAdmin} />
 
       {peutCreer && (
         <Modal

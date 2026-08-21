@@ -24,14 +24,14 @@ export function insightCompletenessSetup(score: number, alertCount: number): Ins
     return {
       title: 'Complétude setup',
       interpretation: `${score} % des critères de mise en service sont satisfaits · ${alertCount} alerte(s).`,
-      recommendation: 'Suivre la checklist : chaque magasin actif doit avoir un entrepôt PRINCIPAL et une caisse magasin.',
+      recommendation: 'Créer les magasins : entrepôt, caisse magasin et tiroir POS sont générés ensemble.',
       severity: 'warning',
     };
   }
   return {
     title: 'Complétude setup',
     interpretation: `${score} % seulement — la structure n’est pas encore opérationnelle (${alertCount} alerte(s)).`,
-    recommendation: 'Commencer par zones → magasins → entrepôts PRINCIPAL → caisses auxiliaires.',
+      recommendation: 'Créer une zone, puis un magasin — le poste (entrepôt + caisse + tiroir) se crée tout seul.',
     severity: 'critical',
   };
 }
@@ -122,21 +122,25 @@ export function insightCaissesCount(aux: number, centrale: number): Insight {
 export function insightSanteMagasin(
   hasAuxiliaire: boolean,
   hasPrincipal: boolean,
+  hasTiroir = true,
 ): Insight {
-  if (hasAuxiliaire && hasPrincipal) {
+  if (hasAuxiliaire && hasPrincipal && hasTiroir) {
     return {
       title: 'Santé magasin',
-      interpretation: 'Caisse auxiliaire et entrepôt PRINCIPAL présents — magasin prêt pour le POS et le stock.',
+      interpretation:
+        'Entrepôt PRINCIPAL, caisse magasin et tiroir POS présents — le magasin peut encaisser.',
       severity: 'ok',
     };
   }
   const manques: string[] = [];
-  if (!hasAuxiliaire) manques.push('caisse magasin');
   if (!hasPrincipal) manques.push('entrepôt PRINCIPAL');
+  if (!hasAuxiliaire) manques.push('caisse magasin');
+  if (!hasTiroir) manques.push('tiroir POS');
   return {
     title: 'Santé magasin',
-    interpretation: `Configuration incomplète : manque ${manques.join(' et ')}.`,
-    recommendation: 'Compléter depuis les onglets Caisses et Entrepôts avant d’ouvrir une session POS.',
+    interpretation: `Configuration incomplète : manque ${manques.join(', ')}.`,
+    recommendation:
+      'Utilisez « Compléter le poste » : entrepôt, caisse magasin et tiroir sont créés ensemble.',
     severity: 'warning',
   };
 }
@@ -145,7 +149,7 @@ export function insightSanteColonne(): Insight {
   return {
     title: 'Colonne Santé',
     interpretation:
-      'Chaque magasin actif doit avoir une caisse magasin (encaissement / initiation) et un entrepôt PRINCIPAL (stock POS).',
+      'Chaque magasin actif a un entrepôt PRINCIPAL, une caisse magasin et au moins un tiroir POS — créés ensemble à l’ouverture du magasin.',
     severity: 'info',
   };
 }

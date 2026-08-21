@@ -4,7 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   ROLES_ADMIN_STRUCTURE,
-  ROLES_LECTURE_STRUCTURE,
+  ROLES_LECTURE_ACHATS,
   ROLES_RECEPTION_STOCK,
 } from '../caisses/access-scope.constants';
 import { FournisseursService } from './fournisseurs.service';
@@ -29,19 +29,19 @@ export class FournisseursController {
   }
 
   @Get()
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   findAll() {
     return this.fournisseursService.findAll();
   }
 
   @Get('synthese')
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   synthese() {
     return this.fournisseursService.synthese();
   }
 
   @Get(':id')
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   findOne(@Param('id') id: string) {
     return this.fournisseursService.findOne(id);
   }

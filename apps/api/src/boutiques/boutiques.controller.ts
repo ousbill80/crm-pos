@@ -7,7 +7,10 @@ import {
   ROLES_LECTURE_STRUCTURE,
 } from '../caisses/access-scope.constants';
 import { BoutiquesService } from './boutiques.service';
-import { CreateBoutiqueDto } from './dto/create-boutique.dto';
+import {
+  CompleterPosteBoutiqueDto,
+  CreateBoutiqueDto,
+} from './dto/create-boutique.dto';
 import { UpdateBoutiqueDto } from './dto/update-boutique.dto';
 
 // Endpoints Boutique — §3, §4, §6.2 du cahier des charges.
@@ -22,6 +25,25 @@ export class BoutiquesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.boutiquesService.create(dto, user);
+  }
+
+  @Post('completer-tous')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  completerTous(
+    @Body() dto: CompleterPosteBoutiqueDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.boutiquesService.completerTous(dto ?? {}, user);
+  }
+
+  @Post(':id/completer-poste')
+  @Roles(...ROLES_ADMIN_STRUCTURE)
+  completerPoste(
+    @Param('id') id: string,
+    @Body() dto: CompleterPosteBoutiqueDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.boutiquesService.completerPoste(id, dto ?? {}, user);
   }
 
   @Get()

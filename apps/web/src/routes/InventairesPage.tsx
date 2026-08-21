@@ -8,6 +8,11 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import type {
   EntrepotDto,
   InventairePrioriteDto,
@@ -288,6 +293,7 @@ export function InventairesPage() {
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutCompter = user !== null && ROLES_COMPTAGE.includes(user.role);
 
+  const magasin = useFiltreMagasinSiege();
   const [modalOuvrir, setModalOuvrir] = useState(false);
   const [entrepotId, setEntrepotId] = useState('');
   const [motif, setMotif] = useState('');
@@ -316,11 +322,17 @@ export function InventairesPage() {
     enabled: peutLire && modalOuvrir && entrepotId !== '',
   });
 
+  const entrepotsMagasin = useMemo(() => {
+    const all = entrepots.data ?? [];
+    if (!magasin.boutiqueId) return all;
+    return all.filter((e) => e.boutiqueId === magasin.boutiqueId);
+  }, [entrepots.data, magasin.boutiqueId]);
+
   function ouvrirModal(prefillEntrepot?: string) {
     const priorite =
       prefillEntrepot ||
       (priorites.data ?? []).find((p) => p.aInventorier)?.entrepotId;
-    setEntrepotId(priorite ?? entrepots.data?.[0]?.id ?? '');
+    setEntrepotId(priorite ?? entrepotsMagasin[0]?.id ?? '');
     setMotif('');
     setFormErr(null);
     setModalOuvrir(true);
@@ -332,7 +344,10 @@ export function InventairesPage() {
     if (!entrepots.data) return;
     const fromQuery = searchParams.get('entrepotId');
     ouvrirModal(fromQuery ?? undefined);
-    setSearchParams({}, { replace: true });
+    const next = new URLSearchParams();
+    const bid = searchParams.get('boutiqueId');
+    if (bid) next.set('boutiqueId', bid);
+    setSearchParams(next, { replace: true });
   }, [peutCompter, searchParams, entrepots.data]);
 
   const ouvrir = useMutation({
@@ -356,22 +371,39 @@ export function InventairesPage() {
   });
 
   const sessionsFiltrees = useMemo(() => {
-    return (sessions.data ?? []).filter((s) =>
-      filtreStatut ? s.statut === filtreStatut : true,
-    );
-  }, [sessions.data, filtreStatut]);
+    return (sessions.data ?? []).filter((s) => {
+      if (filtreStatut && s.statut !== filtreStatut) return false;
+      if (magasin.boutiqueId && s.entrepot.boutiqueId !== magasin.boutiqueId) {
+        return false;
+      }
+      return true;
+    });
+  }, [sessions.data, filtreStatut, magasin.boutiqueId]);
 
   if (!peutLire) {
     return <p>Vous n’avez pas accès aux inventaires.</p>;
   }
 
-  const aInventorier = (priorites.data ?? []).filter((p) => p.aInventorier);
+  const aInventorier = (priorites.data ?? []).filter(
+    (p) =>
+      p.aInventorier &&
+      (!magasin.boutiqueId ||
+        p.boutiqueId === magasin.boutiqueId ||
+        entrepotsMagasin.some((e) => e.id === p.entrepotId)),
+  );
 
   return (
     <div className="stock-module">
       <PageHeader
         title="Inventaires physiques"
-        subtitle="Comptage contradictoire — le stock ne bouge qu’après validation par un tiers"
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Comptage contradictoire — le stock ne bouge qu’après validation par un tiers',
+          texteBoutique:
+            'Comptage du magasin — le stock ne bouge qu’après validation par un tiers',
+        })}
         actions={
           peutCompter ? (
             <button
@@ -426,6 +458,7 @@ export function InventairesPage() {
       )}
 
       <div className="toolbar stock-toolbar">
+        <FiltreMagasinSiege id="inv-filtre-magasin" />
         <div>
           <label htmlFor="inv-filtre-statut">Statut</label>
           <select
@@ -551,7 +584,7 @@ export function InventairesPage() {
             motif={motif}
             error={formErr}
             pending={ouvrir.isPending}
-            entrepots={entrepots.data ?? []}
+            entrepots={entrepotsMagasin}
             priorites={priorites.data ?? []}
             sessions={sessions.data ?? []}
             apercu={apercuStock.data}

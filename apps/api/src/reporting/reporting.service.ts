@@ -171,6 +171,13 @@ const money = (value: Prisma.Decimal) => value.toFixed(2);
 const zero = () => new Prisma.Decimal(0);
 const DELAI_VERSEMENT_HEURES_DEFAUT = 24;
 
+export type SocieteEntete = {
+  raisonSociale: string;
+  adresse: string;
+  telephone: string | null;
+  email: string | null;
+};
+
 @Injectable()
 export class ReportingService {
   constructor(
@@ -691,6 +698,17 @@ export class ReportingService {
         { key: 'clientId', header: 'Client' },
       ],
     );
+  }
+
+  async enteteSociete(): Promise<SocieteEntete | null> {
+    return this.prisma.societe.findFirst({
+      select: {
+        raisonSociale: true,
+        adresse: true,
+        telephone: true,
+        email: true,
+      },
+    });
   }
 
   private resolvePerimetre(user: AuthenticatedUser): PerimetreReporting {

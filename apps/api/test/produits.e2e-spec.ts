@@ -108,7 +108,7 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     await creerUtilisateur('respsi', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('direction', 'DIRECTION_GENERALE', null, 0);
     await creerUtilisateur('daf', 'DAF', null, 1);
-    await creerUtilisateur('caissier-boutique', 'CAISSIER_BOUTIQUE', null, 4);
+    await creerUtilisateur('caissier-boutique', 'CAISSIER_BOUTIQUE', boutique.id, 4);
     await creerUtilisateur('respcrm', 'RESPONSABLE_CRM', null, 1);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -233,6 +233,60 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         .expect(200);
     });
 
+    it('expose au caissier le stock de sa boutique, pas le cache réseau', async () => {
+      const zone = await env.prisma.zone.findFirstOrThrow();
+      const boutiqueA = await env.prisma.boutique.findFirstOrThrow({
+        where: { nom: 'Boutique Test Produits' },
+      });
+      const boutiqueB = await env.prisma.boutique.create({
+        data: {
+          nom: 'Boutique Test Produits B',
+          adresse: 'Adr B',
+          zoneId: zone.id,
+        },
+      });
+      const entrepotA = await env.prisma.entrepot.findFirstOrThrow({
+        where: { boutiqueId: boutiqueA.id },
+      });
+      const entrepotB = await env.prisma.entrepot.create({
+        data: {
+          nom: 'Principal B',
+          code: 'PRINCIPAL',
+          type: 'PRINCIPAL',
+          boutiqueId: boutiqueB.id,
+        },
+      });
+      const sku = await env.prisma.produit.create({
+        data: {
+          designation: 'Coque périmètre stock',
+          prixUnitaire: '2000.00',
+          stock: 30,
+        },
+      });
+      await env.prisma.stockQuant.createMany({
+        data: [
+          { produitId: sku.id, entrepotId: entrepotA.id, quantite: 10 },
+          { produitId: sku.id, entrepotId: entrepotB.id, quantite: 20 },
+        ],
+      });
+
+      const caissier = await request(app.getHttpServer())
+        .get('/produits')
+        .set(auth(tokens.caissierBoutique))
+        .expect(200);
+      const ligneCaissier = (caissier.body as ProduitDto[]).find(
+        (p) => p.id === sku.id,
+      );
+      expect(ligneCaissier?.stock).toBe(10);
+
+      const daf = await request(app.getHttpServer())
+        .get('/produits')
+        .set(auth(tokens.daf))
+        .expect(200);
+      const ligneDaf = (daf.body as ProduitDto[]).find((p) => p.id === sku.id);
+      expect(ligneDaf?.stock).toBe(30);
+    });
+
     it('refuse (403) la lecture par RESPONSABLE_CRM (hors périmètre structure)', () => {
       return request(app.getHttpServer())
         .get('/produits')
@@ -323,9 +377,13 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
       });
       produitId = produit.id;
 
+      const entrepot = await env.prisma.entrepot.findFirstOrThrow({
+        where: { boutique: { nom: 'Boutique Test Produits' } },
+      });
       await env.prisma.mouvementStock.create({
         data: {
           produitId,
+          entrepotId: entrepot.id,
           type: 'RECEPTION',
           quantite: 8,
           stockApres: 8,
@@ -728,7 +786,11 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         aCreer: number;
         aMettreAJour: number;
         enErreur: number;
-        mapping: { reference: string; designation: string; prixUnitaire: string };
+        mapping: {
+          reference: string;
+          designation: string;
+          prixUnitaire: string;
+        };
       };
       expect(body.aCreer).toBe(2);
       expect(body.aMettreAJour).toBe(0);
@@ -749,7 +811,9 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         .get('/produits?q=IMP-CBL-01')
         .set(auth(tokens.daf))
         .expect(200);
-      const cable = (liste.body as ProduitDto[]).find((p) => p.reference === 'IMP-CBL-01');
+      const cable = (liste.body as ProduitDto[]).find(
+        (p) => p.reference === 'IMP-CBL-01',
+      );
       expect(cable).toBeDefined();
       expect(Number(cable!.prixUnitaire)).toBe(2500);
       expect(cable!.stock).toBe(0);
@@ -778,7 +842,11 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         aCreer: number;
         enErreur: number;
         aIgnorer: number;
-        mapping: { reference: string; designation: string; prixUnitaire: string };
+        mapping: {
+          reference: string;
+          designation: string;
+          prixUnitaire: string;
+        };
       };
       expect(body.mapping.reference).toBe('Code article');
       expect(body.mapping.designation).toBe('Libellé produit');

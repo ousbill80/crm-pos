@@ -36,13 +36,26 @@ export const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
 // Rôle à périmètre zone.
 export const ROLE_SUPERVISEUR_ZONE = RoleLibelle.SUPERVISEUR_ZONE;
 
-// Rôles à périmètre boutique unique (vente + initiation seulement — jamais de
-// validation/réception, cf. règle de séparation des tâches). Le CONVOYEUR
-// (§6.4) est rattaché à une boutique et ne peut que mettre EN_TRANSIT.
+// Rôles à périmètre boutique unique (identité / filtre de données).
+// Le CONVOYEUR (§6.4) est rattaché à une boutique et ne peut que mettre
+// EN_TRANSIT — jamais encaisser (voir ROLES_POS_ECRITURE).
 export const ROLES_PERIMETRE_BOUTIQUE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
   RoleLibelle.CAISSIER_BOUTIQUE,
   RoleLibelle.CONVOYEUR,
+];
+
+// Écriture POS (session, vente, retour, clôture, file) — §4 / CLAUDE.md :
+// caissier + responsable boutique uniquement. Convoyeur exclu.
+export const ROLES_POS_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.CAISSIER_BOUTIQUE,
+];
+
+// Transfert stock boutique (hors ajustement admin SI/DG) — même périmètre
+// que le POS : pas le convoyeur.
+export const ROLES_STOCK_ECRITURE_BOUTIQUE: RoleLibelle[] = [
+  ...ROLES_POS_ECRITURE,
 ];
 
 // Rôles autorisés à lire la structure (zones/boutiques) : tous les rôles
@@ -90,6 +103,13 @@ export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
 export const ROLES_COMMANDE_ACHAT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Lecture achats (fournisseurs, commandes, factures) : pas le caissier / convoyeur. */
+export const ROLES_LECTURE_ACHATS: RoleLibelle[] = [
+  ...ROLES_RESEAU_STRUCTURE,
+  ROLE_SUPERVISEUR_ZONE,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 

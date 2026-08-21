@@ -10,6 +10,11 @@ import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { BonCommandeComposer, type LigneBonCommande } from '../components/BonCommandeComposer';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import { badgeCommande, fmtFcfa, STATUT_COMMANDE } from '../lib/achats-ui';
 import {
   insightCommandesBrouillon,
@@ -46,6 +51,7 @@ type FiltreKpi = 'all' | 'brouillon' | 'ouvertes' | 'partielles' | 'receptionnee
 export function CommandesAchatsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
@@ -94,7 +100,9 @@ export function CommandesAchatsPage() {
   );
   const kpis = useMemo(() => {
     const rows = (commandes.data ?? []).filter(
-      (c) => !fournisseurQuery || c.fournisseurId === fournisseurQuery,
+      (c) =>
+        (!fournisseurQuery || c.fournisseurId === fournisseurQuery) &&
+        (!magasin.boutiqueId || c.boutiqueId === magasin.boutiqueId),
     );
     let brouillons = 0;
     let ouvertes = 0;
@@ -118,11 +126,12 @@ export function CommandesAchatsPage() {
       partielles,
       receptionnees,
     };
-  }, [commandes.data, fournisseurQuery]);
+  }, [commandes.data, fournisseurQuery, magasin.boutiqueId]);
 
   const liste = useMemo(
     () =>
       (commandes.data ?? []).filter((c) => {
+        if (magasin.boutiqueId && c.boutiqueId !== magasin.boutiqueId) return false;
         if (fournisseurQuery && c.fournisseurId !== fournisseurQuery) return false;
         if (filtreStatut && c.statut !== filtreStatut) return false;
         if (filtreKpi === 'brouillon') return c.statut === 'BROUILLON';
@@ -131,7 +140,7 @@ export function CommandesAchatsPage() {
         if (filtreKpi === 'receptionnees') return c.statut === 'RECEPTIONNEE';
         return true;
       }),
-    [commandes.data, filtreStatut, fournisseurQuery, filtreKpi],
+    [commandes.data, filtreStatut, fournisseurQuery, filtreKpi, magasin.boutiqueId],
   );
 
   function setVue(vue: FiltreKpi) {
@@ -193,7 +202,12 @@ export function CommandesAchatsPage() {
     <div>
       <PageHeader
         title="Bons de commande"
-        subtitle="Cycle Achats : brouillon → confirmée → réception (plafonnée à la quantité commandée) → clôture. Pas d’écriture de caisse."
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau:
+            'Cycle Achats : brouillon → confirmée → réception (plafonnée à la quantité commandée) → clôture. Pas d’écriture de caisse.',
+        })}
         actions={
           <div className="page-header-actions-row">
             <Link className="btn btn-secondary" to="/achats/factures">
@@ -290,6 +304,7 @@ export function CommandesAchatsPage() {
           </section>
 
           <div className="toolbar">
+            <FiltreMagasinSiege id="bc-filtre-magasin" />
             <div>
               <label htmlFor="filtre-bc-statut">Statut</label>
               <select
@@ -376,7 +391,27 @@ export function CommandesAchatsPage() {
                         <td>{new Date(row.dateCommande).toLocaleDateString('fr-FR')}</td>
                         <td className="money">{fmtFcfa(row.montant)}</td>
                         <td>
-                          {row.quantiteRecue}/{row.quantite}
+                          <div className="bc-list-recept">
+                            <span>
+                              {row.quantiteRecue}/{row.quantite}
+                            </span>
+                            <div className="inventaire-progress" aria-hidden>
+                              <span
+                                style={{
+                                  width: `${
+                                    row.quantite === 0
+                                      ? 0
+                                      : Math.min(
+                                          100,
+                                          Math.round(
+                                            (row.quantiteRecue / row.quantite) * 100,
+                                          ),
+                                        )
+                                  }%`,
+                                }}
+                              />
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}

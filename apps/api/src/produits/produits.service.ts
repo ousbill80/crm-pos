@@ -10,6 +10,15 @@ import { AuditService } from '../audit/audit.service';
 import { StockService } from '../stocks/stock.service';
 import { BonsStockService } from '../stocks/bons-stock.service';
 import type { AuthenticatedUser } from '../auth/types';
+import {
+  ROLES_PERIMETRE_BOUTIQUE,
+  ROLES_RESEAU_STRUCTURE,
+  ROLE_SUPERVISEUR_ZONE,
+} from '../caisses/access-scope.constants';
+import {
+  requireOwnBoutiqueId,
+  resolveZoneScopeForSuperviseur,
+} from '../boutiques/boutique-scope.util';
 import { toCsv } from '../common/csv.util';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
@@ -130,10 +139,13 @@ export class ProduitsService {
       }),
     });
 
-    return this.findOne(produit.id);
+    return this.findOne(produit.id, user);
   }
 
-  async findAll(query: ListProduitsQueryDto = {}): Promise<ProduitEnrichi[]> {
+  async findAll(
+    query: ListProduitsQueryDto = {},
+    user: AuthenticatedUser,
+  ): Promise<ProduitEnrichi[]> {
     const where: Prisma.ProduitWhereInput = {};
     const q = query.q?.trim();
     if (q) {
@@ -155,20 +167,27 @@ export class ProduitsService {
       orderBy: { designation: 'asc' },
     });
 
-    let enrichis = produits.map(enrichirProduit);
+    const enrichis = await this.appliquerStockPerimetre(
+      produits.map(enrichirProduit),
+      user,
+    );
+    let result = enrichis;
     if (query.statutStock) {
-      enrichis = enrichis.filter((p) => p.statutStock === query.statutStock);
+      result = result.filter((p) => p.statutStock === query.statutStock);
     }
     if (query.margeNegative) {
-      enrichis = enrichis.filter((p) =>
+      result = result.filter((p) =>
         new Prisma.Decimal(p.margeUnitaire).lessThan(0),
       );
     }
-    return enrichis;
+    return result;
   }
 
-  async exportCsv(query: ListProduitsQueryDto = {}): Promise<string> {
-    const produits = await this.findAll(query);
+  async exportCsv(
+    query: ListProduitsQueryDto = {},
+    user: AuthenticatedUser,
+  ): Promise<string> {
+    const produits = await this.findAll(query, user);
     return toCsv(
       produits.map((p) => ({
         reference: p.reference,
@@ -201,7 +220,7 @@ export class ProduitsService {
     );
   }
 
-  async classement() {
+  async classement(user: AuthenticatedUser) {
     const depuis = new Date(Date.now() - FENETRE_ANALYSE_MS);
     const [produits, lignes, retours] = await Promise.all([
       this.prisma.produit.findMany({ where: { actif: true } }),
@@ -253,7 +272,11 @@ export class ProduitsService {
       );
     }
 
-    const parId = new Map(produits.map((p) => [p.id, enrichirProduit(p)]));
+    const enrichis = await this.appliquerStockPerimetre(
+      produits.map(enrichirProduit),
+      user,
+    );
+    const parId = new Map(enrichis.map((p) => [p.id, p]));
     const meilleuresVentes = [...stats.entries()]
       .filter(([, s]) => s.quantite > 0)
       .sort((a, b) => b[1].quantite - a[1].quantite)
@@ -270,14 +293,14 @@ export class ProduitsService {
         ];
       });
 
-    const dormants = produits
+    const dormants = enrichis
       .filter((p) => p.stock > 0 && (stats.get(p.id)?.quantite ?? 0) <= 0)
       .sort((a, b) => b.stock - a.stock)
       .slice(0, 8)
       .map((p) => ({
-        produit: enrichirProduit(p),
+        produit: p,
         stock: p.stock,
-        valeurStock: enrichirProduit(p).valeurStock,
+        valeurStock: p.valeurStock,
       }));
 
     return {
@@ -287,10 +310,14 @@ export class ProduitsService {
     };
   }
 
-  async findVentes(id: string) {
-    await this.findOne(id);
+  async findVentes(id: string, user: AuthenticatedUser) {
+    await this.findOne(id, user);
+    const boutiqueId = this.boutiqueIdPerimetre(user);
     const lignes = await this.prisma.ligneVente.findMany({
-      where: { produitId: id },
+      where: {
+        produitId: id,
+        ...(boutiqueId ? { vente: { caisse: { boutiqueId } } } : {}),
+      },
       include: {
         vente: {
           select: {
@@ -332,8 +359,11 @@ export class ProduitsService {
     });
   }
 
-  async synthese() {
-    const produits = await this.prisma.produit.findMany();
+  async synthese(user: AuthenticatedUser) {
+    const produits = await this.appliquerStockPerimetre(
+      (await this.prisma.produit.findMany()).map(enrichirProduit),
+      user,
+    );
     const actifs = produits.filter((p) => p.actif);
 
     let ruptures = 0;
@@ -377,21 +407,30 @@ export class ProduitsService {
       .filter((c): c is string => c !== null && c.length > 0);
   }
 
-  async findOne(id: string): Promise<ProduitEnrichi> {
+  async findOne(id: string, user: AuthenticatedUser): Promise<ProduitEnrichi> {
     const produit = await this.prisma.produit.findUnique({ where: { id } });
     if (!produit) {
       throw new NotFoundException(`Produit ${id} introuvable.`);
     }
-    return enrichirProduit(produit);
+    const [enrichi] = await this.appliquerStockPerimetre(
+      [enrichirProduit(produit)],
+      user,
+    );
+    return enrichi;
   }
 
-  async analyse(id: string) {
-    const produit = await this.findOne(id);
+  async analyse(id: string, user: AuthenticatedUser) {
+    const produit = await this.findOne(id, user);
     const depuis = new Date(Date.now() - FENETRE_ANALYSE_MS);
+    const entrepotIds = await this.entrepotIdsPerimetre(user);
+    const boutiqueId = this.boutiqueIdPerimetre(user);
 
     const [quants, lignes, retours] = await Promise.all([
       this.prisma.stockQuant.findMany({
-        where: { produitId: id },
+        where: {
+          produitId: id,
+          ...(entrepotIds ? { entrepotId: { in: entrepotIds } } : {}),
+        },
         include: {
           entrepot: {
             select: {
@@ -409,7 +448,10 @@ export class ProduitsService {
       this.prisma.ligneVente.findMany({
         where: {
           produitId: id,
-          vente: { dateVente: { gte: depuis } },
+          vente: {
+            dateVente: { gte: depuis },
+            ...(boutiqueId ? { caisse: { boutiqueId } } : {}),
+          },
         },
         select: {
           quantite: true,
@@ -420,8 +462,11 @@ export class ProduitsService {
       }),
       this.prisma.retourVente.findMany({
         where: {
-          ligneVente: { produitId: id },
           dateHeure: { gte: depuis },
+          ligneVente: {
+            produitId: id,
+            ...(boutiqueId ? { vente: { caisse: { boutiqueId } } } : {}),
+          },
         },
         select: {
           quantite: true,
@@ -523,7 +568,7 @@ export class ProduitsService {
     dto: UpdateProduitDto,
     user: AuthenticatedUser,
   ): Promise<ProduitEnrichi> {
-    await this.findOne(id);
+    await this.findOne(id, user);
 
     let produit: Produit;
     try {
@@ -569,13 +614,17 @@ export class ProduitsService {
       }),
     });
 
-    return enrichirProduit(produit);
+    return this.findOne(id, user);
   }
 
-  async findMouvements(id: string) {
-    await this.findOne(id);
+  async findMouvements(id: string, user: AuthenticatedUser) {
+    await this.findOne(id, user);
+    const entrepotIds = await this.entrepotIdsPerimetre(user);
     return this.prisma.mouvementStock.findMany({
-      where: { produitId: id },
+      where: {
+        produitId: id,
+        ...(entrepotIds ? { entrepotId: { in: entrepotIds } } : {}),
+      },
       include: {
         entrepot: {
           select: {
@@ -647,7 +696,10 @@ export class ProduitsService {
     };
   }
 
-  async appliquerImport(dto: AppliquerImportProduitsDto, user: AuthenticatedUser) {
+  async appliquerImport(
+    dto: AppliquerImportProduitsDto,
+    user: AuthenticatedUser,
+  ) {
     const mode = dto.mode ?? 'UPSERT';
     const importerStockInitial = dto.importerStockInitial === true;
     const prep = await this.preparerImport(dto, mode);
@@ -678,12 +730,18 @@ export class ProduitsService {
             ...(d.parsed.reference ? { reference: d.parsed.reference } : {}),
             ...(d.parsed.codeBarres ? { codeBarres: d.parsed.codeBarres } : {}),
             ...(d.parsed.categorie ? { categorie: d.parsed.categorie } : {}),
-            ...(d.parsed.description ? { description: d.parsed.description } : {}),
+            ...(d.parsed.description
+              ? { description: d.parsed.description }
+              : {}),
             ...(d.parsed.seuilReappro !== undefined
               ? { seuilReappro: d.parsed.seuilReappro ?? undefined }
               : {}),
-            ...(d.parsed.uniteMesure ? { uniteMesure: d.parsed.uniteMesure } : {}),
-            ...(d.parsed.methodeCout ? { methodeCout: d.parsed.methodeCout } : {}),
+            ...(d.parsed.uniteMesure
+              ? { uniteMesure: d.parsed.uniteMesure }
+              : {}),
+            ...(d.parsed.methodeCout
+              ? { methodeCout: d.parsed.methodeCout }
+              : {}),
             ...(d.parsed.strategieSortie
               ? { strategieSortie: d.parsed.strategieSortie }
               : {}),
@@ -701,16 +759,23 @@ export class ProduitsService {
       if (d.action === 'UPDATE' && d.existant) {
         const patch: UpdateProduitDto = {};
         if (d.parsed.designation) patch.designation = d.parsed.designation;
-        if (d.parsed.reference !== undefined) patch.reference = d.parsed.reference;
-        if (d.parsed.codeBarres !== undefined) patch.codeBarres = d.parsed.codeBarres;
-        if (d.parsed.categorie !== undefined) patch.categorie = d.parsed.categorie;
-        if (d.parsed.description !== undefined) patch.description = d.parsed.description;
-        if (d.parsed.prixUnitaire !== undefined) patch.prixUnitaire = d.parsed.prixUnitaire;
-        if (d.parsed.seuilReappro !== undefined) patch.seuilReappro = d.parsed.seuilReappro;
+        if (d.parsed.reference !== undefined)
+          patch.reference = d.parsed.reference;
+        if (d.parsed.codeBarres !== undefined)
+          patch.codeBarres = d.parsed.codeBarres;
+        if (d.parsed.categorie !== undefined)
+          patch.categorie = d.parsed.categorie;
+        if (d.parsed.description !== undefined)
+          patch.description = d.parsed.description;
+        if (d.parsed.prixUnitaire !== undefined)
+          patch.prixUnitaire = d.parsed.prixUnitaire;
+        if (d.parsed.seuilReappro !== undefined)
+          patch.seuilReappro = d.parsed.seuilReappro;
         if (d.parsed.actif !== undefined) patch.actif = d.parsed.actif;
         if (d.parsed.uniteMesure) patch.uniteMesure = d.parsed.uniteMesure;
         if (d.parsed.methodeCout) patch.methodeCout = d.parsed.methodeCout;
-        if (d.parsed.strategieSortie) patch.strategieSortie = d.parsed.strategieSortie;
+        if (d.parsed.strategieSortie)
+          patch.strategieSortie = d.parsed.strategieSortie;
         await this.update(d.existant.id, patch, user);
         misAJour += 1;
         ids.push(d.existant.id);
@@ -743,7 +808,9 @@ export class ProduitsService {
   ) {
     const table = await tableDepuisFichier(dto);
     if (table.enTetes.length === 0) {
-      throw new BadRequestException('Le fichier n’a pas d’en-tête de colonnes.');
+      throw new BadRequestException(
+        'Le fichier n’a pas d’en-tête de colonnes.',
+      );
     }
     if (table.lignes.length > MAX_LIGNES_IMPORT) {
       throw new BadRequestException(
@@ -763,8 +830,12 @@ export class ProduitsService {
       parserLigneCatalogue(table.enTetes, ligne, mapping, i + 2),
     );
 
-    const refs = parsed.map((p) => p.reference).filter((v): v is string => Boolean(v));
-    const codes = parsed.map((p) => p.codeBarres).filter((v): v is string => Boolean(v));
+    const refs = parsed
+      .map((p) => p.reference)
+      .filter((v): v is string => Boolean(v));
+    const codes = parsed
+      .map((p) => p.codeBarres)
+      .filter((v): v is string => Boolean(v));
     const existants = await this.prisma.produit.findMany({
       where: {
         OR: [
@@ -774,10 +845,14 @@ export class ProduitsService {
       },
     });
     const byRef = new Map(
-      existants.filter((p) => p.reference).map((p) => [p.reference as string, p]),
+      existants
+        .filter((p) => p.reference)
+        .map((p) => [p.reference as string, p]),
     );
     const byCode = new Map(
-      existants.filter((p) => p.codeBarres).map((p) => [p.codeBarres as string, p]),
+      existants
+        .filter((p) => p.codeBarres)
+        .map((p) => [p.codeBarres as string, p]),
     );
 
     const seenRef = new Set<string>();
@@ -803,20 +878,26 @@ export class ProduitsService {
 
       if (p.reference) {
         if (seenRef.has(p.reference)) {
-          p.erreurs.push(`Référence « ${p.reference} » en double dans le fichier.`);
+          p.erreurs.push(
+            `Référence « ${p.reference} » en double dans le fichier.`,
+          );
         }
         seenRef.add(p.reference);
       }
       if (p.codeBarres) {
         if (seenCode.has(p.codeBarres)) {
-          p.erreurs.push(`Code-barres « ${p.codeBarres} » en double dans le fichier.`);
+          p.erreurs.push(
+            `Code-barres « ${p.codeBarres} » en double dans le fichier.`,
+          );
         }
         seenCode.add(p.codeBarres);
       }
 
       if (existant) {
         if (mode === 'CREATE_ONLY') {
-          p.avertissements.push('Déjà au catalogue — ignoré (mode création seulement).');
+          p.avertissements.push(
+            'Déjà au catalogue — ignoré (mode création seulement).',
+          );
           return { parsed: p, existant, action: 'SKIP' as const };
         }
         if (p.erreurs.length > 0) {
@@ -825,7 +906,8 @@ export class ProduitsService {
         return { parsed: p, existant, action: 'UPDATE' as const };
       }
 
-      if (!p.designation) p.erreurs.push('Désignation obligatoire pour créer une fiche.');
+      if (!p.designation)
+        p.erreurs.push('Désignation obligatoire pour créer une fiche.');
       if (p.prixUnitaire === undefined) {
         p.erreurs.push('Prix unitaire obligatoire pour créer une fiche.');
       }
@@ -844,6 +926,65 @@ export class ProduitsService {
       avertissementsGlobaux,
     };
   }
+
+  private boutiqueIdPerimetre(user: AuthenticatedUser): string | undefined {
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(user.role)) {
+      return requireOwnBoutiqueId(user);
+    }
+    return undefined;
+  }
+
+  private async entrepotIdsPerimetre(
+    user: AuthenticatedUser,
+  ): Promise<string[] | undefined> {
+    if (ROLES_RESEAU_STRUCTURE.includes(user.role)) {
+      return undefined;
+    }
+    if (user.role === ROLE_SUPERVISEUR_ZONE) {
+      const zoneId = await resolveZoneScopeForSuperviseur(this.prisma, user);
+      const entrepots = await this.prisma.entrepot.findMany({
+        where: { actif: true, boutique: { zoneId } },
+        select: { id: true },
+      });
+      return entrepots.map((e) => e.id);
+    }
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(user.role)) {
+      const boutiqueId = requireOwnBoutiqueId(user);
+      const entrepots = await this.prisma.entrepot.findMany({
+        where: { actif: true, boutiqueId },
+        select: { id: true },
+      });
+      return entrepots.map((e) => e.id);
+    }
+    return undefined;
+  }
+
+  private async appliquerStockPerimetre(
+    produits: ProduitEnrichi[],
+    user: AuthenticatedUser,
+  ): Promise<ProduitEnrichi[]> {
+    const entrepotIds = await this.entrepotIdsPerimetre(user);
+    if (entrepotIds === undefined) {
+      return produits;
+    }
+    if (entrepotIds.length === 0 || produits.length === 0) {
+      return produits.map((p) => enrichirProduit({ ...p, stock: 0 }));
+    }
+    const quants = await this.prisma.stockQuant.groupBy({
+      by: ['produitId'],
+      where: {
+        entrepotId: { in: entrepotIds },
+        produitId: { in: produits.map((p) => p.id) },
+      },
+      _sum: { quantite: true },
+    });
+    const parProduit = new Map(
+      quants.map((q) => [q.produitId, q._sum.quantite ?? 0]),
+    );
+    return produits.map((p) =>
+      enrichirProduit({ ...p, stock: parProduit.get(p.id) ?? 0 }),
+    );
+  }
 }
 
 function fusionnerMapping(
@@ -854,7 +995,7 @@ function fusionnerMapping(
   const out: MappingImport = { ...auto };
   for (const champ of CHAMPS_IMPORT) {
     if (Object.prototype.hasOwnProperty.call(override, champ)) {
-      const v = override[champ as keyof MappingImportProduitsDto];
+      const v = override[champ];
       out[champ] = v === '' || v === undefined ? null : v;
     }
   }

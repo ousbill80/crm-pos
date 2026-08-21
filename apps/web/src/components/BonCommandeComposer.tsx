@@ -159,6 +159,10 @@ export function BonCommandeComposer({
   }, []);
 
   useEffect(() => {
+    searchInput.current?.focus();
+  }, []);
+
+  useEffect(() => {
     setSurvol(0);
   }, [recherche]);
 

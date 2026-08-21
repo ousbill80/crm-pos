@@ -217,6 +217,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     await creerUtilisateur('caissier-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('daf', 'DAF', null, 1);
     await creerUtilisateur('controle', 'CONTROLEUR_INTERNE', null, 1);
+    await creerUtilisateur('convoyeur-b1', 'CONVOYEUR', boutique1Id, 4);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -243,6 +244,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     tokens.caissierCentral = await login('caissier-central');
     tokens.daf = await login('daf');
     tokens.controle = await login('controle');
+    tokens.convoyeurB1 = await login('convoyeur-b1');
   }, 120_000);
 
   afterAll(async () => {
@@ -262,6 +264,15 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       await ouvrirSession(tokens.controle, caisse1Id, 5000, 'resp-b1').expect(
         403,
       );
+    });
+
+    it('refuse (403) qu’un CONVOYEUR ouvre une session POS (jamais encaisser §4)', async () => {
+      await ouvrirSession(
+        tokens.convoyeurB1,
+        caisse1Id,
+        5000,
+        'resp-b1',
+      ).expect(403);
     });
 
     it('refuse (401) tout accès sans authentification', () => {

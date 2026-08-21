@@ -58,6 +58,7 @@ model Boutique {
   utilisateurs   Utilisateur[]
   entrepots      Entrepot[]
   commandesAchat CommandeAchat[]
+  clientsOrigine Client[]
 
   @@map("boutique")
 }
@@ -920,16 +921,28 @@ model Client {
   nom                   String
   // PHYSIQUE : prénom (obligatoire métier) ; MORALE : interlocuteur (optionnel).
   prenom                String?
+  // contact et adresse sont chiffrés au repos (AES-256-GCM, §6.7) au niveau
+  // applicatif — voir apps/api/src/prisma/client-crypto-guard.ts. La colonne
+  // stocke le ciphertext, jamais le clair.
   contact               String?
+  adresse               String?
   // Uniquement pertinente pour PHYSIQUE (ignorée / null pour MORALE).
   dateNaissance         DateTime?
   segment               SegmentClient @default(NOUVEAU)
   consentementMarketing Boolean       @default(false)
+  // Magasin d’accueil (création) — pas une propriété exclusive : la fiche
+  // reste unique réseau (§6.6). Sert à la liste d’exploitation magasin.
+  boutiqueOrigine   Boutique? @relation(fields: [boutiqueOrigineId], references: [id], onDelete: SetNull)
+  boutiqueOrigineId String?
+  // HMAC du contact normalisé — recherche POS par téléphone sans déchiffrer.
+  contactHash String?
 
   ventes       Vente[]
   fidelite     Fidelite?
   interactions InteractionCrm[]
 
+  @@index([boutiqueOrigineId])
+  @@index([contactHash])
   @@map("client")
 }
 

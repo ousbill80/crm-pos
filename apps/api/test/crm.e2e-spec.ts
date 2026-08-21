@@ -24,6 +24,8 @@ interface ClientResponseBody {
   typeClient: string;
   nom: string;
   prenom: string | null;
+  contact: string | null;
+  adresse: string | null;
   dateNaissance: string | null;
   segment: string;
   consentementMarketing: boolean;
@@ -81,11 +83,25 @@ describe('CRM (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
+    const zone = await env.prisma.zone.create({
+      data: { nomZone: 'Zone CRM e2e' },
+    });
+    const boutiqueA = await env.prisma.boutique.create({
+      data: { nom: 'Boutique CRM A', adresse: 'A', zoneId: zone.id },
+    });
+    const boutiqueB = await env.prisma.boutique.create({
+      data: { nom: 'Boutique CRM B', adresse: 'B', zoneId: zone.id },
+    });
+
     for (const libelle of ROLES) {
       const role = await env.prisma.role.create({
         data: { libelle, niveauHabilitation: 1 },
       });
       const login = `${libelle.toLowerCase()}.test`;
+      const rattacheBoutique =
+        libelle === 'CAISSIER_BOUTIQUE' ||
+        libelle === 'RESPONSABLE_BOUTIQUE' ||
+        libelle === 'SUPERVISEUR_ZONE';
       const utilisateur = await env.prisma.utilisateur.create({
         data: {
           login,
@@ -94,10 +110,27 @@ describe('CRM (e2e)', () => {
           prenom: libelle,
           actif: true,
           roleId: role.id,
+          boutiqueId: rattacheBoutique ? boutiqueA.id : null,
         },
       });
       userIds[libelle] = utilisateur.id;
     }
+
+    const roleCaissier = await env.prisma.role.findUniqueOrThrow({
+      where: { libelle: 'CAISSIER_BOUTIQUE' },
+    });
+    const caissierB = await env.prisma.utilisateur.create({
+      data: {
+        login: 'caissier.boutique.b.test',
+        passwordHash: await bcrypt.hash('MotDePasse!123', 10),
+        nom: 'Test',
+        prenom: 'CaissierB',
+        actif: true,
+        roleId: roleCaissier.id,
+        boutiqueId: boutiqueB.id,
+      },
+    });
+    userIds.CAISSIER_BOUTIQUE_B = caissierB.id;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -126,6 +159,14 @@ describe('CRM (e2e)', () => {
         .expect(200);
       tokens[libelle] = body<LoginResponseBody>(response).accessToken;
     }
+    const loginB = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        login: 'caissier.boutique.b.test',
+        password: 'MotDePasse!123',
+      })
+      .expect(200);
+    tokens.CAISSIER_BOUTIQUE_B = body<LoginResponseBody>(loginB).accessToken;
   }, 120_000);
 
   afterAll(async () => {
@@ -308,6 +349,62 @@ describe('CRM (e2e)', () => {
       const clients = body<ClientResponseBody[]>(response);
       expect(Array.isArray(clients)).toBe(true);
       expect(clients.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Liste magasin vs recherche réseau (POS)', () => {
+    it('le caissier ne liste pas un client créé au siège / autre magasin', async () => {
+      const siege = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({ nom: 'Keita', prenom: 'Salif', contact: '0700000099' })
+        .expect(201);
+      const idSiege = body<ClientResponseBody>(siege).id;
+
+      const liste = await request(app.getHttpServer())
+        .get('/crm/clients')
+        .set('Authorization', authHeader('CAISSIER_BOUTIQUE'))
+        .expect(200);
+      const ids = body<ClientResponseBody[]>(liste).map((c) => c.id);
+      expect(ids).not.toContain(idSiege);
+    });
+
+    it('le caissier liste le client qu’il vient d’accueillir (même sans vente)', async () => {
+      const cree = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('CAISSIER_BOUTIQUE'))
+        .send({ nom: 'Dembélé', prenom: 'Aïcha', contact: '0700000088' })
+        .expect(201);
+      const id = body<ClientResponseBody>(cree).id;
+
+      const liste = await request(app.getHttpServer())
+        .get('/crm/clients')
+        .set('Authorization', authHeader('CAISSIER_BOUTIQUE'))
+        .expect(200);
+      expect(body<ClientResponseBody[]>(liste).map((c) => c.id)).toContain(id);
+
+      const autreMagasin = await request(app.getHttpServer())
+        .get('/crm/clients')
+        .set('Authorization', `Bearer ${tokens.CAISSIER_BOUTIQUE_B}`)
+        .expect(200);
+      expect(
+        body<ClientResponseBody[]>(autreMagasin).map((c) => c.id),
+      ).not.toContain(id);
+    });
+
+    it('la recherche POS ?q= retrouve un client d’un autre magasin par téléphone', async () => {
+      const cree = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', `Bearer ${tokens.CAISSIER_BOUTIQUE_B}`)
+        .send({ nom: 'Ouattara', prenom: 'Kady', contact: '0700000077' })
+        .expect(201);
+      const id = body<ClientResponseBody>(cree).id;
+
+      const trouve = await request(app.getHttpServer())
+        .get('/crm/clients?q=0700000077')
+        .set('Authorization', authHeader('CAISSIER_BOUTIQUE'))
+        .expect(200);
+      expect(body<ClientResponseBody[]>(trouve).map((c) => c.id)).toContain(id);
     });
   });
 
@@ -701,6 +798,80 @@ describe('CRM (e2e)', () => {
       expect(
         body<InteractionResponseBody[]>(response).length,
       ).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Chiffrement des données sensibles (§6.7) — contact/adresse ne doivent
+  // jamais transiter en clair en base, seulement dans l'API applicative.
+  // ---------------------------------------------------------------------
+
+  describe('Chiffrement des données client sensibles', () => {
+    it('stocke contact et adresse chiffrés en base tout en les renvoyant en clair via l’API', async () => {
+      const contactClair = '+225 07 12 34 56 78';
+      const adresseClaire = 'Cocody, Abidjan';
+
+      const creation = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({
+          nom: 'Kaboré',
+          prenom: 'Salimata',
+          contact: contactClair,
+          adresse: adresseClaire,
+        })
+        .expect(201);
+      const client = body<ClientResponseBody>(creation);
+      expect(client.contact).toBe(contactClair);
+      expect(client.adresse).toBe(adresseClaire);
+
+      const lignesBrutes = await env.prisma.$queryRaw<
+        { contact: string | null; adresse: string | null }[]
+      >`SELECT contact, adresse FROM client WHERE id = ${client.id}`;
+      const [ligneBrute] = lignesBrutes;
+      expect(ligneBrute.contact).not.toBeNull();
+      expect(ligneBrute.contact).not.toBe(contactClair);
+      expect(ligneBrute.adresse).not.toBeNull();
+      expect(ligneBrute.adresse).not.toBe(adresseClaire);
+
+      const lecture = await request(app.getHttpServer())
+        .get(`/crm/clients/${client.id}`)
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .expect(200);
+      const clientLu = body<ClientResponseBody>(lecture);
+      expect(clientLu.contact).toBe(contactClair);
+      expect(clientLu.adresse).toBe(adresseClaire);
+    });
+
+    it('rechiffre avec un ciphertext différent après modification, tout en exposant le nouveau clair via l’API', async () => {
+      const creation = await request(app.getHttpServer())
+        .post('/crm/clients')
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({ nom: 'Sawadogo', prenom: 'Fatimata', contact: '0700000099' })
+        .expect(201);
+      const client = body<ClientResponseBody>(creation);
+
+      const [avant] = await env.prisma.$queryRaw<
+        { contact: string | null }[]
+      >`SELECT contact FROM client WHERE id = ${client.id}`;
+
+      const modification = await request(app.getHttpServer())
+        .patch(`/crm/clients/${client.id}`)
+        .set('Authorization', authHeader('RESPONSABLE_CRM'))
+        .send({ adresse: 'Yopougon, Abidjan' })
+        .expect(200);
+      expect(body<ClientResponseBody>(modification).adresse).toBe(
+        'Yopougon, Abidjan',
+      );
+
+      const [apres] = await env.prisma.$queryRaw<
+        { contact: string | null; adresse: string | null }[]
+      >`SELECT contact, adresse FROM client WHERE id = ${client.id}`;
+      // contact non touché par le PATCH : ciphertext stable (pas de
+      // rechiffrement superflu d'un champ non modifié).
+      expect(apres.contact).toBe(avant.contact);
+      expect(apres.adresse).not.toBeNull();
+      expect(apres.adresse).not.toBe('Yopougon, Abidjan');
     });
   });
 });

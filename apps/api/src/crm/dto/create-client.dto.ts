@@ -36,6 +36,10 @@ export class CreateClientDto {
   @IsString()
   contact?: string;
 
+  @IsOptional()
+  @IsString()
+  adresse?: string;
+
   /** Uniquement pour PHYSIQUE — ignorée si MORALE. */
   @ValidateIf(
     (o: CreateClientDto) =>

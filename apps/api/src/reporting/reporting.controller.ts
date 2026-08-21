@@ -10,6 +10,11 @@ import {
 import { ReportingService } from './reporting.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { VentesQuotidiennesQueryDto } from './dto/ventes-quotidiennes-query.dto';
+import {
+  dessinerDafPdf,
+  dessinerDashboardPdf,
+} from '../impressions/reporting.pdf';
+import { pipePdf } from '../impressions/pdf.util';
 
 // Endpoints Reporting — §6.3.4, §6.7 du cahier des charges.
 @Controller('reporting')
@@ -51,6 +56,25 @@ export class ReportingController {
     res.send(csv);
   }
 
+  @Get('daf/export.pdf')
+  @Roles(...ROLES_RESEAU_TRESORERIE)
+  async exportDafPdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardQueryDto,
+    @Res() res: Response,
+  ) {
+    const [data, societe] = await Promise.all([
+      this.reportingService.getDaf(user, query),
+      this.reportingService.enteteSociete(),
+    ]);
+    pipePdf(
+      res,
+      'finance-daf.pdf',
+      (doc) => dessinerDafPdf(doc, data, societe),
+      'Finance DAF · §6.3.4 · grand livre append-only',
+    );
+  }
+
   @Get('ventes-quotidiennes')
   @Roles(...ROLES_LECTURE_CAISSES)
   ventesQuotidiennes(
@@ -80,6 +104,25 @@ export class ReportingController {
       'attachment; filename="tableau-de-bord.csv"',
     );
     res.send(csv);
+  }
+
+  @Get('dashboard/export.pdf')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  async exportDashboardPdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardQueryDto,
+    @Res() res: Response,
+  ) {
+    const [data, societe] = await Promise.all([
+      this.reportingService.getDashboard(user, query),
+      this.reportingService.enteteSociete(),
+    ]);
+    pipePdf(
+      res,
+      'tableau-de-bord.pdf',
+      (doc) => dessinerDashboardPdf(doc, data, societe),
+      'Tableau de bord · §6.3.4',
+    );
   }
 
   @Get('ventes/export.csv')

@@ -14,13 +14,18 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import {
+  FiltreMagasinSiege,
+  libellePerimetrePage,
+  useFiltreMagasinSiege,
+} from '../components/FiltreMagasinSiege';
 import { insightStatutTransaction } from '../lib/insights/transactions';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import {
   enqueueTransactionInit,
-  flushOutbox,
   outboxCount,
 } from '../lib/offline/outbox';
+import { sAbonnerSync } from '../lib/offline/auto-sync';
 import type { CaisseDto, TransactionDto } from '../lib/types';
 
 function labelCaisseOption(c: CaisseDto): string {
@@ -179,6 +184,7 @@ export function TransactionsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const magasin = useFiltreMagasinSiege();
   const [searchParams] = useSearchParams();
   const enCours = searchParams.get('enCours') === '1';
   const ageingBucket = searchParams.get('ageing');
@@ -215,23 +221,12 @@ export function TransactionsPage() {
   }, [statutParam]);
 
   useEffect(() => {
-    async function sync() {
-      if (!navigator.onLine) return;
-      const result = await flushOutbox((path, body, method = 'POST') =>
-        apiFetch(path, {
-          method,
-          ...(method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
-        }),
-      );
+    function rafraichir() {
       setPendingOffline(outboxCount());
-      if (result.flushed > 0) {
-        void queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      }
     }
-    void sync();
-    window.addEventListener('online', sync);
-    return () => window.removeEventListener('online', sync);
-  }, [queryClient]);
+    rafraichir();
+    return sAbonnerSync(rafraichir);
+  }, []);
 
   // Depuis /tresorerie?enCours=1 : on charge sans filtre statut API, filtre local.
   const queryFilters = enCours ? { ...filters, statut: '' } : filters;
@@ -263,8 +258,15 @@ export function TransactionsPage() {
         return true;
       });
     }
+    if (magasin.boutiqueId) {
+      rows = rows.filter(
+        (t) =>
+          t.caisse?.boutiqueId === magasin.boutiqueId ||
+          t.caisse?.boutique?.id === magasin.boutiqueId,
+      );
+    }
     return rows;
-  }, [transactions, enCours, ageingBucket, filters.statut]);
+  }, [transactions, enCours, ageingBucket, filters.statut, magasin.boutiqueId]);
 
   const colonnesStatut = useMemo(() => {
     if (enCours) return STATUTS_EN_COURS;
@@ -291,13 +293,16 @@ export function TransactionsPage() {
     <div className="treso-module">
       <PageHeader
         title="Transactions"
-        subtitle={
-          enCours
+        subtitle={libellePerimetrePage(user?.role, {
+          boutiqueId: magasin.boutiqueId,
+          nomMagasin: magasin.nomMagasin,
+          texteReseau: enCours
             ? ageingBucket && AGEING_HOURS[ageingBucket]
               ? `En cours · ageing ${ageingBucket.replace('_', '–')}`
               : 'Filtre : circuit en cours (initiée / transit / réceptionnée)'
-            : 'Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE'
-        }
+            : 'Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE',
+          texteBoutique: 'Circuit du magasin — initiation et suivi des versements',
+        })}
         actions={
           <>
             <nav className="circuit-nav" aria-label="Circuit trésorerie">
@@ -348,6 +353,7 @@ export function TransactionsPage() {
 
       <ListPanel title="Filtres">
         <div className="filters-row">
+          <FiltreMagasinSiege id="tx-filtre-magasin" />
           <label>
             Statut
             <select
@@ -384,7 +390,11 @@ export function TransactionsPage() {
               onChange={(e) => setFilters((f) => ({ ...f, caisseId: e.target.value }))}
             >
               <option value="">Toutes</option>
-              {(caisses ?? []).map((c) => (
+              {(caisses ?? [])
+                .filter(
+                  (c) => !magasin.boutiqueId || c.boutiqueId === magasin.boutiqueId,
+                )
+                .map((c) => (
                 <option key={c.id} value={c.id}>
                   {labelCaisseOption(c)}
                 </option>

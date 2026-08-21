@@ -43,14 +43,21 @@ export class ProduitsController {
 
   @Get()
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  findAll(@Query() query: ListProduitsQueryDto) {
-    return this.produitsService.findAll(query);
+  findAll(
+    @Query() query: ListProduitsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.produitsService.findAll(query, user);
   }
 
   @Get('export.csv')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  async exportCsv(@Query() query: ListProduitsQueryDto, @Res() res: Response) {
-    const csv = await this.produitsService.exportCsv(query);
+  async exportCsv(
+    @Query() query: ListProduitsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const csv = await this.produitsService.exportCsv(query, user);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
@@ -61,14 +68,14 @@ export class ProduitsController {
 
   @Get('synthese')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  synthese() {
-    return this.produitsService.synthese();
+  synthese(@CurrentUser() user: AuthenticatedUser) {
+    return this.produitsService.synthese(user);
   }
 
   @Get('classement')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  classement() {
-    return this.produitsService.classement();
+  classement(@CurrentUser() user: AuthenticatedUser) {
+    return this.produitsService.classement(user);
   }
 
   @Get('categories')
@@ -106,26 +113,29 @@ export class ProduitsController {
 
   @Get(':id')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  findOne(@Param('id') id: string) {
-    return this.produitsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.produitsService.findOne(id, user);
   }
 
   @Get(':id/analyse')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  analyse(@Param('id') id: string) {
-    return this.produitsService.analyse(id);
+  analyse(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.produitsService.analyse(id, user);
   }
 
   @Get(':id/ventes')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  findVentes(@Param('id') id: string) {
-    return this.produitsService.findVentes(id);
+  findVentes(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.produitsService.findVentes(id, user);
   }
 
   @Get(':id/mouvements')
   @Roles(...ROLES_LECTURE_STRUCTURE)
-  findMouvements(@Param('id') id: string) {
-    return this.produitsService.findMouvements(id);
+  findMouvements(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.produitsService.findMouvements(id, user);
   }
 
   @Patch(':id')

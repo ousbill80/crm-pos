@@ -4,7 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   ROLES_FACTURE_FOURNISSEUR,
-  ROLES_LECTURE_STRUCTURE,
+  ROLES_LECTURE_ACHATS,
   ROLES_PAIEMENT_FOURNISSEUR,
 } from '../caisses/access-scope.constants';
 import { FacturesFournisseurService } from './factures-fournisseur.service';
@@ -25,19 +25,19 @@ export class FacturesFournisseurController {
   }
 
   @Get()
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   lister() {
     return this.factures.lister();
   }
 
   @Get('a-facturer')
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   aFacturer(@Query('fournisseurId') fournisseurId?: string) {
     return this.factures.receptionsAFacturer(fournisseurId);
   }
 
   @Get(':id')
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_ACHATS)
   detail(@Param('id') id: string) {
     return this.factures.detail(id);
   }

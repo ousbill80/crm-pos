@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Banknote,
   CreditCard,
+  FileText,
   Keyboard,
   Minus,
   Pause,
@@ -61,12 +62,12 @@ import {
   enqueueLiberation,
   enqueueReservation,
   enqueueVente,
-  flushOutbox,
   hydrateOutbox,
   outboxVentesCount,
   quantiteReserveeOutbox,
   venteEnAttenteSync,
 } from '../lib/offline/outbox';
+import { sAbonnerSync } from '../lib/offline/auto-sync';
 import {
   CouponAttente,
   FileAttenteCaisse,
@@ -76,6 +77,7 @@ import {
   RailAttente,
   nomClientPos,
 } from '../components/pos/AttenteCaisse';
+import { EtatCaissePrint } from '../components/pos/EtatCaissePrint';
 import { loadPosCache, savePosCache, hydratePosCache } from '../lib/offline/pos-cache';
 import {
   clearHolds,
@@ -96,10 +98,12 @@ import type {
   ClientDto,
   ClotureSessionResponseDto,
   EntrepotDto,
+  EtatSessionDto,
   LigneVenteDto,
   ProduitDto,
   RetourVenteDto,
   SessionCaisseDto,
+  SocieteDto,
   TemoinEligibleDto,
   StatutStock,
   StockQuantDto,
@@ -375,15 +379,20 @@ function ComptageDenominations({
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [ouvert, setOuvert] = useState(false);
 
+  const total = DENOMINATIONS_FCFA.reduce(
+    (s, d) => s + d * (counts[d] ?? 0),
+    0,
+  );
+
   function maj(denom: number, raw: string) {
     const n = Math.max(0, Math.floor(Number(raw) || 0));
     const next = { ...counts, [denom]: n };
     setCounts(next);
-    const total = DENOMINATIONS_FCFA.reduce(
+    const sum = DENOMINATIONS_FCFA.reduce(
       (s, d) => s + d * (next[d] ?? 0),
       0,
     );
-    onTotalChange(total);
+    onTotalChange(sum);
   }
 
   function reset() {
@@ -407,6 +416,7 @@ function ComptageDenominations({
     <div className="pos-denoms">
       <div className="pos-denoms-head">
         <span>Coupures</span>
+        <strong className="money pos-denoms-total">{total.toLocaleString('fr-FR')} F</strong>
         <button type="button" className="pos-btn-ghost" onClick={reset}>
           Remise à zéro
         </button>
@@ -779,12 +789,14 @@ function TicketVente({
   vente,
   client,
   boutiqueNom,
+  societe,
   caissier,
   onSuite,
 }: {
   vente: VenteDto;
   client: ClientDto | null;
   boutiqueNom?: string;
+  societe?: SocieteDto | null;
   caissier: string;
   onSuite: () => void;
 }) {
@@ -798,35 +810,60 @@ function TicketVente({
     return () => window.removeEventListener('keydown', onKey);
   }, [onSuite]);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => window.print(), 180);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const mode = MODE_META[vente.modePaiement];
   const parts = paiementsEffectifs(vente);
 
   return (
     <div className="pos-receipt" data-testid="pos-receipt">
       <div className="pos-receipt-card ticket">
-        <div className="pos-receipt-brand">CaissePOS</div>
+        <div className="pos-receipt-brand">
+          {societe?.raisonSociale ?? 'CaissePOS'}
+        </div>
         {boutiqueNom && <p className="pos-receipt-shop">{boutiqueNom}</p>}
+        {societe?.adresse && <p className="pos-receipt-addr">{societe.adresse}</p>}
+        {societe?.telephone && (
+          <p className="pos-receipt-addr">{societe.telephone}</p>
+        )}
+        <div className="pos-receipt-rule" />
         <h2>Ticket {idCourt(vente.id)}</h2>
         <p className="pos-receipt-meta">
-          {new Date(vente.dateVente).toLocaleString('fr-FR')} · {caissier}
+          {new Date(vente.dateVente).toLocaleString('fr-FR')}
         </p>
-        <ul>
-          {vente.lignes.map((l) => {
-            const remise = Number(l.remise);
-            const ligne = Number(l.prixUnitaire) * l.quantite - remise;
-            return (
-              <li key={l.id}>
-                <span>
-                  {l.produit.designation} ×{l.quantite}
-                  {remise > 0 && (
-                    <em className="pos-receipt-remise"> −{formatMontant(remise)}</em>
-                  )}
-                </span>
-                <span className="money">{formatMontant(ligne)}</span>
-              </li>
-            );
-          })}
-        </ul>
+        <p className="pos-receipt-meta">{caissier}</p>
+        <div className="pos-receipt-rule" />
+        <table className="pos-ticket-lines">
+          <thead>
+            <tr>
+              <th>Article</th>
+              <th>Qté</th>
+              <th>Montant</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vente.lignes.map((l) => {
+              const remise = Number(l.remise);
+              const ligne = Number(l.prixUnitaire) * l.quantite - remise;
+              return (
+                <tr key={l.id}>
+                  <td>
+                    {l.produit.designation}
+                    {remise > 0 && (
+                      <em className="pos-receipt-remise"> −{formatMontant(remise)}</em>
+                    )}
+                  </td>
+                  <td>{l.quantite}</td>
+                  <td className="money">{formatMontant(ligne)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="pos-receipt-rule" />
         {client && (
           <p className="pos-receipt-client">
             {nomClientPos(client)}
@@ -848,15 +885,16 @@ function TicketVente({
         <p className="pos-receipt-total money">
           {formatMontant(Number(vente.montantTotal))} FCFA
         </p>
+        <p className="pos-receipt-thanks">Merci de votre visite</p>
         {venteEnAttenteSync(vente.id) && (
-          <p className="pos-warn" role="status">
+          <p className="pos-warn no-print" role="status">
             Ticket en attente de synchronisation — il partira à la reconnexion.
           </p>
         )}
         <div className="pos-receipt-actions no-print">
           <button type="button" onClick={() => window.print()}>
             <Printer size={16} />
-            Imprimer
+            Réimprimer
           </button>
           <button type="button" className="pos-btn-primary" onClick={onSuite}>
             Nouvelle commande
@@ -884,6 +922,11 @@ function CloturePanel({
 }) {
   const queryClient = useQueryClient();
   const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
+  const { data: etat, isLoading: loadingEtat } = useQuery({
+    queryKey: ['etat-session', session.id],
+    queryFn: () =>
+      apiFetch<EtatSessionDto>(`/ventes/sessions/${session.id}/etat`),
+  });
   const [etape, setEtape] = useState<1 | 2>(1);
   const [fondCompteCloture, setFondCompteCloture] = useState('');
   const [temoinLogin, setTemoinLogin] = useState('');
@@ -896,14 +939,23 @@ function CloturePanel({
     setTemoinLogin(temoins[0].login);
   }, [temoins]);
 
+  // Fallback local si l’état X n’est pas encore chargé — la clôture serveur
+  // recalcule toujours via calculerReleve (§6.3.4).
   const caEspeces = ventes.reduce((s, v) => s + partEspeces(v), 0);
   const retoursEspeces = debitEspecesRetours(ventes, retours);
-  const fondTheorique = Number(session.fondInitial) + caEspeces - retoursEspeces;
+  const fondInitialLocal = Number(session.fondInitial);
+  const especesNettesLocal = caEspeces - retoursEspeces;
+  const fondInitial = Number(etat?.fondInitial ?? fondInitialLocal);
+  const especesNettes = Number(etat?.totalEspecesNet ?? especesNettesLocal);
+  const fondTheorique = Number(
+    etat?.fondTheorique ?? fondInitialLocal + especesNettesLocal,
+  );
   const fondCompteNum = fondCompteCloture === '' ? null : Number(fondCompteCloture);
   const fondOk =
     fondCompteNum != null && Number.isFinite(fondCompteNum) && fondCompteNum >= 0;
   const ecart = fondOk ? fondCompteNum - fondTheorique : null;
   const temoinChoisi = temoins?.find((t) => t.login === temoinLogin);
+  const peutContinuer = commandesEnAttente === 0 && fondOk && !loadingEtat;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -919,12 +971,24 @@ function CloturePanel({
       setResultat(data);
       clearHolds(session.id);
       void queryClient.invalidateQueries({ queryKey: ['ventes-sessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['etat-session', session.id] });
     },
     onError: (err) =>
       setError(
         messageDepuisApi(err, 'Échec clôture : fond compté ou confirmateur invalide.'),
       ),
   });
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !mutation.isPending && !resultat) {
+        e.preventDefault();
+        onFermer();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mutation.isPending, resultat, onFermer]);
 
   function allerConfirmateur() {
     if (commandesEnAttente > 0) {
@@ -933,6 +997,12 @@ function CloturePanel({
     }
     if (!fondOk) {
       setError('Indiquez le fond compté dans le tiroir.');
+      return;
+    }
+    if (!temoins || temoins.length === 0) {
+      setError(
+        'Aucun confirmateur éligible sur cette boutique. Créez un autre caissier ou un responsable magasin.',
+      );
       return;
     }
     setError(null);
@@ -953,221 +1023,276 @@ function CloturePanel({
       setError('Le confirmateur doit saisir son mot de passe.');
       return;
     }
+    setError(null);
     mutation.mutate();
   }
 
   if (resultat) {
     return (
-      <div className="pos-modal-backdrop">
-        <div className="pos-modal ticket pos-cloture-card">
-          <div className="pos-gate-brand">CaissePOS</div>
-          <h2>Session clôturée</h2>
-          <ul className="pos-cloture-releve">
-            {resultat.releve.map((r) => (
-              <li key={r.modePaiement}>
-                {MODE_META[r.modePaiement]?.label ?? r.modePaiement} :{' '}
-                <strong className="money">{formatMontant(Number(r.total))}</strong>{' '}
-                ({r.nombreVentes})
-              </li>
-            ))}
-          </ul>
-          {resultat.transactionVersementId ? (
-            <p>
-              Bordereau espèces initié :{' '}
-              <Link to={`/transactions/${resultat.transactionVersementId}`}>
-                {idCourt(resultat.transactionVersementId)} — ouvrir la fiche
-              </Link>
-            </p>
-          ) : (
-            <p>Pas de bordereau espèces (aucune vente cash nette).</p>
-          )}
-          <div className="pos-receipt-actions">
-            <button
-              type="button"
-              onClick={() =>
-                void apiDownload(
-                  `/ventes/sessions/${session.id}/cloture/pdf`,
-                  `releve-${session.id}.pdf`,
-                )
-              }
-            >
-              <Printer size={16} />
-              PDF
-            </button>
-            <button type="button" className="pos-btn-primary" onClick={onFermer}>
-              Fermer
-            </button>
-          </div>
-        </div>
-      </div>
+      <EtatCaissePrint
+        sessionId={session.id}
+        autoPrint
+        bordereauId={resultat.transactionVersementId}
+        onFermer={onFermer}
+      />
     );
   }
 
   return (
-    <div className="pos-modal-backdrop" onClick={onFermer} role="presentation">
+    <div
+      className="pos-modal-backdrop"
+      onClick={() => {
+        if (!mutation.isPending) onFermer();
+      }}
+      role="presentation"
+    >
       <form
         className="pos-modal pos-cloture-card"
+        data-testid="pos-cloture-panel"
         onSubmit={onSubmit}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="pos-open-top">
-          <div className="pos-gate-brand">CaissePOS</div>
-          <div className="pos-open-steps" aria-label="Étapes">
-            <span className={etape === 1 ? 'actif' : 'fait'}>1 Comptage</span>
-            <span className="pos-open-steps-sep" />
-            <span className={etape === 2 ? 'actif' : ''}>2 Confirmateur</span>
+        <div className="pos-cloture-head">
+          <div className="pos-open-top">
+            <div className="pos-gate-brand">CaissePOS</div>
+            <div className="pos-open-steps" aria-label="Étapes de clôture">
+              <span className={etape === 1 ? 'actif' : 'fait'}>1 Comptage</span>
+              <span className="pos-open-steps-sep" aria-hidden />
+              <span className={etape === 2 ? 'actif' : ''}>2 Confirmateur</span>
+            </div>
           </div>
+          <h2>Fermer le poste</h2>
+          <p className="pos-open-help">
+            Comptez le tiroir, puis faites confirmer par un coéquipier présent.
+            Un écart ouvre un litige sur le versement magasin.
+          </p>
         </div>
-        <h2>Fermer le poste</h2>
-        <p className="pos-open-help">
-          Comme en magasin : compter le tiroir, puis faire confirmer par un
-          coéquipier.
-        </p>
 
-        {panierNonVide && (
-          <p className="pos-warn" role="status">
-            La commande en cours n’est pas encaissée et sera perdue.
-          </p>
-        )}
-        {commandesEnAttente > 0 && (
-          <p className="pos-warn" role="status">
-            {commandesEnAttente} ticket(s) en file d’attente — reprendre ou
-            abandonner avant de clôturer.
-            <InfoTooltip insight={insightCommandeEnAttente(commandesEnAttente)} />
-          </p>
-        )}
+        <div className="pos-cloture-body">
+          {panierNonVide && (
+            <p className="pos-warn" role="status">
+              La commande en cours n’est pas encaissée et sera perdue.
+            </p>
+          )}
+          {commandesEnAttente > 0 && (
+            <p className="pos-warn" role="status">
+              {commandesEnAttente} ticket(s) en file — reprendre ou abandonner
+              avant de clôturer.
+              <InfoTooltip insight={insightCommandeEnAttente(commandesEnAttente)} />
+            </p>
+          )}
 
-        {etape === 1 && (
-          <fieldset className="pos-open-fieldset">
-            <legend>Comptage du tiroir</legend>
-            <div className="pos-open-recap">
-              <span>
-                Attendu
-                <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
-              </span>
-              <strong className="money">
-                {formatMontant(fondTheorique)} FCFA
-              </strong>
-            </div>
-            <div className="pos-open-fonds">
-              <button
-                type="button"
-                className={fondCompteNum === fondTheorique ? 'actif' : ''}
-                onClick={() => setFondCompteCloture(String(Math.round(fondTheorique)))}
-              >
-                = Attendu
-              </button>
-              {FONDS_RAPIDES.filter((n) => n > 0).map((n) => (
+          {etape === 1 && (
+            <fieldset className="pos-open-fieldset">
+              <legend>Comptage du tiroir</legend>
+
+              <div className="pos-cloture-breakdown" aria-label="Fond attendu">
+                {loadingEtat ? (
+                  <LoadingState label="Calcul du fond attendu…" />
+                ) : (
+                  <>
+                    <div>
+                      <span>Fond d’ouverture</span>
+                      <strong className="money">
+                        {formatMontant(fondInitial)} F
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Espèces nettes session</span>
+                      <strong className="money">
+                        {especesNettes >= 0 ? '+' : ''}
+                        {formatMontant(especesNettes)} F
+                      </strong>
+                    </div>
+                    {retoursEspeces > 0 && (
+                      <div>
+                        <span>dont retours espèces</span>
+                        <strong className="money">
+                          −{formatMontant(retoursEspeces)} F
+                        </strong>
+                      </div>
+                    )}
+                    <div className="pos-cloture-breakdown-total">
+                      <span>
+                        Attendu
+                        <InfoTooltip
+                          insight={insightEcartCloture(
+                            fondTheorique,
+                            fondCompteNum,
+                          )}
+                        />
+                      </span>
+                      <strong className="money">
+                        {formatMontant(fondTheorique)} FCFA
+                      </strong>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pos-open-fonds">
                 <button
-                  key={n}
                   type="button"
-                  className={fondCompteNum === n ? 'actif' : ''}
-                  onClick={() => setFondCompteCloture(String(n))}
+                  className={fondCompteNum === fondTheorique ? 'actif' : ''}
+                  onClick={() =>
+                    setFondCompteCloture(String(Math.round(fondTheorique)))
+                  }
                 >
-                  {n.toLocaleString('fr-FR')} F
+                  = Attendu
                 </button>
-              ))}
-            </div>
-            <ComptageDenominations
-              onTotalChange={(total) => setFondCompteCloture(String(total))}
-            />
-            <label htmlFor="fondCompteCloture">Fond compté (FCFA)</label>
-            <input
-              id="fondCompteCloture"
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              value={fondCompteCloture}
-              onChange={(e) => setFondCompteCloture(e.target.value)}
-              required
-              autoFocus
-            />
-            {ecart != null && (
-              <p
-                className={
-                  ecart === 0
-                    ? 'pos-cloture-ecart ok'
-                    : 'pos-cloture-ecart warn'
-                }
-                role="status"
-              >
-                {ecart === 0
-                  ? 'Tiroir juste — aucun écart'
-                  : `Écart ${ecart > 0 ? '+' : ''}${formatMontant(ecart)} FCFA`}
-              </p>
-            )}
-          </fieldset>
-        )}
+                {FONDS_RAPIDES.filter((n) => n > 0).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={fondCompteNum === n ? 'actif' : ''}
+                    onClick={() => setFondCompteCloture(String(n))}
+                  >
+                    {n.toLocaleString('fr-FR')} F
+                  </button>
+                ))}
+              </div>
 
-        {etape === 2 && (
-          <fieldset className="pos-open-fieldset">
-            <legend>Confirmateur présent</legend>
-            <div className="pos-open-recap">
-              <span>Compté</span>
-              <strong className="money">
-                {formatMontant(fondCompteNum ?? 0)} FCFA
-              </strong>
-            </div>
-            {ecart != null && ecart !== 0 && (
-              <p className="pos-cloture-ecart warn" role="status">
-                Écart {ecart > 0 ? '+' : ''}
-                {formatMontant(ecart)} FCFA vs attendu
-                <InfoTooltip insight={insightEcartCloture(fondTheorique, fondCompteNum)} />
-              </p>
-            )}
-            <TemoinsPicker
-              temoins={temoins}
-              value={temoinLogin}
-              onChange={(login) => {
-                setTemoinLogin(login);
-                setTemoinPassword('');
-              }}
-              loading={loadingTemoins}
-            />
-            {temoinLogin && (
-              <>
-                <label htmlFor="temoinPasswordCloture">
-                  Mot de passe de {temoinChoisi?.prenom ?? 'confirmateur'}
-                </label>
-                <input
-                  id="temoinPasswordCloture"
-                  type="password"
-                  autoComplete="current-password"
-                  value={temoinPassword}
-                  onChange={(e) => setTemoinPassword(e.target.value)}
-                  required
-                  autoFocus
-                />
-              </>
-            )}
-          </fieldset>
-        )}
+              <ComptageDenominations
+                onTotalChange={(total) => setFondCompteCloture(String(total))}
+              />
 
-        <div className="pos-open-actions">
+              <label htmlFor="fondCompteCloture">Fond compté (FCFA)</label>
+              <input
+                id="fondCompteCloture"
+                data-testid="pos-cloture-fond"
+                className="pos-open-montant"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={fondCompteCloture}
+                onChange={(e) => setFondCompteCloture(e.target.value)}
+                required
+                autoFocus
+                placeholder="Montant réellement dans le tiroir"
+              />
+
+              {ecart != null && (
+                <p
+                  className={
+                    ecart === 0 ? 'pos-cloture-ecart ok' : 'pos-cloture-ecart warn'
+                  }
+                  role="status"
+                  data-testid="pos-cloture-ecart"
+                >
+                  {ecart === 0
+                    ? 'Tiroir juste — aucun écart'
+                    : `Écart ${ecart > 0 ? '+' : ''}${formatMontant(ecart)} FCFA`}
+                </p>
+              )}
+            </fieldset>
+          )}
+
+          {etape === 2 && (
+            <fieldset className="pos-open-fieldset">
+              <legend>Confirmateur présent</legend>
+
+              <div className="pos-cloture-breakdown" aria-label="Récapitulatif">
+                <div>
+                  <span>Attendu</span>
+                  <strong className="money">
+                    {formatMontant(fondTheorique)} F
+                  </strong>
+                </div>
+                <div>
+                  <span>Compté</span>
+                  <strong className="money">
+                    {formatMontant(fondCompteNum ?? 0)} F
+                  </strong>
+                </div>
+                {ecart != null && (
+                  <div className="pos-cloture-breakdown-total">
+                    <span>
+                      Écart
+                      <InfoTooltip
+                        insight={insightEcartCloture(fondTheorique, fondCompteNum)}
+                      />
+                    </span>
+                    <strong
+                      className={`money${ecart === 0 ? '' : ' pos-cloture-ecart-inline'}`}
+                    >
+                      {ecart === 0
+                        ? '0 F'
+                        : `${ecart > 0 ? '+' : ''}${formatMontant(ecart)} F`}
+                    </strong>
+                  </div>
+                )}
+              </div>
+
+              <TemoinsPicker
+                temoins={temoins}
+                value={temoinLogin}
+                onChange={(login) => {
+                  setTemoinLogin(login);
+                  setTemoinPassword('');
+                }}
+                loading={loadingTemoins}
+              />
+
+              {temoinLogin && (
+                <>
+                  <label htmlFor="temoinPasswordCloture">
+                    Mot de passe de {temoinChoisi?.prenom ?? 'confirmateur'}
+                  </label>
+                  <input
+                    id="temoinPasswordCloture"
+                    data-testid="pos-cloture-temoin-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={temoinPassword}
+                    onChange={(e) => setTemoinPassword(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </>
+              )}
+            </fieldset>
+          )}
+
+          {error && (
+            <p className="pos-cloture-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="pos-cloture-foot pos-open-actions">
           {etape === 2 ? (
             <button
               type="button"
               className="pos-open-back"
+              disabled={mutation.isPending}
               onClick={() => {
                 setError(null);
+                setTemoinPassword('');
                 setEtape(1);
               }}
             >
               ← Comptage
             </button>
           ) : (
-            <button type="button" className="pos-open-back" onClick={onFermer}>
+            <button
+              type="button"
+              className="pos-open-back"
+              disabled={mutation.isPending}
+              onClick={onFermer}
+            >
               Annuler
             </button>
           )}
           <button
             type="submit"
             className="pos-btn-primary"
+            data-testid="pos-cloture-submit"
             disabled={
               mutation.isPending ||
               commandesEnAttente > 0 ||
-              (etape === 1 && !fondOk) ||
+              (etape === 1 && !peutContinuer) ||
               (etape === 2 && (!temoinLogin || !temoinPassword))
             }
           >
@@ -1180,7 +1305,6 @@ function CloturePanel({
                   : 'Clôturer'}
           </button>
         </div>
-        {error && <p role="alert">{error}</p>}
       </form>
     </div>
   );
@@ -1264,18 +1388,25 @@ function ClientPicker({
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [horsListe, setHorsListe] = useState<ClientDto | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const selected = clients.find((c) => c.id === clientId) ?? null;
+  const terme = q.trim();
+  const rechercheReseau = useQuery({
+    queryKey: ['crm-clients', 'recherche', terme],
+    queryFn: () =>
+      apiFetch<ClientDto[]>(`/crm/clients?q=${encodeURIComponent(terme)}`),
+    enabled: terme.length >= 2,
+  });
+  const selected =
+    clients.find((c) => c.id === clientId) ??
+    (horsListe?.id === clientId ? horsListe : null);
 
   const filtres = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const list = !s
-      ? clients
-      : clients.filter((c) =>
-          `${nomClientPos(c)} ${c.contact ?? ''}`.toLowerCase().includes(s),
-        );
-    return list.slice(0, 12);
-  }, [clients, q]);
+    if (terme.length >= 2) {
+      return (rechercheReseau.data ?? []).slice(0, 12);
+    }
+    return clients.slice(0, 12);
+  }, [clients, terme.length, rechercheReseau.data]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -1286,6 +1417,17 @@ function ClientPicker({
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
+
+  function choisir(client: ClientDto | null) {
+    if (client && !clients.some((c) => c.id === client.id)) {
+      setHorsListe(client);
+    } else {
+      setHorsListe(null);
+    }
+    onChange(client?.id ?? '');
+    setQ('');
+    setOpen(false);
+  }
 
   return (
     <div className="pos-client" ref={wrapRef}>
@@ -1304,7 +1446,7 @@ function ClientPicker({
               {selected.fidelite?.pointsCumules ?? 0} pts
             </span>
           </div>
-          <button type="button" className="pos-btn-ghost" onClick={() => onChange('')}>
+          <button type="button" className="pos-btn-ghost" onClick={() => { setHorsListe(null); onChange(''); }}>
             Anonyme
           </button>
         </div>
@@ -1313,7 +1455,7 @@ function ClientPicker({
           <input
             id="pos-client-search"
             type="search"
-            placeholder="Rechercher — laisser vide = anonyme"
+            placeholder="Nom ou téléphone — réseau"
             value={q}
             autoComplete="off"
             onChange={(e) => {
@@ -1325,38 +1467,30 @@ function ClientPicker({
           {open && (
             <ul className="pos-client-list" role="listbox">
               <li>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange('');
-                    setQ('');
-                    setOpen(false);
-                  }}
-                >
+                <button type="button" onClick={() => choisir(null)}>
                   Client anonyme
                 </button>
               </li>
+              {rechercheReseau.isFetching && terme.length >= 2 ? (
+                <li className="pos-empty">Recherche réseau…</li>
+              ) : null}
               {filtres.map((c) => (
                 <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onChange(c.id);
-                      setQ('');
-                      setOpen(false);
-                    }}
-                  >
+                  <button type="button" onClick={() => choisir(c)}>
                     <strong>
                       {nomClientPos(c)}
                     </strong>
                     <small>
+                      {c.contact ? `${c.contact} · ` : ''}
                       {c.segment} · {c.fidelite?.niveau ?? 'BRONZE'} ·{' '}
                       {c.fidelite?.pointsCumules ?? 0} pts
                     </small>
                   </button>
                 </li>
               ))}
-              {filtres.length === 0 && <li className="pos-empty">Aucun client.</li>}
+              {filtres.length === 0 && !rechercheReseau.isFetching && (
+                <li className="pos-empty">Aucun client.</li>
+              )}
             </ul>
           )}
         </>
@@ -1888,10 +2022,15 @@ function PosCaisse({
   const [ticket, setTicket] = useState<VenteDto | null>(null);
   const [ticketClient, setTicketClient] = useState<ClientDto | null>(null);
   const [cloture, setCloture] = useState(false);
+  const [etatOpen, setEtatOpen] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const now = useNowTick(5_000);
   const queryClient = useQueryClient();
+  const societeQ = useQuery({
+    queryKey: ['entreprise'],
+    queryFn: () => apiFetch<SocieteDto>('/entreprise'),
+  });
   const online = useOnline();
   const [pending, setPending] = useState(() => outboxVentesCount(session.id));
   const clientsDisponibles = useMemo(() => {
@@ -1977,26 +2116,12 @@ function PosCaisse({
   }, [online, session.id, holds, queryClient]);
 
   useEffect(() => {
-    async function sync() {
+    function rafraichir() {
       setPending(outboxVentesCount(session.id));
-      if (!navigator.onLine) return;
-      const result = await flushOutbox((path, body, method = 'POST') =>
-        apiFetch(path, {
-          method,
-          ...(method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
-        }),
-      );
-      setPending(outboxVentesCount(session.id));
-      if (result.flushed > 0) {
-        void queryClient.invalidateQueries({ queryKey: ['ventes-session'] });
-        void queryClient.invalidateQueries({ queryKey: ['produits'] });
-        void queryClient.invalidateQueries({ queryKey: ['stocks'] });
-      }
     }
-    void sync();
-    window.addEventListener('online', sync);
-    return () => window.removeEventListener('online', sync);
-  }, [queryClient, session.id]);
+    rafraichir();
+    return sAbonnerSync(rafraichir);
+  }, [session.id]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -2334,12 +2459,19 @@ function PosCaisse({
         vente={ticket}
         client={ticketClient}
         boutiqueNom={boutiqueNom}
+        societe={societeQ.data}
         caissier={userLogin}
         onSuite={() => {
           setTicket(null);
           setTicketClient(null);
         }}
       />
+    );
+  }
+
+  if (etatOpen) {
+    return (
+      <EtatCaissePrint sessionId={session.id} onFermer={() => setEtatOpen(false)} />
     );
   }
 
@@ -2491,9 +2623,20 @@ function PosCaisse({
           F2 scan · F3 attente · F8 file · F4 / Ctrl+Entrée paiement · Échap
         </p>
         <div className="pos-topbar-actions">
-          <span className="pos-online-chip" title={online ? 'En ligne' : 'Hors ligne'}>
-            {online ? <Wifi size={15} /> : <WifiOff size={15} />}
-            {pending > 0 ? pending : null}
+          <span
+            className={`pos-online-chip${online ? '' : ' is-off'}${pending > 0 ? ' is-sync' : ''}`}
+            title={
+              !online
+                ? 'Hors ligne — les ventes iront au serveur automatiquement à la reconnexion'
+                : pending > 0
+                  ? `${pending} vente(s) : envoi automatique en cours`
+                  : 'En ligne — les ventes partent au serveur'
+            }
+          >
+            {online ? <Wifi size={15} aria-hidden /> : <WifiOff size={15} aria-hidden />}
+            <span>
+              {!online ? 'Hors ligne' : pending > 0 ? `Envoi ${pending}` : 'En ligne'}
+            </span>
             <InfoTooltip insight={insightHorsLignePos(pending, online)} />
           </span>
           <button
@@ -2523,6 +2666,15 @@ function PosCaisse({
           </button>
           <button
             type="button"
+            data-testid="pos-etat-x-btn"
+            title="Ventes du jour — État X, sans clôturer"
+            onClick={() => setEtatOpen(true)}
+          >
+            <FileText size={15} />
+            Ventes du jour
+          </button>
+          <button
+            type="button"
             data-testid="pos-cloture-btn"
             disabled={pending > 0 || holds.length > 0}
             title={
@@ -2541,8 +2693,8 @@ function PosCaisse({
       {(!online || pending > 0) && (
         <div className="pos-offline-banner" role="status">
           {online
-            ? `${pending} ticket(s) en attente de synchronisation.`
-            : 'Hors ligne — les encaissements iront en file locale (§6.7).'}
+            ? `${pending} ticket(s) : envoi automatique au serveur en cours.`
+            : 'Hors ligne — les encaissements iront en file locale, puis au serveur tout seuls à la reconnexion.'}
         </div>
       )}
 

@@ -101,4 +101,32 @@ describe('flushOutbox — append-only', () => {
     expect(sent).toEqual(['POST /ventes/sessions/s/ventes']);
     expect((await store.listOutbox())[0]?.method).toBe('PUT');
   });
+
+  it('conserve une op enqueued pendant l’envoi', async () => {
+    const store = createMemoryStore();
+    await store.replaceOutbox([
+      op({
+        id: 'v1',
+        method: 'POST',
+        path: '/ventes/sessions/s/ventes',
+        body: { clientOperationId: 'v1' },
+      }),
+    ]);
+
+    const result = await flushOutbox(store, async () => {
+      const actuel = await store.listOutbox();
+      await store.replaceOutbox([
+        ...actuel,
+        op({
+          id: 'v2',
+          method: 'POST',
+          path: '/ventes/sessions/s/ventes',
+          body: { clientOperationId: 'v2' },
+        }),
+      ]);
+    });
+
+    expect(result).toEqual({ flushed: 1, remaining: 1 });
+    expect((await store.listOutbox()).map((o) => o.id)).toEqual(['v2']);
+  });
 });

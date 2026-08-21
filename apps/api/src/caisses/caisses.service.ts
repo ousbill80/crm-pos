@@ -93,7 +93,7 @@ export class CaissesService {
   async createTiroir(dto: CreateTiroirDto, user: AuthenticatedUser) {
     if (!ROLES_CONFIG_TIROIRS.includes(user.role)) {
       throw new ForbiddenException(
-        'Configuration des tiroirs réservée au DAF.',
+        'Configuration des tiroirs réservée au DAF et à l’admin structure.',
       );
     }
     const boutique = await this.prisma.boutique.findUnique({
@@ -150,7 +150,7 @@ export class CaissesService {
   ) {
     if (!ROLES_CONFIG_TIROIRS.includes(user.role)) {
       throw new ForbiddenException(
-        'Configuration des tiroirs réservée au DAF.',
+        'Configuration des tiroirs réservée au DAF et à l’admin structure.',
       );
     }
     const tiroir = await this.prisma.caisse.findUnique({ where: { id } });

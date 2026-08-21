@@ -40,3 +40,13 @@ export const CRM_ROLES_CREATION: RoleLibelle[] = [
 ];
 
 export const CRM_ROLES_ADMIN: RoleLibelle[] = [RoleLibelle.RESPONSABLE_CRM];
+
+// Campagnes = siège / CRM. Pas les rôles boutique (liste magasin seulement)
+// ni le superviseur (même menu Contacts sans campagnes).
+export const CRM_ROLES_CAMPAGNES: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_CRM,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.CAISSIER_CENTRAL,
+  RoleLibelle.CONTROLEUR_INTERNE,
+];

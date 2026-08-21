@@ -185,6 +185,23 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
       expect(body.telephone).toBe('+221770000000');
     });
 
+    it('enregistre le logo sans le dump base64 dans l’audit', async () => {
+      const dataUrl =
+        'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD';
+      const response = await request(app.getHttpServer())
+        .patch('/entreprise')
+        .set(auth(tokens.respsi))
+        .send({ logoUrl: dataUrl })
+        .expect(200);
+      expect((response.body as { logoUrl: string }).logoUrl).toBe(dataUrl);
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: { action: 'ENTREPRISE_UPDATED' },
+        orderBy: { dateHeure: 'desc' },
+      });
+      expect(audit?.details).toContain('[image]');
+      expect(audit?.details).not.toContain('/9j/');
+    });
+
     it('autorise RESPONSABLE_SI à configurer delaiVersementHeures (§6.3.5)', async () => {
       const response = await request(app.getHttpServer())
         .patch('/entreprise')

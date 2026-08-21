@@ -71,8 +71,13 @@ export class CampagnesService {
   async contacts(id: string): Promise<ContactCible[]> {
     const campagne = await this.findOne(id);
 
+    // §6.6 : uniquement les clients avec consentement marketing et un
+    // contact renseigné — la campagne sert l’export pour envoi manuel.
     const clients = await this.prisma.client.findMany({
       where: {
+        consentementMarketing: true,
+        contact: { not: null },
+        NOT: { contact: '' },
         ...(campagne.segment ? { segment: campagne.segment } : {}),
         ...(campagne.niveauFidelite
           ? { fidelite: { niveau: campagne.niveauFidelite } }

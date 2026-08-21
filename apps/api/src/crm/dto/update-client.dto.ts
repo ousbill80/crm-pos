@@ -32,6 +32,10 @@ export class UpdateClientDto {
   contact?: string;
 
   @IsOptional()
+  @IsString()
+  adresse?: string;
+
+  @IsOptional()
   @IsDateString()
   dateNaissance?: string;
 

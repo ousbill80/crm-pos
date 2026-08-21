@@ -1,40 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Building2,
   Grid2x2,
   LayoutDashboard,
   LogOut,
   Package,
   PieChart,
+  Settings,
   ShoppingCart,
+  ShoppingBag,
   Truck,
   Users,
   Wallet,
   Warehouse,
   type LucideIcon,
 } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
+import {
+  accueilApp,
+  homeForRole,
+  RoleLibelle,
+  rolesPourApp,
+  rolesPourMenu,
+  type AppProfilId,
+} from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
 import { TopbarSystray } from '../components/Topbar';
 
 type AppMenu = { to: string; label: string; roles?: RoleLibelle[] };
 
 type AppDef = {
-  id: string;
+  id: AppProfilId;
   name: string;
   color: string;
   icon: LucideIcon;
   home: string;
   match: string[];
   menus: AppMenu[];
-  /** Si défini, l'app n'apparaît que pour ces rôles. */
-  roles?: RoleLibelle[];
+  roles: RoleLibelle[];
 };
 
 /**
- * Navigation façon Odoo : switcher d’applications + menus de l’app active.
- * (pas de sidebar avec groupes Pilotage / Trésorerie / Opérations)
+ * Navigation façon Odoo. Visibilité = catalogue profils §4 / §6.2
+ * (`packages/shared/src/profils.ts`). L’API refuse déjà les écritures hors rôle.
  */
 const APPS: AppDef[] = [
   {
@@ -44,7 +51,25 @@ const APPS: AppDef[] = [
     icon: ShoppingCart,
     home: '/pos',
     match: ['/pos'],
+    roles: rolesPourApp('pos'),
     menus: [],
+  },
+  {
+    id: 'ventes',
+    name: 'Ventes',
+    color: '#875A7B',
+    icon: ShoppingBag,
+    home: '/ventes',
+    match: ['/ventes'],
+    roles: rolesPourApp('ventes'),
+    menus: [
+      { to: '/ventes', label: 'Vue d’ensemble' },
+      {
+        to: '/pos',
+        label: 'Point de vente',
+        roles: rolesPourApp('pos'),
+      },
+    ],
   },
   {
     id: 'produits',
@@ -53,6 +78,7 @@ const APPS: AppDef[] = [
     icon: Package,
     home: '/produits',
     match: ['/produits'],
+    roles: rolesPourApp('produits'),
     menus: [{ to: '/produits', label: 'Catalogue' }],
   },
   {
@@ -62,12 +88,29 @@ const APPS: AppDef[] = [
     icon: Warehouse,
     home: '/stocks',
     match: ['/stocks', '/inventaires'],
+    roles: rolesPourApp('inventory'),
     menus: [
-      { to: '/stocks', label: 'Stocks' },
-      { to: '/stocks/operations', label: 'Opérations' },
-      { to: '/stocks/emplacements', label: 'Emplacements' },
-      { to: '/stocks/reappro', label: 'Réappro' },
-      { to: '/inventaires', label: 'Inventaires physiques' },
+      { to: '/stocks', label: 'Stocks', roles: rolesPourMenu('inventory', '/stocks') },
+      {
+        to: '/stocks/operations',
+        label: 'Opérations',
+        roles: rolesPourMenu('inventory', '/stocks/operations'),
+      },
+      {
+        to: '/stocks/emplacements',
+        label: 'Emplacements',
+        roles: rolesPourMenu('inventory', '/stocks/emplacements'),
+      },
+      {
+        to: '/stocks/reappro',
+        label: 'Réappro',
+        roles: rolesPourMenu('inventory', '/stocks/reappro'),
+      },
+      {
+        to: '/inventaires',
+        label: 'Inventaires physiques',
+        roles: rolesPourMenu('inventory', '/inventaires'),
+      },
     ],
   },
   {
@@ -77,6 +120,7 @@ const APPS: AppDef[] = [
     icon: Truck,
     home: '/fournisseurs',
     match: ['/fournisseurs', '/achats/commandes', '/achats/factures'],
+    roles: rolesPourApp('purchase'),
     menus: [
       { to: '/fournisseurs', label: 'Fournisseurs' },
       { to: '/achats/commandes', label: 'Commandes' },
@@ -89,8 +133,16 @@ const APPS: AppDef[] = [
     color: '#875A7B',
     icon: Users,
     home: '/clients',
-    match: ['/clients'],
-    menus: [{ to: '/clients', label: 'Clients' }],
+    match: ['/clients', '/campagnes'],
+    roles: rolesPourApp('contacts'),
+    menus: [
+      { to: '/clients', label: 'Clients', roles: rolesPourMenu('contacts', '/clients') },
+      {
+        to: '/campagnes',
+        label: 'Campagnes',
+        roles: rolesPourMenu('contacts', '/campagnes'),
+      },
+    ],
   },
   {
     id: 'finance',
@@ -99,12 +151,7 @@ const APPS: AppDef[] = [
     icon: PieChart,
     home: '/finance',
     match: ['/finance'],
-    roles: [
-      RoleLibelle.DAF,
-      RoleLibelle.DIRECTION_GENERALE,
-      RoleLibelle.CAISSIER_CENTRAL,
-      RoleLibelle.CONTROLEUR_INTERNE,
-    ],
+    roles: rolesPourApp('finance'),
     menus: [
       { to: '/finance', label: 'Vue DAF' },
       { to: '/finance?tab=resultat', label: 'Compte de résultat' },
@@ -121,11 +168,20 @@ const APPS: AppDef[] = [
     icon: Wallet,
     home: '/tresorerie',
     match: ['/tresorerie', '/transactions', '/caisses', '/litiges'],
+    roles: rolesPourApp('treasury'),
     menus: [
-      { to: '/tresorerie', label: 'Vue d’ensemble' },
-      { to: '/transactions', label: 'Transactions' },
-      { to: '/caisses', label: 'Caisses' },
-      { to: '/litiges', label: 'Litiges' },
+      {
+        to: '/tresorerie',
+        label: 'Vue d’ensemble',
+        roles: rolesPourMenu('treasury', '/tresorerie'),
+      },
+      {
+        to: '/transactions',
+        label: 'Transactions',
+        roles: rolesPourMenu('treasury', '/transactions'),
+      },
+      { to: '/caisses', label: 'Caisses', roles: rolesPourMenu('treasury', '/caisses') },
+      { to: '/litiges', label: 'Litiges', roles: rolesPourMenu('treasury', '/litiges') },
     ],
   },
   {
@@ -135,6 +191,7 @@ const APPS: AppDef[] = [
     icon: LayoutDashboard,
     home: '/dashboard',
     match: ['/dashboard', '/alertes'],
+    roles: rolesPourApp('dashboard'),
     menus: [
       { to: '/dashboard', label: 'Vue d’ensemble' },
       { to: '/alertes', label: 'Alertes' },
@@ -144,29 +201,30 @@ const APPS: AppDef[] = [
     id: 'settings',
     name: 'Configuration',
     color: '#6C757D',
-    icon: Building2,
-    home: '/entreprise',
-    match: ['/entreprise', '/utilisateurs', '/audit'],
+    icon: Settings,
+    home: '/utilisateurs',
+    match: ['/entreprise', '/utilisateurs', '/audit', '/profils'],
+    roles: rolesPourApp('settings'),
     menus: [
-      { to: '/entreprise', label: 'Entreprise' },
       {
         to: '/utilisateurs',
         label: 'Utilisateurs',
-        roles: [
-          RoleLibelle.RESPONSABLE_SI,
-          RoleLibelle.DIRECTION_GENERALE,
-          RoleLibelle.DAF,
-          RoleLibelle.CONTROLEUR_INTERNE,
-        ],
+        roles: rolesPourMenu('settings', '/utilisateurs'),
+      },
+      {
+        to: '/profils',
+        label: 'Profils',
+        roles: rolesPourMenu('settings', '/profils'),
+      },
+      {
+        to: '/entreprise',
+        label: 'Entreprise',
+        roles: rolesPourMenu('settings', '/entreprise'),
       },
       {
         to: '/audit',
         label: "Journal d'audit",
-        roles: [
-          RoleLibelle.RESPONSABLE_SI,
-          RoleLibelle.DAF,
-          RoleLibelle.CONTROLEUR_INTERNE,
-        ],
+        roles: rolesPourMenu('settings', '/audit'),
       },
     ],
   },
@@ -181,6 +239,24 @@ function resolveApp(pathname: string): AppDef {
   return found ?? APPS.find((a) => a.id === 'dashboard')!;
 }
 
+function appHome(app: AppDef, role: RoleLibelle): string {
+  return accueilApp(role, app.id, app.home);
+}
+
+function pathAllowed(pathname: string, role: RoleLibelle): boolean {
+  const app = resolveApp(pathname);
+  if (!app.roles.includes(role)) return false;
+  const matches = app.menus
+    .map((menu) => ({ menu, base: menu.to.split('?')[0] }))
+    .filter(
+      ({ base }) => pathname === base || pathname.startsWith(`${base}/`),
+    )
+    .sort((a, b) => b.base.length - a.base.length);
+  const menu = matches[0]?.menu;
+  if (menu?.roles && !menu.roles.includes(role)) return false;
+  return true;
+}
+
 export function ProtectedRoute() {
   const { isAuthenticated, user, mustChangePassword, logout } = useAuth();
   const location = useLocation();
@@ -189,27 +265,22 @@ export function ProtectedRoute() {
   const [userOpen, setUserOpen] = useState(false);
   const appsRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+  const role = user?.role as RoleLibelle | undefined;
 
   const currentApp = useMemo(
     () => resolveApp(location.pathname),
     [location.pathname],
   );
   const visibleApps = useMemo(() => {
-    const role = user?.role;
     return APPS.filter(
-      (app) =>
-        !app.roles ||
-        (role !== undefined && app.roles.includes(role as RoleLibelle)),
+      (app) => !app.roles || (role !== undefined && app.roles.includes(role)),
     );
-  }, [user?.role]);
+  }, [role]);
   const visibleMenus = useMemo(() => {
-    const role = user?.role;
     return currentApp.menus.filter(
-      (menu) =>
-        !menu.roles ||
-        (role !== undefined && menu.roles.includes(role as RoleLibelle)),
+      (menu) => !menu.roles || (role !== undefined && menu.roles.includes(role)),
     );
-  }, [currentApp, user?.role]);
+  }, [currentApp, role]);
   const isPos = location.pathname.startsWith('/pos');
 
   useEffect(() => {
@@ -233,7 +304,7 @@ export function ProtectedRoute() {
   }, [appsOpen, userOpen]);
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (location.pathname === '/changer-mot-de-passe') {
@@ -242,6 +313,10 @@ export function ProtectedRoute() {
 
   if (mustChangePassword) {
     return <Navigate to="/changer-mot-de-passe" replace />;
+  }
+
+  if (role && !pathAllowed(location.pathname, role)) {
+    return <Navigate to={homeForRole(role)} replace />;
   }
 
   if (isPos) {
@@ -289,7 +364,7 @@ export function ProtectedRoute() {
                         className={active ? 'odoo-app-tile actif' : 'odoo-app-tile'}
                         onClick={() => {
                           setAppsOpen(false);
-                          navigate(app.home);
+                          navigate(role ? appHome(app, role) : app.home);
                         }}
                       >
                         <span
@@ -310,7 +385,9 @@ export function ProtectedRoute() {
           <button
             type="button"
             className="odoo-current-app"
-            onClick={() => navigate(currentApp.home)}
+            onClick={() =>
+              navigate(role ? appHome(currentApp, role) : currentApp.home)
+            }
             title={currentApp.name}
           >
             <span
@@ -330,7 +407,9 @@ export function ProtectedRoute() {
                   to={menu.to}
                   end={
                     menu.to === currentApp.home &&
-                    !['/produits', '/clients', '/stocks', '/fournisseurs'].includes(menu.to)
+                    !['/produits', '/clients', '/stocks', '/fournisseurs'].includes(
+                      menu.to,
+                    )
                   }
                 >
                   {menu.label}
@@ -369,6 +448,7 @@ export function ProtectedRoute() {
                   onClick={() => {
                     setUserOpen(false);
                     logout();
+                    navigate('/login', { replace: true });
                   }}
                 >
                   <LogOut size={15} />

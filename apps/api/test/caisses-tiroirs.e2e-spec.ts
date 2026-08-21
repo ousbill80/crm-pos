@@ -124,12 +124,13 @@ describe('Caisses tiroirs grande surface (e2e)', () => {
       .expect(403);
   });
 
-  it('Responsable SI reçoit 403 sur création tiroir', async () => {
-    await request(app.getHttpServer())
+  it('Responsable SI peut créer un tiroir (ouverture magasin §6.7)', async () => {
+    const res = await request(app.getHttpServer())
       .post('/caisses/tiroirs')
       .set('Authorization', `Bearer ${tokens.si}`)
-      .send({ boutiqueId, code: 'T98', libelle: 'Interdit SI' })
-      .expect(403);
+      .send({ boutiqueId, code: 'T98', libelle: 'Tiroir SI' })
+      .expect(201);
+    expect((res.body as { code: string }).code).toBe('T98');
   });
 
   it('DAF désactive un tiroir', async () => {

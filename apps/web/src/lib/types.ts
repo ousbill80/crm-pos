@@ -135,6 +135,8 @@ export interface ClientDto {
   nom: string;
   prenom: string | null;
   contact: string | null;
+  adresse: string | null;
+  boutiqueOrigineId?: string | null;
   dateNaissance: string | null;
   segment: SegmentClient;
   consentementMarketing: boolean;
@@ -347,7 +349,7 @@ export interface RegleReapproDto {
   min: number;
   max: number;
   produit: { designation: string };
-  entrepot: { nom: string; code: string };
+  entrepot: { nom: string; code: string; boutiqueId?: string };
 }
 
 export interface LigneVenteDto {
@@ -400,6 +402,10 @@ export interface SessionCaisseDto {
   clotureUtilisateurId: string | null;
   clotureTemoinId: string | null;
   transactionVersementId: string | null;
+  /** Présent sur GET /ventes/sessions (liste enrichie). */
+  nombreVentes?: number;
+  /** CA tickets de la session (somme montantTotal). */
+  caSession?: string;
 }
 
 /** Coéquipier éligible au double contrôle d'ouverture/clôture (§5.1). */
@@ -434,6 +440,44 @@ export interface ReleveModePaiementDto {
   modePaiement: ModePaiement;
   total: string;
   nombreVentes: number;
+}
+
+export interface EtatVenteLigneDto {
+  id: string;
+  dateVente: string;
+  montantTotal: string;
+  modePaiement: ModePaiement | string;
+  paiements: PaiementVenteDto[];
+  nbLignes: number;
+}
+
+export interface EtatSessionDto {
+  typeEtat: 'X' | 'Z';
+  sessionId: string;
+  statut: string;
+  ouvertureDateHeure: string;
+  clotureDateHeure: string | null;
+  caisseLibelle: string;
+  boutiqueNom: string | null;
+  ouvreur: string | null;
+  temoinOuverture: string | null;
+  clotureur: string | null;
+  temoinCloture: string | null;
+  societe: {
+    raisonSociale: string;
+    adresse: string;
+    telephone: string | null;
+    email: string | null;
+  } | null;
+  releve: ReleveModePaiementDto[];
+  ventes: EtatVenteLigneDto[];
+  nombreVentes: number;
+  fondInitial: string;
+  totalEspecesNet: string;
+  fondTheorique: string;
+  fondCompteCloture: string | null;
+  ecart: string | null;
+  imprimeAt: string;
 }
 
 export interface ClotureSessionResponseDto {
@@ -807,6 +851,7 @@ export interface InventairePrioriteDto {
   entrepotId: string;
   code: string;
   nom: string;
+  boutiqueId?: string;
   nomBoutique: string;
   dernierInventaireAt: string | null;
   joursDepuis: number | null;

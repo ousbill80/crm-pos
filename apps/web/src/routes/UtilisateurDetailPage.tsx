@@ -2,38 +2,23 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, KeyRound, ShieldAlert } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
+import { RoleLibelle, labelPerimetre, labelProfil, profilOf, ROLES_ADMIN_UTILISATEURS, ROLES_LECTURE_UTILISATEURS } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { EmptyState } from '../components/PageChrome';
+import { SelectProfil } from '../components/SelectProfil';
 import type {
   BoutiqueDto,
   JournalAuditPageDto,
   UtilisateurDto,
 } from '../lib/types';
 
-const ROLES_ADMIN: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-];
-const ROLES_LECTURE: RoleLibelle[] = [
-  ...ROLES_ADMIN,
-  RoleLibelle.DAF,
-  RoleLibelle.CONTROLEUR_INTERNE,
-];
 const ROLES_LECTURE_AUDIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DAF,
   RoleLibelle.CONTROLEUR_INTERNE,
 ];
-const ROLES_BOUTIQUE_REQUISE: RoleLibelle[] = [
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-  RoleLibelle.CONVOYEUR,
-];
-const TOUS_LES_ROLES: RoleLibelle[] = Object.values(RoleLibelle);
 
 type Onglet = 'identite' | 'securite' | 'activite';
 
@@ -52,8 +37,10 @@ export function UtilisateurDetailPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutAdmin = user !== null && ROLES_ADMIN.includes(user.role);
+  const peutLire =
+    user !== null && ROLES_LECTURE_UTILISATEURS.includes(user.role);
+  const peutAdmin =
+    user !== null && ROLES_ADMIN_UTILISATEURS.includes(user.role);
   const peutLireAudit =
     user !== null && ROLES_LECTURE_AUDIT.includes(user.role);
 
@@ -152,7 +139,7 @@ export function UtilisateurDetailPage() {
   const u = detail.data;
   const boutiqueNom =
     boutiques.data?.find((b) => b.id === u.boutiqueId)?.nom ?? '—';
-  const boutiqueRequise = ROLES_BOUTIQUE_REQUISE.includes(role);
+  const boutiqueRequise = profilOf(role).boutiqueRequise;
 
   function onSaveIdentite(e: FormEvent) {
     e.preventDefault();
@@ -180,8 +167,9 @@ export function UtilisateurDetailPage() {
             {u.prenom} {u.nom}
           </h1>
           <p className="lead">
-            {u.login} · {u.role.libelle}
-            {u.boutiqueId ? ` · ${boutiqueNom}` : ' · Réseau entier'}
+            {u.login} · {labelProfil(u.role.libelle)} ·{' '}
+            {labelPerimetre(profilOf(u.role.libelle).perimetre)}
+            {u.boutiqueId ? ` · ${boutiqueNom}` : ''}
           </p>
         </div>
         <div className="cfg-chip-row">
@@ -272,18 +260,10 @@ export function UtilisateurDetailPage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="u-role">Rôle</label>
-                  <select
-                    id="u-role"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as RoleLibelle)}
-                  >
-                    {TOUS_LES_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                  <label htmlFor="u-role">Profil</label>
+                  <SelectProfil id="u-role" value={role} onChange={setRole} />
+                  <p className="lead">{profilOf(role).resume}</p>
+                  <Link to={`/profils?role=${role}`}>Voir la fiche profil</Link>
                 </div>
                 {boutiqueRequise && (
                   <div>

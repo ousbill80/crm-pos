@@ -135,7 +135,9 @@ export function proposerMapping(enTetes: string[]): MappingImport {
   const mapping: MappingImport = {};
   const pris = new Set<string>();
 
-  const meilleur = (champ: ChampImport): { header: string; score: number } | null => {
+  const meilleur = (
+    champ: ChampImport,
+  ): { header: string; score: number } | null => {
     let best: { header: string; score: number } | null = null;
     for (const h of enTetes) {
       if (pris.has(h)) continue;
@@ -166,7 +168,10 @@ export function proposerMapping(enTetes: string[]): MappingImport {
 export function scoreAlias(enteteNorm: string, alias: string): number {
   if (enteteNorm === alias) return 100;
   if (alias.length < 5) return 0;
-  if (enteteNorm.startsWith(alias) || (enteteNorm.length >= 5 && alias.startsWith(enteteNorm))) {
+  if (
+    enteteNorm.startsWith(alias) ||
+    (enteteNorm.length >= 5 && alias.startsWith(enteteNorm))
+  ) {
     return 80;
   }
   if (enteteNorm.includes(alias)) return 60;
@@ -327,7 +332,12 @@ export function parserLigneCatalogue(
     }
   }
 
-  if (!parsed.designation && !parsed.reference && !parsed.codeBarres && parsed.prixUnitaire === undefined) {
+  if (
+    !parsed.designation &&
+    !parsed.reference &&
+    !parsed.codeBarres &&
+    parsed.prixUnitaire === undefined
+  ) {
     return parsed;
   }
 

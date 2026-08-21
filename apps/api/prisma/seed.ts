@@ -429,6 +429,27 @@ async function main() {
     nom: 'Traoré',
     prenom: 'Mariam',
   });
+  await ensureUser({
+    login: 'demo-controle',
+    roleLibelle: 'CONTROLEUR_INTERNE',
+    boutiqueId: null,
+    nom: 'Sow',
+    prenom: 'Awa',
+  });
+  await ensureUser({
+    login: 'demo-superviseur',
+    roleLibelle: 'SUPERVISEUR_ZONE',
+    boutiqueId: boutiqueExt.boutique.id,
+    nom: 'Diop',
+    prenom: 'Cheikh',
+  });
+  await ensureUser({
+    login: 'demo-crm',
+    roleLibelle: 'RESPONSABLE_CRM',
+    boutiqueId: null,
+    nom: 'Cissé',
+    prenom: 'Lamine',
+  });
 
   let reserve = await prisma.entrepot.findUnique({
     where: {
@@ -687,11 +708,13 @@ async function main() {
       `Zone: ${zone.nomZone}`,
       `Points de vente: ${pdv.map((p) => p.boutique.nom).join(', ')}`,
       `Hub: ${hub.nom} (${hub.code})`,
-      'Comptes (mdp MotDePasse!123):',
-      '  Réseau: demo-dg / demo-respsi / demo-central / demo-daf',
-      '  Extérieur: demo-pos-caissier / demo-pos-temoin / demo-convoyeur',
-      '  GSM: demo-caissier-gsm / demo-resp-gsm',
-      '  Café-Market: demo-caissier-cafe / demo-resp-cafe',
+      'Comptes (mdp MotDePasse!123) — 10 profils §4 :',
+      '  Direction: demo-dg / demo-daf / demo-controle',
+      '  Trésorerie: demo-central',
+      '  Zone: demo-superviseur',
+      '  Boutique: demo-pos-caissier / demo-pos-temoin / demo-convoyeur',
+      '  Support: demo-respsi / demo-crm',
+      '  (aussi) GSM: demo-caissier-gsm / demo-resp-gsm · Café: demo-caissier-cafe / demo-resp-cafe',
     ].join('\n'),
   );
 }
