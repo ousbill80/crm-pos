@@ -48,6 +48,7 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
 
   let boutique1Id: string;
   let caisse1Id: string;
+  let tiroir1Id: string;
   let entrepot1Id: string;
   let produitId: string;
   let fournisseurId: string;
@@ -115,6 +116,18 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
       data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
     });
     caisse1Id = caisse1.id;
+
+    const tiroir1 = await env.prisma.caisse.create({
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1Id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
+    });
+    tiroir1Id = tiroir1.id;
 
     const produit = await env.prisma.produit.create({
       data: { designation: 'Produit rentabilité', prixUnitaire: '1000.00' },
@@ -194,7 +207,7 @@ describe('Rentabilité par boutique — reporting.service.ts (e2e)', () => {
       .post('/ventes/sessions')
       .set(auth(tokens.caissierB1))
       .send({
-        caisseId: caisse1Id,
+        caisseId: tiroir1Id,
         fondInitial: 0,
         temoinLogin: 'rent-temoin-b1',
         temoinPassword: MOT_DE_PASSE,

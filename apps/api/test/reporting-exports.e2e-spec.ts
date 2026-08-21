@@ -82,7 +82,14 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
     // distincte de caisse1 qui garde une session OUVERTE en permanence pour
     // les fixtures d'agrégation CA ci-dessous.
     const caisse1Pos = await env.prisma.caisse.create({
-      data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique1Id },
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1Id,
+        code: 'T01',
+        libelle: 'Tiroir 1',
+        actif: true,
+        ordreAffichage: 1,
+      },
     });
     await env.prisma.caisse.create({
       data: { type: TypeCaisse.MAGASIN, boutiqueId: boutique2Id },
@@ -143,7 +150,7 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         ouvertureTemoinId: temoinB1Id,
       },
     });
-    await env.prisma.vente.create({
+    const venteEspeces = await env.prisma.vente.create({
       data: {
         caisseId: caisseBoutique1Id,
         sessionCaisseId: session.id,
@@ -152,7 +159,10 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         dateVente: new Date(),
       },
     });
-    await env.prisma.vente.create({
+    await env.prisma.paiementVente.create({
+      data: { venteId: venteEspeces.id, modePaiement: 'ESPECES', montant: 5000 },
+    });
+    const venteCarte = await env.prisma.vente.create({
       data: {
         caisseId: caisseBoutique1Id,
         sessionCaisseId: session.id,
@@ -161,7 +171,10 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         dateVente: new Date(),
       },
     });
-    await env.prisma.vente.create({
+    await env.prisma.paiementVente.create({
+      data: { venteId: venteCarte.id, modePaiement: 'CARTE', montant: 2000 },
+    });
+    const venteAncienne = await env.prisma.vente.create({
       data: {
         caisseId: caisseBoutique1Id,
         sessionCaisseId: session.id,
@@ -169,6 +182,9 @@ describe('Reporting — exports & série temporelle §6.3.4 (e2e)', () => {
         modePaiement: 'ESPECES',
         dateVente: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
       },
+    });
+    await env.prisma.paiementVente.create({
+      data: { venteId: venteAncienne.id, modePaiement: 'ESPECES', montant: 1000 },
     });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
