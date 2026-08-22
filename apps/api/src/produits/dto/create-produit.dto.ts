@@ -43,6 +43,10 @@ export class CreateProduitDto {
   @MaxLength(500)
   description?: string;
 
+  @IsOptional()
+  @IsIn(['ARTICLE', 'PRESTATION'])
+  typeProduit?: 'ARTICLE' | 'PRESTATION';
+
   @IsNumber()
   @IsPositive()
   prixUnitaire: number;

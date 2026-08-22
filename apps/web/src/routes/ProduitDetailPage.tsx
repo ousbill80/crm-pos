@@ -4,9 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { FicheProduit } from '../components/FicheProduit';
 import { LoadingState } from '../components/LoadingState';
 
-const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
+const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 const ROLES_LECTURE_STRUCTURE: RoleLibelle[] = [
@@ -40,7 +41,7 @@ export function ProduitDetailPage() {
   return (
     <FicheProduit
       produitId={produitId}
-      peutGerer={ROLES_ADMIN_STRUCTURE.includes(user.role)}
+      peutGerer={ROLES_CATALOGUE_ECRITURE.includes(user.role)}
       onBack={() => navigate('/produits')}
     />
   );

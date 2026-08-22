@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ModePaiement,
   Prisma,
@@ -8,6 +12,7 @@ import {
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../auth/types';
 import {
+  ROLES_CONTROLE_COHERENCE,
   ROLES_LECTURE_CAISSES,
   ROLES_PERIMETRE_BOUTIQUE,
   ROLES_RESEAU_TRESORERIE,
@@ -18,6 +23,7 @@ import { CaissesService } from '../caisses/caisses.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
 import { toCsv } from '../common/csv.util';
+import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
 
 export interface PeriodeFiltre {
   dateFrom?: string;
@@ -167,9 +173,31 @@ export interface ReportingDafDto {
   };
 }
 
+// Rapprochement 3 voies (§5.2, ligne 259-261) — contrôle interne : ventes
+// enregistrées en boutique, bordereaux de versement émis, réceptions
+// validées côté centrale. Un écart signale une incohérence à investiguer.
+export interface ControleCoherenceDto {
+  perimetre: {
+    boutiqueId: string | null;
+    nomBoutique: string | null;
+    periode: { dateFrom: string | null; dateTo: string | null };
+  };
+  totaux: {
+    ventesEnregistrees: string;
+    bordereauxEmis: string;
+    receptionsValidees: string;
+  };
+  ecarts: {
+    ventesVsBordereaux: string;
+    bordereauxVsReceptions: string;
+    signale: boolean;
+  };
+}
+
 const money = (value: Prisma.Decimal) => value.toFixed(2);
 const zero = () => new Prisma.Decimal(0);
 const DELAI_VERSEMENT_HEURES_DEFAUT = 24;
+const TOLERANCE_ECART = new Prisma.Decimal('0.01');
 
 export type SocieteEntete = {
   raisonSociale: string;
@@ -709,6 +737,102 @@ export class ReportingService {
         email: true,
       },
     });
+  }
+
+  // Rapprochement 3 voies (§5.2, ligne 259-261) — contrôle interne : compare,
+  // pour le périmètre demandé, le total des ventes enregistrées, le total
+  // des bordereaux de versement émis et le total des réceptions validées
+  // par la centrale, et signale tout écart.
+  async getControleCoherence(
+    user: AuthenticatedUser,
+    query: ControleCoherenceQueryDto,
+  ): Promise<ControleCoherenceDto> {
+    if (!ROLES_CONTROLE_COHERENCE.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité au rapprochement 3 voies (§5.2).`,
+      );
+    }
+
+    const boutique = query.boutiqueId
+      ? await this.prisma.boutique.findUnique({
+          where: { id: query.boutiqueId },
+          select: { id: true, nom: true },
+        })
+      : null;
+    if (query.boutiqueId && !boutique) {
+      throw new NotFoundException('Boutique introuvable.');
+    }
+
+    const periode = periodeWhere(query);
+    const caisses = await this.prisma.caisse.findMany({
+      where: {
+        type: TypeCaisse.MAGASIN,
+        ...(query.boutiqueId ? { boutiqueId: query.boutiqueId } : {}),
+      },
+      select: { id: true },
+    });
+    const caisseIds = caisses.map((c) => c.id);
+
+    const ventesAgg =
+      caisseIds.length === 0
+        ? null
+        : await this.prisma.vente.aggregate({
+            where: { caisseId: { in: caisseIds }, dateVente: periode },
+            _sum: { montantTotal: true },
+          });
+    const ventesEnregistrees = ventesAgg?._sum.montantTotal ?? zero();
+
+    const bordereaux =
+      caisseIds.length === 0
+        ? []
+        : await this.prisma.bordereauVersement.findMany({
+            where: {
+              transaction: {
+                type: TypeTransaction.SORTIE_FONDS,
+                caisseId: { in: caisseIds },
+                dateHeure: periode,
+              },
+            },
+            select: {
+              montantDeclare: true,
+              reception: { select: { montantRecu: true } },
+            },
+          });
+
+    const bordereauxEmis = bordereaux.reduce(
+      (acc, b) => acc.plus(b.montantDeclare),
+      zero(),
+    );
+    const receptionsValidees = bordereaux.reduce(
+      (acc, b) => (b.reception ? acc.plus(b.reception.montantRecu) : acc),
+      zero(),
+    );
+
+    const ecartVentesBordereaux = ventesEnregistrees.minus(bordereauxEmis);
+    const ecartBordereauxReceptions = bordereauxEmis.minus(receptionsValidees);
+
+    return {
+      perimetre: {
+        boutiqueId: boutique?.id ?? null,
+        nomBoutique: boutique?.nom ?? null,
+        periode: {
+          dateFrom: query.dateFrom ?? null,
+          dateTo: query.dateTo ?? null,
+        },
+      },
+      totaux: {
+        ventesEnregistrees: money(ventesEnregistrees),
+        bordereauxEmis: money(bordereauxEmis),
+        receptionsValidees: money(receptionsValidees),
+      },
+      ecarts: {
+        ventesVsBordereaux: money(ecartVentesBordereaux),
+        bordereauxVsReceptions: money(ecartBordereauxReceptions),
+        signale:
+          ecartVentesBordereaux.abs().greaterThan(TOLERANCE_ECART) ||
+          ecartBordereauxReceptions.abs().greaterThan(TOLERANCE_ECART),
+      },
+    };
   }
 
   private resolvePerimetre(user: AuthenticatedUser): PerimetreReporting {

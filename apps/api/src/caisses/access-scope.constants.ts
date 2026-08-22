@@ -94,9 +94,19 @@ export const ROLES_INVENTAIRE_VALIDATION: RoleLibelle[] = [
 ];
 
 /**
+ * Catalogue produit (création / modification fiche) : SI, DG, DAF.
+ * Distinct de l’import CSV et de l’admin structure (zones / magasins).
+ * Permet l’auto-création depuis un bon de commande (EntityFinder).
+ */
+export const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
+/**
  * Fiches fournisseur (création / modification) : SI, DG, DAF.
- * Distinct de ROLES_ADMIN_STRUCTURE (zones / magasins / catalogue) — le DAF
- * pilote les achats, pas la configuration SI.
+ * Distinct de ROLES_ADMIN_STRUCTURE (zones / magasins).
  */
 export const ROLES_FICHE_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
@@ -168,3 +178,15 @@ export const ROLES_BON_STOCK_FAIT: RoleLibelle[] = [
 
 /** Fréquence cible (jours) au-delà de laquelle un entrepôt est « à inventorier ». */
 export const INVENTAIRE_FREQUENCE_CIBLE_JOURS = 30;
+
+/**
+ * Rapprochement 3 voies (§5.2, ligne 259-261) : contrôle interne — ventes
+ * enregistrées / bordereaux émis / réceptions validées. Explicitement
+ * Contrôleur interne, DAF, Direction Générale (pas Caissier Central, dont
+ * le travail de réception est l'objet même du contrôle).
+ */
+export const ROLES_CONTROLE_COHERENCE: RoleLibelle[] = [
+  RoleLibelle.CONTROLEUR_INTERNE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];

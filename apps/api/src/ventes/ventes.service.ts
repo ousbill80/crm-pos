@@ -272,17 +272,20 @@ export class VentesService {
               `Le produit « ${produit.designation} » est inactif et ne peut plus être encaissé.`,
             );
           }
-          const dispo = await this.stockService.getDisponible(
-            produit.id,
-            entrepotIdPos,
-            dto.holdId,
-            tx,
-          );
-          if (dispo < ligne.quantite && !motifs.has('STOCK_INSUFFISANT')) {
-            throw new BadRequestException({
-              code: 'STOCK_INSUFFISANT',
-              message: `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
-            });
+          const estPrestation = produit.typeProduit === 'PRESTATION';
+          if (!estPrestation) {
+            const dispo = await this.stockService.getDisponible(
+              produit.id,
+              entrepotIdPos,
+              dto.holdId,
+              tx,
+            );
+            if (dispo < ligne.quantite && !motifs.has('STOCK_INSUFFISANT')) {
+              throw new BadRequestException({
+                code: 'STOCK_INSUFFISANT',
+                message: `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
+              });
+            }
           }
 
           const prixUnitaire = new Prisma.Decimal(produit.prixUnitaire);
@@ -299,17 +302,19 @@ export class VentesService {
             });
           }
 
-          await this.stockService.appliquerMouvement(
-            {
-              produitId: produit.id,
-              entrepotId: entrepotIdPos,
-              type: 'VENTE',
-              delta: -ligne.quantite,
-              utilisateurId: utilisateur.userId,
-              autoriserNegatif: motifs.has('STOCK_INSUFFISANT'),
-            },
-            tx,
-          );
+          if (!estPrestation) {
+            await this.stockService.appliquerMouvement(
+              {
+                produitId: produit.id,
+                entrepotId: entrepotIdPos,
+                type: 'VENTE',
+                delta: -ligne.quantite,
+                utilisateurId: utilisateur.userId,
+                autoriserNegatif: motifs.has('STOCK_INSUFFISANT'),
+              },
+              tx,
+            );
+          }
 
           montantTotal = montantTotal.plus(montantLigne.minus(remise));
           lignesData.push({
@@ -321,6 +326,29 @@ export class VentesService {
           });
         }
 
+        // Avantage fidélité (§6.6) : remise en % au palier Argent/Or,
+        // uniquement si un pourcentage a été configuré (défaut 0 = désactivé).
+        let remiseFidelite = new Prisma.Decimal(0);
+        if (dto.clientId) {
+          const fidelite = await tx.fidelite.findUnique({
+            where: { clientId: dto.clientId },
+          });
+          if (fidelite && fidelite.niveau !== 'BRONZE') {
+            const societe = await tx.societe.findFirst();
+            const pct =
+              fidelite.niveau === 'OR'
+                ? (societe?.avantageFideliteOrPct ?? 0)
+                : (societe?.avantageFideliteArgentPct ?? 0);
+            if (pct > 0) {
+              remiseFidelite = montantTotal
+                .times(pct)
+                .dividedBy(100)
+                .toDecimalPlaces(2);
+              montantTotal = montantTotal.minus(remiseFidelite);
+            }
+          }
+        }
+
         const paiements = this.normaliserPaiements(dto, montantTotal);
         const created = await tx.vente.create({
           data: {
@@ -328,6 +356,7 @@ export class VentesService {
             sessionCaisseId: session.id,
             modePaiement: this.modePrincipal(paiements, dto.modePaiement),
             montantTotal,
+            remiseFidelite,
             clientId: dto.clientId,
             clientOperationId: dto.clientOperationId,
             lignes: { create: lignesData },
@@ -387,6 +416,7 @@ export class VentesService {
       details: JSON.stringify({
         sessionCaisseId: session.id,
         montantTotal: vente.montantTotal.toString(),
+        remiseFidelite: vente.remiseFidelite.toString(),
         modePaiement: vente.modePaiement,
         clientId: dto.clientId ?? null,
         holdId: dto.holdId ?? null,

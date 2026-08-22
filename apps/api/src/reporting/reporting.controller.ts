@@ -4,12 +4,14 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
+  ROLES_CONTROLE_COHERENCE,
   ROLES_LECTURE_CAISSES,
   ROLES_RESEAU_TRESORERIE,
 } from '../caisses/access-scope.constants';
 import { ReportingService } from './reporting.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { VentesQuotidiennesQueryDto } from './dto/ventes-quotidiennes-query.dto';
+import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
 import {
   dessinerDafPdf,
   dessinerDashboardPdf,
@@ -123,6 +125,16 @@ export class ReportingController {
       (doc) => dessinerDashboardPdf(doc, data, societe),
       'Tableau de bord · §6.3.4',
     );
+  }
+
+  /** Rapprochement 3 voies (§5.2) — contrôle interne. */
+  @Get('controle-coherence')
+  @Roles(...ROLES_CONTROLE_COHERENCE)
+  getControleCoherence(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ControleCoherenceQueryDto,
+  ) {
+    return this.reportingService.getControleCoherence(user, query);
   }
 
   @Get('ventes/export.csv')

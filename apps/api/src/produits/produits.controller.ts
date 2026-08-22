@@ -14,6 +14,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
   ROLES_ADMIN_STRUCTURE,
+  ROLES_CATALOGUE_ECRITURE,
   ROLES_LECTURE_STRUCTURE,
 } from '../caisses/access-scope.constants';
 import { ProduitsService } from './produits.service';
@@ -33,7 +34,7 @@ export class ProduitsController {
   constructor(private readonly produitsService: ProduitsService) {}
 
   @Post()
-  @Roles(...ROLES_ADMIN_STRUCTURE)
+  @Roles(...ROLES_CATALOGUE_ECRITURE)
   create(
     @Body() dto: CreateProduitDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -139,7 +140,7 @@ export class ProduitsController {
   }
 
   @Patch(':id')
-  @Roles(...ROLES_ADMIN_STRUCTURE)
+  @Roles(...ROLES_CATALOGUE_ECRITURE)
   update(
     @Param('id') id: string,
     @Body() dto: UpdateProduitDto,

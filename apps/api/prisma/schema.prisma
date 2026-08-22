@@ -20,25 +20,38 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Societe {
-  id                String  @id @default(uuid())
-  raisonSociale     String
-  adresse           String
-  telephone         String?
-  email             String?
-  devise            String  @default("XOF")
-  logoUrl           String?
+  id                              String   @id @default(uuid())
+  raisonSociale                   String
+  adresse                         String
+  telephone                       String?
+  email                           String?
+  devise                          String   @default("XOF")
+  logoUrl                         String?
   // Montant (FCFA) au-delà duquel seul la Direction Générale peut valider
   // un rapprochement sans écart (§4 « validation seuils exceptionnels »).
-  seuilValidationDg Decimal @default(5000000) @db.Decimal(14, 2)
+  seuilValidationDg               Decimal  @default(5000000) @db.Decimal(14, 2)
   // Délai (heures) au-delà duquel un versement non transmis déclenche une
   // alerte et est compté en retard dans le reporting DAF (§6.3.5 « gestion
   // des seuils : montants de versement, délais »).
-  delaiVersementHeures Int @default(24)
+  delaiVersementHeures            Int      @default(24)
   // Seuils CRM paramétrables (§6.6) — défauts = première itération documentée.
-  seuilFideliteArgent  Int @default(500)
-  seuilFideliteOr      Int @default(2000)
-  seuilSegmentRegulier Int @default(5)
-  seuilSegmentVip      Int @default(15)
+  seuilFideliteArgent             Int      @default(500)
+  seuilFideliteOr                 Int      @default(2000)
+  seuilSegmentRegulier            Int      @default(5)
+  seuilSegmentVip                 Int      @default(15)
+  // Avantages fidélité (§6.6 « avantages associés ») : remise % appliquée
+  // automatiquement à l'encaissement pour un client aux paliers Argent/Or.
+  // Défaut 0 = désactivé — le cahier ne chiffre pas ces avantages, c'est à
+  // l'admin de les activer et de les chiffrer (comme les autres seuils).
+  avantageFideliteArgentPct       Int      @default(0)
+  avantageFideliteOrPct           Int      @default(0)
+  // Seuil de caisse (§5.1 « par exemple 500 000 FCFA ») au-delà duquel une
+  // alerte de versement anticipé est déclenchée en cours de journée. Null =
+  // désactivé (le cahier ne donne qu'un exemple, pas une valeur imposée).
+  seuilVersementAnticipe          Decimal? @db.Decimal(14, 2)
+  // Délai (heures) de régularisation d'un litige avant alerte de retard
+  // (§5.1 « sous 24 à 48 heures » — 48h = borne haute retenue par défaut).
+  delaiRegularisationLitigeHeures Int      @default(48)
 
   @@map("societe")
 }
@@ -138,6 +151,12 @@ model Utilisateur {
   boutiqueId   String?
   actif        Boolean   @default(true)
   createdAt    DateTime  @default(now())
+
+  // Contact pour les notifications proactives (§6.7, §5.1) : optionnel,
+  // aucune valeur par défaut inventée — sans contact renseigné, l'utilisateur
+  // ne reçoit que la diffusion temps réel (WebSocket), pas de SMS/email.
+  email     String?
+  telephone String?
 
   // Sécurité authentification (§6.7)
   mustChangePassword  Boolean   @default(false)
@@ -318,6 +337,10 @@ model Produit {
   // (cohérent avec le grand livre append-only). Un produit inactif ne peut
   // plus être encaissé et n'alimente plus l'alerte STOCK_BAS.
   actif               Boolean              @default(true)
+  // Article physique (stock décrémenté à la vente) ou prestation de service
+  // (§6.3.1 « produits ou prestations... gestion de stock simplifiée si
+  // nécessaire ») : une PRESTATION n'a pas de décrément/contrôle de stock.
+  typeProduit         TypeProduit          @default(ARTICLE)
   prixUnitaire        Decimal              @db.Decimal(14, 2)
   // Cache réseau = somme(StockQuant.quantite). Ne jamais écrire à la
   // main — passer par StockService.
@@ -365,6 +388,11 @@ enum MethodeCout {
   CMP
   FIFO
   STANDARD
+}
+
+enum TypeProduit {
+  ARTICLE
+  PRESTATION
 }
 
 enum StrategieSortie {
@@ -793,6 +821,9 @@ model Vente {
   id                String          @id @default(uuid())
   dateVente         DateTime        @default(now())
   montantTotal      Decimal         @db.Decimal(14, 2)
+  // Avantage fidélité (§6.6) appliqué à l'encaissement, tracé séparément du
+  // montant total (montantTotal est déjà net de cette remise).
+  remiseFidelite    Decimal         @default(0) @db.Decimal(14, 2)
   modePaiement      ModePaiement
   caisse            Caisse          @relation(fields: [caisseId], references: [id])
   caisseId          String
@@ -892,18 +923,20 @@ model LigneVente {
 // (contrôle applicatif dans ventes.service.ts) — évite de rouvrir une
 // trésorerie déjà versée/validée. Extension au-delà du cahier des charges.
 model RetourVente {
-  id               String        @id @default(uuid())
-  vente            Vente         @relation(fields: [venteId], references: [id])
-  venteId          String
-  ligneVente       LigneVente    @relation(fields: [ligneVenteId], references: [id])
-  ligneVenteId     String
-  quantite         Int
-  montantRembourse Decimal       @db.Decimal(14, 2)
-  sessionCaisse    SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
-  sessionCaisseId  String
-  utilisateur      Utilisateur   @relation(fields: [utilisateurId], references: [id])
-  utilisateurId    String
-  dateHeure        DateTime      @default(now())
+  id                String        @id @default(uuid())
+  vente             Vente         @relation(fields: [venteId], references: [id])
+  venteId           String
+  ligneVente        LigneVente    @relation(fields: [ligneVenteId], references: [id])
+  ligneVenteId      String
+  quantite          Int
+  montantRembourse  Decimal       @db.Decimal(14, 2)
+  sessionCaisse     SessionCaisse @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisseId   String
+  utilisateur       Utilisateur   @relation(fields: [utilisateurId], references: [id])
+  utilisateurId     String
+  dateHeure         DateTime      @default(now())
+  // Idempotence hors-ligne (§6.7) : UUID généré côté appareil, unique si renseigné.
+  clientOperationId String?       @unique
 
   @@map("retour_vente")
 }
@@ -944,8 +977,8 @@ model Client {
   consentementMarketing Boolean       @default(false)
   // Magasin d’accueil (création) — pas une propriété exclusive : la fiche
   // reste unique réseau (§6.6). Sert à la liste d’exploitation magasin.
-  boutiqueOrigine   Boutique? @relation(fields: [boutiqueOrigineId], references: [id], onDelete: SetNull)
-  boutiqueOrigineId String?
+  boutiqueOrigine       Boutique?     @relation(fields: [boutiqueOrigineId], references: [id], onDelete: SetNull)
+  boutiqueOrigineId     String?
 
   ventes       Vente[]
   fidelite     Fidelite?
@@ -1029,21 +1062,21 @@ enum StatutDevisClient {
 }
 
 model DevisClient {
-  id           String           @id @default(uuid())
-  numero       String           @unique
-  statut       StatutDevisClient @default(BROUILLON)
-  client       Client           @relation(fields: [clientId], references: [id])
+  id           String             @id @default(uuid())
+  numero       String             @unique
+  statut       StatutDevisClient  @default(BROUILLON)
+  client       Client             @relation(fields: [clientId], references: [id])
   clientId     String
-  boutique     Boutique?        @relation(fields: [boutiqueId], references: [id])
+  boutique     Boutique?          @relation(fields: [boutiqueId], references: [id])
   boutiqueId   String?
-  montantTotal Decimal          @db.Decimal(14, 2)
+  montantTotal Decimal            @db.Decimal(14, 2)
   notes        String?
-  vente        Vente?           @relation(fields: [venteId], references: [id])
-  venteId      String?          @unique
-  createdBy    Utilisateur      @relation(fields: [createdById], references: [id])
+  vente        Vente?             @relation(fields: [venteId], references: [id])
+  venteId      String?            @unique
+  createdBy    Utilisateur        @relation(fields: [createdById], references: [id])
   createdById  String
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
   lignes       LigneDevisClient[]
 
   @@index([clientId])
@@ -1081,4 +1114,18 @@ model JournalAudit {
   details       String?
 
   @@map("journal_audit")
+}
+
+// Trace append-only des notifications proactives déjà envoyées (§6.7
+// « alertes automatiques ») — évite de renvoyer la même alerte (écart,
+// retard, accès refusé) à chaque cycle du scheduler tant qu'elle n'a pas
+// été régularisée. Jamais modifiée/supprimée, cohérent avec le journal
+// d'audit.
+model AlerteNotifiee {
+  id        String   @id @default(uuid())
+  type      String
+  cleUnique String   @unique
+  dateEnvoi DateTime @default(now())
+
+  @@map("alerte_notifiee")
 }

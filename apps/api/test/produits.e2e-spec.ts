@@ -1,10 +1,8 @@
 // Tests d'intégration réels (zéro mock) — module Produits (catalogue POS,
-// §6.3.2 du cahier des charges). Le paramétrage du catalogue est traité
-// comme de l'administration système (même RBAC que zones/boutiques —
-// ROLES_ADMIN_STRUCTURE en écriture, ROLES_LECTURE_STRUCTURE en lecture),
-// voir apps/api/src/caisses/access-scope.constants.ts. Démarre un vrai
-// PostgreSQL via Testcontainers et authentifie chaque profil via le vrai
-// endpoint /auth/login.
+// §6.3.2 du cahier des charges). Création / modification fiche :
+// ROLES_CATALOGUE_ECRITURE (SI / DG / DAF). Import CSV et admin structure
+// (zones / magasins) restent ROLES_ADMIN_STRUCTURE. Lecture :
+// ROLES_LECTURE_STRUCTURE. Voir apps/api/src/caisses/access-scope.constants.ts.
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -145,7 +143,7 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     await env.stop();
   });
 
-  describe('Création (ROLES_ADMIN_STRUCTURE uniquement)', () => {
+  describe('Création (ROLES_CATALOGUE_ECRITURE : SI / DG / DAF)', () => {
     it('refuse (403) la création par un rôle non admin (CAISSIER_BOUTIQUE)', () => {
       return request(app.getHttpServer())
         .post('/produits')
@@ -154,12 +152,15 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
         .expect(403);
     });
 
-    it('refuse (403) la création par DAF (lecture structure, pas admin)', () => {
-      return request(app.getHttpServer())
+    it('autorise DAF à créer un produit (auto-création Achats / EntityFinder)', async () => {
+      const response = await request(app.getHttpServer())
         .post('/produits')
         .set(auth(tokens.daf))
-        .send({ designation: 'Coque téléphone', prixUnitaire: 2500, stock: 10 })
-        .expect(403);
+        .send({ designation: 'Article DAF auto', prixUnitaire: 1, stock: 0 })
+        .expect(201);
+      expect((response.body as ProduitDto).designation).toBe(
+        'Article DAF auto',
+      );
     });
 
     it("autorise RESPONSABLE_SI à créer un produit et journalise une entrée d'audit", async () => {
@@ -307,7 +308,7 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     });
   });
 
-  describe('Mise à jour (ROLES_ADMIN_STRUCTURE uniquement)', () => {
+  describe('Mise à jour (ROLES_CATALOGUE_ECRITURE : SI / DG / DAF)', () => {
     let produitId: string;
 
     beforeAll(async () => {

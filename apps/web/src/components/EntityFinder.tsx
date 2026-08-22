@@ -9,26 +9,47 @@ import {
 import { createPortal } from 'react-dom';
 import { ChevronsUpDown, Plus, Search } from 'lucide-react';
 
+export type EntityFinderOption =
+  | string
+  | { label: string; keywords?: string };
+
+function libelleOption(option: EntityFinderOption): string {
+  return typeof option === 'string' ? option : option.label;
+}
+
+function motsClesOption(option: EntityFinderOption): string {
+  if (typeof option === 'string') return option;
+  return `${option.label} ${option.keywords ?? ''}`;
+}
+
 export function EntityFinder({
   id,
   value,
   onChange,
+  onSelect,
   options,
   placeholder = 'Rechercher…',
   allowCreate = true,
   emptyLabel = 'Aucune correspondance',
   createLabel,
+  isExisting,
   disabled,
+  autoFocus,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
-  options: string[];
+  /** Appelé seulement à la validation (clic / Entrée), pas à chaque frappe. */
+  onSelect?: (value: string, meta: { created: boolean }) => void;
+  options: EntityFinderOption[];
   placeholder?: string;
   allowCreate?: boolean;
   emptyLabel?: string;
   createLabel?: (saisie: string) => string;
+  /** Si vrai, on ne propose pas « Créer » (l’entité existe déjà). */
+  isExisting?: (saisie: string) => boolean;
   disabled?: boolean;
+  autoFocus?: boolean;
 }) {
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -66,24 +87,25 @@ export function EntityFinder({
     const vus = new Set<string>();
     const out: string[] = [];
     for (const o of options) {
-      const t = o.trim();
+      const t = libelleOption(o).trim();
       if (!t) continue;
       const k = t.toLowerCase();
       if (vus.has(k)) continue;
       vus.add(k);
-      if (qNorm && !k.includes(qNorm)) continue;
+      const hay = motsClesOption(o).toLowerCase();
+      if (qNorm && !hay.includes(qNorm)) continue;
       out.push(t);
     }
     return out.slice(0, 12);
   }, [options, qNorm]);
 
-  const dejaExact = options.some((o) => o.trim().toLowerCase() === qNorm);
+  const dejaExact =
+    options.some((o) => libelleOption(o).trim().toLowerCase() === qNorm) ||
+    Boolean(q && isExisting?.(q));
   const peutCreer = allowCreate && q.length > 0 && !dejaExact;
   const lignes: Array<{ kind: 'create' | 'option'; label: string }> = [
-    ...(peutCreer
-      ? [{ kind: 'create' as const, label: q }]
-      : []),
     ...existants.map((label) => ({ kind: 'option' as const, label })),
+    ...(peutCreer ? [{ kind: 'create' as const, label: q }] : []),
   ];
 
   useEffect(() => {
@@ -112,10 +134,11 @@ export function EntityFinder({
     };
   }, [ouvert, listId, value]);
 
-  function choisir(label: string) {
-    onChange(label);
-    setSaisie(label);
+  function choisir(label: string, created: boolean) {
+    onChange(created ? '' : label);
+    setSaisie(created ? '' : label);
     setOuvert(false);
+    onSelect?.(label, { created });
   }
 
   function onKey(e: KeyboardEvent<HTMLInputElement>) {
@@ -136,10 +159,10 @@ export function EntityFinder({
       return;
     }
     if (e.key === 'Enter') {
+      e.preventDefault();
       const ligne = lignes[survol];
       if (ouvert && ligne) {
-        e.preventDefault();
-        choisir(ligne.label);
+        choisir(ligne.label, ligne.kind === 'create');
       }
     }
   }
@@ -156,6 +179,7 @@ export function EntityFinder({
         type="text"
         role="combobox"
         autoComplete="off"
+        autoFocus={autoFocus}
         disabled={disabled}
         placeholder={placeholder}
         value={saisie}
@@ -170,6 +194,7 @@ export function EntityFinder({
         }}
         onFocus={ouvrir}
         onKeyDown={onKey}
+        aria-label="Ajouter un article"
       />
       <button
         type="button"
@@ -209,7 +234,7 @@ export function EntityFinder({
                       className={`entity-finder-item${i === survol ? ' is-active' : ''}${ligne.kind === 'create' ? ' is-create' : ''}`}
                       onMouseEnter={() => setSurvol(i)}
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => choisir(ligne.label)}
+                      onClick={() => choisir(ligne.label, ligne.kind === 'create')}
                     >
                       {ligne.kind === 'create' ? (
                         <>

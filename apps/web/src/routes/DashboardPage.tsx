@@ -4,7 +4,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -69,19 +69,15 @@ type DashSectionId =
   | 'ca-evolution'
   | 'ca-boutiques'
   | 'modes'
-  | 'rentabilite'
-  | 'pipeline'
-  | 'soldes'
-  | 'segments';
+  | 'rentabilite';
+
+type OngletDash = 'rentabilite' | 'pipeline' | 'soldes' | 'segments';
 
 const DASH_SECTIONS: DashSectionId[] = [
   'ca-evolution',
   'ca-boutiques',
   'modes',
   'rentabilite',
-  'pipeline',
-  'soldes',
-  'segments',
 ];
 
 const DASH_OPEN_DEFAULT: Record<DashSectionId, boolean> = {
@@ -89,10 +85,9 @@ const DASH_OPEN_DEFAULT: Record<DashSectionId, boolean> = {
   'ca-boutiques': true,
   modes: true,
   rentabilite: true,
-  pipeline: true,
-  soldes: true,
-  segments: true,
 };
+
+const ONGLET_DASH: OngletDash[] = ['rentabilite', 'pipeline', 'soldes', 'segments'];
 
 function DashSection({
   id,
@@ -351,6 +346,7 @@ function dashboardPourMagasin(
 export function DashboardPage() {
   const { user } = useAuth();
   const magasin = useFiltreMagasinSiege();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initial = rangeForPreset('30j');
   const [preset, setPreset] = useState<PeriodePreset>('30j');
   const [dateFrom, setDateFrom] = useState(initial.from);
@@ -358,6 +354,27 @@ export function DashboardPage() {
   const [openSections, setOpenSections] =
     useState<Record<DashSectionId, boolean>>(DASH_OPEN_DEFAULT);
   const [sortRentab, setSortRentab] = useState<SortState<ColonneRentab> | null>(null);
+  const ongletRaw = searchParams.get('tab');
+  const onglet: OngletDash = ONGLET_DASH.includes(ongletRaw as OngletDash)
+    ? (ongletRaw as OngletDash)
+    : 'rentabilite';
+
+  function setOnglet(tab: OngletDash) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'rentabilite') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  }
+
+  function allerOnglet(tab: OngletDash) {
+    setOnglet(tab);
+    window.setTimeout(() => {
+      document.getElementById('dash-tabs')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 0);
+  }
   const { data: brut, isLoading, isError, error, isFetching } =
     useReportingDashboard(dateFrom, dateTo);
   const { data: serieQuotidienne } = useVentesQuotidiennes();
@@ -1131,6 +1148,69 @@ export function DashboardPage() {
                   </div>
                 )}
 
+                <p className="dash-rentab-footnote">
+                  Détail par boutique dans l’onglet ci-dessous.{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => allerOnglet('rentabilite')}
+                  >
+                    Ouvrir le tableau
+                  </button>
+                  {' · '}
+                  <Link to="/finance?tab=resultat">Compte de résultat →</Link>
+                </p>
+              </>
+            )}
+          </DashSection>
+
+          <div className="dash-tabs-wrap" id="dash-tabs">
+            <div className="dash-tabs-head">
+              <nav className="client-workspace-tabs" aria-label="Détail du tableau de bord">
+                <button
+                  type="button"
+                  className={onglet === 'rentabilite' ? 'actif' : undefined}
+                  onClick={() => setOnglet('rentabilite')}
+                >
+                  <Scale size={14} aria-hidden />
+                  Rentabilité
+                  <span className="fiche-tab-count">{rentabiliteRows.length}</span>
+                </button>
+                <button
+                  type="button"
+                  className={onglet === 'pipeline' ? 'actif' : undefined}
+                  onClick={() => setOnglet('pipeline')}
+                >
+                  <Banknote size={14} aria-hidden />
+                  Pipeline
+                  <span className="fiche-tab-count">
+                    {data.versements.parStatut.reduce((n, s) => n + s.nombre, 0)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={onglet === 'soldes' ? 'actif' : undefined}
+                  onClick={() => setOnglet('soldes')}
+                >
+                  <Wallet size={14} aria-hidden />
+                  Soldes
+                  <span className="fiche-tab-count">{data.tresorerie.caisses.length}</span>
+                </button>
+                <button
+                  type="button"
+                  className={onglet === 'segments' ? 'actif' : undefined}
+                  onClick={() => setOnglet('segments')}
+                >
+                  <Users size={14} aria-hidden />
+                  Segments
+                  <span className="fiche-tab-count">{data.crm.nombreClients}</span>
+                </button>
+              </nav>
+            </div>
+
+            <div className="panel dash-tabs-panel">
+              {onglet === 'rentabilite' && (
+                <>
                 <div className="table-wrap">
                   <table className="pl-table">
                     <thead>
@@ -1299,185 +1379,141 @@ export function DashboardPage() {
                   Marge/stock = rendement de la marge sur le stock valorisé.{' '}
                   <Link to="/finance?tab=resultat">Voir le compte de résultat →</Link>
                 </p>
-              </>
-            )}
-          </DashSection>
+                </>
+              )}
 
-          <div className="dash-layout dash-layout-3">
-            <DashSection
-              id="pipeline"
-              title="Pipeline versements"
-              open={openSections.pipeline}
-              onToggle={toggleSection}
-              summary={
-                <ul className="dash-section-summary-list">
-                  {STATUT_ORDER.filter((statut) => {
-                    const row = data.versements.parStatut.find((s) => s.statut === statut);
-                    return (row?.nombre ?? 0) > 0;
-                  })
-                    .slice(0, 3)
-                    .map((statut) => {
+              {onglet === 'pipeline' && (
+                <div className="dash-tabs-block">
+                  <h2 className="dash-tabs-title">Pipeline versements</h2>
+                  <ul className="dash-pipeline">
+                    {STATUT_ORDER.map((statut) => {
                       const row = data.versements.parStatut.find((s) => s.statut === statut);
+                      const nombre = row?.nombre ?? 0;
+                      const montant = row?.montant ?? '0';
                       return (
-                        <li key={statut}>
-                          <span>{STATUT_LABEL[statut]}</span>
+                        <li key={statut} className={nombre === 0 ? 'muted' : undefined}>
+                          <span className={`dash-pipe-dot statut-${statut.toLowerCase()}`} />
                           <span>
-                            {row?.nombre ?? 0} · {formatFcfa(row?.montant ?? '0')}
+                            {STATUT_LABEL[statut] ?? statut}
+                            <small> · {nombre}</small>
                           </span>
+                          <span className="money">{formatFcfa(montant)}</span>
+                          <InfoTooltip insight={insightPipelineVersement(statut, nombre, montant)} />
                         </li>
                       );
                     })}
-                  {data.versements.parStatut.every((s) => s.nombre === 0) && (
-                    <li>
-                      <span>Aucun versement actif</span>
-                    </li>
+                  </ul>
+                </div>
+              )}
+
+              {onglet === 'soldes' && (
+                <div className="dash-tabs-block">
+                  <h2 className="dash-tabs-title">
+                    Soldes de caisse
+                    <span className="dash-panel-meta">
+                      {data.tresorerie.caisses.length} caisse(s)
+                    </span>
+                  </h2>
+                  {data.tresorerie.caisses.length === 0 ? (
+                    <p className="lead">Aucune caisse dans le périmètre.</p>
+                  ) : (
+                    <>
+                      <ResponsiveContainer width="100%" height={140}>
+                        <BarChart
+                          data={[...data.tresorerie.caisses]
+                            .sort((a, b) => Number(b.solde) - Number(a.solde))
+                            .slice(0, 6)
+                            .map((c) => ({
+                              name:
+                                c.type === 'CENTRALE'
+                                  ? 'Centrale'
+                                  : `Aux. ${c.caisseId.slice(0, 4)}`,
+                              solde: Number(c.solde),
+                            }))}
+                          layout="vertical"
+                          margin={{ left: 8, right: 8 }}
+                        >
+                          <XAxis type="number" hide />
+                          <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={tooltipStyle()}
+                            formatter={(value) => formatFcfa(Number(value ?? 0))}
+                          />
+                          <Bar dataKey="solde" fill="#0f766e" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <ul className="dash-soldes-list">
+                        {[...data.tresorerie.caisses]
+                          .sort((a, b) => Number(b.solde) - Number(a.solde))
+                          .map((c) => (
+                            <li key={c.caisseId}>
+                              <span>
+                                {c.type === 'CENTRALE' ? 'Centrale' : 'Auxiliaire'}{' '}
+                                <small style={{ color: 'var(--text-muted)' }}>
+                                  {c.caisseId.slice(0, 8)}
+                                </small>
+                              </span>
+                              <span className="money">{formatFcfa(c.solde)}</span>
+                              <InfoTooltip insight={insightSoldeCaisse(c.type, c.solde)} />
+                            </li>
+                          ))}
+                      </ul>
+                    </>
                   )}
-                </ul>
-              }
-            >
-              <ul className="dash-pipeline">
-                {STATUT_ORDER.map((statut) => {
-                  const row = data.versements.parStatut.find((s) => s.statut === statut);
-                  const nombre = row?.nombre ?? 0;
-                  const montant = row?.montant ?? '0';
-                  return (
-                    <li key={statut} className={nombre === 0 ? 'muted' : undefined}>
-                      <span className={`dash-pipe-dot statut-${statut.toLowerCase()}`} />
-                      <span>
-                        {STATUT_LABEL[statut] ?? statut}
-                        <small> · {nombre}</small>
-                      </span>
-                      <span className="money">{formatFcfa(montant)}</span>
-                      <InfoTooltip insight={insightPipelineVersement(statut, nombre, montant)} />
-                    </li>
-                  );
-                })}
-              </ul>
-            </DashSection>
-
-            <DashSection
-              id="soldes"
-              title="Soldes de caisse"
-              meta={`${data.tresorerie.caisses.length} caisse(s)`}
-              open={openSections.soldes}
-              onToggle={toggleSection}
-              summary={
-                <p className="dash-section-summary-line">
-                  Auxiliaires{' '}
-                  <strong className="money">
-                    {formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}
-                  </strong>
-                  {' · '}
-                  {data.tresorerie.caisses.length} caisse(s)
-                </p>
-              }
-            >
-              {data.tresorerie.caisses.length === 0 ? (
-                <p className="lead">Aucune caisse dans le périmètre.</p>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={140}>
-                    <BarChart
-                      data={[...data.tresorerie.caisses]
-                        .sort((a, b) => Number(b.solde) - Number(a.solde))
-                        .slice(0, 6)
-                        .map((c) => ({
-                          name:
-                            c.type === 'CENTRALE'
-                              ? 'Centrale'
-                              : `Aux. ${c.caisseId.slice(0, 4)}`,
-                          solde: Number(c.solde),
-                        }))}
-                      layout="vertical"
-                      margin={{ left: 8, right: 8 }}
-                    >
-                      <XAxis type="number" hide />
-                      <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
-                      <Tooltip
-                        contentStyle={tooltipStyle()}
-                        formatter={(value) => formatFcfa(Number(value ?? 0))}
-                      />
-                      <Bar dataKey="solde" fill="#0f766e" radius={[0, 4, 4, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                  <ul>
-                    {[...data.tresorerie.caisses]
-                      .sort((a, b) => Number(b.solde) - Number(a.solde))
-                      .map((c) => (
-                      <li key={c.caisseId}>
-                        <span>
-                          {c.type === 'CENTRALE' ? 'Centrale' : 'Auxiliaire'}{' '}
-                          <small style={{ color: 'var(--text-muted)' }}>{c.caisseId.slice(0, 8)}</small>
-                        </span>
-                        <span className="money">{formatFcfa(c.solde)}</span>
-                        <InfoTooltip insight={insightSoldeCaisse(c.type, c.solde)} />
-                      </li>
-                    ))}
-                  </ul>
-                </>
+                </div>
               )}
-            </DashSection>
 
-            <DashSection
-              id="segments"
-              title="Segments clients"
-              meta={`${data.crm.nombreClients} client(s)`}
-              open={openSections.segments}
-              onToggle={toggleSection}
-              summary={
-                data.crm.parSegment.length === 0 ? (
-                  <p className="dash-section-summary-line">Aucun client segmenté</p>
-                ) : (
-                  <ul className="dash-section-summary-list">
-                    {data.crm.parSegment.map((s) => (
-                      <li key={s.segment}>
-                        <span>{s.segment}</span>
-                        <span>{s.nombre}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )
-              }
-            >
-              {data.crm.parSegment.length === 0 ? (
-                <p className="lead">Aucun client segmenté.</p>
-              ) : (
-                <ul className="dash-segments">
-                  {data.crm.parSegment.map((s) => {
-                    const part =
-                      data.crm.nombreClients > 0
-                        ? (s.nombre / data.crm.nombreClients) * 100
-                        : 0;
-                    return (
-                      <li key={s.segment}>
-                        <div className="dash-rank-row">
-                          <span
-                            className="dash-seg-dot"
-                            style={{ background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280' }}
-                          />
-                          <span className="dash-rank-name">{s.segment}</span>
-                          <span>
-                            {s.nombre} <small>({part.toFixed(0)} %)</small>
-                          </span>
-                          <InfoTooltip
-                            insight={insightSegmentClient(s.segment, s.nombre, data.crm.nombreClients)}
-                          />
-                        </div>
-                        <div className="dash-bar-track">
-                          <div
-                            className="dash-bar-fill"
-                            style={{
-                              width: `${part}%`,
-                              background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280',
-                            }}
-                          />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+              {onglet === 'segments' && (
+                <div className="dash-tabs-block">
+                  <h2 className="dash-tabs-title">
+                    Segments clients
+                    <span className="dash-panel-meta">{data.crm.nombreClients} client(s)</span>
+                  </h2>
+                  {data.crm.parSegment.length === 0 ? (
+                    <p className="lead">Aucun client segmenté.</p>
+                  ) : (
+                    <ul className="dash-segments">
+                      {data.crm.parSegment.map((s) => {
+                        const part =
+                          data.crm.nombreClients > 0
+                            ? (s.nombre / data.crm.nombreClients) * 100
+                            : 0;
+                        return (
+                          <li key={s.segment}>
+                            <div className="dash-rank-row">
+                              <span
+                                className="dash-seg-dot"
+                                style={{ background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280' }}
+                              />
+                              <span className="dash-rank-name">{s.segment}</span>
+                              <span>
+                                {s.nombre} <small>({part.toFixed(0)} %)</small>
+                              </span>
+                              <InfoTooltip
+                                insight={insightSegmentClient(
+                                  s.segment,
+                                  s.nombre,
+                                  data.crm.nombreClients,
+                                )}
+                              />
+                            </div>
+                            <div className="dash-bar-track">
+                              <div
+                                className="dash-bar-fill"
+                                style={{
+                                  width: `${part}%`,
+                                  background: COULEURS_SEGMENTS[s.segment] ?? '#6b7280',
+                                }}
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               )}
-            </DashSection>
+            </div>
           </div>
 
           <nav className="dash-shortcuts" aria-label="Raccourcis">

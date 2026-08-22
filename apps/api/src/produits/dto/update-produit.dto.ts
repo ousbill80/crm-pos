@@ -49,6 +49,10 @@ export class UpdateProduitDto {
   imageUrl?: string | null;
 
   @IsOptional()
+  @IsIn(['ARTICLE', 'PRESTATION'])
+  typeProduit?: 'ARTICLE' | 'PRESTATION';
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   prixUnitaire?: number;

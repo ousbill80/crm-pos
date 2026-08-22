@@ -34,7 +34,8 @@
           "cameraPermission": "Autoriser CaissePOS à utiliser la caméra pour scanner les articles."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sqlite"
     ],
     "extra": {
       "apiUrl": "http://localhost:3000"

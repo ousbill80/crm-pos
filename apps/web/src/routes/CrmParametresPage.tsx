@@ -32,6 +32,7 @@ import {
   type SeuilsCrmForm,
 } from '../lib/crm-parametres';
 import {
+  insightAvantageFidelite,
   insightCreditFideliteAuto,
   insightSeuilFideliteArgent,
   insightSeuilFideliteOr,
@@ -120,6 +121,8 @@ export function CrmParametresPage() {
   const [or, setOr] = useState('');
   const [regulier, setRegulier] = useState('');
   const [vip, setVip] = useState('');
+  const [avantageArgent, setAvantageArgent] = useState('0');
+  const [avantageOr, setAvantageOr] = useState('0');
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
@@ -128,11 +131,21 @@ export function CrmParametresPage() {
     setOr(String(params.data.seuilFideliteOr));
     setRegulier(String(params.data.seuilSegmentRegulier));
     setVip(String(params.data.seuilSegmentVip));
+    setAvantageArgent(String(params.data.avantageFideliteArgentPct));
+    setAvantageOr(String(params.data.avantageFideliteOrPct));
   }, [params.data]);
 
   const brouillon = useMemo(
-    () => parseSeuilsForm({ argent, or, regulier, vip }),
-    [argent, or, regulier, vip],
+    () =>
+      parseSeuilsForm({
+        argent,
+        or,
+        regulier,
+        vip,
+        avantageArgent,
+        avantageOr,
+      }),
+    [argent, or, regulier, vip, avantageArgent, avantageOr],
   );
 
   const sauvegarde = useMemo<SeuilsCrmForm | null>(() => {
@@ -142,6 +155,8 @@ export function CrmParametresPage() {
       seuilFideliteOr: params.data.seuilFideliteOr,
       seuilSegmentRegulier: params.data.seuilSegmentRegulier,
       seuilSegmentVip: params.data.seuilSegmentVip,
+      avantageFideliteArgentPct: params.data.avantageFideliteArgentPct,
+      avantageFideliteOrPct: params.data.avantageFideliteOrPct,
     };
   }, [params.data]);
 
@@ -171,6 +186,8 @@ export function CrmParametresPage() {
     setOr(String(SEUILS_CRM_DEFAUT.seuilFideliteOr));
     setRegulier(String(SEUILS_CRM_DEFAUT.seuilSegmentRegulier));
     setVip(String(SEUILS_CRM_DEFAUT.seuilSegmentVip));
+    setAvantageArgent(String(SEUILS_CRM_DEFAUT.avantageFideliteArgentPct));
+    setAvantageOr(String(SEUILS_CRM_DEFAUT.avantageFideliteOrPct));
     setMsg(null);
   }
 
@@ -180,6 +197,8 @@ export function CrmParametresPage() {
     setOr(String(params.data.seuilFideliteOr));
     setRegulier(String(params.data.seuilSegmentRegulier));
     setVip(String(params.data.seuilSegmentVip));
+    setAvantageArgent(String(params.data.avantageFideliteArgentPct));
+    setAvantageOr(String(params.data.avantageFideliteOrPct));
     setMsg(null);
   }
 
@@ -194,6 +213,10 @@ export function CrmParametresPage() {
   const orN = brouillon?.seuilFideliteOr ?? params.data?.seuilFideliteOr ?? 0;
   const regulierN = brouillon?.seuilSegmentRegulier ?? params.data?.seuilSegmentRegulier ?? 0;
   const vipN = brouillon?.seuilSegmentVip ?? params.data?.seuilSegmentVip ?? 0;
+  const avantageArgentN =
+    brouillon?.avantageFideliteArgentPct ?? params.data?.avantageFideliteArgentPct ?? 0;
+  const avantageOrN =
+    brouillon?.avantageFideliteOrPct ?? params.data?.avantageFideliteOrPct ?? 0;
 
   return (
     <div className="crm-parametres-page">
@@ -335,6 +358,51 @@ export function CrmParametresPage() {
                       value={or}
                       onChange={(e) => {
                         setOr(e.target.value);
+                        setMsg(null);
+                      }}
+                      disabled={!peutAdmin}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-grid-2">
+                  <div className="form-field">
+                    <label htmlFor="avantage-argent">
+                      Avantage Argent (% remise à l’encaissement)
+                      <InfoTooltip
+                        insight={insightAvantageFidelite('Argent', avantageArgentN)}
+                      />
+                    </label>
+                    <input
+                      id="avantage-argent"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={avantageArgent}
+                      onChange={(e) => {
+                        setAvantageArgent(e.target.value);
+                        setMsg(null);
+                      }}
+                      disabled={!peutAdmin}
+                      required
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="avantage-or">
+                      Avantage Or (% remise à l’encaissement)
+                      <InfoTooltip
+                        insight={insightAvantageFidelite('Or', avantageOrN)}
+                      />
+                    </label>
+                    <input
+                      id="avantage-or"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={avantageOr}
+                      onChange={(e) => {
+                        setAvantageOr(e.target.value);
                         setMsg(null);
                       }}
                       disabled={!peutAdmin}

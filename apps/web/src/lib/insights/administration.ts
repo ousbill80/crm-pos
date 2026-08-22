@@ -71,6 +71,30 @@ export function insightPerimetreRole(role: RoleLibelle): Insight {
   };
 }
 
+// Rapprochement 3 voies (§5.2, ligne 259-261) : compare ventes / bordereaux
+// émis / réceptions validées et signale tout écart entre les trois totaux.
+export function insightRapprochementCoherence(
+  signale: boolean,
+  ecartVentesBordereaux: string,
+  ecartBordereauxReceptions: string,
+): Insight {
+  if (!signale) {
+    return {
+      title: 'Rapprochement cohérent',
+      interpretation:
+        'Ventes enregistrées, bordereaux émis et réceptions validées concordent sur ce périmètre — aucun écart détecté.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Écart détecté (§5.2)',
+    interpretation: `Écart ventes ↔ bordereaux : ${ecartVentesBordereaux} FCFA. Écart bordereaux ↔ réceptions : ${ecartBordereauxReceptions} FCFA.`,
+    recommendation:
+      'Investiguer les transactions du périmètre concerné (versements non transmis, litiges en cours) avant clôture de période.',
+    severity: 'critical',
+  };
+}
+
 // Combien de profils ont accès (total ou partiel) à une application du shell
 // — aide à repérer les modules largement ouverts vs très restreints.
 export function insightAccesApplication(

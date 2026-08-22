@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AlertesPage } from './routes/AlertesPage';
 import { AuditPage } from './routes/AuditPage';
+import { ControleCoherencePage } from './routes/ControleCoherencePage';
 import { ChangePasswordPage } from './routes/ChangePasswordPage';
 import { UtilisateurDetailPage } from './routes/UtilisateurDetailPage';
 import { ProfilsPage } from './routes/ProfilsPage';
@@ -101,6 +102,7 @@ function App() {
         <Route path="/utilisateurs/:userId" element={<UtilisateurDetailPage />} />
         <Route path="/profils" element={<ProfilsPage />} />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/audit/controle-coherence" element={<ControleCoherencePage />} />
         <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
         <Route path="/pos" element={<PosPage />} />
       </Route>

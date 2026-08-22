@@ -1,13 +1,8 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-} from 'react';
-import { Calendar, Minus, Plus, Search, Trash2 } from 'lucide-react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { Calendar, Minus, Plus, Trash2 } from 'lucide-react';
+import { apiFetch, messageDepuisApi } from '../lib/api';
 import { fmtFcfa } from '../lib/achats-ui';
+import { EntityFinder } from './EntityFinder';
 import type {
   FournisseurDto,
   FournisseurProduitStatsDto,
@@ -36,6 +31,9 @@ interface BonCommandeComposerProps {
   submitting: boolean;
   onSubmit: () => void;
   onCancel: () => void;
+  /** SI / DG / DAF : auto-création article depuis le finder. */
+  allowCreateArticle?: boolean;
+  onProduitCree?: (produit: ProduitDto) => void;
 }
 
 function nouvelleLigne(
@@ -72,18 +70,8 @@ function badgeStock(statut: ProduitDto['statutStock']): string | null {
   return null;
 }
 
-function surligner(texte: string, q: string) {
-  const needle = q.trim();
-  if (!needle) return texte;
-  const i = texte.toLowerCase().indexOf(needle.toLowerCase());
-  if (i < 0) return texte;
-  return (
-    <>
-      {texte.slice(0, i)}
-      <mark>{texte.slice(i, i + needle.length)}</mark>
-      {texte.slice(i + needle.length)}
-    </>
-  );
+function libelleProduit(p: ProduitDto): string {
+  return p.reference ? `${p.designation} · ${p.reference}` : p.designation;
 }
 
 export function BonCommandeComposer({
@@ -101,18 +89,24 @@ export function BonCommandeComposer({
   submitting,
   onSubmit,
   onCancel,
+  allowCreateArticle = false,
+  onProduitCree,
 }: BonCommandeComposerProps) {
   const [recherche, setRecherche] = useState('');
-  const [ouvert, setOuvert] = useState(false);
-  const [survol, setSurvol] = useState(0);
+  const [crees, setCrees] = useState<ProduitDto[]>([]);
+  const [creationEnCours, setCreationEnCours] = useState(false);
+  const [creationErr, setCreationErr] = useState<string | null>(null);
   const [lignePulse, setLignePulse] = useState<string | null>(null);
-  const searchWrap = useRef<HTMLDivElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
   const qtyRefs = useRef(new Map<string, HTMLInputElement>());
 
+  const catalogue = useMemo(() => {
+    const ids = new Set(produits.map((p) => p.id));
+    return [...produits, ...crees.filter((p) => !ids.has(p.id))];
+  }, [produits, crees]);
+
   const produitsParId = useMemo(
-    () => new Map(produits.map((p) => [p.id, p])),
-    [produits],
+    () => new Map(catalogue.map((p) => [p.id, p])),
+    [catalogue],
   );
   const statsParProduit = useMemo(
     () => new Map(statsFournisseur.map((s) => [s.produitId, s])),
@@ -142,48 +136,28 @@ export function BonCommandeComposer({
     [statsFournisseur, produitsParId, idsCommandes],
   );
 
-  const resultats = useMemo(() => {
-    const q = recherche.trim().toLowerCase();
-    let pool: ProduitDto[];
-    if (q) {
-      pool = produits.filter((p) => {
-        const hay = [p.designation, p.reference ?? '', p.codeBarres ?? '', p.categorie ?? '']
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(q);
-      });
-    } else {
-      const priorite = (p: ProduitDto) => {
-        if (p.statutStock === 'RUPTURE') return 0;
-        if (p.statutStock === 'SOUS_SEUIL') return 1;
-        if (statsParProduit.has(p.id)) return 2;
-        return 3;
-      };
-      pool = [...produits].sort((a, b) => priorite(a) - priorite(b) || a.designation.localeCompare(b.designation, 'fr'));
-    }
-    return pool.slice(0, 14);
-  }, [produits, recherche, statsParProduit]);
+  const finderOptions = useMemo(
+    () =>
+      catalogue.map((p) => ({
+        label: libelleProduit(p),
+        keywords: [p.designation, p.reference ?? '', p.codeBarres ?? '', p.categorie ?? ''].join(
+          ' ',
+        ),
+      })),
+    [catalogue],
+  );
 
-  useEffect(() => {
-    function onDocClick(event: MouseEvent) {
-      if (!searchWrap.current?.contains(event.target as Node)) setOuvert(false);
-    }
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, []);
-
-  useEffect(() => {
-    searchInput.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    setSurvol(0);
-  }, [recherche]);
-
-  useEffect(() => {
-    if (!ouvert) return;
-    searchWrap.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [ouvert]);
+  function trouverProduit(saisie: string): ProduitDto | undefined {
+    const q = saisie.trim().toLowerCase();
+    if (!q) return undefined;
+    return catalogue.find((p) => {
+      if (libelleProduit(p).toLowerCase() === q) return true;
+      if (p.designation.toLowerCase() === q) return true;
+      if (p.reference && p.reference.toLowerCase() === q) return true;
+      if (p.codeBarres && p.codeBarres.toLowerCase() === q) return true;
+      return false;
+    });
+  }
 
   function focusQte(key: string) {
     requestAnimationFrame(() => {
@@ -217,7 +191,40 @@ export function BonCommandeComposer({
       focusQte(ligne.key);
     }
     setRecherche('');
-    setOuvert(false);
+    setCreationErr(null);
+  }
+
+  async function creerEtAjouter(designation: string) {
+    const nom = designation.trim();
+    if (!nom || creationEnCours) return;
+    setCreationEnCours(true);
+    setCreationErr(null);
+    try {
+      const created = await apiFetch<ProduitDto>('/produits', {
+        method: 'POST',
+        body: JSON.stringify({
+          designation: nom,
+          prixUnitaire: 1,
+          stock: 0,
+        }),
+      });
+      setCrees((prev) => (prev.some((p) => p.id === created.id) ? prev : [...prev, created]));
+      onProduitCree?.(created);
+      ajouterProduit(created);
+    } catch (err) {
+      setCreationErr(messageDepuisApi(err, 'Impossible de créer l’article.'));
+    } finally {
+      setCreationEnCours(false);
+    }
+  }
+
+  function onSelectArticle(label: string, meta: { created: boolean }) {
+    if (meta.created) {
+      void creerEtAjouter(label);
+      return;
+    }
+    const produit = trouverProduit(label);
+    if (produit) ajouterProduit(produit);
   }
 
   function majLigne(key: string, patch: Partial<LigneBonCommande>) {
@@ -248,22 +255,6 @@ export function BonCommandeComposer({
     }
     return { articles, unites, montant, incompletes: lignes.length - articles };
   }, [lignes]);
-
-  function onSearchKey(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setOuvert(true);
-      setSurvol((i) => Math.min(i + 1, Math.max(0, resultats.length - 1)));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSurvol((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (resultats[survol]) ajouterProduit(resultats[survol]);
-    } else if (e.key === 'Escape') {
-      setOuvert(false);
-    }
-  }
 
   return (
     <form
@@ -484,83 +475,35 @@ export function BonCommandeComposer({
           </table>
           </div>
 
-          <div className="bc-doc-search-wrap" ref={searchWrap}>
-            <div className="bc-doc-search">
-              <Search size={16} className="bc-doc-search-icon" aria-hidden />
-              <input
-                ref={searchInput}
-                id="bc-recherche"
-                type="search"
-                autoComplete="off"
-                placeholder="Ajouter un article — désignation, réf. ou code-barres"
-                value={recherche}
-                onChange={(e) => {
-                  setRecherche(e.target.value);
-                  setOuvert(true);
-                }}
-                onFocus={() => setOuvert(true)}
-                onKeyDown={onSearchKey}
-                aria-label="Ajouter un article"
-                aria-expanded={ouvert}
-                aria-controls="bc-recherche-liste"
-                role="combobox"
-              />
-            </div>
-            {ouvert && (
-              <ul id="bc-recherche-liste" className="bc-doc-search-list" role="listbox">
-                {produits.length === 0 ? (
-                  <li className="bc-doc-search-empty">
-                    Aucun article au catalogue. Créez d’abord un produit.
-                  </li>
-                ) : resultats.length === 0 ? (
-                  <li className="bc-doc-search-empty">
-                    Aucun article ne correspond
-                    {recherche.trim() ? ` à « ${recherche.trim()} »` : ''}.
-                  </li>
-                ) : (
-                  resultats.map((p, i) => {
-                    const hint = badgeStock(p.statutStock);
-                    const deja = idsCommandes.has(p.id);
-                    const prix = prixSuggere(p, statsParProduit);
-                    const q = recherche.trim();
-                    return (
-                      <li key={p.id} role="option" aria-selected={i === survol}>
-                        <button
-                          type="button"
-                          className={`bc-doc-search-item${i === survol ? ' is-active' : ''}`}
-                          onMouseEnter={() => setSurvol(i)}
-                          onClick={() => ajouterProduit(p)}
-                        >
-                          <span className="bc-doc-search-main">
-                            <strong>{surligner(p.designation, q)}</strong>
-                            <span>
-                              {[
-                                p.reference ? surligner(p.reference, q) : null,
-                                hint,
-                                `stock ${p.stock}`,
-                                deja ? 'déjà sur le bon (+1)' : null,
-                              ]
-                                .filter(Boolean)
-                                .map((part, idx) => (
-                                  <span key={idx}>
-                                    {idx > 0 ? ' · ' : null}
-                                    {part}
-                                  </span>
-                                ))}
-                            </span>
-                          </span>
-                          <span className="bc-doc-search-prix">
-                            {prix.valeur
-                              ? `${fmtFcfa(prix.valeur)}${prix.source === 'dernier' ? ' · dernier' : ' · CMP'}`
-                              : 'Prix à saisir'}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
-            )}
+          <div className="bc-doc-search-wrap">
+            <EntityFinder
+              id="bc-recherche"
+              value={recherche}
+              onChange={setRecherche}
+              onSelect={onSelectArticle}
+              options={finderOptions}
+              allowCreate={allowCreateArticle}
+              isExisting={(saisie) => Boolean(trouverProduit(saisie))}
+              placeholder="Ajouter un article — désignation, réf. ou code-barres"
+              createLabel={(s) => `Créer l’article « ${s} »`}
+              emptyLabel={
+                catalogue.length === 0
+                  ? allowCreateArticle
+                    ? 'Aucun article — saisissez un nom puis créez-le'
+                    : 'Aucun article au catalogue'
+                  : 'Aucune correspondance'
+              }
+              disabled={submitting || creationEnCours}
+              autoFocus
+            />
+            {creationEnCours ? (
+              <p className="bc-doc-hint">Création de l’article…</p>
+            ) : null}
+            {creationErr ? (
+              <p className="bc-form-err" role="alert">
+                {creationErr}
+              </p>
+            ) : null}
           </div>
         </section>
 

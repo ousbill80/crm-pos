@@ -34,6 +34,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       description: null,
       imageUrl: null,
       actif: true,
+      typeProduit: 'ARTICLE',
       prixUnitaire: new Prisma.Decimal('1000.00'),
       stock: 10,
       coutMoyenPondere: new Prisma.Decimal('400.00'),

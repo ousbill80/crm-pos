@@ -47,6 +47,12 @@ const ROLES_COMMANDE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
+const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
 type FiltreKpi = 'all' | 'brouillon' | 'ouvertes' | 'partielles' | 'receptionnees';
 
 export function CommandesAchatsPage() {
@@ -57,6 +63,8 @@ export function CommandesAchatsPage() {
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
+  const peutCreerArticle =
+    user !== null && ROLES_CATALOGUE_ECRITURE.includes(user.role);
 
   const fournisseurQuery = searchParams.get('fournisseurId') ?? '';
   const ouvrirQuery = searchParams.get('ouvrir') === '1';
@@ -446,6 +454,10 @@ export function CommandesAchatsPage() {
             submitting={creer.isPending}
             onSubmit={() => creer.mutate()}
             onCancel={() => setModalNouveau(false)}
+            allowCreateArticle={peutCreerArticle}
+            onProduitCree={() => {
+              void queryClient.invalidateQueries({ queryKey: ['produits'] });
+            }}
           />
         </Modal>
       )}

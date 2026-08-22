@@ -18,7 +18,9 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ModePaiement, TypeCaisse } from '@caisse-crm/shared';
 import {
+  enqueueCloturerSessionOp,
   enqueueLiberationOp,
+  enqueueOuvrirSessionOp,
   enqueueReservationOp,
   enqueueVenteOp,
   getOfflineStore,
@@ -56,6 +58,8 @@ import { useRootNavigation } from '../navigation/use-root-navigation';
 import { useOutboxPending } from '../offline/use-outbox-pending';
 import { tenterFlushMobile } from '../offline/auto-sync';
 import { estErreurHorsLigne } from '../offline/erreurs';
+import { verifierIdentifiantsLocal } from '../offline/local-auth';
+import { stasherSecretOp } from '../offline/op-secrets';
 import {
   formatNumeroAttente,
   hydrateHolds,
@@ -148,6 +152,10 @@ export function PosScreen({ navigation, route }: Props) {
   const [tiroirs, setTiroirs] = useState<CaisseDto[]>([]);
   const [caisse, setCaisse] = useState<CaisseDto | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  // Session ouverte hors ligne : `session.id` porte le placeholder
+  // `{{localSessionId:...}}` tant que l'ouverture n'est pas synchronisée
+  // (§6.7 — file offline session caisse).
+  const [sessionEnAttenteSync, setSessionEnAttenteSync] = useState(false);
   const [produits, setProduits] = useState<Produit[]>([]);
   const [rechercheProduit, setRechercheProduit] = useState('');
   const [temoins, setTemoins] = useState<Temoin[]>([]);
@@ -395,9 +403,49 @@ export function PosScreen({ navigation, route }: Props) {
     });
   }, [charger]);
 
+  // Une session ouverte hors ligne garde le placeholder tant que son
+  // ouverture n'est pas synchronisée (§6.7) : dès que l'op quitte la file
+  // (sync auto en arrière-plan, cf. `auto-sync.ts`), on recharge la session
+  // réelle pour que les ventes suivantes portent l'id serveur, pas le
+  // placeholder.
+  useEffect(() => {
+    if (!sessionEnAttenteSync) return;
+    let cancelled = false;
+    const verifier = async () => {
+      const queue = await getOfflineStore().listOutbox();
+      const ouvertureEnAttente = queue.some(
+        (op) => op.path === '/ventes/sessions' && op.method === 'POST',
+      );
+      if (!ouvertureEnAttente && !cancelled) {
+        setSessionEnAttenteSync(false);
+        await charger().catch(() => undefined);
+      }
+    };
+    void verifier();
+    const poll = setInterval(() => void verifier(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+  }, [sessionEnAttenteSync, charger]);
+
   useEffect(() => {
     void tenterFlushMobile().catch(() => undefined);
   }, []);
+
+  /** Message d'échec de vérification locale du témoin (§6.7, hors ligne). */
+  function messageTemoinHorsLigne(local: {
+    verrouille?: boolean;
+    perime?: boolean;
+  }): string {
+    if (local.verrouille) {
+      return 'Témoin verrouillé localement (trop d’échecs) — reconnectez le réseau.';
+    }
+    if (local.perime) {
+      return 'Identité témoin hors ligne périmée (24h) — reconnexion réseau nécessaire.';
+    }
+    return 'Identifiants témoin invalides ou jamais connectés en ligne sur cet appareil.';
+  }
 
   async function ouvrir() {
     if (!caisse) return;
@@ -414,13 +462,43 @@ export function PosScreen({ navigation, route }: Props) {
         }),
       });
       setSession(created);
+      setSessionEnAttenteSync(false);
       await chargerCatalogue(created.id);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Ouverture refusée (fond ou confirmateur).',
-      );
+      if (estErreurHorsLigne(err)) {
+        const local = await verifierIdentifiantsLocal(temoinLogin, temoinPassword);
+        if (!local.ok) {
+          setError(messageTemoinHorsLigne(local));
+          setPending(false);
+          return;
+        }
+        const { op, placeholderSessionId } = await enqueueOuvrirSessionOp(
+          getOfflineStore(),
+          {
+            caisseId: caisse.id,
+            fondInitial: Number(fond) || 0,
+            temoinLogin,
+            clientOperationId: newClientOperationId(),
+          },
+        );
+        await stasherSecretOp(op.id, { temoinPassword });
+        const localSession: Session = {
+          id: placeholderSessionId,
+          caisseId: caisse.id,
+          statut: 'OUVERTE',
+        };
+        setSession(localSession);
+        setSessionEnAttenteSync(true);
+        await chargerCatalogue(localSession.id);
+        setInfo('Session ouverte hors ligne — en attente de synchronisation.');
+        void tenterFlushMobile();
+      } else {
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : 'Ouverture refusée (fond ou confirmateur).',
+        );
+      }
     } finally {
       setPending(false);
     }
@@ -726,7 +804,8 @@ export function PosScreen({ navigation, route }: Props) {
   }
 
   async function ouvrirCloture() {
-    if (pendingOutbox > 0) {
+    const sessionLocale = session?.id.startsWith('{{localSessionId:') ?? false;
+    if (pendingOutbox > 0 && !sessionLocale) {
       setError(
         `File hors-ligne : ${pendingOutbox} opération(s). Synchronisez avant clôture.`,
       );
@@ -744,7 +823,13 @@ export function PosScreen({ navigation, route }: Props) {
 
   async function cloturer() {
     if (!session) return;
-    if (pendingOutbox > 0) {
+    // Une session déjà ouverte hors ligne (id = placeholder) porte ses
+    // propres ops non synchronisées dans `pendingOutbox` — les clôturer dans
+    // le même lot est le scénario nominal, pas un blocage (§6.7). Le
+    // blocage reste entier pour une session réelle avec un reliquat étranger
+    // (ex. ventes non synchronisées d'un épisode hors ligne antérieur).
+    const sessionLocale = session.id.startsWith('{{localSessionId:');
+    if (pendingOutbox > 0 && !sessionLocale) {
       setError('File hors-ligne non vide — clôture bloquée.');
       return;
     }
@@ -763,6 +848,7 @@ export function PosScreen({ navigation, route }: Props) {
         }),
       });
       setSession(null);
+      setSessionEnAttenteSync(false);
       setPanier([]);
       setRemiseSaisie('0');
       setClient(null);
@@ -779,11 +865,44 @@ export function PosScreen({ navigation, route }: Props) {
       setTemoins(t);
       if (t.length === 1) setTemoinLogin(t[0].login);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Clôture refusée (fond ou confirmateur).',
-      );
+      if (estErreurHorsLigne(err)) {
+        const local = await verifierIdentifiantsLocal(
+          clotureTemoinLogin,
+          clotureTemoinPassword,
+        );
+        if (!local.ok) {
+          setError(messageTemoinHorsLigne(local));
+          setPending(false);
+          return;
+        }
+        const op = await enqueueCloturerSessionOp(getOfflineStore(), sessionId, {
+          fondCompteCloture: Number(fondCompteCloture) || 0,
+          temoinLogin: clotureTemoinLogin,
+        });
+        await stasherSecretOp(op.id, { temoinPassword: clotureTemoinPassword });
+        setSession(null);
+        setSessionEnAttenteSync(false);
+        setPanier([]);
+        setRemiseSaisie('0');
+        setClient(null);
+        setClotureOn(false);
+        setClotureResultat({
+          sessionId,
+          transactionId: null,
+          fondCompte: Number(fondCompteCloture) || 0,
+        });
+        setFondCompteCloture('0');
+        setClotureTemoinLogin('');
+        setClotureTemoinPassword('');
+        setInfo('Clôture enregistrée hors ligne — en attente de synchronisation.');
+        void tenterFlushMobile();
+      } else {
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : 'Clôture refusée (fond ou confirmateur).',
+        );
+      }
     } finally {
       setPending(false);
     }
@@ -1365,6 +1484,11 @@ export function PosScreen({ navigation, route }: Props) {
         </View>
       </View>
 
+      {sessionEnAttenteSync ? (
+        <Banner tone="warning">
+          Session ouverte hors ligne — en attente de synchronisation
+        </Banner>
+      ) : null}
       {pendingOutbox > 0 ? (
         <Pressable onPress={() => root.navigate('FileAttente')}>
           <Banner tone="warning">

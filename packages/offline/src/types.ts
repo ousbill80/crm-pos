@@ -6,6 +6,14 @@ export interface OutboxOp {
   method: OutboxMethod;
   body: Record<string, unknown>;
   createdAt: string;
+  /**
+   * Jeton placeholder (ex. `{{localSessionId:<id>}}`) que cette op, une fois
+   * envoyée avec succès, résout vers l'id réel renvoyé par le serveur
+   * (`reponse.id`) — substitué dans `path`/`body` de toutes les ops
+   * suivantes du même lot avant leur propre envoi (§6.7, session caisse
+   * ouverte hors ligne puis vendue/clôturée dans le même lot).
+   */
+  resolvesPlaceholder?: string;
 }
 
 export interface OfflineStore {

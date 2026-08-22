@@ -189,6 +189,24 @@ export function insightSeuilSegmentVip(seuil: number, seuilRegulier: number): In
   };
 }
 
+export function insightAvantageFidelite(
+  palier: 'Argent' | 'Or',
+  pct: number,
+): Insight {
+  return {
+    title: `Avantage ${palier}`,
+    interpretation:
+      pct > 0
+        ? `Remise automatique de ${pct}% appliquée à l’encaissement pour les clients au palier ${palier}.`
+        : `Désactivé (0%) — aucune remise n’est appliquée au palier ${palier}.`,
+    recommendation:
+      pct === 0
+        ? 'Renseigner un pourcentage pour activer l’avantage fidélité de ce palier.'
+        : undefined,
+    severity: pct > 0 ? 'info' : 'neutral',
+  };
+}
+
 export function insightCreditFideliteAuto(): Insight {
   return {
     title: 'Crédit automatique POS',

@@ -299,4 +299,124 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     expect(alerte).toBeDefined();
     expect(alerte?.message).toContain('(6 h)');
   });
+
+  it("SLA litige (§5.1, 24 à 48 h) : un litige constaté il y a 10 h n'est pas en retard avec le délai par défaut (48 h)", async () => {
+    const transactionLitige = await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 300,
+        statut: StatutTransaction.LITIGE,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+      },
+    });
+    const bordereauLitige = await env.prisma.bordereauVersement.create({
+      data: { transactionId: transactionLitige.id, montantDeclare: 300 },
+    });
+    await env.prisma.receptionValidation.create({
+      data: {
+        bordereauId: bordereauLitige.id,
+        montantRecu: 250,
+        ecart: -50,
+        statutFinal: StatutTransaction.LITIGE,
+        validateurId: caissierB1Id,
+        dateReception: new Date(Date.now() - 10 * 60 * 60 * 1000),
+      },
+    });
+
+    const avant = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    expect(
+      (avant.body as AlerteDto[]).some(
+        (a) =>
+          a.type === 'LITIGE_EN_RETARD' && a.entiteId === transactionLitige.id,
+      ),
+    ).toBe(false);
+
+    // Une fois le délai de régularisation abaissé à 6h, ce même litige de
+    // 10h devient en retard.
+    const societe = await env.prisma.societe.findFirst();
+    if (!societe) throw new Error('société introuvable pour le test');
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { delaiRegularisationLitigeHeures: 6 },
+    });
+
+    const apres = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const alerteLitige = (apres.body as AlerteDto[]).find(
+      (a) =>
+        a.type === 'LITIGE_EN_RETARD' && a.entiteId === transactionLitige.id,
+    );
+    expect(alerteLitige).toBeDefined();
+    expect(alerteLitige?.message).toContain('(6 h)');
+
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { delaiRegularisationLitigeHeures: 48 },
+    });
+  });
+
+  it('seuil de caisse (§5.1) : aucune alerte SEUIL_CAISSE_DEPASSE tant que le seuil est désactivé (défaut null)', async () => {
+    await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.VENTE,
+        montant: 600_000,
+        statut: StatutTransaction.VALIDEE,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    expect(
+      (response.body as AlerteDto[]).some(
+        (a) => a.type === 'SEUIL_CAISSE_DEPASSE',
+      ),
+    ).toBe(false);
+  });
+
+  it('seuil de caisse (§5.1) : alerte SEUIL_CAISSE_DEPASSE une fois le seuil configuré et atteint', async () => {
+    const societe = await env.prisma.societe.findFirst();
+    if (!societe) throw new Error('société introuvable pour le test');
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { seuilVersementAnticipe: 500_000 },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const alerte = (response.body as AlerteDto[]).find(
+      (a) =>
+        a.type === 'SEUIL_CAISSE_DEPASSE' && a.entiteId === caisseBoutique1Id,
+    );
+    expect(alerte).toBeDefined();
+    expect(alerte?.message).toContain('Boutique 1');
+
+    // Visible aussi dans le périmètre du caissier de la boutique concernée.
+    const responseBoutique = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.caissierB1}`)
+      .expect(200);
+    expect(
+      (responseBoutique.body as AlerteDto[]).some(
+        (a) =>
+          a.type === 'SEUIL_CAISSE_DEPASSE' && a.entiteId === caisseBoutique1Id,
+      ),
+    ).toBe(true);
+
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { seuilVersementAnticipe: null },
+    });
+  });
 });

@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createIdbStore,
   createMemoryStore,
+  enqueueCloturerSessionOp,
+  enqueueOuvrirSessionOp,
   enqueueSortieFondsOp,
+  enqueueVenteOp,
   flushOutbox,
+  localSessionPlaceholder,
   LS_HOLDS_PREFIX,
   LS_MIGRATED,
   LS_OUTBOX,
@@ -146,5 +150,60 @@ describe('flushOutbox — append-only', () => {
       montant: 1500,
       clientOperationId: 'op-sortie-01',
     });
+  });
+
+  it('substitue {{localSessionId}} par l’id réel dans le reste du lot (ouverture+vente+clôture hors ligne)', async () => {
+    const store = createMemoryStore();
+    const { op: ouverture, placeholderSessionId } = await enqueueOuvrirSessionOp(store, {
+      caisseId: 'c1',
+      fondInitial: 10000,
+      temoinLogin: 'chef-boutique',
+      clientOperationId: 'local-op-1',
+    });
+    expect(placeholderSessionId).toBe(localSessionPlaceholder('local-op-1'));
+    expect(ouverture.resolvesPlaceholder).toBe(placeholderSessionId);
+
+    await enqueueVenteOp(store, placeholderSessionId, {
+      clientOperationId: 'vente-1',
+      lignes: [],
+    });
+    await enqueueCloturerSessionOp(store, placeholderSessionId, {
+      fondCompteCloture: 10000,
+      temoinLogin: 'chef-boutique',
+    });
+
+    const envoyees: Array<{ path: string; body: unknown }> = [];
+    const result = await flushOutbox(store, async (item) => {
+      envoyees.push({ path: item.path, body: item.body });
+      if (item.path === '/ventes/sessions') return { id: 'sess-reelle-42' };
+      return { id: 'peu-importe' };
+    });
+
+    expect(result).toEqual({ flushed: 3, remaining: 0 });
+    expect(envoyees[0]?.path).toBe('/ventes/sessions');
+    expect(envoyees[1]?.path).toBe('/ventes/sessions/sess-reelle-42/ventes');
+    expect(envoyees[2]?.path).toBe('/ventes/sessions/sess-reelle-42/cloture');
+    expect((await store.listOutbox())).toHaveLength(0);
+  });
+
+  it('conserve le placeholder tel quel si l’ouverture échoue (réseau toujours indisponible)', async () => {
+    const store = createMemoryStore();
+    const { placeholderSessionId } = await enqueueOuvrirSessionOp(store, {
+      caisseId: 'c1',
+      fondInitial: 5000,
+      temoinLogin: 'chef-boutique',
+      clientOperationId: 'local-op-2',
+    });
+    await enqueueVenteOp(store, placeholderSessionId, { clientOperationId: 'vente-2' });
+
+    const result = await flushOutbox(store, async (item) => {
+      if (item.path === '/ventes/sessions') throw new Error('offline');
+      throw new Error('ne devrait pas être appelé avant résolution du placeholder');
+    });
+
+    expect(result.flushed).toBe(0);
+    expect(result.remaining).toBe(2);
+    const restant = await store.listOutbox();
+    expect(restant[1]?.path).toBe(`/ventes/sessions/${placeholderSessionId}/ventes`);
   });
 });

@@ -195,6 +195,8 @@ export interface CrmParametresDto {
   seuilFideliteOr: number;
   seuilSegmentRegulier: number;
   seuilSegmentVip: number;
+  avantageFideliteArgentPct: number;
+  avantageFideliteOrPct: number;
 }
 
 export interface TableauDeBordCrmDto {
@@ -254,6 +256,7 @@ export interface ProduitDto {
   categorie: string | null;
   description: string | null;
   actif: boolean;
+  typeProduit?: 'ARTICLE' | 'PRESTATION';
   prixUnitaire: string;
   stock: number;
   seuilReappro: number | null;
@@ -483,6 +486,7 @@ export interface VenteDto {
   id: string;
   dateVente: string;
   montantTotal: string;
+  remiseFidelite?: string;
   modePaiement: ModePaiement;
   caisseId: string;
   sessionCaisseId: string;
@@ -751,6 +755,8 @@ export interface SocieteDto {
   seuilFideliteOr?: number;
   seuilSegmentRegulier?: number;
   seuilSegmentVip?: number;
+  seuilVersementAnticipe?: string | null;
+  delaiRegularisationLitigeHeures?: number;
 }
 
 export interface ZoneDto {

@@ -82,6 +82,15 @@ export const ROLES_REGULARISATION_LITIGE_INTERNE: RoleLibelle[] = [
   RoleLibelle.DAF,
 ];
 
+// Rapprochement 3 voies (§5.2, ligne 259-261) : Contrôleur interne, DAF,
+// Direction Générale. Pas le Caissier Central, dont le travail de réception
+// est l'objet même de ce contrôle — miroir API ROLES_CONTROLE_COHERENCE.
+export const ROLES_CONTROLE_COHERENCE: RoleLibelle[] = [
+  RoleLibelle.CONTROLEUR_INTERNE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
 // Configuration des tiroirs POS : DAF (paramétrage) + SI / DG (ouverture magasin, §6.7).
 export const ROLES_CONFIG_TIROIRS: RoleLibelle[] = [
   RoleLibelle.DAF,

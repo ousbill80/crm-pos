@@ -29,6 +29,8 @@ export type SeuilsCrm = {
   seuilFideliteOr: number;
   seuilSegmentRegulier: number;
   seuilSegmentVip: number;
+  avantageFideliteArgentPct: number;
+  avantageFideliteOrPct: number;
 };
 
 export const SEUILS_CRM_DEFAUT: SeuilsCrm = {
@@ -36,4 +38,6 @@ export const SEUILS_CRM_DEFAUT: SeuilsCrm = {
   seuilFideliteOr: SEUIL_FIDELITE_OR,
   seuilSegmentRegulier: SEUIL_SEGMENT_REGULIER_NB_VENTES,
   seuilSegmentVip: SEUIL_SEGMENT_VIP_NB_VENTES,
+  avantageFideliteArgentPct: 0,
+  avantageFideliteOrPct: 0,
 };

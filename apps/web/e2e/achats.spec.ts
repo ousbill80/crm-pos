@@ -39,7 +39,11 @@ test('Achats/Fournisseurs : cycle complet fournisseur → commande → réceptio
 
     const recherche = dialog.locator('#bc-recherche');
     await recherche.fill('Chargeur USB-C 20W');
-    const resultat = dialog.locator('.bc-doc-search-item', { hasText: 'Chargeur USB-C 20W' }).first();
+    const resultat = page
+      .locator('.entity-finder-item')
+      .filter({ hasNotText: /^Créer/ })
+      .filter({ hasText: 'Chargeur USB-C 20W' })
+      .first();
     await expect(resultat).toBeVisible();
     await resultat.click();
 

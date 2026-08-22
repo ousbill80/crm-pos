@@ -8,8 +8,10 @@ import {
   getOfflineStore,
   hydrateOffline,
   outboxPendingCount,
+  type OutboxOp,
 } from '@caisse-crm/offline';
-import { apiFetch } from '../api';
+import { apiFetch, ApiError } from '../api';
+import { purgerSecretOp, rehydraterSecretOp } from './op-secrets';
 
 const DELAI_MIN_MS = 3_000;
 const DELAI_MAX_MS = 60_000;
@@ -49,6 +51,51 @@ async function envoyer(
   });
 }
 
+const CLOTURE_SUFFIX = /\/cloture$/;
+
+/**
+ * Rehydrate les champs sensibles (mot de passe témoin) stashés hors du
+ * corps stocké en file avant l'envoi (§6.7 — jamais journalisés en clair
+ * dans l'outbox), puis les purge dès l'envoi réussi. Échec réseau : le
+ * secret reste stashé pour le prochain essai.
+ *
+ * Cas particulier clôture : une réponse perdue (coupure juste après un 200
+ * serveur) ferait rejouer indéfiniment un POST .../cloture qui échoue avec
+ * « déjà fermée » (400, jamais retenté par la logique réseau générique de
+ * `flushOutbox` puisque ce n'est pas une erreur réseau). On confirme alors
+ * l'état réel via GET avant de considérer l'op résolue — jamais un avalage
+ * aveugle de l'erreur.
+ */
+async function envoyerOp(op: OutboxOp): Promise<unknown> {
+  const body = await rehydraterSecretOp(op.id, op.body);
+  try {
+    const reponse = await envoyer(op.path, body, op.method);
+    await purgerSecretOp(op.id);
+    return reponse;
+  } catch (err) {
+    if (
+      op.method === 'POST' &&
+      CLOTURE_SUFFIX.test(op.path) &&
+      err instanceof ApiError &&
+      err.status === 400 &&
+      err.message.includes('déjà fermée')
+    ) {
+      try {
+        const etat = await apiFetch<{ statut: string }>(
+          op.path.replace(CLOTURE_SUFFIX, ''),
+        );
+        if (etat.statut !== 'OUVERTE') {
+          await purgerSecretOp(op.id);
+          return { confirmee: true };
+        }
+      } catch {
+        /* confirmation impossible : on retombe sur l'échec d'origine */
+      }
+    }
+    throw err;
+  }
+}
+
 export async function tenterFlushMobile(): Promise<{
   flushed: number;
   remaining: number;
@@ -67,9 +114,7 @@ export async function tenterFlushMobile(): Promise<{
       arreterRelance();
       return { flushed: 0, remaining: 0 };
     }
-    const result = await flushOutbox(getOfflineStore(), (op) =>
-      envoyer(op.path, op.body, op.method),
-    );
+    const result = await flushOutbox(getOfflineStore(), envoyerOp);
     if (result.flushed > 0) onFlushed?.();
     if (result.remaining === 0) {
       delai = DELAI_MIN_MS;

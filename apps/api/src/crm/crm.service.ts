@@ -398,6 +398,12 @@ export class ClientsService {
         ...(dto.seuilSegmentVip !== undefined
           ? { seuilSegmentVip: dto.seuilSegmentVip }
           : {}),
+        ...(dto.avantageFideliteArgentPct !== undefined
+          ? { avantageFideliteArgentPct: dto.avantageFideliteArgentPct }
+          : {}),
+        ...(dto.avantageFideliteOrPct !== undefined
+          ? { avantageFideliteOrPct: dto.avantageFideliteOrPct }
+          : {}),
       },
     });
     const seuils = await lireSeuilsCrm(this.prisma);

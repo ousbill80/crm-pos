@@ -49,6 +49,12 @@ const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
 ];
 
+const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
 const ROLES_LECTURE_STRUCTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
   RoleLibelle.DAF,
@@ -160,6 +166,7 @@ function NouveauProduitForm({
   const [reference, setReference] = useState('');
   const [categorie, setCategorie] = useState('');
   const [description, setDescription] = useState('');
+  const [typeProduit, setTypeProduit] = useState<'ARTICLE' | 'PRESTATION'>('ARTICLE');
   const [prixUnitaire, setPrixUnitaire] = useState('');
   const [stock, setStock] = useState('0');
   const [seuilReappro, setSeuilReappro] = useState('');
@@ -178,8 +185,9 @@ function NouveauProduitForm({
           ...(reference.trim() ? { reference: reference.trim() } : {}),
           ...(categorie.trim() ? { categorie: categorie.trim() } : {}),
           ...(description.trim() ? { description: description.trim() } : {}),
+          typeProduit,
           prixUnitaire: Number(prixUnitaire),
-          stock: Number(stock),
+          stock: typeProduit === 'PRESTATION' ? 0 : Number(stock),
           ...(seuilReappro ? { seuilReappro: Number(seuilReappro) } : {}),
         }),
       }),
@@ -188,6 +196,7 @@ function NouveauProduitForm({
       setReference('');
       setCategorie('');
       setDescription('');
+      setTypeProduit('ARTICLE');
       setPrixUnitaire('');
       setStock('0');
       setSeuilReappro('');
@@ -248,6 +257,15 @@ function NouveauProduitForm({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
+      <label htmlFor="typeProduit">Type</label>
+      <select
+        id="typeProduit"
+        value={typeProduit}
+        onChange={(e) => setTypeProduit(e.target.value as 'ARTICLE' | 'PRESTATION')}
+      >
+        <option value="ARTICLE">Article (stock géré)</option>
+        <option value="PRESTATION">Prestation (sans stock)</option>
+      </select>
       <label htmlFor="prixUnitaire">Prix unitaire (FCFA)</label>
       <input
         id="prixUnitaire"
@@ -258,25 +276,29 @@ function NouveauProduitForm({
         onChange={(e) => setPrixUnitaire(e.target.value)}
         required
       />
-      <label htmlFor="stock">Stock initial (déposé sur l’entrepôt PRINCIPAL)</label>
-      <input
-        id="stock"
-        type="number"
-        min="0"
-        step="1"
-        value={stock}
-        onChange={(e) => setStock(e.target.value)}
-        required
-      />
-      <label htmlFor="seuilReappro">Seuil de réapprovisionnement (optionnel)</label>
-      <input
-        id="seuilReappro"
-        type="number"
-        min="0"
-        step="1"
-        value={seuilReappro}
-        onChange={(e) => setSeuilReappro(e.target.value)}
-      />
+      {typeProduit === 'ARTICLE' && (
+        <>
+          <label htmlFor="stock">Stock initial (déposé sur l’entrepôt PRINCIPAL)</label>
+          <input
+            id="stock"
+            type="number"
+            min="0"
+            step="1"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            required
+          />
+          <label htmlFor="seuilReappro">Seuil de réapprovisionnement (optionnel)</label>
+          <input
+            id="seuilReappro"
+            type="number"
+            min="0"
+            step="1"
+            value={seuilReappro}
+            onChange={(e) => setSeuilReappro(e.target.value)}
+          />
+        </>
+      )}
       <button type="submit" className="btn-primary" disabled={mutation.isPending}>
         Créer
       </button>
@@ -290,7 +312,8 @@ export function ProduitsPage() {
   const navigate = useNavigate();
   const magasin = useFiltreMagasinSiege();
   const peutLire = user !== null && ROLES_LECTURE_STRUCTURE.includes(user.role);
-  const peutGerer = user !== null && ROLES_ADMIN_STRUCTURE.includes(user.role);
+  const peutGerer = user !== null && ROLES_CATALOGUE_ECRITURE.includes(user.role);
+  const peutImporter = user !== null && ROLES_ADMIN_STRUCTURE.includes(user.role);
 
   const [recherche, setRecherche] = useState('');
   const [qDebounced, setQDebounced] = useState('');
@@ -429,19 +452,19 @@ export function ProduitsPage() {
             >
               <Download size={14} /> Exporter CSV
             </button>
+            {peutImporter ? (
+              <button type="button" onClick={() => setModalImport(true)}>
+                <Upload size={14} /> Importer
+              </button>
+            ) : null}
             {peutGerer ? (
-              <>
-                <button type="button" onClick={() => setModalImport(true)}>
-                  <Upload size={14} /> Importer
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => setModalNouveau(true)}
-                >
-                  Nouveau produit
-                </button>
-              </>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setModalNouveau(true)}
+              >
+                Nouveau produit
+              </button>
             ) : null}
           </>
         }
@@ -768,18 +791,22 @@ export function ProduitsPage() {
                       : 'Le catalogue est vide. Créez un premier produit pour démarrer.'
                   }
                   action={
-                    peutGerer && !recherche && !categorie ? (
+                    (peutGerer || peutImporter) && !recherche && !categorie ? (
                       <div className="table-actions">
-                        <button type="button" onClick={() => setModalImport(true)}>
-                          Importer CSV / Excel
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          onClick={() => setModalNouveau(true)}
-                        >
-                          Nouveau produit
-                        </button>
+                        {peutImporter ? (
+                          <button type="button" onClick={() => setModalImport(true)}>
+                            Importer CSV / Excel
+                          </button>
+                        ) : null}
+                        {peutGerer ? (
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => setModalNouveau(true)}
+                          >
+                            Nouveau produit
+                          </button>
+                        ) : null}
                       </div>
                     ) : undefined
                   }
@@ -849,6 +876,9 @@ export function ProduitsPage() {
                               <strong>{p.designation}</strong>
                               <div className="produit-ref">
                                 {p.reference ?? '—'}
+                                {p.typeProduit === 'PRESTATION' && (
+                                  <span className="badge badge-neutral">Prestation</span>
+                                )}
                                 {!p.actif && (
                                   <span className="badge badge-neutral">Inactif</span>
                                 )}
@@ -901,7 +931,7 @@ export function ProduitsPage() {
           />
         </Modal>
       )}
-      {peutGerer && (
+      {peutImporter && (
         <ImportCatalogueModal
           open={modalImport}
           onClose={() => setModalImport(false)}

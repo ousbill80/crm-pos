@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 
 export const TRANSACTION_STATUT_EVENT = 'transaction.statut';
+export const ALERTE_NOUVELLE_EVENT = 'alerte.nouvelle';
 
 export interface TransactionStatutPayload {
   id: string;
@@ -25,6 +26,17 @@ export interface TransactionStatutPayload {
   caisseId: string;
   boutiqueId: string | null;
   zoneId: string | null;
+}
+
+// Notification proactive (§6.7, §5.1) — diffusée par AlertesSchedulerService.
+export interface AlerteRealtimePayload {
+  type: string;
+  severite: string;
+  message: string;
+  dateHeure: string;
+  entite: string;
+  entiteId: string;
+  details?: Record<string, unknown>;
 }
 
 // Diffusion temps réel des changements de statut (§5.2) : rooms
@@ -95,6 +107,19 @@ export class TransactionsGateway implements OnGatewayConnection {
       this.server
         .to(`boutique:${payload.boutiqueId}`)
         .emit(TRANSACTION_STATUT_EVENT, payload);
+    }
+  }
+
+  emitAlerte(payload: AlerteRealtimePayload, zoneId?: string | null): void {
+    this.server.to('reseau').emit(ALERTE_NOUVELLE_EVENT, payload);
+    const boutiqueId = payload.details?.boutiqueId as string | undefined;
+    if (boutiqueId) {
+      this.server
+        .to(`boutique:${boutiqueId}`)
+        .emit(ALERTE_NOUVELLE_EVENT, payload);
+    }
+    if (zoneId) {
+      this.server.to(`zone:${zoneId}`).emit(ALERTE_NOUVELLE_EVENT, payload);
     }
   }
 }

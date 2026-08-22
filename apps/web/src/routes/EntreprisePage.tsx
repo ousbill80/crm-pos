@@ -251,6 +251,9 @@ export function EntreprisePage() {
   const [logoUrl, setLogoUrl] = useState('');
   const [logoErr, setLogoErr] = useState<string | null>(null);
   const [delaiVersementHeures, setDelaiVersementHeures] = useState('24');
+  const [seuilVersementAnticipe, setSeuilVersementAnticipe] = useState('');
+  const [delaiRegularisationLitigeHeures, setDelaiRegularisationLitigeHeures] =
+    useState('48');
   const [msg, setMsg] = useState<string | null>(null);
   const [formHydrated, setFormHydrated] = useState(false);
 
@@ -263,6 +266,10 @@ export function EntreprisePage() {
     setDevise(societe.data.devise);
     setLogoUrl(societe.data.logoUrl ?? '');
     setDelaiVersementHeures(String(societe.data.delaiVersementHeures));
+    setSeuilVersementAnticipe(societe.data.seuilVersementAnticipe ?? '');
+    setDelaiRegularisationLitigeHeures(
+      String(societe.data.delaiRegularisationLitigeHeures ?? 48),
+    );
     setFormHydrated(true);
   }, [societe.data, formHydrated]);
 
@@ -279,6 +286,13 @@ export function EntreprisePage() {
           logoUrl: logoUrl || null,
           delaiVersementHeures: delaiVersementHeures
             ? Number(delaiVersementHeures)
+            : undefined,
+          seuilVersementAnticipe:
+            seuilVersementAnticipe.trim() === ''
+              ? null
+              : Number(seuilVersementAnticipe),
+          delaiRegularisationLitigeHeures: delaiRegularisationLitigeHeures
+            ? Number(delaiRegularisationLitigeHeures)
             : undefined,
         }),
       }),
@@ -1047,6 +1061,15 @@ export function EntreprisePage() {
                         <span className="cfg-badge muted">
                           Versement &lt; {societe.data.delaiVersementHeures} h
                         </span>
+                        <span className="cfg-badge muted">
+                          {societe.data.seuilVersementAnticipe
+                            ? `Alerte seuil caisse ≥ ${societe.data.seuilVersementAnticipe}`
+                            : 'Alerte seuil caisse désactivée'}
+                        </span>
+                        <span className="cfg-badge muted">
+                          Litige régularisé sous{' '}
+                          {societe.data.delaiRegularisationLitigeHeures ?? 48} h
+                        </span>
                       </div>
                       {peutAdmin && (
                         <p className="lead" style={{ marginTop: 8 }}>
@@ -1163,6 +1186,40 @@ export function EntreprisePage() {
                               value={delaiVersementHeures}
                               onChange={(e) =>
                                 setDelaiVersementHeures(e.target.value)
+                              }
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="seuil-versement-anticipe">
+                              Seuil de caisse — alerte versement anticipé
+                            </label>
+                            <input
+                              id="seuil-versement-anticipe"
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="Désactivé (laisser vide)"
+                              value={seuilVersementAnticipe}
+                              onChange={(e) =>
+                                setSeuilVersementAnticipe(e.target.value)
+                              }
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="delai-regularisation-litige">
+                              Délai de régularisation d'un litige (heures)
+                            </label>
+                            <input
+                              id="delai-regularisation-litige"
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={delaiRegularisationLitigeHeures}
+                              onChange={(e) =>
+                                setDelaiRegularisationLitigeHeures(
+                                  e.target.value,
+                                )
                               }
                               required
                             />

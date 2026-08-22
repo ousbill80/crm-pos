@@ -8,6 +8,9 @@ export {
   enqueueSortieFondsOp,
   enqueueReservationOp,
   enqueueLiberationOp,
+  enqueueOuvrirSessionOp,
+  enqueueCloturerSessionOp,
+  localSessionPlaceholder,
   outboxPendingCount,
 } from './enqueue';
 export {

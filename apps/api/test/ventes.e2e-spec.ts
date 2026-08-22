@@ -25,6 +25,7 @@ interface SessionCaisseDto {
 interface VenteDto {
   id: string;
   montantTotal: string;
+  remiseFidelite: string;
   modePaiement: string;
   clientId: string | null;
   sessionCaisseId: string;
@@ -888,6 +889,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
     let produitMixteId: string;
     let produitReserveId: string;
     let produitRuptureId: string;
+    let produitPrestationId: string;
     let entrepotId: string;
 
     beforeAll(async () => {
@@ -918,9 +920,18 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
           stock: 1,
         },
       });
+      const prestation = await env.prisma.produit.create({
+        data: {
+          designation: 'Pose de film de protection',
+          typeProduit: 'PRESTATION',
+          prixUnitaire: '2500.00',
+          stock: 0,
+        },
+      });
       produitMixteId = mixte.id;
       produitReserveId = reserve.id;
       produitRuptureId = rupture.id;
+      produitPrestationId = prestation.id;
       await env.prisma.stockQuant.createMany({
         data: [
           { produitId: produitMixteId, entrepotId, quantite: 10 },
@@ -998,6 +1009,102 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         .expect(200)
         .expect('Content-Type', /pdf/);
       expect((releve.body as Buffer).byteLength).toBeGreaterThan(200);
+    });
+
+    it('encaisse une prestation sans décrémenter ni contrôler le stock (§6.3.1)', async () => {
+      const body = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitPrestationId, quantite: 3 }],
+          modePaiement: 'ESPECES',
+          paiements: [{ modePaiement: 'ESPECES', montant: 7500 }],
+        })
+        .expect(201)
+        .then((r) => r.body as VenteDto);
+
+      expect(Number(body.montantTotal)).toBe(7500);
+
+      const produitApres = await env.prisma.produit.findUnique({
+        where: { id: produitPrestationId },
+      });
+      expect(produitApres?.stock).toBe(0);
+
+      const stockQuant = await env.prisma.stockQuant.findUnique({
+        where: {
+          produitId_entrepotId: {
+            produitId: produitPrestationId,
+            entrepotId,
+          },
+        },
+      });
+      expect(stockQuant).toBeNull();
+    });
+
+    it('applique la remise fidélité au palier Or si configurée (§6.6)', async () => {
+      const societeExistante = await env.prisma.societe.findFirst();
+      const societeId = societeExistante
+        ? societeExistante.id
+        : (
+            await env.prisma.societe.create({
+              data: { raisonSociale: 'Test Société', adresse: 'Adresse' },
+            })
+          ).id;
+      await env.prisma.societe.update({
+        where: { id: societeId },
+        data: { avantageFideliteOrPct: 20 },
+      });
+
+      const clientOr = await env.prisma.client.create({
+        data: { nom: 'Client', prenom: 'Or' },
+      });
+      await env.prisma.fidelite.create({
+        data: { clientId: clientOr.id, niveau: 'OR' },
+      });
+
+      const body = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+          clientId: clientOr.id,
+          modePaiement: 'ESPECES',
+          paiements: [{ modePaiement: 'ESPECES', montant: 800 }],
+        })
+        .expect(201)
+        .then((r) => r.body as VenteDto);
+
+      expect(Number(body.montantTotal)).toBe(800);
+      expect(Number(body.remiseFidelite)).toBe(200);
+
+      await env.prisma.societe.update({
+        where: { id: societeId },
+        data: { avantageFideliteOrPct: 0 },
+      });
+    });
+
+    it("n'applique aucune remise si l'avantage fidélité n'est pas configuré", async () => {
+      const clientOrNonConfigure = await env.prisma.client.create({
+        data: { nom: 'Client', prenom: 'OrNonConfigure' },
+      });
+      await env.prisma.fidelite.create({
+        data: { clientId: clientOrNonConfigure.id, niveau: 'OR' },
+      });
+
+      const body = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/ventes`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          lignes: [{ produitId: produitMixteId, quantite: 1 }],
+          clientId: clientOrNonConfigure.id,
+          modePaiement: 'ESPECES',
+          paiements: [{ modePaiement: 'ESPECES', montant: 1000 }],
+        })
+        .expect(201)
+        .then((r) => r.body as VenteDto);
+
+      expect(Number(body.montantTotal)).toBe(1000);
+      expect(Number(body.remiseFidelite)).toBe(0);
     });
 
     it('refuse (400) une somme de règlements différente du total', async () => {
