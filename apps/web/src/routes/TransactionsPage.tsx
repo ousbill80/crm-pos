@@ -26,7 +26,6 @@ import {
   insightPerimetreTransactions,
   insightStatutTransaction,
 } from '../lib/insights/transactions';
-import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import {
   enqueueTransactionInit,
   outboxCount,
@@ -244,7 +243,6 @@ export function TransactionsPage({
   const typeParam = searchParams.get('type') ?? typeDefaut;
   const peutInitier =
     user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
-  useTresorerieRealtime(user !== null);
   const [pendingOffline, setPendingOffline] = useState(outboxCount());
   const [filters, setFilters] = useState({
     statut: statutParam,

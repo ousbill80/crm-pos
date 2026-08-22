@@ -3,7 +3,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import {
-  ROLES_ADMIN_STRUCTURE,
+  ROLES_FICHE_FOURNISSEUR,
   ROLES_LECTURE_ACHATS,
   ROLES_RECEPTION_STOCK,
 } from '../caisses/access-scope.constants';
@@ -13,14 +13,14 @@ import { UpdateFournisseurDto } from './dto/update-fournisseur.dto';
 import { CreateReceptionDto } from './dto/create-reception.dto';
 
 // Endpoints Fournisseur & réception de stock — extension au socle MCD (§6.5).
-// Fiches : administration structure. Réceptions fournisseur : SI / DG
-// (entrepôt central). La boutique réceptionne les bons de transfert interne.
+// Fiches + réceptions : SI / DG / DAF. La boutique réceptionne les bons de
+// transfert interne, pas le fournisseur.
 @Controller('fournisseurs')
 export class FournisseursController {
   constructor(private readonly fournisseursService: FournisseursService) {}
 
   @Post()
-  @Roles(...ROLES_ADMIN_STRUCTURE)
+  @Roles(...ROLES_FICHE_FOURNISSEUR)
   create(
     @Body() dto: CreateFournisseurDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -47,7 +47,7 @@ export class FournisseursController {
   }
 
   @Patch(':id')
-  @Roles(...ROLES_ADMIN_STRUCTURE)
+  @Roles(...ROLES_FICHE_FOURNISSEUR)
   update(
     @Param('id') id: string,
     @Body() dto: UpdateFournisseurDto,

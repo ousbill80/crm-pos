@@ -263,12 +263,7 @@ export function FactureFournisseurDetailPage() {
         </div>
       </header>
 
-      {f.notes && <p>{f.notes}</p>}
       {formErr && <p role="alert">{formErr}</p>}
-      <p className="lead">
-        Le paiement est un grand livre Achats (DAF / Caissier Central) — il ne débite pas une
-        caisse boutique.
-      </p>
 
       <nav className="client-workspace-tabs" aria-label="Sections facture fournisseur">
         {tabs.map((tab) => (
@@ -327,25 +322,18 @@ export function FactureFournisseurDetailPage() {
               </button>
             </div>
 
-            <h2 style={{ marginTop: '1.5rem' }}>Circuit</h2>
-            <ol className="lead" style={{ paddingLeft: '1.25rem' }}>
-              <li>Création brouillon à partir des réceptions</li>
-              <li>Comptabilisation (DAF / SI / DG)</li>
-              <li>Paiements partiels ou solde (DAF / Caissier Central)</li>
-            </ol>
+            {f.notes ? <p className="kpi-hint">{f.notes}</p> : null}
 
-            <h2>Timeline</h2>
-            <dl className="clients-dl">
+            <h2>Chronologie</h2>
+            <ol className="fiche-timeline">
               {historique.map((evt, i) => (
-                <div key={`${evt.label}-${i}`}>
-                  <dt>{fmtDateHeure(evt.at)}</dt>
-                  <dd>
-                    {evt.label}
-                    {evt.detail ? ` · ${evt.detail}` : ''}
-                  </dd>
-                </div>
+                <li key={`${evt.label}-${i}`}>
+                  <time dateTime={evt.at}>{fmtDateHeure(evt.at)}</time>
+                  <strong>{evt.label}</strong>
+                  {evt.detail ? <span>{evt.detail}</span> : null}
+                </li>
               ))}
-            </dl>
+            </ol>
           </div>
         )}
 
@@ -491,18 +479,15 @@ export function FactureFournisseurDetailPage() {
         {onglet === 'historique' && (
           <div className="client-workspace-section">
             <h2>Historique</h2>
-            <p className="lead">Création et règlements append-only — pas le journal d’audit.</p>
-            <dl className="clients-dl">
+            <ol className="fiche-timeline">
               {historique.map((evt, i) => (
-                <div key={`${evt.label}-${i}`}>
-                  <dt>{fmtDateHeure(evt.at)}</dt>
-                  <dd>
-                    {evt.label}
-                    {evt.detail ? ` · ${evt.detail}` : ''}
-                  </dd>
-                </div>
+                <li key={`${evt.label}-${i}`}>
+                  <time dateTime={evt.at}>{fmtDateHeure(evt.at)}</time>
+                  <strong>{evt.label}</strong>
+                  {evt.detail ? <span>{evt.detail}</span> : null}
+                </li>
               ))}
-            </dl>
+            </ol>
           </div>
         )}
       </section>

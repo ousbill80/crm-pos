@@ -37,7 +37,15 @@ jobs:
       - name: Test
         run: pnpm test
 
-  playwright-pos:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose build
+
+  playwright-e2e:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -89,9 +97,9 @@ jobs:
       - name: Wait for API
         run: |
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/auth/login || true)
-            if echo "$code" | grep -qE '^[0-9]{3}$' && [ "$code" != "000" ]; then
-              echo "API HTTP $code"
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health || true)
+            if [ "$code" = "200" ]; then
+              echo "API ready (HTTP $code)"
               exit 0
             fi
             sleep 2
@@ -102,6 +110,5 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
 
-      - name: POS E2E
+      - name: Web E2E (POS, trésorerie, CRM, …)
         run: pnpm --filter web test:e2e
-

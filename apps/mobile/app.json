@@ -5,7 +5,11 @@
     "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "ios": {
       "bundleIdentifier": "sn.caissepos.app",
       "supportsTablet": true,
@@ -15,7 +19,9 @@
     },
     "android": {
       "package": "sn.caissepos.app",
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#7e14ff"
@@ -27,7 +33,8 @@
         {
           "cameraPermission": "Autoriser CaissePOS à utiliser la caméra pour scanner les articles."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "apiUrl": "http://localhost:3000"

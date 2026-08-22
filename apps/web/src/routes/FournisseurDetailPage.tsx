@@ -63,11 +63,20 @@ const ROLES_LECTURE: RoleLibelle[] = [
 const ROLES_FICHE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
+const ROLES_COMMANDE: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
 const ROLES_RECEPTION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 const ROLES_PAIEMENT: RoleLibelle[] = [
@@ -156,6 +165,7 @@ export function FournisseurDetailPage() {
   const queryClient = useQueryClient();
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutGererFiche = user !== null && ROLES_FICHE.includes(user.role);
+  const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
   const peutRecevoir = user !== null && ROLES_RECEPTION.includes(user.role);
   const peutPayer = user !== null && ROLES_PAIEMENT.includes(user.role);
 
@@ -442,12 +452,14 @@ export function FournisseurDetailPage() {
           ← Fournisseurs
         </button>
         <div className="client-workspace-toolbar-actions">
-          <Link
-            to={`/achats/commandes?fournisseurId=${f.id}&ouvrir=1`}
-            className="stock-row-link"
-          >
-            Nouvelle commande
-          </Link>
+          {peutCommander && (
+            <Link
+              to={`/achats/commandes?fournisseurId=${f.id}&ouvrir=1`}
+              className="stock-row-link"
+            >
+              Nouvelle commande
+            </Link>
+          )}
           <Link
             to={`/achats/factures?fournisseurId=${f.id}&ouvrir=1`}
             className="stock-row-link"
@@ -1079,10 +1091,15 @@ export function FournisseurDetailPage() {
             <h2>Bons de commande</h2>
             {cmds.length === 0 ? (
               <p className="lead">
-                Aucune commande.{' '}
-                <Link to={`/achats/commandes?fournisseurId=${f.id}&ouvrir=1`}>
-                  Créer un bon de commande
-                </Link>
+                Aucune commande.
+                {peutCommander ? (
+                  <>
+                    {' '}
+                    <Link to={`/achats/commandes?fournisseurId=${f.id}&ouvrir=1`}>
+                      Créer un bon de commande
+                    </Link>
+                  </>
+                ) : null}
               </p>
             ) : (
               <div className="clients-table-wrap">

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   KeyRound,
   LogOut,
+  Radio,
   ShoppingCart,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ import {
   initialesLogin,
   libelleProfilUtilisateur,
 } from '../lib/user-display';
+import { useTresorerieRealtimeStatus } from '../lib/tresorerie-realtime';
 
 function useAlertes() {
   return useQuery({
@@ -32,6 +34,35 @@ function useAlertes() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+}
+
+/** Indicateur connexion WebSocket trésorerie (§5.2). */
+export function TopbarRealtimeIndicator() {
+  const wsStatus = useTresorerieRealtimeStatus();
+  if (wsStatus === 'idle') return null;
+
+  const label =
+    wsStatus === 'connected'
+      ? 'Trésorerie temps réel active'
+      : wsStatus === 'connecting'
+        ? 'Connexion trésorerie…'
+        : 'Trésorerie hors ligne — reconnexion…';
+
+  return (
+    <span
+      className={
+        wsStatus === 'connected'
+          ? 'odoo-realtime-indicator connected'
+          : wsStatus === 'connecting'
+            ? 'odoo-realtime-indicator connecting'
+            : 'odoo-realtime-indicator disconnected'
+      }
+      title={label}
+      aria-label={label}
+    >
+      <Radio size={14} aria-hidden />
+    </span>
+  );
 }
 
 /** Systray : cloche + panneau alertes (aperçu, lien direct). */

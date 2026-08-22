@@ -45,6 +45,7 @@ const ROLES_LECTURE: RoleLibelle[] = [
 const ROLES_FICHE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 function fmtMoney(value: string | number): string {

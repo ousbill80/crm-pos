@@ -118,16 +118,51 @@ test.describe('Trésorerie — cycle complet §6.4', () => {
     expect(rapprocher.status()).toBe(403);
   });
 
-  test('Caissier central réceptionne puis rapproche sans écart -> VALIDEE, persistance après reload', async ({
+  test('WebSocket §5.2 — la boutique voit le changement de statut sans rechargement', async ({
+    browser,
+    request,
+  }) => {
+    const contextBoutique = await browser.newContext();
+    const contextCentral = await browser.newContext();
+    const pageBoutique = await contextBoutique.newPage();
+    const pageCentral = await contextCentral.newPage();
+
+    await loginAs(
+      pageBoutique,
+      request,
+      'demo-resp-gsm',
+      `/transactions/${transactionId}`,
+    );
+    await loginAs(
+      pageCentral,
+      request,
+      'demo-central',
+      `/transactions/${transactionId}`,
+    );
+
+    await expect(
+      pageBoutique.locator('.badge', { hasText: 'EN_TRANSIT' }),
+    ).toBeVisible();
+    await pageCentral.getByRole('button', { name: 'Réceptionner' }).click();
+    await expect(
+      pageCentral.locator('.badge', { hasText: 'RECEPTIONNEE' }),
+    ).toBeVisible();
+
+    await expect(
+      pageBoutique.locator('.badge', { hasText: 'RECEPTIONNEE' }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await contextBoutique.close();
+    await contextCentral.close();
+  });
+
+  test('Caissier central rapproche sans écart -> VALIDEE, persistance après reload', async ({
     page,
     request,
   }) => {
     await loginAs(page, request, 'demo-central', `/transactions/${transactionId}`);
 
-    await expect(page.locator('.badge', { hasText: 'EN_TRANSIT' })).toBeVisible();
-    await page.getByRole('button', { name: 'Réceptionner' }).click();
     await expect(page.locator('.badge', { hasText: 'RECEPTIONNEE' })).toBeVisible();
-
     await page.getByRole('button', { name: 'Rapprocher' }).click();
     const modal = page.getByRole('dialog', { name: 'Rapprochement' });
     await expect(modal).toBeVisible();

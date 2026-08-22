@@ -72,6 +72,20 @@ function badgeStock(statut: ProduitDto['statutStock']): string | null {
   return null;
 }
 
+function surligner(texte: string, q: string) {
+  const needle = q.trim();
+  if (!needle) return texte;
+  const i = texte.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return texte;
+  return (
+    <>
+      {texte.slice(0, i)}
+      <mark>{texte.slice(i, i + needle.length)}</mark>
+      {texte.slice(i + needle.length)}
+    </>
+  );
+}
+
 export function BonCommandeComposer({
   fournisseurs,
   produits,
@@ -165,6 +179,11 @@ export function BonCommandeComposer({
   useEffect(() => {
     setSurvol(0);
   }, [recherche]);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    searchWrap.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [ouvert]);
 
   function focusQte(key: string) {
     requestAnimationFrame(() => {
@@ -462,79 +481,86 @@ export function BonCommandeComposer({
                 })
               )}
             </tbody>
-            <tfoot>
-              <tr className="bc-doc-add">
-                <td className="bc-col-n">
-                  <Plus size={14} aria-hidden />
-                </td>
-                <td colSpan={6}>
-                  <div className="bc-doc-search" ref={searchWrap}>
-                    <Search size={16} className="bc-doc-search-icon" aria-hidden />
-                    <input
-                      ref={searchInput}
-                      id="bc-recherche"
-                      type="search"
-                      autoComplete="off"
-                      placeholder="Ajouter un article — désignation, réf. ou code-barres"
-                      value={recherche}
-                      onChange={(e) => {
-                        setRecherche(e.target.value);
-                        setOuvert(true);
-                      }}
-                      onFocus={() => setOuvert(true)}
-                      onKeyDown={onSearchKey}
-                      aria-label="Ajouter un article"
-                      aria-expanded={ouvert}
-                      aria-controls="bc-recherche-liste"
-                      role="combobox"
-                    />
-                    {ouvert && (
-                      <ul id="bc-recherche-liste" className="bc-doc-search-list" role="listbox">
-                        {resultats.length === 0 ? (
-                          <li className="bc-doc-search-empty">Aucun article ne correspond.</li>
-                        ) : (
-                          resultats.map((p, i) => {
-                            const hint = badgeStock(p.statutStock);
-                            const deja = idsCommandes.has(p.id);
-                            const prix = prixSuggere(p, statsParProduit);
-                            return (
-                              <li key={p.id} role="option" aria-selected={i === survol}>
-                                <button
-                                  type="button"
-                                  className={`bc-doc-search-item${i === survol ? ' is-active' : ''}`}
-                                  onMouseEnter={() => setSurvol(i)}
-                                  onClick={() => ajouterProduit(p)}
-                                >
-                                  <span className="bc-doc-search-main">
-                                    <strong>{p.designation}</strong>
-                                    <span>
-                                      {[
-                                        p.reference,
-                                        hint,
-                                        `stock ${p.stock}`,
-                                        deja ? 'déjà sur le bon (+1)' : null,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(' · ')}
-                                    </span>
-                                  </span>
-                                  <span className="bc-doc-search-prix">
-                                    {prix.valeur
-                                      ? `${fmtFcfa(prix.valeur)}${prix.source === 'dernier' ? ' · dernier' : ' · CMP'}`
-                                      : 'Prix à saisir'}
-                                  </span>
-                                </button>
-                              </li>
-                            );
-                          })
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            </tfoot>
           </table>
+          </div>
+
+          <div className="bc-doc-search-wrap" ref={searchWrap}>
+            <div className="bc-doc-search">
+              <Search size={16} className="bc-doc-search-icon" aria-hidden />
+              <input
+                ref={searchInput}
+                id="bc-recherche"
+                type="search"
+                autoComplete="off"
+                placeholder="Ajouter un article — désignation, réf. ou code-barres"
+                value={recherche}
+                onChange={(e) => {
+                  setRecherche(e.target.value);
+                  setOuvert(true);
+                }}
+                onFocus={() => setOuvert(true)}
+                onKeyDown={onSearchKey}
+                aria-label="Ajouter un article"
+                aria-expanded={ouvert}
+                aria-controls="bc-recherche-liste"
+                role="combobox"
+              />
+            </div>
+            {ouvert && (
+              <ul id="bc-recherche-liste" className="bc-doc-search-list" role="listbox">
+                {produits.length === 0 ? (
+                  <li className="bc-doc-search-empty">
+                    Aucun article au catalogue. Créez d’abord un produit.
+                  </li>
+                ) : resultats.length === 0 ? (
+                  <li className="bc-doc-search-empty">
+                    Aucun article ne correspond
+                    {recherche.trim() ? ` à « ${recherche.trim()} »` : ''}.
+                  </li>
+                ) : (
+                  resultats.map((p, i) => {
+                    const hint = badgeStock(p.statutStock);
+                    const deja = idsCommandes.has(p.id);
+                    const prix = prixSuggere(p, statsParProduit);
+                    const q = recherche.trim();
+                    return (
+                      <li key={p.id} role="option" aria-selected={i === survol}>
+                        <button
+                          type="button"
+                          className={`bc-doc-search-item${i === survol ? ' is-active' : ''}`}
+                          onMouseEnter={() => setSurvol(i)}
+                          onClick={() => ajouterProduit(p)}
+                        >
+                          <span className="bc-doc-search-main">
+                            <strong>{surligner(p.designation, q)}</strong>
+                            <span>
+                              {[
+                                p.reference ? surligner(p.reference, q) : null,
+                                hint,
+                                `stock ${p.stock}`,
+                                deja ? 'déjà sur le bon (+1)' : null,
+                              ]
+                                .filter(Boolean)
+                                .map((part, idx) => (
+                                  <span key={idx}>
+                                    {idx > 0 ? ' · ' : null}
+                                    {part}
+                                  </span>
+                                ))}
+                            </span>
+                          </span>
+                          <span className="bc-doc-search-prix">
+                            {prix.valeur
+                              ? `${fmtFcfa(prix.valeur)}${prix.source === 'dernier' ? ' · dernier' : ' · CMP'}`
+                              : 'Prix à saisir'}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            )}
           </div>
         </section>
 

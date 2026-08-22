@@ -19,8 +19,11 @@ RUN pnpm --filter api build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+RUN apk add --no-cache wget
 WORKDIR /repo
 COPY --from=build /repo /repo
+RUN chmod +x apps/api/docker-entrypoint.sh
 EXPOSE 3000
-# Applique les migrations Prisma au démarrage du conteneur (jamais en image build).
-CMD ["sh", "-c", "pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main.js"]
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=30s \
+  CMD wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1
+ENTRYPOINT ["apps/api/docker-entrypoint.sh"]

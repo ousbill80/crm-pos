@@ -40,6 +40,39 @@
   gap: 2px;
 }
 
+.odoo-realtime-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.odoo-realtime-indicator.connected {
+  color: #7ee787;
+}
+
+.odoo-realtime-indicator.connecting {
+  color: #f0c14b;
+  animation: odoo-realtime-pulse 1.2s ease-in-out infinite;
+}
+
+.odoo-realtime-indicator.disconnected {
+  color: #ff9b9b;
+}
+
+@keyframes odoo-realtime-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .odoo-apps {
   position: relative;
   flex-shrink: 0;

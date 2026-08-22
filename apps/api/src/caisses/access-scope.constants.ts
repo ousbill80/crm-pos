@@ -93,16 +93,29 @@ export const ROLES_INVENTAIRE_VALIDATION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
-/** Réception fournisseur : SI / DG uniquement (entrepôt central). La boutique réceptionne les transferts. */
+/**
+ * Fiches fournisseur (création / modification) : SI, DG, DAF.
+ * Distinct de ROLES_ADMIN_STRUCTURE (zones / magasins / catalogue) — le DAF
+ * pilote les achats, pas la configuration SI.
+ */
+export const ROLES_FICHE_FOURNISSEUR: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+];
+
+/** Réception fournisseur → entrée en stock : SI / DG / DAF (entrepôt). La boutique réceptionne les transferts. */
 export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
-/** Bons de commande : SI / DG / responsable boutique (création + confirmation). */
+/** Bons de commande : SI / DG / DAF / responsable boutique (création + confirmation). */
 export const ROLES_COMMANDE_ACHAT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 

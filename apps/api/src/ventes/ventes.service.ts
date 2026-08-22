@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -71,6 +72,20 @@ export class VentesService {
   ): Promise<SessionCaisse> {
     const boutiqueId = requireOwnBoutiqueId(utilisateur);
 
+    // Idempotence hors-ligne (§6.7) : un rejeu du même clientOperationId
+    // (resynchro depuis la file offline) renvoie la session déjà créée,
+    // sans repasser par le témoin ni recréer le transfert de fond initial.
+    if (dto.clientOperationId) {
+      const existante = await this.prisma.sessionCaisse.findUnique({
+        where: { clientOperationId: dto.clientOperationId },
+        include: { caisse: true },
+      });
+      if (existante) {
+        this.verifierPerimetreBoutique(existante, utilisateur);
+        return existante;
+      }
+    }
+
     const caisse = await this.prisma.caisse.findUnique({
       where: { id: dto.caisseId },
     });
@@ -95,6 +110,24 @@ export class VentesService {
       where: { caisseId: dto.caisseId, statut: StatutSessionCaisse.OUVERTE },
     });
     if (sessionExistante) {
+      if (dto.clientOperationId) {
+        // Conflit détecté à la resynchro : une autre ouverture (en ligne ou
+        // une autre file offline) a déjà pris le tiroir entre-temps.
+        await this.audit.record({
+          utilisateurId: utilisateur.userId,
+          action: 'SESSION_CONFLIT_HORS_LIGNE',
+          entite: 'SessionCaisse',
+          entiteId: sessionExistante.id,
+          details: JSON.stringify({
+            caisseId: dto.caisseId,
+            clientOperationIdRejete: dto.clientOperationId,
+            sessionExistanteId: sessionExistante.id,
+          }),
+        });
+        throw new ConflictException(
+          'Conflit de synchronisation : une session a déjà été ouverte sur ce tiroir entre-temps.',
+        );
+      }
       throw new BadRequestException(
         'Une session est déjà ouverte pour ce tiroir : clôturez-la avant d’en ouvrir une nouvelle.',
       );
@@ -117,15 +150,29 @@ export class VentesService {
     }
 
     const fondInitial = new Prisma.Decimal(dto.fondInitial);
-    const session = await this.prisma.sessionCaisse.create({
-      data: {
-        caisseId: dto.caisseId,
-        statut: StatutSessionCaisse.OUVERTE,
-        fondInitial,
-        ouvertureUtilisateurId: utilisateur.userId,
-        ouvertureTemoinId: temoin.id,
-      },
-    });
+    let session: SessionCaisse;
+    try {
+      session = await this.prisma.sessionCaisse.create({
+        data: {
+          caisseId: dto.caisseId,
+          statut: StatutSessionCaisse.OUVERTE,
+          fondInitial,
+          ouvertureUtilisateurId: utilisateur.userId,
+          ouvertureTemoinId: temoin.id,
+          clientOperationId: dto.clientOperationId,
+        },
+      });
+    } catch (error) {
+      if (this.estConflitIdempotence(error) && dto.clientOperationId) {
+        const existante = await this.prisma.sessionCaisse.findUnique({
+          where: { clientOperationId: dto.clientOperationId },
+        });
+        if (existante) {
+          return existante;
+        }
+      }
+      throw error;
+    }
 
     // Fond de caisse : magasin → tiroir (transfert interne VALIDEE).
     if (fondInitial.greaterThan(0)) {

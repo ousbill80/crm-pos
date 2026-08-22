@@ -41,3 +41,22 @@ export function decodeAccessToken(token: string): SessionUser | null {
     return null;
   }
 }
+
+/** Instant d'expiration (ms epoch) du JWT, lu localement — null si absent/illisible. */
+export function decodeAccessTokenExpiryMs(token: string): number | null {
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    const payload = JSON.parse(base64UrlDecode(parts[1])) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** §6.7 : un JWT dont l'expiration serveur est dépassée ne doit plus être
+ * considéré comme une session valide, même relu hors ligne depuis le stockage local. */
+export function isAccessTokenExpired(token: string): boolean {
+  const expMs = decodeAccessTokenExpiryMs(token);
+  return expMs !== null && expMs <= Date.now();
+}

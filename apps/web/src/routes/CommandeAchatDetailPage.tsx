@@ -41,12 +41,14 @@ const ROLES_LECTURE: RoleLibelle[] = [
 const ROLES_COMMANDE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
 const ROLES_RECEPTION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 type Onglet = 'apercu' | 'lignes' | 'receptions' | 'factures' | 'historique';

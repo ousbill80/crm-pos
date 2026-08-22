@@ -214,6 +214,25 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       .expect(403);
   });
 
+  it('autorise le DAF à créer et confirmer une commande', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/achats/commandes')
+      .set(auth(tokens.daf))
+      .send({
+        fournisseurId,
+        lignes: [{ produitId, quantite: 2, prixUnitaire: 800 }],
+      })
+      .expect(201);
+    const commande = created.body as { id: string; statut: string };
+    expect(commande.statut).toBe('BROUILLON');
+
+    const confirmee = await request(app.getHttpServer())
+      .post(`/achats/commandes/${commande.id}/confirmer`)
+      .set(auth(tokens.daf))
+      .expect(201);
+    expect((confirmee.body as { statut: string }).statut).toBe('CONFIRMEE');
+  });
+
   it('refuse la réception et l’annulation hors machine à états, puis déroule le cycle complet', async () => {
     const created = await request(app.getHttpServer())
       .post('/achats/commandes')

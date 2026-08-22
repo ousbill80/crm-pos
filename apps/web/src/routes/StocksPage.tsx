@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
+  History,
   Package,
   PackageX,
   Search,
@@ -103,8 +104,17 @@ const COULEURS_STATUT: Record<StatutStockLigne, string> = {
   OK: '#0f766e',
 };
 
+/** Le graphique reste lisible : le détail de tous les entrepôts est en grille dessous. */
+const TOP_ENTREPOTS_GRAPHIQUE = 8;
+
 type VueNiveaux = 'liste' | 'matrice';
+type OngletStock = 'niveaux' | 'entrepots' | 'mouvements';
 type FiltreStatut = 'TOUS' | StatutStockLigne;
+
+function parseOngletStock(raw: string | null): OngletStock {
+  if (raw === 'entrepots' || raw === 'mouvements') return raw;
+  return 'niveaux';
+}
 type ColonneNiveau =
   | 'designation'
   | 'categorie'
@@ -204,7 +214,9 @@ function qtyAt(
 export function StocksPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const onglet = parseOngletStock(searchParams.get('tab'));
   const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
   const peutEcrire = user !== null && ROLES_ECRITURE.includes(user.role);
   const peutAjusterLibre =
@@ -466,6 +478,14 @@ export function StocksPage() {
     ].filter((d) => d.value > 0);
   }, [syntheseAffichee]);
 
+  const entrepotsClasses = useMemo(
+    () =>
+      [...(syntheseAffichee?.parEntrepot ?? [])].sort(
+        (a, b) => Number(b.valeur) - Number(a.valeur) || b.unites - a.unites,
+      ),
+    [syntheseAffichee?.parEntrepot],
+  );
+
   const qtyActuelleAjustement = useMemo(() => {
     const ligne = synthese.data?.lignes.find((l) => l.produitId === ajProduit);
     if (!ligne || !ajEntrepot) return null;
@@ -553,13 +573,25 @@ export function StocksPage() {
   );
   const totalEmplacements = statutChart.reduce((n, s) => n + s.value, 0);
 
-  function allerNiveaux() {
+  function setOnglet(tab: OngletStock) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'niveaux') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next);
+  }
+
+  function allerOnglet(tab: OngletStock) {
+    setOnglet(tab);
     window.setTimeout(() => {
-      document.getElementById('stock-niveaux')?.scrollIntoView({
+      document.getElementById('stock-tabs')?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
     }, 0);
+  }
+
+  function allerNiveaux() {
+    allerOnglet('niveaux');
   }
 
   function toggleStatut(s: FiltreStatut) {
@@ -907,10 +939,7 @@ export function StocksPage() {
                 if (data.parEntrepot.length === 1) {
                   navigate(`/stocks/entrepots/${data.parEntrepot[0].entrepotId}`);
                 } else {
-                  document.getElementById('stock-charts')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start',
-                  });
+                  allerOnglet('entrepots');
                 }
               }}
               onKeyDown={(e) => {
@@ -935,7 +964,11 @@ export function StocksPage() {
               <div className="dash-panel-head">
                 <h2>{valeurNulle ? 'Unités par entrepôt' : 'Valeur par entrepôt'}</h2>
                 <span className="dash-panel-meta">
-                  {valeurNulle ? 'CMP à 0 — quantités' : 'CMP × quantité'}
+                  {entrepotsClasses.length > TOP_ENTREPOTS_GRAPHIQUE
+                    ? `Top ${TOP_ENTREPOTS_GRAPHIQUE} · ${valeurNulle ? 'quantités' : 'CMP × quantité'}`
+                    : valeurNulle
+                      ? 'CMP à 0 — quantités'
+                      : 'CMP × quantité'}
                 </span>
               </div>
               {valeurNulle && (
@@ -950,21 +983,21 @@ export function StocksPage() {
                   />
                 </p>
               )}
-              {data.parEntrepot.length === 0 ? (
+              {entrepotsClasses.length === 0 ? (
                 <p className="lead">Aucun entrepôt dans le périmètre.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={220}>
                   <BarChart
-                    data={data.parEntrepot.map((e) => ({
+                    data={entrepotsClasses.slice(0, TOP_ENTREPOTS_GRAPHIQUE).map((e) => ({
                       id: e.entrepotId,
                       name: e.code,
                       boutique: e.nomBoutique,
                       valeur: Number(e.valeur),
                       unites: e.unites,
                     }))}
-                    margin={{ left: 8, right: 8, top: 8 }}
+                    margin={{ left: 8, right: 8, top: 8, bottom: 4 }}
                   >
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} />
                     <YAxis
                       tick={{ fontSize: 11 }}
                       width={56}
@@ -1016,41 +1049,43 @@ export function StocksPage() {
                 <p className="lead">Aucun emplacement de stock.</p>
               ) : (
                 <div className="stock-donut">
-                  <ResponsiveContainer width="100%" height={180}>
-                    <PieChart>
-                      <Pie
-                        data={statutChart}
-                        dataKey="value"
-                        nameKey="label"
-                        innerRadius={48}
-                        outerRadius={74}
-                        paddingAngle={2}
-                        onClick={(d) => {
-                          const key = (d as { key?: StatutStockLigne }).key;
-                          if (key) toggleStatut(key);
-                        }}
-                        cursor="pointer"
-                      >
-                        {statutChart.map((entry) => (
-                          <Cell
-                            key={entry.key}
-                            fill={COULEURS_STATUT[entry.key]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={chartTooltipStyle()}
-                        formatter={(value, name) => [
-                          `${Number(value ?? 0)} · ${
-                            totalEmplacements
-                              ? Math.round((Number(value ?? 0) / totalEmplacements) * 100)
-                              : 0
-                          } %`,
-                          String(name),
-                        ]}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="stock-donut-chart">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <PieChart>
+                        <Pie
+                          data={statutChart}
+                          dataKey="value"
+                          nameKey="label"
+                          innerRadius={52}
+                          outerRadius={78}
+                          paddingAngle={2}
+                          onClick={(d) => {
+                            const key = (d as { key?: StatutStockLigne }).key;
+                            if (key) toggleStatut(key);
+                          }}
+                          cursor="pointer"
+                        >
+                          {statutChart.map((entry) => (
+                            <Cell
+                              key={entry.key}
+                              fill={COULEURS_STATUT[entry.key]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={chartTooltipStyle()}
+                          formatter={(value, name) => [
+                            `${Number(value ?? 0)} · ${
+                              totalEmplacements
+                                ? Math.round((Number(value ?? 0) / totalEmplacements) * 100)
+                                : 0
+                            } %`,
+                            String(name),
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                   <ul className="stock-legend">
                     {statutChart.map((s) => (
                       <li key={s.key}>
@@ -1078,57 +1113,49 @@ export function StocksPage() {
                 </div>
               )}
             </section>
-
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>Entrepôts</h2>
-                <span className="dash-panel-meta">Fiche détaillée</span>
-              </div>
-              {data.parEntrepot.length === 0 ? (
-                <p className="lead">Aucun entrepôt dans le périmètre.</p>
-              ) : (
-                <ul className="dash-rank">
-                  {[...data.parEntrepot]
-                    .sort((a, b) => Number(b.valeur) - Number(a.valeur) || b.unites - a.unites)
-                    .map((e, i) => {
-                      const meta = entrepotOptions.find((x) => x.id === e.entrepotId);
-                      return (
-                        <li key={e.entrepotId}>
-                          <button
-                            type="button"
-                            className="stock-entrepot-btn"
-                            onClick={() => navigate(`/stocks/entrepots/${e.entrepotId}`)}
-                          >
-                            <div className="dash-rank-row">
-                              <span className="dash-rank-pos">{i + 1}</span>
-                              <span className="dash-rank-name">
-                                {e.code}
-                                <small>
-                                  {' '}
-                                  · {e.nomBoutique}
-                                  {meta?.type === 'PRINCIPAL' ? ' · Principal' : ''}
-                                </small>
-                              </span>
-                              <span className="money">{formatFcfa(e.valeur)}</span>
-                              <ChevronRight size={16} />
-                            </div>
-                            <div className="kpi-hint" style={{ marginTop: 0 }}>
-                              {e.unites} u. · {e.ruptures} rupture(s) · {e.sousSeuil}{' '}
-                              sous seuil
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-                </ul>
-              )}
-            </section>
           </div>
         </>
       )}
 
+      <div className="stock-tabs-wrap" id="stock-tabs">
+        <div className="stock-tabs-head">
+          <nav className="client-workspace-tabs" aria-label="Sections stocks">
+            <button
+              type="button"
+              className={onglet === 'niveaux' ? 'actif' : undefined}
+              onClick={() => setOnglet('niveaux')}
+            >
+              <Package size={14} aria-hidden />
+              Niveaux
+              <span className="fiche-tab-count">{lignesFiltrees.length}</span>
+            </button>
+            <button
+              type="button"
+              className={onglet === 'entrepots' ? 'actif' : undefined}
+              onClick={() => setOnglet('entrepots')}
+            >
+              <Warehouse size={14} aria-hidden />
+              Entrepôts
+              <span className="fiche-tab-count">{entrepotsClasses.length}</span>
+            </button>
+            <button
+              type="button"
+              className={onglet === 'mouvements' ? 'actif' : undefined}
+              onClick={() => setOnglet('mouvements')}
+            >
+              <History size={14} aria-hidden />
+              Mouvements
+              <span className="fiche-tab-count">{mouvementsFiltres.length}</span>
+            </button>
+          </nav>
+          <div className="stock-tabs-magasin">
+            <FiltreMagasinSiege id="stock-filtre-magasin" />
+          </div>
+        </div>
+
+        {onglet === 'niveaux' && (
+          <>
       <div className="toolbar stock-toolbar">
-        <FiltreMagasinSiege id="stock-filtre-magasin" />
         <div className="stock-search">
           <label htmlFor="stock-q">Recherche</label>
           <div className="stock-search-field">
@@ -1535,11 +1562,84 @@ export function StocksPage() {
         </ListPanel>
         </div>
       )}
+          </>
+        )}
 
+        {onglet === 'entrepots' && (
+          <section className="panel stock-entrepots-panel">
+            <div className="dash-panel-head">
+              <h2>Entrepôts</h2>
+              <span className="dash-panel-meta">
+                {entrepotsClasses.length} fiche{entrepotsClasses.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            {synthese.isLoading ? (
+              <LoadingState label="Chargement des entrepôts..." />
+            ) : entrepotsClasses.length === 0 ? (
+              <p className="lead">Aucun entrepôt dans le périmètre.</p>
+            ) : (
+              <ul className="stock-entrepot-grid">
+                {entrepotsClasses.map((e, i) => {
+                  const meta = entrepotOptions.find((x) => x.id === e.entrepotId);
+                  return (
+                    <li key={e.entrepotId}>
+                      <button
+                        type="button"
+                        className={
+                          e.ruptures > 0
+                            ? 'stock-entrepot-card has-rupture'
+                            : e.sousSeuil > 0
+                              ? 'stock-entrepot-card has-seuil'
+                              : 'stock-entrepot-card'
+                        }
+                        onClick={() => navigate(`/stocks/entrepots/${e.entrepotId}`)}
+                      >
+                        <span className="dash-rank-pos">{i + 1}</span>
+                        <span className="stock-entrepot-card-body">
+                          <span className="stock-entrepot-card-name">
+                            {e.code}
+                            <small>
+                              {' '}
+                              · {e.nomBoutique}
+                              {meta?.type === 'PRINCIPAL' ? ' · Principal' : ''}
+                            </small>
+                          </span>
+                          <span className="stock-entrepot-card-meta">
+                            {e.unites} u. · {e.ruptures} rupture(s) · {e.sousSeuil}{' '}
+                            sous seuil
+                          </span>
+                        </span>
+                        <span className="money">{formatFcfa(e.valeur)}</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {onglet === 'mouvements' && (
       <ListPanel
         title="Journal des mouvements — cliquer une ligne pour le détail"
         toolbar={
-          <div>
+          <div className="stock-mvt-toolbar">
+            <div className="stock-search">
+              <label htmlFor="stock-mvt-q" className="sr-only">
+                Recherche mouvement
+              </label>
+              <div className="stock-search-field">
+                <Search size={14} />
+                <input
+                  id="stock-mvt-q"
+                  type="search"
+                  placeholder="Produit"
+                  value={recherche}
+                  onChange={(e) => setRecherche(e.target.value)}
+                />
+              </div>
+            </div>
             <label htmlFor="filtre-mvt" className="sr-only">
               Type de mouvement
             </label>
@@ -1679,6 +1779,8 @@ export function StocksPage() {
           </div>
         )}
       </ListPanel>
+        )}
+      </div>
 
       {peutAjusterLibre && (
         <>

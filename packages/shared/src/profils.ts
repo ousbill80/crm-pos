@@ -152,8 +152,8 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       settings: CONFIG_CONTROLE,
     },
     resume:
-      'Pôle financier réseau : résultat, stocks valorisés, trésorerie, validation niveau 2.',
-    interdit: 'N’encaisse pas en boutique. Ne configure pas le SI.',
+      'Pôle financier réseau : achats (fiches, commandes, réceptions, factures, paiements), résultat, stocks valorisés, trésorerie, validation niveau 2.',
+    interdit: 'N’encaisse pas en boutique. Ne configure pas le SI (zones, magasins, catalogue).',
   },
   CAISSIER_CENTRAL: {
     role: RoleLibelle.CAISSIER_CENTRAL,

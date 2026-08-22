@@ -7,7 +7,7 @@ export function insightListeFournisseurs(count: number, jamaisLivres: number): I
       interpretation:
         'Aucun fournisseur enregistré : impossible de saisir une réception de stock.',
       recommendation:
-        'Créer au moins une fiche fournisseur (Responsable SI / Direction) avant d’approvisionner.',
+        'Créer au moins une fiche fournisseur (DAF / SI / Direction) avant d’approvisionner.',
       severity: 'warning',
     };
   }
@@ -198,7 +198,7 @@ export function insightCommandesBrouillon(count: number): Insight {
   return {
     title: 'Brouillons',
     interpretation: `${count} bon(s) non confirmé(s) — pas encore d’engagement fournisseur.`,
-    recommendation: 'Confirmer (SI / Direction / responsable boutique) avant toute réception.',
+    recommendation: 'Confirmer (DAF / SI / Direction / responsable boutique) avant toute réception.',
     severity: 'info',
   };
 }
@@ -214,7 +214,7 @@ export function insightCommandesOuvertes(count: number, unitesRestantes: number)
   return {
     title: 'Commandes ouvertes',
     interpretation: `${count} commande(s) confirmée(s) · ${unitesRestantes} unité(s) encore à recevoir.`,
-    recommendation: 'Réception centrale (SI / Direction) plafonnée à la quantité commandée.',
+    recommendation: 'Réception centrale (DAF / SI / Direction) plafonnée à la quantité commandée.',
     severity: 'warning',
   };
 }
@@ -255,7 +255,7 @@ export function insightFicheFournisseurCircuit(): Insight {
   return {
     title: 'Fiche fournisseur',
     interpretation:
-      'Réceptions (SI / Direction) → bons de commande → factures → paiements (DAF / Caissier Central). Le cumul d’achats couvre tout le réseau, pas une seule boutique.',
+      'Réceptions et commandes (DAF / SI / Direction) → factures → paiements (DAF / Caissier Central). Le cumul d’achats couvre tout le réseau, pas une seule boutique.',
     severity: 'neutral',
   };
 }
@@ -315,7 +315,7 @@ export function insightCircuitCommandeAchat(): Insight {
   return {
     title: 'Bon de commande',
     interpretation:
-      'Brouillon → confirmée (SI / Direction / responsable boutique) → réceptionnée partiellement ou totalement (SI / Direction) → clôturée. Une commande groupe alimente le hub ENTREE puis se répartit vers les boutiques.',
+      'Brouillon → confirmée (DAF / SI / Direction / responsable boutique) → réceptionnée partiellement ou totalement (DAF / SI / Direction) → clôturée. Une commande groupe alimente le hub ENTREE puis se répartit vers les boutiques.',
     severity: 'neutral',
   };
 }

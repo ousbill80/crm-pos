@@ -767,8 +767,8 @@ model SessionCaisse {
   fondInitial            Decimal             @db.Decimal(14, 2)
   ouvertureUtilisateur   Utilisateur         @relation("OuvertureSession", fields: [ouvertureUtilisateurId], references: [id])
   ouvertureUtilisateurId String
-  // Comptage contradictoire (§5.1) : témoin résolu par login, sans
-  // ré-authentification (simplification assumée — voir plan de la tâche).
+  // Comptage contradictoire (§5.1) : le témoin EST ré-authentifié par mot de
+  // passe côté serveur (resoudreTemoin, bcrypt.compare réel) — pas une simplification.
   ouvertureTemoin        Utilisateur         @relation("OuvertureTemoin", fields: [ouvertureTemoinId], references: [id])
   ouvertureTemoinId      String
   clotureDateHeure       DateTime?
@@ -779,6 +779,8 @@ model SessionCaisse {
   clotureTemoinId        String?
   transactionVersement   TransactionCaisse?  @relation(fields: [transactionVersementId], references: [id])
   transactionVersementId String?             @unique
+  // Idempotence hors-ligne (§6.7) : UUID généré côté appareil, unique si renseigné.
+  clientOperationId      String?             @unique
   ventes                 Vente[]
   retours                RetourVente[]
   reservations           ReservationStock[]

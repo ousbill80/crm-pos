@@ -25,7 +25,7 @@ import {
   type AppProfilId,
 } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
-import { TopbarSystray, TopbarUserMenu } from '../components/Topbar';
+import { TopbarRealtimeIndicator, TopbarSystray, TopbarUserMenu } from '../components/Topbar';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 
 type AppMenu = { to: string; label: string; roles?: RoleLibelle[] };
@@ -475,6 +475,7 @@ export function ProtectedRoute() {
         </div>
 
         <div className="odoo-navbar-right">
+          <TopbarRealtimeIndicator />
           <TopbarSystray />
           {user && (
             <TopbarUserMenu

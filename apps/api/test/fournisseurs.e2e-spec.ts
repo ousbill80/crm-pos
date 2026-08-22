@@ -1,11 +1,7 @@
 // Tests d'intégration réels (zéro mock) — module Fournisseurs & réception de
-// stock (extension au socle MCD §6.5, portée validée avec l'utilisateur :
-// fiche fournisseur simple + réception de stock, pas de bon de commande ni
-// de facturation fournisseur). RBAC identique au catalogue Produit
-// (ROLES_ADMIN_STRUCTURE en écriture, ROLES_LECTURE_STRUCTURE en lecture),
-// voir apps/api/src/caisses/access-scope.constants.ts. Démarre un vrai
-// PostgreSQL via Testcontainers et authentifie chaque profil via le vrai
-// endpoint /auth/login.
+// stock (extension au socle MCD §6.5). Fiches + réceptions : SI / DG / DAF
+// (ROLES_FICHE_FOURNISSEUR, ROLES_RECEPTION_STOCK). La boutique ne réceptionne
+// pas le fournisseur. PostgreSQL réel via Testcontainers.
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -176,8 +172,8 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
     await env.stop();
   });
 
-  describe('Création fournisseur (ROLES_ADMIN_STRUCTURE uniquement)', () => {
-    it('refuse (403) la création par un rôle non admin (CAISSIER_BOUTIQUE)', () => {
+  describe('Création fournisseur (ROLES_FICHE_FOURNISSEUR)', () => {
+    it('refuse (403) la création par un rôle non habilité (CAISSIER_BOUTIQUE)', () => {
       return request(app.getHttpServer())
         .post('/fournisseurs')
         .set(auth(tokens.caissierBoutique))
@@ -185,12 +181,13 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
         .expect(403);
     });
 
-    it('refuse (403) la création par DAF (lecture structure, pas admin)', () => {
-      return request(app.getHttpServer())
+    it('autorise DAF à créer un fournisseur (cycle Achats, pas admin SI)', async () => {
+      const response = await request(app.getHttpServer())
         .post('/fournisseurs')
         .set(auth(tokens.daf))
-        .send({ nom: 'Grossiste Accessoires SARL' })
-        .expect(403);
+        .send({ nom: 'Grossiste DAF SARL' })
+        .expect(201);
+      expect((response.body as FournisseurDto).nom).toBe('Grossiste DAF SARL');
     });
 
     it("autorise RESPONSABLE_SI à créer un fournisseur et journalise une entrée d'audit", async () => {
@@ -284,12 +281,35 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       fournisseurId = fournisseur.id;
     });
 
-    it('refuse (403) la réception par un rôle non admin (CAISSIER_BOUTIQUE)', () => {
+    it('refuse (403) la réception par un rôle non habilité (CAISSIER_BOUTIQUE)', () => {
       return request(app.getHttpServer())
         .post(`/fournisseurs/${fournisseurId}/receptions`)
         .set(auth(tokens.caissierBoutique))
         .send({ produitId, quantite: 10, prixAchat: 1500 })
         .expect(403);
+    });
+
+    it('autorise DAF à enregistrer une réception (entrée en stock)', async () => {
+      const entrepotPrincipal = await env.prisma.entrepot.findFirstOrThrow({
+        where: { nom: 'Principal Fournisseurs' },
+      });
+      const avant = await env.prisma.produit.findUniqueOrThrow({
+        where: { id: produitId },
+      });
+      await request(app.getHttpServer())
+        .post(`/fournisseurs/${fournisseurId}/receptions`)
+        .set(auth(tokens.daf))
+        .send({
+          produitId,
+          quantite: 3,
+          prixAchat: 1400,
+          entrepotId: entrepotPrincipal.id,
+        })
+        .expect(201);
+      const apres = await env.prisma.produit.findUniqueOrThrow({
+        where: { id: produitId },
+      });
+      expect(apres.stock).toBe(avant.stock + 3);
     });
 
     it("autorise RESPONSABLE_SI à enregistrer une réception, incrémente le stock et journalise l'audit", async () => {
@@ -465,7 +485,7 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       expect(audit).not.toBeNull();
     });
 
-    it('refuse (403) le PATCH par DAF et RESPONSABLE_CRM', async () => {
+    it('autorise le PATCH par DAF et refuse RESPONSABLE_CRM', async () => {
       const created = await request(app.getHttpServer())
         .post('/fournisseurs')
         .set(auth(tokens.respsi))
@@ -476,8 +496,8 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/fournisseurs/${id}`)
         .set(auth(tokens.daf))
-        .send({ notes: 'x' })
-        .expect(403);
+        .send({ notes: 'Note DAF' })
+        .expect(200);
       await request(app.getHttpServer())
         .patch(`/fournisseurs/${id}`)
         .set(auth(tokens.respcrm))

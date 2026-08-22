@@ -17,6 +17,12 @@ import {
 } from '@caisse-crm/shared';
 import { apiFetch } from '../api';
 import { useSession } from '../session-context';
+import { decodeAccessToken } from '../session';
+import { estErreurHorsLigne } from '../offline/erreurs';
+import {
+  cacherIdentifiants,
+  verifierIdentifiantsLocal,
+} from '../offline/local-auth';
 import { colors } from '../ui';
 
 const DEMO_PASSWORD = 'MotDePasse!123';
@@ -44,13 +50,45 @@ export function LoginScreen() {
   const [login, setLogin] = useState(COMPTES_DEMO.CAISSIER_BOUTIQUE.login);
   const [password, setPassword] = useState(DEMO_PASSWORD);
   const [error, setError] = useState<string | null>(null);
+  const [infoHorsLigne, setInfoHorsLigne] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const familles = useMemo(() => comptesDemoParFamille(), []);
+
+  async function tenterConnexionHorsLigne(id: string): Promise<boolean> {
+    const resultat = await verifierIdentifiantsLocal(id, password);
+    if (resultat.ok && resultat.accessToken !== undefined) {
+      setInfoHorsLigne(
+        'Connexion hors ligne — identité vérifiée localement, synchronisation en attente.',
+      );
+      // Bref délai pour laisser le message hors ligne visible avant la
+      // navigation automatique déclenchée par signIn (§6.7).
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      await signIn(resultat.accessToken, resultat.mustChangePassword ?? false);
+      return true;
+    }
+    if (resultat.verrouille) {
+      const minutes = resultat.verrouJusqua
+        ? Math.max(1, Math.ceil((resultat.verrouJusqua - Date.now()) / 60_000))
+        : 15;
+      setError(
+        `Trop d’échecs hors ligne : réessayez dans ${minutes} min ou reconnectez le réseau.`,
+      );
+      return true;
+    }
+    if (resultat.perime) {
+      setError(
+        'Session hors ligne expirée (24h sans connexion) : une reconnexion réseau est nécessaire.',
+      );
+      return true;
+    }
+    return false;
+  }
 
   async function submit(loginOverride?: string) {
     const id = loginOverride ?? login;
     setLogin(id);
     setError(null);
+    setInfoHorsLigne(null);
     setPending(true);
     try {
       const { accessToken, mustChangePassword } = await apiFetch<{
@@ -60,9 +98,26 @@ export function LoginScreen() {
         method: 'POST',
         body: JSON.stringify({ login: id, password }),
       });
+      const decoded = decodeAccessToken(accessToken);
+      if (decoded) {
+        await cacherIdentifiants(id, password, {
+          role: decoded.role,
+          accessToken,
+          mustChangePassword,
+        });
+      }
       await signIn(accessToken, mustChangePassword);
-    } catch {
-      setError('Identifiants invalides ou API injoignable.');
+    } catch (err) {
+      if (estErreurHorsLigne(err)) {
+        const traite = await tenterConnexionHorsLigne(id);
+        if (!traite) {
+          setError(
+            'API injoignable et identifiant jamais connecté en ligne sur cet appareil.',
+          );
+        }
+      } else {
+        setError('Identifiants invalides.');
+      }
     } finally {
       setPending(false);
     }
@@ -138,6 +193,9 @@ export function LoginScreen() {
           value={password}
           onChangeText={setPassword}
         />
+        {infoHorsLigne ? (
+          <Text style={styles.infoHorsLigne}>{infoHorsLigne}</Text>
+        ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable
           style={styles.primaryBtn}
@@ -257,6 +315,14 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     backgroundColor: colors.dangerSoft,
+    padding: 10,
+    borderRadius: 10,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  infoHorsLigne: {
+    color: colors.accentText,
+    backgroundColor: colors.accentSoft,
     padding: 10,
     borderRadius: 10,
     fontWeight: '600',

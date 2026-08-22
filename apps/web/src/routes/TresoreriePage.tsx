@@ -37,7 +37,6 @@ import {
   insightVersementsEnRetard,
 } from '../lib/insights/dashboard';
 import { useAuth } from '../context/AuthContext';
-import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import { outboxCount } from '../lib/offline/outbox';
 import type { Insight } from '../lib/insights/types';
 import type { ReportingDashboard } from './DashboardPage';
@@ -169,7 +168,6 @@ export function TresoreriePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const magasin = useFiltreMagasinSiege();
-  useTresorerieRealtime(user !== null);
   const pendingOffline = outboxCount();
 
   const dashboard = useQuery({

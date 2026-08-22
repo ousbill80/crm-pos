@@ -15,7 +15,6 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
-import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -75,7 +74,6 @@ export function LitigesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const magasin = useFiltreMagasinSiege();
-  useTresorerieRealtime(user !== null);
   const [filtre, setFiltre] = useState<FiltreCategorie>('tous');
   const [q, setQ] = useState('');
 
