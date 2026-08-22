@@ -40,6 +40,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       coutMoyenPondere: new Prisma.Decimal('400.00'),
       seuilReappro: 5,
       codeBarres: null,
+      codeBarresGenere: false,
       uniteMesure: 'UN',
       facteurUnite: new Prisma.Decimal(1),
       parentId: null,

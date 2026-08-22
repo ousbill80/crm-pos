@@ -353,6 +353,10 @@ model Produit {
   // (apps/api/src/alertes/alertes.service.ts) quand stock <= seuilReappro.
   seuilReappro        Int?
   codeBarres          String?              @unique
+  // true si codeBarres a été généré automatiquement (impression d'étiquettes
+  // sans EAN fournisseur saisi) plutôt que saisi manuellement — distingue un
+  // code interne d'un EAN réel (apps/api/src/produits/produits.service.ts).
+  codeBarresGenere    Boolean              @default(false)
   uniteMesure         String               @default("UN")
   facteurUnite        Decimal              @default(1) @db.Decimal(12, 4)
   parentId            String?

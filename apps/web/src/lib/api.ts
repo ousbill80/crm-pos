@@ -146,3 +146,37 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+// Variante POST + corps JSON (ex. impression d'étiquettes : liste
+// d'articles/quantités trop volumineuse pour une query GET).
+export async function apiDownloadPost(
+  path: string,
+  body: unknown,
+  filename: string,
+): Promise<void> {
+  const token = getToken();
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new ApiError(res.status, text || res.statusText);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

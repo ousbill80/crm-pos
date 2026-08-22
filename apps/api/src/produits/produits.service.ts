@@ -23,6 +23,8 @@ import { toCsv } from '../common/csv.util';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
+import { ImprimerEtiquettesDto } from './dto/imprimer-etiquettes.dto';
+import type { DonneesEtiquettesPdf } from '../impressions/etiquettes.pdf';
 import {
   ApercuImportProduitsDto,
   AppliquerImportProduitsDto,
@@ -46,6 +48,8 @@ import {
 } from './produits.helpers';
 
 const FENETRE_ANALYSE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_ETIQUETTES_PAR_LOT = 1000;
+const MAX_TENTATIVES_CODE_INTERNE = 5;
 
 function isUniqueViolation(error: unknown): boolean {
   return (
@@ -617,6 +621,146 @@ export class ProduitsService {
     });
 
     return this.findOne(id, user);
+  }
+
+  // Code interne Code128, distinct des EAN fournisseurs (13 chiffres) — ne
+  // touche jamais un codeBarres déjà saisi manuellement (§ impression
+  // d'étiquettes en lot).
+  private genererCodeInterne(): string {
+    const suffixe = Math.floor(Math.random() * 1_000_000_000)
+      .toString()
+      .padStart(9, '0');
+    return `INT${suffixe}`;
+  }
+
+  private async genererCodeBarresManquant(
+    produit: Produit,
+    user: AuthenticatedUser,
+  ): Promise<Produit> {
+    if (produit.codeBarres) {
+      return produit;
+    }
+    for (
+      let tentative = 0;
+      tentative < MAX_TENTATIVES_CODE_INTERNE;
+      tentative += 1
+    ) {
+      const codeBarres = this.genererCodeInterne();
+      try {
+        const misAJour = await this.prisma.produit.update({
+          where: { id: produit.id },
+          data: { codeBarres, codeBarresGenere: true },
+        });
+        await this.audit.record({
+          utilisateurId: user.userId,
+          action: 'PRODUIT_CODE_BARRES_GENERE',
+          entite: 'Produit',
+          entiteId: produit.id,
+          details: JSON.stringify({ codeBarres }),
+        });
+        return misAJour;
+      } catch (error) {
+        if (
+          isUniqueViolation(error) &&
+          tentative < MAX_TENTATIVES_CODE_INTERNE - 1
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    // Inatteignable (la boucle retourne ou lève systématiquement) — TypeScript
+    // exige néanmoins un chemin de sortie explicite.
+    throw new Error(
+      'Génération de code-barres interne impossible après plusieurs tentatives.',
+    );
+  }
+
+  // Prépare les données d'un lot d'étiquettes (§ impression code-barres) :
+  // résout les produits, génère les codes-barres manquants, applique le
+  // plafond volumétrique et journalise l'action globale en plus des audits
+  // individuels de génération de code.
+  async preparerEtiquettes(
+    dto: ImprimerEtiquettesDto,
+    user: AuthenticatedUser,
+  ): Promise<DonneesEtiquettesPdf> {
+    if (dto.afficherBoutique && !dto.boutiqueId) {
+      throw new BadRequestException(
+        'boutiqueId est requis lorsque afficherBoutique est activé.',
+      );
+    }
+
+    const totalEtiquettes = dto.articles.reduce(
+      (somme, article) => somme + article.quantite,
+      0,
+    );
+    if (totalEtiquettes > MAX_ETIQUETTES_PAR_LOT) {
+      throw new BadRequestException(
+        `Le lot demande ${totalEtiquettes} étiquettes, au-delà du plafond de ${MAX_ETIQUETTES_PAR_LOT} par impression. Scindez le lot en plusieurs impressions.`,
+      );
+    }
+
+    const produitIds = dto.articles.map((a) => a.produitId);
+    const produitsTrouves = await this.prisma.produit.findMany({
+      where: { id: { in: produitIds } },
+    });
+    const produitParId = new Map(produitsTrouves.map((p) => [p.id, p]));
+    const manquants = produitIds.filter((id) => !produitParId.has(id));
+    if (manquants.length > 0) {
+      throw new NotFoundException(
+        `Produit(s) introuvable(s) : ${manquants.join(', ')}.`,
+      );
+    }
+
+    let boutiqueNom: string | null = null;
+    if (dto.afficherBoutique && dto.boutiqueId) {
+      const boutique = await this.prisma.boutique.findUnique({
+        where: { id: dto.boutiqueId },
+      });
+      if (!boutique) {
+        throw new NotFoundException(`Boutique ${dto.boutiqueId} introuvable.`);
+      }
+      boutiqueNom = boutique.nom;
+    }
+
+    const articles: DonneesEtiquettesPdf['articles'] = [];
+    for (const ligne of dto.articles) {
+      let produit = produitParId.get(ligne.produitId);
+      if (!produit) continue;
+      if (!produit.codeBarres) {
+        produit = await this.genererCodeBarresManquant(produit, user);
+      }
+      articles.push({
+        produitId: produit.id,
+        designation: produit.designation,
+        reference: produit.reference,
+        codeBarres: produit.codeBarres as string,
+        prixUnitaire: money(new Prisma.Decimal(produit.prixUnitaire)),
+        quantite: ligne.quantite,
+      });
+    }
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'ETIQUETTES_IMPRESSION_LOT',
+      entite: 'Produit',
+      entiteId: articles[0].produitId,
+      details: JSON.stringify({
+        produitIds: articles.map((a) => a.produitId),
+        quantites: articles.map((a) => a.quantite),
+        format: dto.format,
+        totalEtiquettes,
+      }),
+    });
+
+    return {
+      format: dto.format,
+      afficherNom: dto.afficherNom,
+      afficherBoutique: dto.afficherBoutique,
+      afficherReference: dto.afficherReference,
+      boutiqueNom,
+      articles,
+    };
   }
 
   async findMouvements(id: string, user: AuthenticatedUser) {

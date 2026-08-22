@@ -1018,6 +1018,11 @@ export function FicheProduit({
             )}
             {produit.uniteMesure ? ` · ${produit.uniteMesure}` : ''}
             {produit.codeBarres ? ` · EAN ${produit.codeBarres}` : ''}
+            {produit.codeBarres && produit.codeBarresGenere ? (
+              <span className="badge badge-neutral" style={{ marginLeft: 6 }}>
+                Généré automatiquement
+              </span>
+            ) : null}
           </p>
           <div className="client-workspace-chips">
             <span className={STATUT_BADGE[produit.statutStock]}>
@@ -1225,7 +1230,14 @@ export function FicheProduit({
                       </div>
                       <div>
                         <dt>Code-barres</dt>
-                        <dd>{produit.codeBarres ?? '—'}</dd>
+                        <dd>
+                          {produit.codeBarres ?? '—'}
+                          {produit.codeBarres && produit.codeBarresGenere ? (
+                            <span className="badge badge-neutral" style={{ marginLeft: 6 }}>
+                              Généré automatiquement
+                            </span>
+                          ) : null}
+                        </dd>
                       </div>
                       <div>
                         <dt>Méthode de coût</dt>

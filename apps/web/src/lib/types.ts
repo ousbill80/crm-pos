@@ -266,6 +266,7 @@ export interface ProduitDto {
   tauxMarge: string;
   valeurStock: string;
   codeBarres?: string | null;
+  codeBarresGenere?: boolean;
   uniteMesure?: string;
   methodeCout?: 'CMP' | 'FIFO' | 'STANDARD';
   strategieSortie?: 'FIFO' | 'FEFO';

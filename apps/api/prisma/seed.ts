@@ -482,6 +482,10 @@ async function main() {
     boutiques: number;
     seuilReappro: number;
     actif: boolean;
+    // EAN-13 fournisseur déjà saisi sur quelques articles démo — le reste du
+    // catalogue reste sans code pour exercer la génération automatique
+    // Code128 à l'impression d'étiquettes (apps/api/src/produits/produits.service.ts).
+    codeBarres?: string;
   }> = [
     {
       designation: 'Coque silicone iPhone',
@@ -495,6 +499,7 @@ async function main() {
       boutiques: 120,
       seuilReappro: 20,
       actif: true,
+      codeBarres: '3760012345670',
     },
     {
       designation: 'Chargeur USB-C 20W',
@@ -508,6 +513,7 @@ async function main() {
       boutiques: 100,
       seuilReappro: 25,
       actif: true,
+      codeBarres: '3760012345687',
     },
     {
       designation: 'Écouteurs Bluetooth',
@@ -521,6 +527,7 @@ async function main() {
       boutiques: 70,
       seuilReappro: 15,
       actif: true,
+      codeBarres: '3760012345694',
     },
     {
       designation: 'Verre trempé universel',
@@ -713,6 +720,7 @@ async function main() {
           seuilReappro: article.seuilReappro,
           coutMoyenPondere: article.coutMoyenPondere,
           actif: article.actif,
+          codeBarres: article.codeBarres,
           imageUrl,
         },
       });
@@ -727,6 +735,7 @@ async function main() {
           coutMoyenPondere: article.coutMoyenPondere,
           seuilReappro: article.seuilReappro,
           actif: article.actif,
+          codeBarres: article.codeBarres ?? produit.codeBarres,
           imageUrl: produit.imageUrl?.startsWith('data:')
             ? produit.imageUrl
             : imageUrl,

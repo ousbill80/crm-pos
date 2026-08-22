@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -9,6 +10,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import PDFDocument from 'pdfkit';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
@@ -21,10 +23,12 @@ import { ProduitsService } from './produits.service';
 import { CreateProduitDto } from './dto/create-produit.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
+import { ImprimerEtiquettesDto } from './dto/imprimer-etiquettes.dto';
 import {
   ApercuImportProduitsDto,
   AppliquerImportProduitsDto,
 } from './dto/import-produits.dto';
+import { dessinerEtiquettesPdf } from '../impressions/etiquettes.pdf';
 
 // Endpoints Produit — catalogue du POS (§6.3.2). RBAC identique aux
 // modules zones/boutiques : administration système en écriture, périmètre
@@ -40,6 +44,32 @@ export class ProduitsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.produitsService.create(dto, user);
+  }
+
+  // Écriture (peut générer/persister un codeBarres interne manquant) — même
+  // RBAC que PATCH /produits/:id.
+  @Post('etiquettes/pdf')
+  @HttpCode(200)
+  @Roles(...ROLES_CATALOGUE_ECRITURE)
+  async imprimerEtiquettes(
+    @Body() dto: ImprimerEtiquettesDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const data = await this.produitsService.preparerEtiquettes(dto, user);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="etiquettes-${Date.now()}.pdf"`,
+    );
+    const doc = new PDFDocument({
+      autoFirstPage: false,
+      bufferPages: true,
+      info: { Title: 'Étiquettes catalogue', Author: 'Caisse CRM' },
+    });
+    doc.pipe(res);
+    await dessinerEtiquettesPdf(doc, data);
+    doc.end();
   }
 
   @Get()

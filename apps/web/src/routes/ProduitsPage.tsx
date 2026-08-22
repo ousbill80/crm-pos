@@ -8,6 +8,7 @@ import {
   Package,
   PackageX,
   Scale,
+  Tag,
   Upload,
   Wallet,
 } from 'lucide-react';
@@ -18,6 +19,10 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { ImportCatalogueModal } from './ImportCatalogueModal';
+import {
+  EtiquettesModal,
+  type ArticleEtiquetteSelection,
+} from '../components/EtiquettesModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
   FiltreMagasinSiege,
@@ -323,6 +328,11 @@ export function ProduitsPage() {
   const [margeNegative, setMargeNegative] = useState(false);
   const [modalNouveau, setModalNouveau] = useState(false);
   const [modalImport, setModalImport] = useState(false);
+  const [modeSelectionEtiquettes, setModeSelectionEtiquettes] = useState(false);
+  const [selectionEtiquettes, setSelectionEtiquettes] = useState<
+    Map<string, number>
+  >(new Map());
+  const [modalEtiquettes, setModalEtiquettes] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
     key: 'designation',
     dir: 'asc',
@@ -403,6 +413,48 @@ export function ProduitsPage() {
     );
   }
 
+  function toggleSelectionArticle(produitId: string) {
+    setSelectionEtiquettes((prev) => {
+      const next = new Map(prev);
+      if (next.has(produitId)) {
+        next.delete(produitId);
+      } else {
+        next.set(produitId, 1);
+      }
+      return next;
+    });
+  }
+
+  function toggleToutSelectionner() {
+    setSelectionEtiquettes((prev) => {
+      const tousSelectionnes = produitsTries.every((p) => prev.has(p.id));
+      if (tousSelectionnes) {
+        return new Map();
+      }
+      const next = new Map(prev);
+      for (const p of produitsTries) {
+        if (!next.has(p.id)) next.set(p.id, 1);
+      }
+      return next;
+    });
+  }
+
+  const articlesSelectionnes: ArticleEtiquetteSelection[] = useMemo(() => {
+    const parId = new Map(produitsTries.map((p) => [p.id, p]));
+    return Array.from(selectionEtiquettes.entries())
+      .map(([produitId, quantite]) => {
+        const produit = parId.get(produitId);
+        if (!produit) return null;
+        return {
+          produitId,
+          designation: produit.designation,
+          reference: produit.reference,
+          quantite,
+        };
+      })
+      .filter((a): a is ArticleEtiquetteSelection => a !== null);
+  }, [selectionEtiquettes, produitsTries]);
+
   function resetFiltres() {
     setRecherche('');
     setQDebounced('');
@@ -455,6 +507,18 @@ export function ProduitsPage() {
             {peutImporter ? (
               <button type="button" onClick={() => setModalImport(true)}>
                 <Upload size={14} /> Importer
+              </button>
+            ) : null}
+            {peutGerer ? (
+              <button
+                type="button"
+                aria-pressed={modeSelectionEtiquettes}
+                onClick={() => {
+                  setModeSelectionEtiquettes((prev) => !prev);
+                  if (modeSelectionEtiquettes) setSelectionEtiquettes(new Map());
+                }}
+              >
+                <Tag size={14} /> Sélection pour étiquettes
               </button>
             ) : null}
             {peutGerer ? (
@@ -815,6 +879,19 @@ export function ProduitsPage() {
                 <table>
                   <thead>
                     <tr>
+                      {modeSelectionEtiquettes && (
+                        <th>
+                          <input
+                            type="checkbox"
+                            aria-label="Tout sélectionner (résultats filtrés)"
+                            checked={
+                              produitsTries.length > 0 &&
+                              produitsTries.every((p) => selectionEtiquettes.has(p.id))
+                            }
+                            onChange={toggleToutSelectionner}
+                          />
+                        </th>
+                      )}
                       <th>
                         <button
                           type="button"
@@ -851,18 +928,40 @@ export function ProduitsPage() {
                     {produitsTries.map((p) => (
                       <tr
                         key={p.id}
-                        className="produit-row"
+                        className={
+                          modeSelectionEtiquettes && selectionEtiquettes.has(p.id)
+                            ? 'produit-row produit-row-selected'
+                            : 'produit-row'
+                        }
                         tabIndex={0}
                         role="link"
                         aria-label={`Ouvrir la fiche de ${p.designation}`}
-                        onClick={() => navigate(`/produits/${p.id}`)}
+                        onClick={() =>
+                          modeSelectionEtiquettes
+                            ? toggleSelectionArticle(p.id)
+                            : navigate(`/produits/${p.id}`)
+                        }
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            navigate(`/produits/${p.id}`);
+                            if (modeSelectionEtiquettes) {
+                              toggleSelectionArticle(p.id);
+                            } else {
+                              navigate(`/produits/${p.id}`);
+                            }
                           }
                         }}
                       >
+                        {modeSelectionEtiquettes && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Sélectionner ${p.designation}`}
+                              checked={selectionEtiquettes.has(p.id)}
+                              onChange={() => toggleSelectionArticle(p.id)}
+                            />
+                          </td>
+                        )}
                         <td>
                           <div className="produit-cell-nom">
                             {p.imageUrl ? (
@@ -916,6 +1015,28 @@ export function ProduitsPage() {
         </div>
       )}
 
+      {modeSelectionEtiquettes && selectionEtiquettes.size > 0 && (
+        <div className="selection-toolbar" role="toolbar" aria-label="Sélection étiquettes">
+          <span>{selectionEtiquettes.size} article(s) sélectionné(s)</span>
+          <div className="selection-toolbar-actions">
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setSelectionEtiquettes(new Map())}
+            >
+              Vider la sélection
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setModalEtiquettes(true)}
+            >
+              <Tag size={14} /> Imprimer les étiquettes
+            </button>
+          </div>
+        </div>
+      )}
+
       {peutGerer && (
         <Modal
           open={modalNouveau}
@@ -935,6 +1056,32 @@ export function ProduitsPage() {
         <ImportCatalogueModal
           open={modalImport}
           onClose={() => setModalImport(false)}
+        />
+      )}
+      {peutGerer && (
+        <EtiquettesModal
+          open={modalEtiquettes}
+          onClose={() => setModalEtiquettes(false)}
+          articles={articlesSelectionnes}
+          onQuantiteChange={(produitId, quantite) =>
+            setSelectionEtiquettes((prev) => {
+              const next = new Map(prev);
+              next.set(produitId, quantite);
+              return next;
+            })
+          }
+          onRemove={(produitId) =>
+            setSelectionEtiquettes((prev) => {
+              const next = new Map(prev);
+              next.delete(produitId);
+              return next;
+            })
+          }
+          onImprime={() => {
+            setSelectionEtiquettes(new Map());
+            setModeSelectionEtiquettes(false);
+            setModalEtiquettes(false);
+          }}
         />
       )}
     </div>
