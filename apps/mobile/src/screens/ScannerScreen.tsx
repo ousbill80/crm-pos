@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   StyleSheet,
@@ -12,12 +13,30 @@ import {
   useCameraPermissions,
   type BarcodeScanningResult,
 } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../ui';
+import { lireTagNfc, nfcDisponible } from '../nfc';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scanner'>;
+
+const BARCODE_TYPES = [
+  'ean13',
+  'ean8',
+  'upc_a',
+  'upc_e',
+  'code39',
+  'code93',
+  'code128',
+  'codabar',
+  'itf14',
+  'pdf417',
+  'aztec',
+  'datamatrix',
+  'qr',
+] as const;
 
 /**
  * Scan code-barres produit (POS terrain).
@@ -26,12 +45,30 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Scanner'>;
 export function ScannerScreen({ navigation }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [manualCode, setManualCode] = useState('');
+  const [torche, setTorche] = useState(false);
+  const [mode, setMode] = useState<'camera' | 'nfc'>('camera');
+  const [nfcOk, setNfcOk] = useState(false);
+  const [nfcEnCours, setNfcEnCours] = useState(false);
+  const [nfcErreur, setNfcErreur] = useState<string | null>(null);
   const dejaScanne = useRef(false);
   const cameraUtile = Platform.OS !== 'web';
 
-  function valider(code: string) {
+  useEffect(() => {
+    let vivant = true;
+    void nfcDisponible().then((ok) => {
+      if (vivant) setNfcOk(ok);
+    });
+    return () => {
+      vivant = false;
+    };
+  }, []);
+
+  function valider(code: string, viaScan: boolean) {
     if (dejaScanne.current || !code.trim()) return;
     dejaScanne.current = true;
+    if (viaScan) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
     navigation.navigate('Main', {
       screen: 'Caisse',
       params: {
@@ -42,7 +79,22 @@ export function ScannerScreen({ navigation }: Props) {
   }
 
   function onBarcodeScanned(result: BarcodeScanningResult) {
-    valider(result.data);
+    valider(result.data, true);
+  }
+
+  async function scannerNfc() {
+    setNfcErreur(null);
+    setNfcEnCours(true);
+    try {
+      const code = await lireTagNfc();
+      valider(code, true);
+    } catch (err) {
+      setNfcErreur(
+        err instanceof Error ? err.message : 'Lecture NFC impossible.',
+      );
+    } finally {
+      setNfcEnCours(false);
+    }
   }
 
   if (!permission) {
@@ -50,6 +102,108 @@ export function ScannerScreen({ navigation }: Props) {
   }
 
   const camAutorisee = cameraUtile && permission.granted;
+  const modeSelector =
+    cameraUtile && nfcOk ? (
+      <View style={styles.modeSwitch}>
+        <Pressable
+          style={[styles.modeBtn, mode === 'camera' && styles.modeBtnActive]}
+          onPress={() => setMode('camera')}
+        >
+          <Ionicons
+            name="barcode-outline"
+            size={16}
+            color={mode === 'camera' ? '#fff' : colors.accentText}
+          />
+          <Text
+            style={[
+              styles.modeBtnText,
+              mode === 'camera' && styles.modeBtnTextActive,
+            ]}
+          >
+            Caméra
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeBtn, mode === 'nfc' && styles.modeBtnActive]}
+          onPress={() => setMode('nfc')}
+        >
+          <Ionicons
+            name="wifi-outline"
+            size={16}
+            color={mode === 'nfc' ? '#fff' : colors.accentText}
+          />
+          <Text
+            style={[
+              styles.modeBtnText,
+              mode === 'nfc' && styles.modeBtnTextActive,
+            ]}
+          >
+            NFC
+          </Text>
+        </Pressable>
+      </View>
+    ) : null;
+
+  if (mode === 'nfc' && nfcOk) {
+    return (
+      <View style={styles.root}>
+        <View style={styles.glowTop} />
+        <View style={styles.glowBottom} />
+
+        <View style={styles.topNav}>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={styles.backChip}
+            hitSlop={8}
+          >
+            <Ionicons name="chevron-back" size={18} color={colors.accentText} />
+            <Text style={styles.backLabel}>Caisse</Text>
+          </Pressable>
+        </View>
+
+        {modeSelector}
+
+        <View style={styles.hero}>
+          <View style={styles.iconRing}>
+            <View style={styles.iconDisc}>
+              <Ionicons name="wifi" size={36} color={colors.accent} />
+            </View>
+          </View>
+          <Text style={styles.kicker}>SCAN NFC</Text>
+          <Text style={styles.headline}>Approcher un tag</Text>
+          <Text style={styles.lead}>
+            Maintenez l’article ou le badge NFC contre le haut du téléphone.
+          </Text>
+        </View>
+
+        <View style={styles.panel}>
+          <Pressable
+            style={[styles.primaryBtn, nfcEnCours && styles.primaryBtnOff]}
+            onPress={() => void scannerNfc()}
+            disabled={nfcEnCours}
+          >
+            {nfcEnCours ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="wifi" size={20} color="#fff" />
+            )}
+            <Text style={styles.primaryBtnText}>
+              {nfcEnCours ? 'Lecture en cours…' : 'Scanner un tag NFC'}
+            </Text>
+          </Pressable>
+
+          {nfcErreur ? <Text style={styles.nfcErreur}>{nfcErreur}</Text> : null}
+
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={styles.ghostBtn}
+          >
+            <Text style={styles.ghostBtnText}>Annuler</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   if (!camAutorisee) {
     return (
@@ -67,6 +221,8 @@ export function ScannerScreen({ navigation }: Props) {
             <Text style={styles.backLabel}>Caisse</Text>
           </Pressable>
         </View>
+
+        {modeSelector}
 
         <View style={styles.hero}>
           <View style={styles.iconRing}>
@@ -112,7 +268,7 @@ export function ScannerScreen({ navigation }: Props) {
             autoFocus={!cameraUtile}
             value={manualCode}
             onChangeText={setManualCode}
-            onSubmitEditing={() => valider(manualCode)}
+            onSubmitEditing={() => valider(manualCode, false)}
             returnKeyType="done"
           />
 
@@ -121,7 +277,7 @@ export function ScannerScreen({ navigation }: Props) {
               styles.primaryBtn,
               !manualCode.trim() && styles.primaryBtnOff,
             ]}
-            onPress={() => valider(manualCode)}
+            onPress={() => valider(manualCode, false)}
             disabled={!manualCode.trim()}
           >
             <Ionicons name="checkmark-circle" size={20} color="#fff" />
@@ -144,8 +300,10 @@ export function ScannerScreen({ navigation }: Props) {
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
+        enableTorch={torche}
+        autofocus="on"
         barcodeScannerSettings={{
-          barcodeTypes: ['ean13', 'ean8', 'upc_a', 'code128', 'qr'],
+          barcodeTypes: [...BARCODE_TYPES],
         }}
         onBarcodeScanned={onBarcodeScanned}
       />
@@ -162,8 +320,28 @@ export function ScannerScreen({ navigation }: Props) {
           <Ionicons name="close" size={22} color="#fff" />
         </Pressable>
         <Text style={styles.camTitle}>Scanner</Text>
-        <View style={{ width: 40 }} />
+        <Pressable
+          style={[styles.closeBtn, torche && styles.closeBtnActive]}
+          onPress={() => setTorche((v) => !v)}
+        >
+          <Ionicons
+            name={torche ? 'flash' : 'flash-outline'}
+            size={20}
+            color="#fff"
+          />
+        </Pressable>
       </View>
+      {nfcOk ? (
+        <View style={styles.camModeRow}>
+          <Pressable
+            style={styles.camModeChip}
+            onPress={() => setMode('nfc')}
+          >
+            <Ionicons name="wifi-outline" size={14} color="#fff" />
+            <Text style={styles.camModeChipText}>Passer en NFC</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={styles.camFooter}>
         <Text style={styles.camHint}>Cadrez le code dans le cadre</Text>
         <View style={styles.manualRow}>
@@ -175,14 +353,14 @@ export function ScannerScreen({ navigation }: Props) {
             autoCorrect={false}
             value={manualCode}
             onChangeText={setManualCode}
-            onSubmitEditing={() => valider(manualCode)}
+            onSubmitEditing={() => valider(manualCode, false)}
           />
           <Pressable
             style={[
               styles.okBtn,
               !manualCode.trim() && styles.primaryBtnOff,
             ]}
-            onPress={() => valider(manualCode)}
+            onPress={() => valider(manualCode, false)}
             disabled={!manualCode.trim()}
           >
             <Text style={styles.primaryBtnText}>OK</Text>
@@ -238,6 +416,63 @@ const styles = StyleSheet.create({
     color: colors.accentText,
     fontWeight: '700',
     fontSize: 13,
+  },
+  modeSwitch: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#D5DDD9',
+    marginBottom: 8,
+  },
+  modeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+  },
+  modeBtnActive: {
+    backgroundColor: colors.accent,
+  },
+  modeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.accentText,
+  },
+  modeBtnTextActive: {
+    color: '#fff',
+  },
+  nfcErreur: {
+    color: '#DC2626',
+    fontWeight: '600',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  camModeRow: {
+    position: 'absolute',
+    top: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  camModeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  camModeChipText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
   },
   hero: {
     alignItems: 'center',
@@ -402,6 +637,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  closeBtnActive: {
+    backgroundColor: colors.accent,
   },
   camFooter: {
     position: 'absolute',

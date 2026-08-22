@@ -14,13 +14,18 @@
       "bundleIdentifier": "sn.caissepos.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Scan des codes-barres produits en caisse."
+        "NSCameraUsageDescription": "Scan des codes-barres produits en caisse.",
+        "NFCReaderUsageDescription": "Autoriser CaissePOS à lire les tags NFC pour identifier un article."
+      },
+      "entitlements": {
+        "com.apple.developer.nfc.readersession.formats": ["NDEF"]
       }
     },
     "android": {
       "package": "sn.caissepos.app",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "NFC"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
