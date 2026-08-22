@@ -157,10 +157,28 @@ test('CRM/Devis : clients, fidélité, interactions, campagnes, devis (§6.6)', 
     await expect(form).toBeVisible();
     const argent = await form.locator('#seuil-argent').inputValue();
     const or = await form.locator('#seuil-or').inputValue();
+    // Avantages fidélité par palier (§6.6) : remise appliquée à l'encaissement
+    // pour les clients Argent/Or (apps/api/src/ventes/ventes.service.ts).
+    await form.locator('#avantage-argent').fill('5');
+    await form.locator('#avantage-or').fill('10');
     await form.getByRole('button', { name: 'Enregistrer' }).click();
     await expect(page.getByRole('status')).toHaveText('Seuils enregistrés.');
     await expect(form.locator('#seuil-argent')).toHaveValue(argent);
     await expect(form.locator('#seuil-or')).toHaveValue(or);
+    await expect(form.locator('#avantage-argent')).toHaveValue('5');
+    await expect(form.locator('#avantage-or')).toHaveValue('10');
+
+    await page.reload();
+    const formApresReload = page.locator('form.client-workspace-card');
+    await expect(formApresReload.locator('#avantage-argent')).toHaveValue('5');
+    await expect(formApresReload.locator('#avantage-or')).toHaveValue('10');
+
+    // Remise à zéro : ne pas laisser un avantage fidélité actif affecter les
+    // totaux d'autres scénarios (POS notamment) qui s'exécutent sur la même base.
+    await formApresReload.locator('#avantage-argent').fill('0');
+    await formApresReload.locator('#avantage-or').fill('0');
+    await formApresReload.getByRole('button', { name: 'Enregistrer' }).click();
+    await expect(page.getByRole('status')).toHaveText('Seuils enregistrés.');
   });
 
   await test.step('Fidélité / Pilotage — tableaux de bord lecture seule', async () => {
@@ -241,6 +259,14 @@ test('CRM/Devis : clients, fidélité, interactions, campagnes, devis (§6.6)', 
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.csv$/);
     await expect(item.getByRole('alert')).toHaveCount(0);
+  });
+
+  await test.step('Envoyer la campagne (§6.6) — diffusion irréversible, badge Envoyée', async () => {
+    const item = page.locator('.campagne-item', { hasText: CAMPAGNE_NOM });
+    page.once('dialog', (dialog) => void dialog.accept());
+    await item.getByRole('button', { name: 'Envoyer la campagne' }).click();
+    await expect(item.getByRole('button', { name: 'Déjà envoyée' })).toBeVisible();
+    await expect(item.locator('.badge', { hasText: 'Envoyée' })).toBeVisible();
   });
 
   let devisId = '';

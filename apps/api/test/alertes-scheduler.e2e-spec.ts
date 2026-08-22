@@ -23,8 +23,6 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
   let boutique1Id: string;
   let caisseBoutique1Id: string;
   let caissierB1Id: string;
-  let controleurId: string;
-
   const tokens: Record<string, string> = {};
 
   async function login(loginValue: string): Promise<string> {
@@ -86,7 +84,7 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       4,
       'caissier-b1@example.test',
     );
-    controleurId = await creerUtilisateur(
+    await creerUtilisateur(
       'sched-controleur',
       'CONTROLEUR_INTERNE',
       null,

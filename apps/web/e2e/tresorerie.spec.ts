@@ -178,5 +178,13 @@ test.describe('Trésorerie — cycle complet §6.4', () => {
     // Une fois VALIDEE, plus aucune action de transition n'est proposée
     // (état terminal §6.4).
     await expect(page.getByRole('button', { name: 'Rapprocher' })).toHaveCount(0);
+
+    // Export PDF du bordereau de versement (§5.1) depuis la fiche transaction.
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Imprimer le bordereau' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(
+      `bordereau-versement-${transactionId}.pdf`,
+    );
   });
 });

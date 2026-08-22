@@ -293,7 +293,11 @@ test.describe('Administration : journal d’audit (§6.7)', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
 
     // Filtre par action : ne doit renvoyer que des lignes de cette action.
-    await page.getByLabel('Action').fill('UTILISATEUR_CREE');
+    // Locator scopé au rôle combobox : getByLabel('Action') seul est
+    // ambigu, il matche aussi les boutons InfoTooltip
+    // « Explication : Action sensible » (substring du nom accessible).
+    const filtreAction = page.getByRole('combobox', { name: 'Action' });
+    await filtreAction.fill('UTILISATEUR_CREE');
     await expect(async () => {
       const rows = page.locator('table tbody tr');
       const count = await rows.count();
@@ -305,7 +309,7 @@ test.describe('Administration : journal d’audit (§6.7)', () => {
 
     // Réinitialisation des filtres.
     await page.getByRole('button', { name: 'Réinitialiser' }).click();
-    await expect(page.getByLabel('Action')).toHaveValue('');
+    await expect(filtreAction).toHaveValue('');
 
     // Détail d'une entrée.
     await page.locator('table tbody tr').first().click();

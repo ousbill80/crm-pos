@@ -65,6 +65,9 @@ jobs:
       DATABASE_URL: postgresql://caisse:caisse@127.0.0.1:5433/caisse_crm?schema=public
       JWT_SECRET: ci-playwright-jwt-secret-not-for-production
       VITE_API_URL: http://localhost:3000
+      # Passerelle mock (§6.6 diffusion de campagne) : permet de tester
+      # POST /crm/campagnes/:id/envoyer sans dépendance externe réelle.
+      SMS_GATEWAY_URL: mock://ci
     steps:
       - uses: actions/checkout@v4
 

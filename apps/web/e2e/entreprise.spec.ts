@@ -8,7 +8,10 @@ import { loginAs } from './helpers';
 // sans se heurter à une restriction RBAC volontaire (cf. Responsable SI,
 // exclu de la lecture caisses — §4 séparation admin structure / trésorerie).
 const DEMO_DG = 'demo-dg';
-const DB_URL = 'postgresql://caisse@127.0.0.1:5433/caisse_crm';
+// Port 5433 par défaut : mappage du service postgres CI (.github/workflows/ci.yml).
+// Surchargeable via E2E_DB_URL pour un run local si ce port est occupé par une
+// autre instance Postgres (ex. instance de dev native sur la même machine).
+const DB_URL = process.env.E2E_DB_URL ?? 'postgresql://caisse@127.0.0.1:5433/caisse_crm';
 
 test.describe.configure({ mode: 'serial' });
 

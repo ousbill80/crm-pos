@@ -385,6 +385,7 @@ test.describe('Produits & Stocks — cycle CRUD complet (§6.5)', () => {
     expect(await quantiteSur('demo-respsi', produitId, entrepotA)).toBe(6);
     expect(await quantiteSur('demo-respsi', produitId, entrepotB)).toBe(2);
 
+    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Valider (Fait)' }).click();
     await expect(page.locator('span.badge', { hasText: 'Fait' })).toBeVisible();
     // Le stock bouge uniquement à la validation Fait.
