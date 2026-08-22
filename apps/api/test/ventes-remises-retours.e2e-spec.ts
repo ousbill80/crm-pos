@@ -54,6 +54,7 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
   let caisse1Id: string;
   let caisse2Id: string;
   let caisse3Id: string;
+  let caisse4Id: string;
   let produitId: string;
 
   const tokens: Record<string, string> = {};
@@ -178,6 +179,17 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
       },
     });
     caisse3Id = caisse3.id;
+    const caisse4 = await env.prisma.caisse.create({
+      data: {
+        type: TypeCaisse.TIROIR,
+        boutiqueId: boutique1.id,
+        code: 'T04',
+        libelle: 'Tiroir 4',
+        actif: true,
+        ordreAffichage: 4,
+      },
+    });
+    caisse4Id = caisse4.id;
 
     const produit = await env.prisma.produit.create({
       data: {
@@ -384,6 +396,61 @@ describe('Ventes — remises & retours/avoirs POS (e2e)', () => {
         .post(`/ventes/sessions/${sessionId}/retours`)
         .set(auth(tokens.caissierB1))
         .send({ ligneVenteId: vente.lignes[0].id, quantite: 1 })
+        .expect(400);
+    });
+  });
+
+  describe('Idempotence des retours (clientOperationId, §6.7)', () => {
+    it('rejouer un retour avec le même clientOperationId renvoie le retour existant, sans doublon', async () => {
+      const sessionId = await ouvrirSession(
+        tokens.caissierB1,
+        caisse4Id,
+        5000,
+        'resp-b1',
+      );
+      const vente = await encaisser(sessionId, 5, 0);
+      const clientOperationId = '11111111-2222-3333-4444-555555555555';
+
+      const premiere = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/retours`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          ligneVenteId: vente.lignes[0].id,
+          quantite: 2,
+          clientOperationId,
+        })
+        .expect(201);
+      const premierBody = premiere.body as RetourVenteDto;
+      expect(premierBody.quantite).toBe(2);
+
+      const rejoue = await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/retours`)
+        .set(auth(tokens.caissierB1))
+        .send({
+          ligneVenteId: vente.lignes[0].id,
+          quantite: 2,
+          clientOperationId,
+        })
+        .expect(201);
+      const rejoueBody = rejoue.body as RetourVenteDto;
+      expect(rejoueBody.id).toBe(premierBody.id);
+
+      const retours = await env.prisma.retourVente.findMany({
+        where: { clientOperationId },
+      });
+      expect(retours).toHaveLength(1);
+
+      const mouvements = await env.prisma.mouvementStock.findMany({
+        where: { reference: premierBody.id },
+      });
+      expect(mouvements).toHaveLength(1);
+
+      // Un sur-retour direct après le rejeu confirme qu'aucune quantité
+      // supplémentaire n'a été créditée deux fois (2 déjà retournés sur 5).
+      await request(app.getHttpServer())
+        .post(`/ventes/sessions/${sessionId}/retours`)
+        .set(auth(tokens.caissierB1))
+        .send({ ligneVenteId: vente.lignes[0].id, quantite: 4 })
         .expect(400);
     });
   });

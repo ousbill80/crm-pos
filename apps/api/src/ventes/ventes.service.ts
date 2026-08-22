@@ -443,6 +443,22 @@ export class VentesService {
     dto: CreateRetourDto,
     utilisateur: AuthenticatedUser,
   ): Promise<RetourVente> {
+    // Idempotence hors-ligne (§6.7) : un rejeu du même clientOperationId
+    // (resynchro depuis la file offline) renvoie le retour déjà créé, sans
+    // créditer le stock une seconde fois.
+    if (dto.clientOperationId) {
+      const existant = await this.prisma.retourVente.findUnique({
+        where: { clientOperationId: dto.clientOperationId },
+      });
+      if (existant) {
+        const sessionExistante = await this.trouverSessionOuEchouer(
+          existant.sessionCaisseId,
+        );
+        this.verifierPerimetreBoutique(sessionExistante, utilisateur);
+        return existant;
+      }
+    }
+
     const session = await this.trouverSessionOuEchouer(sessionId);
     this.verifierPerimetreBoutique(session, utilisateur);
 
@@ -483,41 +499,55 @@ export class VentesService {
       .times(dto.quantite)
       .toDecimalPlaces(2);
 
-    const retour = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.retourVente.create({
-        data: {
-          venteId: ligneVente.venteId,
-          ligneVenteId: ligneVente.id,
-          quantite: dto.quantite,
-          montantRembourse,
-          sessionCaisseId: session.id,
-          utilisateurId: utilisateur.userId,
-        },
+    let retour: RetourVente;
+    try {
+      retour = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.retourVente.create({
+          data: {
+            venteId: ligneVente.venteId,
+            ligneVenteId: ligneVente.id,
+            quantite: dto.quantite,
+            montantRembourse,
+            sessionCaisseId: session.id,
+            utilisateurId: utilisateur.userId,
+            clientOperationId: dto.clientOperationId,
+          },
+        });
+
+        if (!session.caisse.boutiqueId) {
+          throw new BadRequestException(
+            'Caisse sans boutique : impossible de créditer le stock.',
+          );
+        }
+        const entrepotRetour =
+          await this.stockService.trouverEntrepotPrincipalBoutique(
+            session.caisse.boutiqueId,
+          );
+        await this.stockService.appliquerMouvement(
+          {
+            produitId: ligneVente.produitId,
+            entrepotId: entrepotRetour,
+            type: 'RETOUR',
+            delta: dto.quantite,
+            utilisateurId: utilisateur.userId,
+            reference: created.id,
+          },
+          tx,
+        );
+
+        return created;
       });
-
-      if (!session.caisse.boutiqueId) {
-        throw new BadRequestException(
-          'Caisse sans boutique : impossible de créditer le stock.',
-        );
+    } catch (error) {
+      if (this.estConflitIdempotence(error) && dto.clientOperationId) {
+        const existant = await this.prisma.retourVente.findUnique({
+          where: { clientOperationId: dto.clientOperationId },
+        });
+        if (existant) {
+          return existant;
+        }
       }
-      const entrepotRetour =
-        await this.stockService.trouverEntrepotPrincipalBoutique(
-          session.caisse.boutiqueId,
-        );
-      await this.stockService.appliquerMouvement(
-        {
-          produitId: ligneVente.produitId,
-          entrepotId: entrepotRetour,
-          type: 'RETOUR',
-          delta: dto.quantite,
-          utilisateurId: utilisateur.userId,
-          reference: created.id,
-        },
-        tx,
-      );
-
-      return created;
-    });
+      throw error;
+    }
 
     await this.audit.record({
       utilisateurId: utilisateur.userId,

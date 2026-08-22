@@ -1,4 +1,12 @@
-import { IsInt, IsPositive, IsUUID } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 // Retour/avoir sur une ligne de vente de la session de caisse en cours
 // (extension au-delà du cahier des charges, assumée — voir plan de la
@@ -11,4 +19,11 @@ export class CreateRetourDto {
   @IsInt()
   @IsPositive()
   quantite: number;
+
+  // Idempotence hors-ligne (§6.7) : UUID généré côté caisse.
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  clientOperationId?: string;
 }
