@@ -13,6 +13,7 @@ import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { PosShortcutLink } from '../components/PosShortcutLink';
 import { insightSoldeCaisse, insightTypeCaisse } from '../lib/insights/caisses';
 import { insightStatutTransaction } from '../lib/insights/transactions';
 import type {
@@ -236,9 +237,7 @@ export function CaisseDetailPage() {
             </Link>
           ) : null}
           {c.type === TypeCaisse.TIROIR ? (
-            <Link className="btn-primary" to="/pos">
-              Ouvrir le POS
-            </Link>
+            <PosShortcutLink label="Ouvrir le POS" hint="Caisse ouverte · encaissement" compact />
           ) : null}
         </div>
       </div>

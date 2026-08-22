@@ -7,7 +7,6 @@ import {
   Eye,
   FileDown,
   Receipt,
-  ShoppingBag,
   ShoppingCart,
   Wallet,
 } from 'lucide-react';
@@ -19,6 +18,7 @@ import {
 import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
+import { PosShortcutLink } from '../components/PosShortcutLink';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { EtatCaissePrint } from '../components/pos/EtatCaissePrint';
@@ -191,11 +191,7 @@ export function VentesPage() {
         })}
         actions={
           <>
-            {peutPos && (
-              <Link to="/pos" className="btn-primary">
-                <ShoppingBag size={16} /> Point de vente
-              </Link>
-            )}
+            {peutPos && <PosShortcutLink />}
             <button
               type="button"
               className="btn-secondary"

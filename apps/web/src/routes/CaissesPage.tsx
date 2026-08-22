@@ -17,6 +17,7 @@ import { RoleLibelle, ROLES_CONFIG_TIROIRS, StatutTransaction, TypeCaisse } from
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
+import { PosShortcutLink } from '../components/PosShortcutLink';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
@@ -351,9 +352,7 @@ function MouvementsCaisse({
               <p>{hintVide}</p>
               <div className="caisses-ledger-empty-actions">
                 {typeCaisse === TypeCaisse.TIROIR ? (
-                  <Link className="btn-primary" to="/pos">
-                    <Monitor size={14} /> Ouvrir le POS
-                  </Link>
+                  <PosShortcutLink label="Ouvrir le POS" compact />
                 ) : null}
                 {typeCaisse === TypeCaisse.MAGASIN ? (
                   <Link
@@ -1791,9 +1790,7 @@ export function CaissesPage() {
                                 </Link>
                               ) : null}
                               {selected.type === TypeCaisse.TIROIR ? (
-                                <Link className="btn-secondary" to="/pos">
-                                  <Monitor size={14} /> Ouvrir le POS
-                                </Link>
+                                <PosShortcutLink label="Ouvrir le POS" compact />
                               ) : null}
                               <button
                                 type="button"
