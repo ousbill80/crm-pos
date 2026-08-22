@@ -3717,6 +3717,19 @@ a.link-button:hover {
   color: var(--text-h);
 }
 
+.client-workspace-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.client-workspace-section-header > h2 {
+  margin: 0 0 14px;
+  font-size: 1.05rem;
+  color: var(--text-h);
+}
+
 .client-workspace-card {
   padding: 16px 18px;
 }

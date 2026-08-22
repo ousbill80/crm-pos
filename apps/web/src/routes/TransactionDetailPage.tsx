@@ -10,7 +10,8 @@ import {
   StatutTransaction,
   TypeTransaction,
 } from '@caisse-crm/shared';
-import { apiFetch } from '../lib/api';
+import { Printer } from 'lucide-react';
+import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
@@ -302,7 +303,21 @@ export function TransactionDetailPage() {
 
       {t.bordereau && (
         <section className="client-workspace-section">
-          <h2>Bordereau</h2>
+          <div className="client-workspace-section-header">
+            <h2>Bordereau</h2>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() =>
+                void apiDownload(
+                  `/transactions/${t.id}/bordereau/pdf`,
+                  `bordereau-versement-${t.id}.pdf`,
+                )
+              }
+            >
+              <Printer size={14} /> Imprimer le bordereau
+            </button>
+          </div>
           <dl className="clients-dl">
             <div>
               <dt>Déclaré</dt>

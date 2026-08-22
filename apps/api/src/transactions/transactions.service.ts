@@ -47,6 +47,23 @@ const DETAIL_INCLUDE = {
   regularisation: true,
 } as const;
 
+const NOM_UTILISATEUR_SELECT = { nom: true, prenom: true } as const;
+
+const BORDEREAU_PDF_INCLUDE = {
+  caisse: { include: { boutique: { select: { id: true, nom: true } } } },
+  initiateur: { select: NOM_UTILISATEUR_SELECT },
+  bordereau: {
+    include: {
+      reception: {
+        include: { validateur: { select: NOM_UTILISATEUR_SELECT } },
+      },
+    },
+  },
+  regularisation: {
+    include: { validateur: { select: NOM_UTILISATEUR_SELECT } },
+  },
+} as const;
+
 // Orchestre le cycle de vie d'une TransactionCaisse (§6.4). Toute évolution
 // de statut passe par TransactionStateMachineService (objet de domaine
 // unique — pas de logique de transition dupliquée ici) et génère une
@@ -607,6 +624,79 @@ export class TransactionsService {
 
     await this.assertLectureAutorisee(transaction, utilisateur);
     return transaction;
+  }
+
+  // Données du bordereau de versement pour export PDF (§5.1) — même
+  // périmètre de lecture que GET /transactions/:id (assertLectureAutorisee).
+  async getBordereauPdfData(id: string, utilisateur: AuthenticatedUser) {
+    const transaction = await this.prisma.transactionCaisse.findUnique({
+      where: { id },
+      include: BORDEREAU_PDF_INCLUDE,
+    });
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction introuvable.');
+    }
+
+    await this.assertLectureAutorisee(transaction, utilisateur);
+
+    const bordereau = transaction.bordereau;
+    if (!bordereau) {
+      throw new BadRequestException(
+        'Cette transaction ne comporte pas de bordereau de versement.',
+      );
+    }
+
+    const societe = await this.prisma.societe.findFirst({
+      select: {
+        raisonSociale: true,
+        adresse: true,
+        telephone: true,
+        email: true,
+      },
+    });
+
+    const nomComplet = (
+      p: { nom: string; prenom: string } | null | undefined,
+    ) => (p ? `${p.prenom} ${p.nom}`.trim() : null);
+
+    return {
+      transactionId: transaction.id,
+      statut: transaction.statut,
+      dateHeure: transaction.dateHeure,
+      montantDeclare: bordereau.montantDeclare.toString(),
+      caisseLibelle:
+        [
+          transaction.caisse.code,
+          transaction.caisse.libelle,
+          transaction.caisse.type,
+        ]
+          .filter(Boolean)
+          .join(' · ') || transaction.caisseId,
+      boutiqueNom: transaction.caisse.boutique?.nom ?? null,
+      initiateur: nomComplet(transaction.initiateur),
+      dateEmission: bordereau.dateEmission,
+      pieceJointe: bordereau.pieceJointe,
+      reception: bordereau.reception
+        ? {
+            montantRecu: bordereau.reception.montantRecu.toString(),
+            ecart: bordereau.reception.ecart.toString(),
+            statutFinal: bordereau.reception.statutFinal,
+            validateur: nomComplet(bordereau.reception.validateur),
+            dateReception: bordereau.reception.dateReception,
+          }
+        : null,
+      regularisation: transaction.regularisation
+        ? {
+            montantRetenu: transaction.regularisation.montantRetenu.toString(),
+            motif: transaction.regularisation.motif,
+            validateur: nomComplet(transaction.regularisation.validateur),
+            dateRegularisation: transaction.regularisation.dateRegularisation,
+          }
+        : null,
+      societe,
+      imprimeAt: new Date(),
+    };
   }
 
   private buildFiltres(

@@ -9,7 +9,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   RoleLibelle,
   ROLES_INITIATION_SORTIE_FONDS,
@@ -22,6 +24,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import { ROLES_LECTURE_CAISSES } from '../caisses/access-scope.constants';
+import { pipePdf } from '../impressions/pdf.util';
+import { dessinerBordereauVersementPdf } from '../impressions/bordereau-versement.pdf';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RapprocherTransactionDto } from './dto/rapprocher-transaction.dto';
@@ -48,6 +52,25 @@ export class TransactionsController {
     @CurrentUser() utilisateur: AuthenticatedUser,
   ) {
     return this.transactionsService.findOne(id, utilisateur);
+  }
+
+  @Get(':id/bordereau/pdf')
+  @Roles(...ROLES_LECTURE_CAISSES)
+  async telechargerBordereauPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() utilisateur: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const data = await this.transactionsService.getBordereauPdfData(
+      id,
+      utilisateur,
+    );
+    pipePdf(
+      res,
+      `bordereau-versement-${data.transactionId}.pdf`,
+      (doc) => dessinerBordereauVersementPdf(doc, data),
+      'Bordereau de versement · document de caisse',
+    );
   }
 
   @Post()
