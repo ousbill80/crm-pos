@@ -2766,6 +2766,29 @@ a.link-button:hover {
   overflow: auto;
 }
 
+.selection-toolbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e6ea);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+
+.selection-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .produits-fiche-head {
   display: flex;
   justify-content: space-between;
