@@ -250,3 +250,139 @@ export function insightCommandesReceptionnees(count: number): Insight {
     severity: 'info',
   };
 }
+
+export function insightFicheFournisseurCircuit(): Insight {
+  return {
+    title: 'Fiche fournisseur',
+    interpretation:
+      'Réceptions (SI / Direction) → bons de commande → factures → paiements (DAF / Caissier Central). Le cumul d’achats couvre tout le réseau, pas une seule boutique.',
+    severity: 'neutral',
+  };
+}
+
+export function insightCumulAchatsFournisseur(montant: number, produitsDistincts: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (montant <= 0) {
+    return {
+      title: 'Cumul achats',
+      interpretation: 'Aucun achat enregistré pour ce fournisseur.',
+      severity: 'info',
+    };
+  }
+  return {
+    title: 'Cumul achats',
+    interpretation: `${fmt(montant)} FCFA sur ${produitsDistincts} article(s) distinct(s) — toutes réceptions confondues, valeur d’entrée stock.`,
+    severity: 'ok',
+  };
+}
+
+export function insightPaiementsFournisseur(count: number, totalPaye: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (count === 0) {
+    return {
+      title: 'Paiements',
+      interpretation: 'Aucun paiement enregistré à ce fournisseur.',
+      severity: 'info',
+    };
+  }
+  return {
+    title: 'Paiements',
+    interpretation: `${count} règlement(s) · ${fmt(totalPaye)} FCFA versé(s) — grand livre Achats (DAF / Caissier Central).`,
+    severity: 'ok',
+  };
+}
+
+export function insightDernierPaiementFournisseur(
+  dateIso: string | null,
+  montant: number | null,
+): Insight {
+  if (!dateIso || montant === null) {
+    return {
+      title: 'Dernier paiement',
+      interpretation: 'Aucun règlement effectué pour l’instant.',
+      severity: 'info',
+    };
+  }
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Dernier paiement',
+    interpretation: `${fmt(montant)} FCFA réglé le plus récemment sur ce fournisseur.`,
+    severity: 'neutral',
+  };
+}
+
+export function insightCircuitCommandeAchat(): Insight {
+  return {
+    title: 'Bon de commande',
+    interpretation:
+      'Brouillon → confirmée (SI / Direction / responsable boutique) → réceptionnée partiellement ou totalement (SI / Direction) → clôturée. Une commande groupe alimente le hub ENTREE puis se répartit vers les boutiques.',
+    severity: 'neutral',
+  };
+}
+
+export function insightMontantCommande(montant: number, nbLignes: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Montant commandé',
+    interpretation: `${fmt(montant)} FCFA sur ${nbLignes} ligne(s) — engagement fournisseur, distinct du montant facturé.`,
+    severity: 'neutral',
+  };
+}
+
+export function insightReceptionCommande(
+  quantiteRecue: number,
+  quantite: number,
+  pct: number,
+): Insight {
+  if (quantite === 0) {
+    return {
+      title: 'Réception',
+      interpretation: 'Commande sans quantité — rien à réceptionner.',
+      severity: 'info',
+    };
+  }
+  if (pct === 0) {
+    return {
+      title: 'Réception',
+      interpretation: `0 / ${quantite} unité(s) reçue(s). Aucune réception enregistrée pour l’instant.`,
+      severity: 'info',
+    };
+  }
+  if (pct >= 100) {
+    return {
+      title: 'Réception',
+      interpretation: `${quantiteRecue} / ${quantite} unité(s) reçue(s) — commande intégralement livrée.`,
+      recommendation: 'Clôturer le bon une fois les factures engagées.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Réception',
+    interpretation: `${quantiteRecue} / ${quantite} unité(s) reçue(s) (${pct} %) — livraison partielle.`,
+    recommendation: 'Le solde reste à réceptionner avant clôture.',
+    severity: 'warning',
+  };
+}
+
+export function insightFacturesLieesCommande(count: number, nonFacturees: number): Insight {
+  if (count === 0) {
+    return {
+      title: 'Factures liées',
+      interpretation: 'Aucune facture rattachée à cette commande pour l’instant.',
+      severity: nonFacturees > 0 ? 'info' : 'ok',
+    };
+  }
+  if (nonFacturees > 0) {
+    return {
+      title: 'Factures liées',
+      interpretation: `${count} facture(s) rattachée(s) · ${nonFacturees} réception(s) encore hors facture.`,
+      recommendation: 'Facturer les réceptions restantes (SI / Direction / DAF).',
+      severity: 'warning',
+    };
+  }
+  return {
+    title: 'Factures liées',
+    interpretation: `${count} facture(s) rattachée(s) — toutes les réceptions sont facturées.`,
+    severity: 'ok',
+  };
+}

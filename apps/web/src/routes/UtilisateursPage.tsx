@@ -9,7 +9,13 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { SelectProfil } from '../components/SelectProfil';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import { insightPerimetreRole } from '../lib/insights/administration';
 import type { BoutiqueDto, UtilisateurDto } from '../lib/types';
+
+type ColonneUser = 'nom' | 'profil' | 'perimetre' | 'boutique' | 'statut' | 'cree';
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -18,6 +24,13 @@ function fmtDate(iso: string | null): string {
 
 function estVerrouille(lockedUntil: string | null): boolean {
   return lockedUntil !== null && new Date(lockedUntil).getTime() > Date.now();
+}
+
+function libelleStatut(u: UtilisateurDto): string {
+  if (estVerrouille(u.lockedUntil)) return 'Verrouillé';
+  if (!u.actif) return 'Inactif';
+  if (u.mustChangePassword) return 'Mdp à changer';
+  return 'Actif';
 }
 
 type FicheForm = {
@@ -62,6 +75,7 @@ export function UtilisateursPage() {
     login: string;
     password: string;
   } | null>(null);
+  const [sort, setSort] = useState<SortState<ColonneUser> | null>(null);
 
   const { data: boutiques } = useBoutiques();
   const liste = useQuery({
@@ -106,9 +120,26 @@ export function UtilisateursPage() {
 
   const lignes = useMemo(() => {
     const all = liste.data ?? [];
-    if (!filtreProfil) return all;
-    return all.filter((u) => u.role.libelle === filtreProfil);
-  }, [liste.data, filtreProfil]);
+    const filtrees = filtreProfil ? all.filter((u) => u.role.libelle === filtreProfil) : all;
+    return sortRows(filtrees, sort, (u, key) => {
+      switch (key) {
+        case 'nom':
+          return `${u.nom} ${u.prenom}`;
+        case 'profil':
+          return labelProfil(u.role.libelle);
+        case 'perimetre':
+          return labelPerimetre(profilOf(u.role.libelle).perimetre);
+        case 'boutique':
+          return boutiques?.find((b) => b.id === u.boutiqueId)?.nom ?? '';
+        case 'statut':
+          return libelleStatut(u);
+        case 'cree':
+          return u.createdAt;
+        default:
+          return null;
+      }
+    });
+  }, [liste.data, filtreProfil, sort, boutiques]);
 
   if (!peutLire) {
     return (
@@ -207,12 +238,25 @@ export function UtilisateursPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Utilisateur</th>
-                    <th>Profil</th>
-                    <th>Périmètre</th>
-                    <th>Boutique</th>
-                    <th>Statut</th>
-                    <th>Créé le</th>
+                    <SortHeader active={sort?.key === 'nom'} dir={sort?.key === 'nom' ? sort.dir : 'asc'} onClick={() => setSort((s) => toggleSort(s, 'nom'))}>
+                      Utilisateur
+                    </SortHeader>
+                    <SortHeader active={sort?.key === 'profil'} dir={sort?.key === 'profil' ? sort.dir : 'asc'} onClick={() => setSort((s) => toggleSort(s, 'profil'))}>
+                      Profil
+                    </SortHeader>
+                    <SortHeader active={sort?.key === 'perimetre'} dir={sort?.key === 'perimetre' ? sort.dir : 'asc'} onClick={() => setSort((s) => toggleSort(s, 'perimetre'))}>
+                      Périmètre
+                    </SortHeader>
+                    <SortHeader active={sort?.key === 'boutique'} dir={sort?.key === 'boutique' ? sort.dir : 'asc'} onClick={() => setSort((s) => toggleSort(s, 'boutique'))}>
+                      Boutique
+                    </SortHeader>
+                    <SortHeader active={sort?.key === 'statut'} dir={sort?.key === 'statut' ? sort.dir : 'asc'} onClick={() => setSort((s) => toggleSort(s, 'statut'))}>
+                      Statut
+                    </SortHeader>
+                    <SortHeader active={sort?.key === 'cree'} dir={sort?.key === 'cree' ? sort.dir : 'desc'} onClick={() => setSort((s) => toggleSort(s, 'cree'))}>
+                      Créé le
+                    </SortHeader>
+                    <th aria-label="Info" />
                   </tr>
                 </thead>
                 <tbody>
@@ -260,6 +304,9 @@ export function UtilisateursPage() {
                         )}
                       </td>
                       <td>{fmtDate(u.createdAt)}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <InfoTooltip insight={insightPerimetreRole(u.role.libelle)} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

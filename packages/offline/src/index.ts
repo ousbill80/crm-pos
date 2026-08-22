@@ -3,6 +3,14 @@ export { createIdbStore } from './idb-store';
 export { createMemoryStore } from './memory-store';
 export { flushOutbox } from './flush';
 export {
+  enqueueOp,
+  enqueueVenteOp,
+  enqueueSortieFondsOp,
+  enqueueReservationOp,
+  enqueueLiberationOp,
+  outboxPendingCount,
+} from './enqueue';
+export {
   LS_CACHE_PREFIX,
   LS_HOLDS_PREFIX,
   LS_MIGRATED,

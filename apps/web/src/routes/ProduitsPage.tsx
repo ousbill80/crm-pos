@@ -27,9 +27,14 @@ import {
 } from '../components/FiltreMagasinSiege';
 import {
   buildPrioritesCatalogue,
+  insightCatalogueActif,
   insightDormant,
   insightMargeUnitaire,
   insightMeilleureVente,
+  insightPrixSousCmp,
+  insightRupturesCatalogue,
+  insightSousSeuilCatalogue,
+  insightValeurStockCatalogue,
 } from '../lib/insights/produits';
 import type {
   ProduitClassementDto,
@@ -444,11 +449,28 @@ export function ProduitsPage() {
 
       {synthese.data && (
         <div className="kpi-grid dash-kpi-grid">
-          <article className="kpi-card dash-kpi">
+          <article
+            className="kpi-card dash-kpi"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setStatutStock('');
+              setActif('true');
+              setMargeNegative(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setStatutStock('');
+                setActif('true');
+                setMargeNegative(false);
+              }
+            }}
+          >
             <div className="dash-kpi-top">
               <span className="dash-kpi-icon">
                 <Package size={16} />
               </span>
+              <InfoTooltip insight={insightCatalogueActif(synthese.data.actifs, synthese.data.inactifs)} />
             </div>
             <div className="kpi-label">Catalogue actif</div>
             <div className="kpi-value">{synthese.data.actifs}</div>
@@ -475,6 +497,7 @@ export function ProduitsPage() {
               <span className="dash-kpi-icon">
                 <PackageX size={16} />
               </span>
+              <InfoTooltip insight={insightRupturesCatalogue(synthese.data.ruptures)} />
             </div>
             <div className="kpi-label">Ruptures</div>
             <div className="kpi-value">{synthese.data.ruptures}</div>
@@ -501,21 +524,25 @@ export function ProduitsPage() {
               <span className="dash-kpi-icon">
                 <AlertTriangle size={16} />
               </span>
+              <InfoTooltip insight={insightSousSeuilCatalogue(synthese.data.sousSeuil)} />
             </div>
             <div className="kpi-label">Sous le seuil</div>
             <div className="kpi-value">{synthese.data.sousSeuil}</div>
             <div className="kpi-hint">Alerte STOCK_BAS</div>
           </article>
-          <article className="kpi-card dash-kpi">
+          <a href="#produits-table" className="kpi-card dash-kpi">
             <div className="dash-kpi-top">
               <span className="dash-kpi-icon">
                 <Wallet size={16} />
               </span>
+              <InfoTooltip
+                insight={insightValeurStockCatalogue(synthese.data.valeurStock, synthese.data.actifs)}
+              />
             </div>
             <div className="kpi-label">Valeur stock</div>
             <div className="kpi-value">{formatFcfa(synthese.data.valeurStock)}</div>
             <div className="kpi-hint">Valorisée au CMP</div>
-          </article>
+          </a>
           <article
             className={
               synthese.data.margesNegatives > 0
@@ -541,6 +568,7 @@ export function ProduitsPage() {
               <span className="dash-kpi-icon">
                 <Scale size={16} />
               </span>
+              <InfoTooltip insight={insightPrixSousCmp(synthese.data.margesNegatives)} />
             </div>
             <div className="kpi-label">Prix &lt; CMP</div>
             <div className="kpi-value">{synthese.data.margesNegatives}</div>
@@ -587,23 +615,38 @@ export function ProduitsPage() {
               {classement.data.meilleuresVentes.length === 0 ? (
                 <p className="lead">Aucune vente nette sur 30 jours.</p>
               ) : (
-                <ol className="produits-classement">
-                  {classement.data.meilleuresVentes.map((row) => (
-                    <li key={row.produit.id}>
-                      <Link className="link-button" to={`/produits/${row.produit.id}`}>
-                        {row.produit.designation}
-                      </Link>
-                      <span>
-                        {row.quantiteVendue} u. · {formatFcfa(row.chiffreAffaires)}
-                        <InfoTooltip
-                          insight={insightMeilleureVente(
-                            row.quantiteVendue,
-                            row.chiffreAffaires,
-                          )}
-                        />
-                      </span>
-                    </li>
-                  ))}
+                <ol className="dash-rank">
+                  {(() => {
+                    const max = Math.max(
+                      ...classement.data.meilleuresVentes.map((r) => r.quantiteVendue),
+                      1,
+                    );
+                    return classement.data.meilleuresVentes.map((row, i) => (
+                      <li key={row.produit.id}>
+                        <div className="dash-rank-row">
+                          <span className="dash-rank-pos">{i + 1}</span>
+                          <Link className="dash-rank-name" to={`/produits/${row.produit.id}`}>
+                            {row.produit.designation}
+                          </Link>
+                          <span className="dash-taux">
+                            {row.quantiteVendue} u. · {formatFcfa(row.chiffreAffaires)}
+                          </span>
+                          <InfoTooltip
+                            insight={insightMeilleureVente(
+                              row.quantiteVendue,
+                              row.chiffreAffaires,
+                            )}
+                          />
+                        </div>
+                        <div className="dash-bar-track">
+                          <div
+                            className="dash-bar-fill"
+                            style={{ width: `${(row.quantiteVendue / max) * 100}%` }}
+                          />
+                        </div>
+                      </li>
+                    ));
+                  })()}
                 </ol>
               )}
             </section>
@@ -612,20 +655,33 @@ export function ProduitsPage() {
               {classement.data.dormants.length === 0 ? (
                 <p className="lead">Aucun actif en stock n’est resté sans vente.</p>
               ) : (
-                <ol className="produits-classement">
-                  {classement.data.dormants.map((row) => (
-                    <li key={row.produit.id}>
-                      <Link className="link-button" to={`/produits/${row.produit.id}`}>
-                        {row.produit.designation}
-                      </Link>
-                      <span>
-                        {row.stock} u. · {formatFcfa(row.valeurStock)}
-                        <InfoTooltip
-                          insight={insightDormant(row.stock, row.valeurStock)}
-                        />
-                      </span>
-                    </li>
-                  ))}
+                <ol className="dash-rank">
+                  {(() => {
+                    const max = Math.max(
+                      ...classement.data.dormants.map((r) => Number(r.valeurStock)),
+                      1,
+                    );
+                    return classement.data.dormants.map((row, i) => (
+                      <li key={row.produit.id}>
+                        <div className="dash-rank-row">
+                          <span className="dash-rank-pos">{i + 1}</span>
+                          <Link className="dash-rank-name" to={`/produits/${row.produit.id}`}>
+                            {row.produit.designation}
+                          </Link>
+                          <span className="dash-taux">
+                            {row.stock} u. · {formatFcfa(row.valeurStock)}
+                          </span>
+                          <InfoTooltip insight={insightDormant(row.stock, row.valeurStock)} />
+                        </div>
+                        <div className="dash-bar-track">
+                          <div
+                            className="dash-bar-fill"
+                            style={{ width: `${(Number(row.valeurStock) / max) * 100}%` }}
+                          />
+                        </div>
+                      </li>
+                    ));
+                  })()}
                 </ol>
               )}
             </section>
@@ -699,7 +755,10 @@ export function ProduitsPage() {
               )}
             </div>
 
-            <ListPanel title={`${produitsTries.length} produit(s) — cliquez une ligne pour ouvrir la fiche`}>
+            <ListPanel
+              title={`${produitsTries.length} produit(s) — cliquez une ligne pour ouvrir la fiche`}
+              id="produits-table"
+            >
               {produitsTries.length === 0 ? (
                 <EmptyState
                   title="Aucun produit"

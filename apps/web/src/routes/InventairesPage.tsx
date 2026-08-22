@@ -8,6 +8,10 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import { insightInventaireAvancement } from '../lib/insights/stocks';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -19,6 +23,15 @@ import type {
   SessionInventaireDto,
   StockSyntheseDto,
 } from '../lib/types';
+
+type ColonneSession =
+  | 'entrepot'
+  | 'statut'
+  | 'ouvert'
+  | 'initiateur'
+  | 'motif'
+  | 'avancement'
+  | 'ecarts';
 
 const MOTIFS_SUGGERES = [
   'Inventaire périodique',
@@ -299,6 +312,7 @@ export function InventairesPage() {
   const [motif, setMotif] = useState('');
   const [formErr, setFormErr] = useState<string | null>(null);
   const [filtreStatut, setFiltreStatut] = useState<'' | SessionInventaireDto['statut']>('');
+  const [sortSessions, setSortSessions] = useState<SortState<ColonneSession> | null>(null);
 
   const entrepots = useQuery({
     queryKey: ['entrepots'],
@@ -371,14 +385,60 @@ export function InventairesPage() {
   });
 
   const sessionsFiltrees = useMemo(() => {
-    return (sessions.data ?? []).filter((s) => {
-      if (filtreStatut && s.statut !== filtreStatut) return false;
-      if (magasin.boutiqueId && s.entrepot.boutiqueId !== magasin.boutiqueId) {
-        return false;
+    const base = (sessions.data ?? [])
+      .filter((s) => {
+        if (filtreStatut && s.statut !== filtreStatut) return false;
+        if (magasin.boutiqueId && s.entrepot.boutiqueId !== magasin.boutiqueId) {
+          return false;
+        }
+        return true;
+      })
+      .map((s) => {
+        const total = s.lignes.length;
+        const comptees = s.lignes.filter((l) => l.quantiteComptee !== null).length;
+        const ecarts = s.lignes.filter(
+          (l) => l.quantiteComptee !== null && l.quantiteComptee !== l.quantiteTheorique,
+        ).length;
+        return { ...s, total, comptees, ecarts };
+      });
+    return sortRows(base, sortSessions, (s, key) => {
+      switch (key) {
+        case 'entrepot':
+          return s.entrepot.code;
+        case 'statut':
+          return STATUT_LABEL[s.statut];
+        case 'ouvert':
+          return s.dateOuverture;
+        case 'initiateur':
+          return `${s.initiateur.prenom} ${s.initiateur.nom}`;
+        case 'motif':
+          return s.motif ?? '';
+        case 'avancement':
+          return s.total > 0 ? s.comptees / s.total : 0;
+        case 'ecarts':
+          return s.ecarts;
+        default:
+          return null;
       }
-      return true;
     });
-  }, [sessions.data, filtreStatut, magasin.boutiqueId]);
+  }, [sessions.data, filtreStatut, magasin.boutiqueId, sortSessions]);
+
+  const kpisSessions = useMemo(() => {
+    const all = sessions.data ?? [];
+    const enCours = all.filter((s) => s.statut === 'EN_COURS').length;
+    const valides = all.filter((s) => s.statut === 'VALIDE').length;
+    const ecartsOuverts = all
+      .filter((s) => s.statut === 'EN_COURS')
+      .reduce(
+        (n, s) =>
+          n +
+          s.lignes.filter(
+            (l) => l.quantiteComptee !== null && l.quantiteComptee !== l.quantiteTheorique,
+          ).length,
+        0,
+      );
+    return { total: all.length, enCours, valides, ecartsOuverts };
+  }, [sessions.data]);
 
   if (!peutLire) {
     return <p>Vous n’avez pas accès aux inventaires.</p>;
@@ -416,6 +476,46 @@ export function InventairesPage() {
           ) : undefined
         }
       />
+
+      <div className="kpi-grid dash-kpi-grid">
+        <article className="kpi-card dash-kpi">
+          <div className="kpi-label">Sessions</div>
+          <div className="kpi-value">{kpisSessions.total}</div>
+          <div className="kpi-hint">toutes périodes</div>
+        </article>
+        <article
+          className={
+            kpisSessions.enCours > 0 ? 'kpi-card dash-kpi kpi-warning' : 'kpi-card dash-kpi'
+          }
+        >
+          <div className="kpi-label">En cours</div>
+          <div className="kpi-value">{kpisSessions.enCours}</div>
+          <div className="kpi-hint">comptage non validé</div>
+        </article>
+        <article className="kpi-card dash-kpi">
+          <div className="kpi-label">Validées</div>
+          <div className="kpi-value">{kpisSessions.valides}</div>
+          <div className="kpi-hint">écritures d’ajustement posées</div>
+        </article>
+        <article
+          className={
+            kpisSessions.ecartsOuverts > 0 ? 'kpi-card dash-kpi kpi-warning' : 'kpi-card dash-kpi'
+          }
+        >
+          <div className="kpi-label">Écarts en cours</div>
+          <div className="kpi-value">{kpisSessions.ecartsOuverts}</div>
+          <div className="kpi-hint">lignes comptées ≠ théorique, non validées</div>
+        </article>
+        <article
+          className={
+            aInventorier.length > 0 ? 'kpi-card dash-kpi kpi-danger' : 'kpi-card dash-kpi'
+          }
+        >
+          <div className="kpi-label">À inventorier</div>
+          <div className="kpi-value">{aInventorier.length}</div>
+          <div className="kpi-hint">échéance dépassée</div>
+        </article>
+      </div>
 
       {aInventorier.length > 0 && (
         <section className="dash-priorites" aria-label="Entrepôts à inventorier">
@@ -497,74 +597,111 @@ export function InventairesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Entrepôt</th>
-                  <th>Statut</th>
-                  <th>Ouvert</th>
-                  <th>Initiateur</th>
-                  <th>Motif</th>
-                  <th>Avancement</th>
-                  <th>Écarts</th>
+                  <SortHeader
+                    active={sortSessions?.key === 'entrepot'}
+                    dir={sortSessions?.key === 'entrepot' ? sortSessions.dir : 'asc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'entrepot'))}
+                  >
+                    Entrepôt
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'statut'}
+                    dir={sortSessions?.key === 'statut' ? sortSessions.dir : 'asc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'statut'))}
+                  >
+                    Statut
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'ouvert'}
+                    dir={sortSessions?.key === 'ouvert' ? sortSessions.dir : 'desc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'ouvert'))}
+                  >
+                    Ouvert
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'initiateur'}
+                    dir={sortSessions?.key === 'initiateur' ? sortSessions.dir : 'asc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'initiateur'))}
+                  >
+                    Initiateur
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'motif'}
+                    dir={sortSessions?.key === 'motif' ? sortSessions.dir : 'asc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'motif'))}
+                  >
+                    Motif
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'avancement'}
+                    dir={sortSessions?.key === 'avancement' ? sortSessions.dir : 'asc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'avancement'))}
+                  >
+                    Avancement
+                  </SortHeader>
+                  <SortHeader
+                    active={sortSessions?.key === 'ecarts'}
+                    dir={sortSessions?.key === 'ecarts' ? sortSessions.dir : 'desc'}
+                    onClick={() => setSortSessions((s) => toggleSort(s, 'ecarts'))}
+                  >
+                    Écarts
+                  </SortHeader>
+                  <th aria-label="Info" />
                 </tr>
               </thead>
               <tbody>
-                {sessionsFiltrees.map((s) => {
-                  const total = s.lignes.length;
-                  const comptees = s.lignes.filter(
-                    (l) => l.quantiteComptee !== null,
-                  ).length;
-                  const ecarts = s.lignes.filter(
-                    (l) =>
-                      l.quantiteComptee !== null &&
-                      l.quantiteComptee !== l.quantiteTheorique,
-                  ).length;
-                  return (
-                    <tr
-                      key={s.id}
-                      className="produit-row"
-                      tabIndex={0}
-                      role="link"
-                      aria-label={`Ouvrir l’inventaire ${s.entrepot.code}`}
-                      onClick={() => navigate(`/inventaires/${s.id}`)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          navigate(`/inventaires/${s.id}`);
+                {sessionsFiltrees.map((s) => (
+                  <tr
+                    key={s.id}
+                    className="produit-row"
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Ouvrir l’inventaire ${s.entrepot.code}`}
+                    onClick={() => navigate(`/inventaires/${s.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(`/inventaires/${s.id}`);
+                      }
+                    }}
+                  >
+                    <td>
+                      <strong>
+                        {s.entrepot.code} — {s.entrepot.boutique.nom}
+                      </strong>
+                      <div className="kpi-hint" style={{ margin: 0 }}>
+                        {s.entrepot.nom}
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          s.statut === 'VALIDE'
+                            ? 'badge badge-ok'
+                            : s.statut === 'ANNULE'
+                              ? 'badge badge-neutral'
+                              : 'badge badge-warning'
                         }
-                      }}
-                    >
-                      <td>
-                        <strong>
-                          {s.entrepot.code} — {s.entrepot.boutique.nom}
-                        </strong>
-                        <div className="kpi-hint" style={{ margin: 0 }}>
-                          {s.entrepot.nom}
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className={
-                            s.statut === 'VALIDE'
-                              ? 'badge badge-ok'
-                              : s.statut === 'ANNULE'
-                                ? 'badge badge-neutral'
-                                : 'badge badge-warning'
-                          }
-                        >
-                          {STATUT_LABEL[s.statut]}
-                        </span>
-                      </td>
-                      <td>{new Date(s.dateOuverture).toLocaleString('fr-FR')}</td>
-                      <td>
-                        {s.initiateur.prenom} {s.initiateur.nom}
-                      </td>
-                      <td>{s.motif ?? '—'}</td>
-                      <td>
-                        {comptees}/{total}
-                      </td>
-                      <td>{ecarts}</td>
-                    </tr>
-                  );
-                })}
+                      >
+                        {STATUT_LABEL[s.statut]}
+                      </span>
+                    </td>
+                    <td>{new Date(s.dateOuverture).toLocaleString('fr-FR')}</td>
+                    <td>
+                      {s.initiateur.prenom} {s.initiateur.nom}
+                    </td>
+                    <td>{s.motif ?? '—'}</td>
+                    <td>
+                      {s.comptees}/{s.total}
+                    </td>
+                    <td>{s.ecarts}</td>
+                    <td>
+                      <InfoTooltip
+                        insight={insightInventaireAvancement(s.comptees, s.total, s.ecarts)}
+                      />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

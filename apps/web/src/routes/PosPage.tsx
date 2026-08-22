@@ -36,7 +36,6 @@ import {
   partEspeces,
 } from '../lib/paiement-vente';
 import {
-  apiDownload,
   apiFetch,
   codeDepuisApi,
   estErreurReseau,
@@ -138,19 +137,39 @@ function formatMontant(valeur: number): string {
   return Math.round(valeur).toLocaleString('fr-FR');
 }
 
+/** FCFA : arrondi à l’unité (aligné mobile / caisse). */
+function arrondiFcfa(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n);
+}
+
 function totalBrut(panier: LignePanier[]): number {
-  return panier.reduce((t, l) => t + Number(l.prixUnitaire) * l.quantite, 0);
+  return panier.reduce(
+    (t, l) => t + arrondiFcfa(Number(l.prixUnitaire) * l.quantite),
+    0,
+  );
 }
 
 function totalNet(panier: LignePanier[]): number {
   return panier.reduce(
-    (t, l) => t + Number(l.prixUnitaire) * l.quantite - l.remise,
+    (t, l) =>
+      t +
+      Math.max(
+        0,
+        arrondiFcfa(Number(l.prixUnitaire) * l.quantite) - arrondiFcfa(l.remise),
+      ),
     0,
   );
 }
 
 function plafondRemise(brut: number): number {
-  return Number((brut * REMISE_MAX_RATIO).toFixed(2));
+  return arrondiFcfa(brut * REMISE_MAX_RATIO);
+}
+
+function montantRemiseDepuisPourcent(brut: number, pourcent: number): number {
+  if (brut <= 0 || pourcent <= 0) return 0;
+  const pct = Math.min(pourcent, REMISE_MAX_RATIO * 100);
+  return arrondiFcfa((brut * pct) / 100);
 }
 
 function distribuerRemise(panier: LignePanier[], remiseTotale: number): LignePanier[] {
@@ -158,13 +177,14 @@ function distribuerRemise(panier: LignePanier[], remiseTotale: number): LignePan
   if (remiseTotale <= 0 || brut <= 0) {
     return panier.map((l) => ({ ...l, remise: 0 }));
   }
+  const plafond = Math.min(arrondiFcfa(remiseTotale), brut);
   let cumul = 0;
   return panier.map((l, index) => {
     if (index === panier.length - 1) {
-      return { ...l, remise: Number((remiseTotale - cumul).toFixed(2)) };
+      return { ...l, remise: Math.max(0, plafond - cumul) };
     }
-    const ligne = Number(l.prixUnitaire) * l.quantite;
-    const part = Number(((ligne / brut) * remiseTotale).toFixed(2));
+    const ligne = arrondiFcfa(Number(l.prixUnitaire) * l.quantite);
+    const part = arrondiFcfa((ligne / brut) * plafond);
     cumul += part;
     return { ...l, remise: part };
   });
@@ -791,6 +811,8 @@ function TicketVente({
   boutiqueNom,
   societe,
   caissier,
+  montantRecu,
+  monnaie,
   onSuite,
 }: {
   vente: VenteDto;
@@ -798,6 +820,8 @@ function TicketVente({
   boutiqueNom?: string;
   societe?: SocieteDto | null;
   caissier: string;
+  montantRecu?: number;
+  monnaie?: number;
   onSuite: () => void;
 }) {
   useEffect(() => {
@@ -885,6 +909,20 @@ function TicketVente({
         <p className="pos-receipt-total money">
           {formatMontant(Number(vente.montantTotal))} FCFA
         </p>
+        {montantRecu != null && montantRecu > 0 && (
+          <div className="pos-receipt-cash">
+            <p>
+              <span>Reçu (espèces)</span>
+              <span className="money">{formatMontant(montantRecu)} FCFA</span>
+            </p>
+            {monnaie != null && monnaie >= 0 && (
+              <p>
+                <span>Monnaie</span>
+                <span className="money">{formatMontant(monnaie)} FCFA</span>
+              </p>
+            )}
+          </div>
+        )}
         <p className="pos-receipt-thanks">Merci de votre visite</p>
         {venteEnAttenteSync(vente.id) && (
           <p className="pos-warn no-print" role="status">
@@ -1552,15 +1590,20 @@ function PaiementScreen({
   onClientChange: (id: string) => void;
   onAnnuler: () => void;
   onMettreEnAttente: () => void;
-  onVente: (vente: VenteDto, client: ClientDto | null) => void;
+  onVente: (
+    vente: VenteDto,
+    client: ClientDto | null,
+    encaissement?: { montantRecu: number; monnaie: number },
+  ) => void;
 }) {
   const queryClient = useQueryClient();
   const { data: temoins } = useTemoinsEligibles(true);
   const chefs = (temoins ?? []).filter((t) => t.role === 'RESPONSABLE_BOUTIQUE');
+  const totalInitial = totalNet(panier);
   const [parts, setParts] = useState<{ mode: ModePaiement; montant: string }[]>([
-    { mode: ModePaiement.ESPECES, montant: String(Math.round(totalNet(panier))) },
+    { mode: ModePaiement.ESPECES, montant: String(arrondiFcfa(totalInitial)) },
   ]);
-  const [recu, setRecu] = useState('');
+  const [recu, setRecu] = useState(() => String(arrondiFcfa(totalInitial)));
   const [error, setError] = useState<string | null>(null);
   const [derogation, setDerogation] = useState<{
     motifs: Array<'REMISE_PLAFOND' | 'STOCK_INSUFFISANT'>;
@@ -1578,8 +1621,9 @@ function PaiementScreen({
     montant: Number(p.montant) || 0,
   }));
   const sommeParts = partsNum.reduce((s, p) => s + p.montant, 0);
-  const reste = Math.round((total - sommeParts) * 100) / 100;
+  const reste = arrondiFcfa(total - sommeParts);
   const mixteOk = Math.abs(reste) < 0.5 && partsNum.every((p) => p.montant > 0);
+  const surAllocation = parts.length > 1 && reste < -0.5;
   const cashPart =
     partsNum.find((p) => p.mode === ModePaiement.ESPECES)?.montant ?? 0;
   const aEspeces = cashPart > 0;
@@ -1588,6 +1632,28 @@ function PaiementScreen({
     ? ModePaiement.ESPECES
     : (parts[0]?.mode ?? ModePaiement.ESPECES);
   const client = clients.find((c) => c.id === clientId) ?? null;
+
+  const modesKey = parts.map((p) => p.mode).join('|');
+
+  /** Modes changent → Exact sur part espèces (aligné mobile). */
+  useEffect(() => {
+    if (cashPart > 0) {
+      setRecu(String(arrondiFcfa(cashPart)));
+    } else {
+      setRecu('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- montants libres après changement de modes
+  }, [modesKey]);
+
+  /** Part espèces augmente au-dessus du reçu → remonter à Exact. */
+  useEffect(() => {
+    if (!aEspeces) return;
+    setRecu((prev) => {
+      const n = Number(prev) || 0;
+      if (n < cashPart) return String(arrondiFcfa(cashPart));
+      return prev;
+    });
+  }, [aEspeces, cashPart]);
 
   function construirePayload(clientOperationId: string) {
     const paiements = partsNum
@@ -1664,7 +1730,11 @@ function PaiementScreen({
       }
     },
     onSuccess: (vente) => {
-      onVente(vente, client);
+      const encaissement =
+        aEspeces && especeOk
+          ? { montantRecu: recuNum, monnaie: Math.max(0, rendu) }
+          : undefined;
+      onVente(vente, client, encaissement);
       void queryClient.invalidateQueries({ queryKey: ['produits'] });
       void queryClient.invalidateQueries({ queryKey: ['stocks'] });
       void queryClient.invalidateQueries({ queryKey: ['ventes-session'] });
@@ -1684,7 +1754,7 @@ function PaiementScreen({
       if (parts.length === 1) return;
       const next = parts.filter((p) => p.mode !== m);
       if (next.length === 1) {
-        setParts([{ mode: next[0]!.mode, montant: String(Math.round(total)) }]);
+        setParts([{ mode: next[0]!.mode, montant: String(arrondiFcfa(total)) }]);
         return;
       }
       setParts(next);
@@ -1697,7 +1767,7 @@ function PaiementScreen({
       ]);
       return;
     }
-    setParts([...parts, { mode: m, montant: reste > 0 ? String(Math.round(reste)) : '' }]);
+    setParts([...parts, { mode: m, montant: reste > 0 ? String(arrondiFcfa(reste)) : '' }]);
   }
 
   useEffect(() => {
@@ -1755,12 +1825,27 @@ function PaiementScreen({
         </div>
         <h1>Paiement</h1>
         <p className="pos-payment-amount money">{formatMontant(total)} FCFA</p>
-        <p className="pos-mixte-reste">
+        <p
+          className={
+            mixteOk
+              ? 'pos-mixte-reste is-ok'
+              : surAllocation
+                ? 'pos-mixte-reste is-over'
+                : 'pos-mixte-reste'
+          }
+        >
           {mixteOk
             ? 'Répartition complète'
             : `Reste à répartir : ${formatMontant(reste)} FCFA`}
           <InfoTooltip insight={insightPaiementMixte(reste, parts.length)} />
         </p>
+        {surAllocation && (
+          <p className="pos-warn" role="status">
+            La somme des parts dépasse le ticket. Ces montants répartissent le ticket
+            entre les modes — le billet remis par le client se saisit plus bas dans «
+            Billet remis ».
+          </p>
+        )}
         <div className="pos-payment-methods">
           {Object.values(ModePaiement).map((m) => {
             const meta = MODE_META[m];
@@ -1781,69 +1866,90 @@ function PaiementScreen({
           })}
         </div>
         {parts.length > 1 && (
-          <ul className="pos-mixte-parts">
-            {parts.map((p) => (
-              <li key={p.mode}>
-                <label htmlFor={`part-${p.mode}`}>{MODE_META[p.mode].label}</label>
-                <input
-                  id={`part-${p.mode}`}
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputMode="numeric"
-                  value={p.montant}
-                  onChange={(e) =>
-                    setParts((prev) =>
-                      prev.map((x) =>
-                        x.mode === p.mode ? { ...x, montant: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const autres = partsNum
-                      .filter((x) => x.mode !== p.mode)
-                      .reduce((s, x) => s + x.montant, 0);
-                    setParts((prev) =>
-                      prev.map((x) =>
-                        x.mode === p.mode
-                          ? { ...x, montant: String(Math.max(0, Math.round(total - autres))) }
-                          : x,
-                      ),
-                    );
-                  }}
-                >
-                  Reste
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="pos-mixte-section">
+            <h2 className="pos-mixte-title">Répartition du ticket</h2>
+            <p className="pos-mixte-hint">
+              Chaque part est une portion du total à encaisser par mode (somme ={' '}
+              {formatMontant(total)} FCFA).
+            </p>
+            <ul className="pos-mixte-parts">
+              {parts.map((p) => (
+                <li key={p.mode}>
+                  <label htmlFor={`part-${p.mode}`}>
+                    Part ticket ({MODE_META[p.mode].label})
+                  </label>
+                  <input
+                    id={`part-${p.mode}`}
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={p.montant}
+                    onChange={(e) =>
+                      setParts((prev) =>
+                        prev.map((x) =>
+                          x.mode === p.mode ? { ...x, montant: e.target.value } : x,
+                        ),
+                      )
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const autres = partsNum
+                        .filter((x) => x.mode !== p.mode)
+                        .reduce((s, x) => s + x.montant, 0);
+                      setParts((prev) =>
+                        prev.map((x) =>
+                          x.mode === p.mode
+                            ? {
+                                ...x,
+                                montant: String(
+                                  Math.max(0, arrondiFcfa(total - autres)),
+                                ),
+                              }
+                            : x,
+                        ),
+                      );
+                    }}
+                  >
+                    Reste
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {aEspeces && (
-          <div className="pos-cash">
-            <div className="pos-cash-head">
-              <div>
-                <span>Reçu (espèces {formatMontant(cashPart)})</span>
-                <strong className="money">{formatMontant(recuNum)} FCFA</strong>
+          <div className="pos-cash-section">
+            <h2 className="pos-cash-title">Billet remis par le client</h2>
+            <p className="pos-mixte-hint">
+              Montant remis en espèces par le client (part ticket espèces :{' '}
+              {formatMontant(cashPart)} FCFA). Indépendant de la répartition mixte
+              ci-dessus.
+            </p>
+            <div className="pos-cash">
+              <div className="pos-cash-head">
+                <div>
+                  <span>Reçu du client</span>
+                  <strong className="money">{formatMontant(recuNum)} FCFA</strong>
+                </div>
+                <div>
+                  <span>
+                    Monnaie à rendre
+                    <InfoTooltip insight={insightMonnaiePos(recuNum, cashPart)} />
+                  </span>
+                  <strong className={rendu < 0 ? 'money pos-neg' : 'money'}>
+                    {rendu < 0 ? '—' : `${formatMontant(rendu)} FCFA`}
+                  </strong>
+                </div>
               </div>
-              <div>
-                <span>
-                  Monnaie
-                  <InfoTooltip insight={insightMonnaiePos(recuNum, cashPart)} />
-                </span>
-                <strong className={rendu < 0 ? 'money pos-neg' : 'money'}>
-                  {rendu < 0 ? '—' : `${formatMontant(rendu)} FCFA`}
-                </strong>
-              </div>
-            </div>
             <div className="pos-cash-rapide">
               <button
                 type="button"
                 data-testid="pos-cash-exact"
-                onClick={() => setRecu(String(Math.round(cashPart)))}
+                onClick={() => setRecu(String(arrondiFcfa(cashPart)))}
               >
                 Exact
               </button>
@@ -1858,6 +1964,7 @@ function PaiementScreen({
               ))}
             </div>
             <NumpadEspeces recu={recu} onChange={setRecu} />
+            </div>
           </div>
         )}
 
@@ -1978,7 +2085,9 @@ function PaiementScreen({
             ? 'Validation…'
             : derogation
               ? `Valider avec dérogation · ${formatMontant(total)}`
-              : `Valider · ${formatMontant(total)}`}
+              : aEspeces && rendu >= 0
+                ? `Valider · ${formatMontant(total)} · monnaie ${formatMontant(rendu)}`
+                : `Valider · ${formatMontant(total)}`}
         </button>
       </aside>
     </div>
@@ -2020,6 +2129,10 @@ function PosCaisse({
   const [filtre, setFiltre] = useState<FiltreCatalogue>('TOUS');
   const [etape, setEtape] = useState<'caisse' | 'paiement'>('caisse');
   const [ticket, setTicket] = useState<VenteDto | null>(null);
+  const [ticketEncaissement, setTicketEncaissement] = useState<{
+    montantRecu: number;
+    monnaie: number;
+  } | null>(null);
   const [ticketClient, setTicketClient] = useState<ClientDto | null>(null);
   const [cloture, setCloture] = useState(false);
   const [etatOpen, setEtatOpen] = useState(false);
@@ -2131,7 +2244,7 @@ function PosCaisse({
     return [...set].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [produits]);
 
-  const filtres = useMemo(() => {
+  const produitsCorrespondants = useMemo(() => {
     const q = recherche.trim().toLowerCase();
     return produits.filter((p) => {
       if (filtre === 'RUPTURE' && p.stock > 0) return false;
@@ -2146,10 +2259,17 @@ function PosCaisse({
     });
   }, [produits, recherche, filtre]);
 
+  /** Grille visible seulement après recherche, scan ou filtre catégorie (pas « Tous »). */
+  const catalogueOuvert =
+    recherche.trim().length > 0 || filtre !== 'TOUS';
+  const produitsAffiches = catalogueOuvert ? produitsCorrespondants : [];
+
   const brut = totalBrut(panier);
-  const remise = Number(remisePanier) || 0;
+  const remisePct = Number(remisePanier) || 0;
+  const plafondPct = REMISE_MAX_RATIO * 100;
+  const remise = montantRemiseDepuisPourcent(brut, remisePct);
   const plafond = plafondRemise(brut);
-  const remiseDepasse = remise > plafond + 1e-9;
+  const remiseDepasse = remisePct > plafondPct + 1e-9;
   const net = Math.max(0, brut - remise);
   const caSession = ventes.reduce((s, v) => s + Number(v.montantTotal), 0);
   const dureeMinutes = Math.max(
@@ -2322,7 +2442,12 @@ function PosCaisse({
 
   function allerPaiement() {
     if (panier.length === 0) return;
-    setPanier((prev) => distribuerRemise(prev, Number(remisePanier) || 0));
+    setPanier((prev) =>
+      distribuerRemise(
+        prev,
+        montantRemiseDepuisPourcent(totalBrut(prev), Number(remisePanier) || 0),
+      ),
+    );
     setEtape('paiement');
   }
 
@@ -2350,7 +2475,7 @@ function PosCaisse({
       ajouter(exact, qte);
       return;
     }
-    const visibles = filtres.filter(
+    const visibles = produitsCorrespondants.filter(
       (p) => stockDisponible(p.id, p.stock) > 0 && p.actif,
     );
     if (visibles.length === 1) {
@@ -2414,7 +2539,15 @@ function PosCaisse({
       if ((e.key === 'Enter' && e.ctrlKey) || e.key === 'F4') {
         e.preventDefault();
         if (panier.length === 0) return;
-        setPanier((prev) => distribuerRemise(prev, Number(remisePanier) || 0));
+        setPanier((prev) =>
+          distribuerRemise(
+            prev,
+            montantRemiseDepuisPourcent(
+              totalBrut(prev),
+              Number(remisePanier) || 0,
+            ),
+          ),
+        );
         setEtape('paiement');
       }
     }
@@ -2461,9 +2594,12 @@ function PosCaisse({
         boutiqueNom={boutiqueNom}
         societe={societeQ.data}
         caissier={userLogin}
+        montantRecu={ticketEncaissement?.montantRecu}
+        monnaie={ticketEncaissement?.monnaie}
         onSuite={() => {
           setTicket(null);
           setTicketClient(null);
+          setTicketEncaissement(null);
         }}
       />
     );
@@ -2578,7 +2714,7 @@ function PosCaisse({
           onClientChange={setClientId}
           onAnnuler={() => setEtape('caisse')}
           onMettreEnAttente={ouvrirPark}
-          onVente={(vente, client) => {
+          onVente={(vente, client, encaissement) => {
             setPanier([]);
             setRemisePanier('');
             setClientId('');
@@ -2587,6 +2723,7 @@ function PosCaisse({
             setEtape('caisse');
             setTicketClient(client);
             setTicket(vente);
+            setTicketEncaissement(encaissement ?? null);
             setPending(outboxVentesCount(session.id));
           }}
         />
@@ -2667,7 +2804,7 @@ function PosCaisse({
           <button
             type="button"
             data-testid="pos-etat-x-btn"
-            title="Ventes du jour — État X, sans clôturer"
+            title="Relevé de contrôle : ventes du jour, sans fermer la caisse"
             onClick={() => setEtatOpen(true)}
           >
             <FileText size={15} />
@@ -2725,7 +2862,8 @@ function PosCaisse({
               <input
                 ref={searchRef}
                 type="search"
-                placeholder="Scanner, SKU, 3xCODE…"
+                data-testid="pos-search-input"
+                placeholder="Scanner, référence, désignation, 3×SKU…"
                 value={recherche}
                 onChange={(e) => setRecherche(e.target.value)}
                 onKeyDown={onSearchKey}
@@ -2774,7 +2912,20 @@ function PosCaisse({
             </button>
           </div>
           <div className="pos-product-grid">
-            {filtres.map((p) => {
+            {!catalogueOuvert ? (
+              <div className="pos-catalog-idle">
+                <p className="pos-catalog-idle-title">Rechercher un article</p>
+                <p className="pos-catalog-idle-hint">
+                  Scannez un code-barres ou saisissez une référence / une désignation —
+                  seuls les articles correspondants s&apos;affichent ici.
+                </p>
+                <p className="pos-catalog-idle-hint">
+                  Vous pouvez aussi choisir une catégorie ou « Rupture » ci-dessus.
+                </p>
+              </div>
+            ) : (
+              <>
+                {produitsAffiches.map((p) => {
               const qte = panier.find((l) => l.produitId === p.id)?.quantite ?? 0;
               const restant = stockDisponible(p.id, p.stock) - qte;
               const epuise = restant <= 0;
@@ -2797,14 +2948,20 @@ function PosCaisse({
                     {p.imageUrl ? (
                       <img className="pos-tile-img" src={p.imageUrl} alt="" />
                     ) : null}
-                    {p.categorie && <span className="pos-tile-cat">{p.categorie}</span>}
-                    <span className="pos-tile-name">{p.designation}</span>
-                    {p.reference && <span className="pos-tile-sku">{p.reference}</span>}
-                    <span className="pos-tile-price money">
-                      {formatMontant(Number(p.prixUnitaire))}
-                    </span>
-                    <span className="pos-tile-stock">
-                      {epuise ? 'Rupture' : `Stock ${restant}`}
+                    <span className="pos-tile-body">
+                      {p.categorie ? (
+                        <span className="pos-tile-cat">{p.categorie}</span>
+                      ) : null}
+                      <span className="pos-tile-name">{p.designation}</span>
+                      {p.reference ? (
+                        <span className="pos-tile-sku">{p.reference}</span>
+                      ) : null}
+                      <span className="pos-tile-price money">
+                        {formatMontant(Number(p.prixUnitaire))}
+                      </span>
+                      <span className="pos-tile-stock">
+                        {epuise ? 'Rupture' : `Stock ${restant}`}
+                      </span>
                     </span>
                     {qte > 0 && <span className="pos-tile-badge">{qte}</span>}
                   </button>
@@ -2816,8 +2973,10 @@ function PosCaisse({
                 </div>
               );
             })}
-            {filtres.length === 0 && (
-              <p className="pos-empty">Aucun produit pour ce filtre.</p>
+                {produitsAffiches.length === 0 && (
+                  <p className="pos-empty">Aucun article pour cette recherche ou ce filtre.</p>
+                )}
+              </>
             )}
           </div>
         </section>
@@ -2926,23 +3085,52 @@ function PosCaisse({
 
           <div className="pos-ticket-footer">
             <label htmlFor="remisePanier">
-              Remise (plafond {formatMontant(plafond)} FCFA)
+              Remise en pourcentage (max {plafondPct} %)
               <InfoTooltip insight={insightRemisePos(remise, brut)} />
             </label>
-            <input
-              id="remisePanier"
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              value={remisePanier}
-              onChange={(e) => setRemisePanier(e.target.value)}
-              disabled={panier.length === 0}
-            />
+            <div className="pos-remise-pct">
+              <input
+                id="remisePanier"
+                type="number"
+                min="0"
+                max={plafondPct}
+                step="0.5"
+                inputMode="decimal"
+                value={remisePanier}
+                onChange={(e) => setRemisePanier(e.target.value)}
+                disabled={panier.length === 0}
+                placeholder="0"
+                aria-label="Remise en pourcentage"
+              />
+              <span className="pos-remise-suffix" aria-hidden>
+                %
+              </span>
+            </div>
+            <div className="pos-remise-chips" role="group" aria-label="Remises rapides">
+              {[0, 5, 10, 15, 20].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={
+                    remisePct === p ? 'pos-chip is-active' : 'pos-chip'
+                  }
+                  disabled={panier.length === 0}
+                  onClick={() => setRemisePanier(String(p))}
+                >
+                  {p} %
+                </button>
+              ))}
+            </div>
+            {remise > 0 && !remiseDepasse && (
+              <p className="pos-muted" role="status">
+                {remisePct} % = −{formatMontant(remise)} FCFA (plafond{' '}
+                {formatMontant(plafond)} FCFA)
+              </p>
+            )}
             {remiseDepasse && (
               <p className="pos-warn" role="status">
-                Remise au-dessus du plafond 20 % — dérogation responsable requise
-                au paiement.
+                Remise au-dessus du plafond {plafondPct} % — dérogation
+                responsable requise au paiement.
               </p>
             )}
             <div className="pos-order-totals">

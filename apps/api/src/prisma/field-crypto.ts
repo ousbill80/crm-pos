@@ -1,18 +1,19 @@
-// Chiffrement applicatif des données client sensibles (§6.7 « chiffrement
-// des données sensibles ») — AES-256-GCM, clé issue de
-// CLIENT_DATA_ENCRYPTION_KEY (32 octets, hex). Utilisé par
-// client-crypto-guard.ts pour chiffrer/déchiffrer Client.contact et
-// Client.adresse de façon transparente au niveau du delegate Prisma.
+// Utilitaires crypto legacy — déchiffrement one-shot des fiches client
+// encore stockées en AES-GCM. Décision produit §6.7 : pas de chiffrement
+// des fiches client au repos (mots de passe = bcrypt uniquement).
+// Ne plus chiffrer à l’écriture.
 
 import {
-  randomBytes,
-  createCipheriv,
   createDecipheriv,
+  createCipheriv,
   createHmac,
+  randomBytes,
 } from 'crypto';
 
 const ALGORITHME = 'aes-256-gcm';
 const TAILLE_IV = 12;
+export const FORMAT_CHIFFRE =
+  /^[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/;
 
 function cle(): Buffer {
   const hex = process.env.CLIENT_DATA_ENCRYPTION_KEY;
@@ -24,8 +25,16 @@ function cle(): Buffer {
   return Buffer.from(hex, 'hex');
 }
 
-// Format de stockage : "iv:authTag:ciphertext" (chaque segment en base64),
-// pour tenir dans la colonne String existante sans migration de type.
+export function cleChiffrementConfiguree(): boolean {
+  const hex = process.env.CLIENT_DATA_ENCRYPTION_KEY;
+  return Boolean(hex && hex.length === 64);
+}
+
+export function estFormatChiffre(valeur: string): boolean {
+  return FORMAT_CHIFFRE.test(valeur);
+}
+
+/** @deprecated Ne plus utiliser pour de nouvelles écritures. */
 export function chiffrer(valeur: string): string {
   const iv = randomBytes(TAILLE_IV);
   const chiffreur = createCipheriv(ALGORITHME, cle(), iv);
@@ -41,14 +50,8 @@ export function chiffrer(valeur: string): string {
   ].join(':');
 }
 
-const FORMAT_CHIFFRE = /^[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/;
-
-// Tolère les valeurs déjà présentes en clair avant l'activation du
-// chiffrement (ex. données de dev saisies manuellement) : elles sont
-// renvoyées telles quelles plutôt que de faire échouer la lecture, et seront
-// rechiffrées à la prochaine écriture de la fiche.
 export function dechiffrer(valeur: string): string {
-  if (!FORMAT_CHIFFRE.test(valeur)) {
+  if (!estFormatChiffre(valeur)) {
     return valeur;
   }
   const [ivB64, authTagB64, ciphertextB64] = valeur.split(':');
@@ -90,7 +93,9 @@ export function normaliserContact(valeur: string): string {
   return digits.length >= 8 ? digits : valeur.trim().toLowerCase();
 }
 
-/** Index de recherche (POS) : HMAC du contact, jamais le clair. */
+/** @deprecated Index HMAC — remplacé par recherche plain-text contains. */
 export function hasherContact(valeur: string): string {
-  return createHmac('sha256', cle()).update(normaliserContact(valeur)).digest('hex');
+  return createHmac('sha256', cle())
+    .update(normaliserContact(valeur))
+    .digest('hex');
 }

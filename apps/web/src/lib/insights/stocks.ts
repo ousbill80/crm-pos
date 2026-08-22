@@ -139,3 +139,199 @@ export function insightSuggestionTransfert(
     severity: destStatut === 'RUPTURE' ? 'critical' : 'warning',
   };
 }
+
+export function insightBonStatut(
+  statut: 'BROUILLON' | 'PRET' | 'FAIT' | 'ANNULE',
+  type: string,
+): Insight {
+  if (statut === 'BROUILLON') {
+    return {
+      title: 'Bon en brouillon',
+      interpretation: `Ce bon de ${type.toLowerCase()} est en préparation : le stock vendable n'a subi aucune écriture.`,
+      recommendation: 'Passer « En prêt » une fois les quantités vérifiées, avant la validation finale.',
+      severity: 'neutral',
+    };
+  }
+  if (statut === 'PRET') {
+    return {
+      title: 'Bon prêt',
+      interpretation: 'Le bon est prêt à être validé. La validation (Fait) posera les écritures de stock — action non journalière, séparée de la préparation.',
+      recommendation: 'Faire valider par un habilité distinct du préparateur si possible (contrôle croisé).',
+      severity: 'warning',
+    };
+  }
+  if (statut === 'FAIT') {
+    return {
+      title: 'Bon validé',
+      interpretation: 'Les écritures de stock ont été posées (mouvements TRANSFERT/RÉCEPTION/REBUT selon le type). Ce bon est clos et non modifiable.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Bon annulé',
+    interpretation: 'Ce bon a été annulé avant validation : aucune écriture de stock n\'a été posée.',
+    severity: 'neutral',
+  };
+}
+
+export function insightEmplacementUsage(
+  usage: string,
+  virtuel: boolean,
+  reseau: boolean,
+): Insight {
+  if (virtuel) {
+    return {
+      title: 'Emplacement virtuel',
+      interpretation: `Emplacement virtuel de type « ${usage.toLowerCase()} » — sert à tracer une consignation (fournisseur/client), n'entre pas dans le stock vendable.`,
+      severity: 'neutral',
+    };
+  }
+  if (usage === 'STOCK') {
+    return {
+      title: 'Stock vendable',
+      interpretation: `Emplacement de vente${reseau ? ' réseau (hub central)' : ' boutique'} — les quantités ici sont proposées à la vente en caisse.`,
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Emplacement logistique',
+    interpretation: `Usage « ${usage.toLowerCase()} » — zone de transit, pas de stock vendable direct.`,
+    severity: 'neutral',
+  };
+}
+
+export function insightReapproRegle(
+  stock: number,
+  min: number,
+  max: number,
+  besoin: number,
+): Insight {
+  if (stock < min) {
+    return {
+      title: 'Sous le seuil minimum',
+      interpretation: `Stock actuel ${stock} < min ${min}. Il manque ${besoin} unité(s) pour atteindre le max (${max}).`,
+      recommendation: 'Lancer le réappro : transfert depuis le hub, ou commande d\'achat si le hub est aussi à sec.',
+      severity: 'critical',
+    };
+  }
+  return {
+    title: 'Dans la fourchette',
+    interpretation: `Stock actuel ${stock}, entre le min (${min}) et le max (${max}). Aucune action nécessaire.`,
+    severity: 'ok',
+  };
+}
+
+export function insightInventaireAvancement(
+  comptees: number,
+  total: number,
+  ecarts: number,
+): Insight {
+  if (total === 0) {
+    return {
+      title: 'Session vide',
+      interpretation: 'Aucune ligne figée dans cette session (entrepôt sans produit actif au moment de l\'ouverture).',
+      severity: 'neutral',
+    };
+  }
+  const complet = comptees >= total;
+  return {
+    title: 'Avancement du comptage',
+    interpretation: `${comptees}/${total} ligne(s) comptée(s)${
+      ecarts > 0 ? `, dont ${ecarts} avec un écart entre théorique et réel` : ''
+    }.`,
+    recommendation: !complet
+      ? 'Terminer le comptage de toutes les lignes avant de pouvoir faire valider par un tiers.'
+      : ecarts > 0
+        ? 'Faire valider par un utilisateur distinct de l\'initiateur : les écarts seront appliqués en écritures d\'ajustement.'
+        : undefined,
+    severity: !complet ? 'neutral' : ecarts > 0 ? 'warning' : 'ok',
+  };
+}
+
+export function insightInventaireEcartsKpi(ecarts: number, unitesEcart: number): Insight {
+  if (ecarts === 0) {
+    return {
+      title: 'Écarts de comptage',
+      interpretation: 'Aucune ligne comptée ne diverge du théorique figé à l’ouverture, pour l’instant.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Écarts de comptage',
+    interpretation: `${ecarts} ligne(s) comptée(s) diffèrent du théorique, pour ${unitesEcart} unité(s) d’écart cumulées (surplus et manquants confondus).`,
+    recommendation:
+      'Recompter les lignes en écart en cas de doute — à la validation, l’écart sera posé tel quel en écriture d’ajustement, non modifiable ensuite.',
+    severity: 'warning',
+  };
+}
+
+export function insightInventaireValeurEcarts(valeurEcarts: number, ecarts: number): Insight {
+  if (ecarts === 0) {
+    return {
+      title: 'Écart valorisé (CMP)',
+      interpretation: 'Aucun écart à valoriser : le comptage confirme le théorique sur les lignes déjà saisies.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Écart valorisé (CMP)',
+    interpretation: `${valeurEcarts.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA d’écart indicatif, au coût moyen pondéré actuel des produits concernés. Ce montant n’est pas encore écrit en stock : il ne le sera qu’à la validation par un tiers, en écriture d’ajustement.`,
+    severity: 'neutral',
+  };
+}
+
+export function insightInventaireRestant(restant: number, total: number): Insight {
+  if (total === 0) {
+    return {
+      title: 'Lignes restantes',
+      interpretation: 'Session sans ligne à compter (entrepôt sans produit actif à l’ouverture).',
+      severity: 'neutral',
+    };
+  }
+  if (restant === 0) {
+    return {
+      title: 'Lignes restantes',
+      interpretation: 'Toutes les lignes ont été comptées : la session peut être soumise à validation par un tiers.',
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Lignes restantes',
+    interpretation: `${restant} ligne(s) sur ${total} n’ont pas encore de quantité comptée. La validation par un tiers est bloquée tant que le comptage n’est pas complet.`,
+    recommendation:
+      'Terminer la saisie de toutes les lignes, ou reporter le théorique restant si le comptage s’arrête là.',
+    severity: 'warning',
+  };
+}
+
+export function insightInventaireLigneEcart(
+  quantiteTheorique: number,
+  quantiteComptee: number | null,
+  cmp: number,
+): Insight {
+  if (quantiteComptee === null) {
+    return {
+      title: 'Ligne non comptée',
+      interpretation: `Théorique figé à ${quantiteTheorique} unité(s) à l’ouverture de la session. Aucune quantité comptée saisie pour l’instant.`,
+      severity: 'neutral',
+    };
+  }
+  const ecart = quantiteComptee - quantiteTheorique;
+  if (ecart === 0) {
+    return {
+      title: 'Comptage conforme',
+      interpretation: `Quantité comptée (${quantiteComptee}) identique au théorique figé (${quantiteTheorique}). Aucune écriture d’ajustement ne sera posée sur cette ligne.`,
+      severity: 'ok',
+    };
+  }
+  const valeur = Math.round(Math.abs(ecart) * cmp);
+  return {
+    title: ecart > 0 ? 'Surplus au comptage' : 'Manquant au comptage',
+    interpretation: `Compté ${quantiteComptee} contre ${quantiteTheorique} théorique, soit ${
+      ecart > 0 ? `+${ecart}` : ecart
+    } unité(s) (≈ ${valeur.toLocaleString('fr-FR')} FCFA au CMP actuel).`,
+    recommendation:
+      'Recompter si un doute existe : à la validation, cet écart sera posé en écriture d’ajustement, non modifiable ensuite.',
+    severity: ecart < 0 ? 'critical' : 'warning',
+  };
+}

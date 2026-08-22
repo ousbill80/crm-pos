@@ -9,7 +9,7 @@ import {
 } from './outbox';
 
 // File hors-ligne §6.7 : envoi automatique (reconnexion, nouvel enqueue,
-// onglet revisible). Pas de bouton « synchroniser ».
+// onglet revisible). POS + initiations transaction — pas le CRM hors ligne.
 
 const DELAI_MIN_MS = 2_000;
 const DELAI_MAX_MS = 60_000;

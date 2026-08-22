@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+coverage
+**/coverage
+.turbo
+apps/api/generated
+.postgres-data
+.postgres-run
+.git
+.claude
+*.log
+.DS_Store
+apps/mobile/.expo

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createIdbStore,
   createMemoryStore,
+  enqueueSortieFondsOp,
   flushOutbox,
   LS_HOLDS_PREFIX,
   LS_MIGRATED,
@@ -128,5 +129,22 @@ describe('flushOutbox — append-only', () => {
 
     expect(result).toEqual({ flushed: 1, remaining: 1 });
     expect((await store.listOutbox()).map((o) => o.id)).toEqual(['v2']);
+  });
+
+  it('enqueueSortieFondsOp pose un POST /transactions idempotent', async () => {
+    const store = createMemoryStore();
+    const queued = await enqueueSortieFondsOp(store, {
+      caisseId: 'c1',
+      montant: 1500,
+      clientOperationId: 'op-sortie-01',
+    });
+    expect(queued.path).toBe('/transactions');
+    expect(queued.method).toBe('POST');
+    expect(queued.body).toEqual({
+      caisseId: 'c1',
+      type: 'SORTIE_FONDS',
+      montant: 1500,
+      clientOperationId: 'op-sortie-01',
+    });
   });
 });

@@ -180,11 +180,7 @@ export class BoutiquesService {
       for (const boutique of boutiques) {
         if (!boutique.actif) continue;
         const created = await provisionnerPoste(tx, boutique, nombreTiroirs);
-        if (
-          created.entrepot ||
-          created.magasin ||
-          created.tiroirs.length > 0
-        ) {
+        if (created.entrepot || created.magasin || created.tiroirs.length > 0) {
           totaux.magasinsTraites += 1;
           if (created.entrepot) totaux.entrepotsCrees += 1;
           if (created.magasin) totaux.caissesCreees += 1;

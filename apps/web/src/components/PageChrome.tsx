@@ -42,13 +42,15 @@ export function ListPanel({
   title,
   children,
   toolbar,
+  id,
 }: {
   title?: string;
   toolbar?: ReactNode;
   children: ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="panel list-panel">
+    <section className="panel list-panel" id={id}>
       {(title || toolbar) && (
         <div className="list-panel-head">
           {title ? <h2>{title}</h2> : <span />}

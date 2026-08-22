@@ -64,9 +64,9 @@ Entités du MCD à respecter comme base : `ZONE`, `BOUTIQUE`, `CAISSE`, `UTILISA
 
 ### 6. Exigences non fonctionnelles (§6.7) — traitées comme fonctionnelles
 
-- Authentification individuelle obligatoire, chiffrement des données sensibles.
+- Authentification individuelle obligatoire ; mots de passe hashés (bcrypt). Les fiches client sont stockées en clair au repos (pas de chiffrement champ-à-champ) — transport TLS.
 - Journal d'audit **horodaté et non modifiable** : les tables d'audit sont append-only (aucun UPDATE/DELETE autorisé, même côté admin).
-- Mode hors-ligne en boutique avec synchronisation automatique à la reconnexion.
+- Mode hors-ligne en boutique : file d'ops POS idempotentes (IndexedDB web + SQLite mobile), sync auto à la reconnexion — pas tout le métier hors ligne.
 - Ajout de boutique/zone sans reparamétrage lourd de l'application.
 - Alertes automatiques : écart de caisse, versement non transmis dans le délai, tentative d'accès non autorisée.
 
@@ -91,7 +91,7 @@ Tant que ce choix n'est pas changé dans ce fichier, toute session code en cohé
 - **API** : REST pour les opérations métier + WebSocket (statuts de transaction visibles en temps réel, §5.2) pour la diffusion des changements de statut aux boutiques/zones/Direction concernées.
 - **Web** : React + TypeScript + Vite (caisse boutique web, tableaux de bord Direction/CRM).
 - **Mobile** (caisse boutique mobile / POS terrain) : React Native, monorepo partagé avec le web (types, client API, logique de state machine) via pnpm workspaces / Turborepo.
-- **Mode hors-ligne** : base locale (SQLite via WatermelonDB ou équivalent) avec file d'attente d'opérations idempotentes horodatées ; la synchronisation est un simple append côté serveur (cohérent avec le principe de grand livre append-only — pas de résolution de conflit sur des updates puisqu'il n'y en a pas).
+- **Mode hors-ligne** : file d'attente d'opérations POS idempotentes horodatées — IndexedDB (Dexie) sur le web, SQLite (`expo-sqlite`) sur mobile — **pas WatermelonDB**, pas de CRM/reporting hors ligne. La synchronisation est un append côté serveur via les endpoints métier (`clientOperationId`) — cohérent avec le grand livre append-only (pas de résolution de conflit sur des updates).
 - **Tests** : Jest (unit + intégration), Supertest (API), Testcontainers pour exécuter les tests d'intégration contre un vrai PostgreSQL éphémère (pas de DB mockée en test non plus — cohérence avec le principe « zéro mock »), Playwright pour l'E2E web.
 - **CI** : lint + typecheck + tests unitaires + tests d'intégration (DB réelle) + migrations appliquées, bloquants avant merge.
 

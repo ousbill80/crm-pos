@@ -7,11 +7,17 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import { insightAuditAction, insightJournalImmuable } from '../lib/insights/administration';
 import type {
   JournalAuditDto,
   JournalAuditPageDto,
   UtilisateurDto,
 } from '../lib/types';
+
+type ColonneAudit = 'date' | 'utilisateur' | 'action' | 'entite';
 
 const ROLES_LECTURE_AUDIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
@@ -117,6 +123,7 @@ export function AuditPage() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState<JournalAuditDto | null>(null);
+  const [sort, setSort] = useState<SortState<ColonneAudit> | null>(null);
   const limit = 20;
 
   const users = useQuery({
@@ -149,6 +156,24 @@ export function AuditPage() {
     () => (query.data ? Math.max(1, Math.ceil(query.data.total / limit)) : 1),
     [query.data],
   );
+
+  const lignesTriees = useMemo(() => {
+    const rows = query.data?.data ?? [];
+    return sortRows(rows, sort, (entry, key) => {
+      switch (key) {
+        case 'date':
+          return entry.dateHeure;
+        case 'utilisateur':
+          return `${entry.utilisateur.nom} ${entry.utilisateur.prenom}`;
+        case 'action':
+          return entry.action;
+        case 'entite':
+          return entry.entite;
+        default:
+          return null;
+      }
+    });
+  }, [query.data, sort]);
 
   function resetFiltres() {
     setAction('');
@@ -264,7 +289,10 @@ export function AuditPage() {
       )}
 
       {!query.isLoading && !query.isError && query.data && (
-        <ListPanel title={`${query.data.total} entrée(s)`}>
+        <ListPanel
+          title={`${query.data.total} entrée(s)`}
+          toolbar={<InfoTooltip insight={insightJournalImmuable(query.data.total)} />}
+        >
           {query.data.data.length === 0 ? (
             <EmptyState
               title="Aucune entrée"
@@ -276,15 +304,40 @@ export function AuditPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Date/heure</th>
-                      <th>Utilisateur</th>
-                      <th>Action</th>
-                      <th>Entité</th>
+                      <SortHeader
+                        active={sort?.key === 'date'}
+                        dir={sort?.key === 'date' ? sort.dir : 'desc'}
+                        onClick={() => setSort((s) => toggleSort(s, 'date'))}
+                      >
+                        Date/heure
+                      </SortHeader>
+                      <SortHeader
+                        active={sort?.key === 'utilisateur'}
+                        dir={sort?.key === 'utilisateur' ? sort.dir : 'asc'}
+                        onClick={() => setSort((s) => toggleSort(s, 'utilisateur'))}
+                      >
+                        Utilisateur
+                      </SortHeader>
+                      <SortHeader
+                        active={sort?.key === 'action'}
+                        dir={sort?.key === 'action' ? sort.dir : 'asc'}
+                        onClick={() => setSort((s) => toggleSort(s, 'action'))}
+                      >
+                        Action
+                      </SortHeader>
+                      <SortHeader
+                        active={sort?.key === 'entite'}
+                        dir={sort?.key === 'entite' ? sort.dir : 'asc'}
+                        onClick={() => setSort((s) => toggleSort(s, 'entite'))}
+                      >
+                        Entité
+                      </SortHeader>
                       <th>Détails</th>
+                      <th aria-label="Info" />
                     </tr>
                   </thead>
                   <tbody>
-                    {query.data.data.map((entry) => (
+                    {lignesTriees.map((entry) => (
                       <tr
                         key={entry.id}
                         className="produit-row"
@@ -318,6 +371,9 @@ export function AuditPage() {
                           </span>
                         </td>
                         <td className="lead">{resumeDetails(entry.details)}</td>
+                        <td>
+                          <InfoTooltip insight={insightAuditAction(entry.action)} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>

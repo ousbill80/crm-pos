@@ -44,6 +44,8 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -55,6 +57,9 @@ import {
   insightClientsCrm,
   insightLitiges,
   insightMargeBrute,
+  insightPipelineVersement,
+  insightSegmentClient,
+  insightSoldeCaisse,
   insightTresorerie,
   insightVersementsEnRetard,
   synthetiserSante,
@@ -190,6 +195,18 @@ interface VenteQuotidienne {
 }
 
 type PeriodePreset = '7j' | '30j' | 'mois' | 'perso';
+
+type ColonneRentab =
+  | 'boutique'
+  | 'ca'
+  | 'partCa'
+  | 'cmv'
+  | 'ratioCmv'
+  | 'marge'
+  | 'partMarge'
+  | 'taux'
+  | 'stock'
+  | 'margeSurStock';
 
 const COULEURS_MODES = ['#0f766e', '#2563eb', '#d97706', '#7c3aed'];
 const COULEURS_SEGMENTS: Record<string, string> = {
@@ -338,6 +355,9 @@ export function DashboardPage() {
   const [preset, setPreset] = useState<PeriodePreset>('30j');
   const [dateFrom, setDateFrom] = useState(initial.from);
   const [dateTo, setDateTo] = useState(initial.to);
+  const [openSections, setOpenSections] =
+    useState<Record<DashSectionId, boolean>>(DASH_OPEN_DEFAULT);
+  const [sortRentab, setSortRentab] = useState<SortState<ColonneRentab> | null>(null);
   const { data: brut, isLoading, isError, error, isFetching } =
     useReportingDashboard(dateFrom, dateTo);
   const { data: serieQuotidienne } = useVentesQuotidiennes();
@@ -348,6 +368,31 @@ export function DashboardPage() {
         : brut,
     [brut, magasin.boutiqueId],
   );
+
+  const toggleSection = useCallback((id: DashSectionId) => {
+    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const expandAll = useCallback(() => {
+    setOpenSections(
+      Object.fromEntries(DASH_SECTIONS.map((id) => [id, true])) as Record<
+        DashSectionId,
+        boolean
+      >,
+    );
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    setOpenSections(
+      Object.fromEntries(DASH_SECTIONS.map((id) => [id, false])) as Record<
+        DashSectionId,
+        boolean
+      >,
+    );
+  }, []);
+
+  const allOpen = DASH_SECTIONS.every((id) => openSections[id]);
+  const allClosed = DASH_SECTIONS.every((id) => !openSections[id]);
 
   const priorites = useMemo(
     () =>
@@ -394,12 +439,107 @@ export function DashboardPage() {
     1,
   );
 
-  const margeReseau = useMemo(() => {
-    if (!data?.rentabiliteParBoutique.length) return null;
-    const ca = data.rentabiliteParBoutique.reduce((s, r) => s + Number(r.chiffreAffairesNet), 0);
-    const marge = data.rentabiliteParBoutique.reduce((s, r) => s + Number(r.margeBrute), 0);
-    return { marge, taux: ca > 0 ? ((marge / ca) * 100).toFixed(1) : '0.0' };
+  const rentabiliteRows = useMemo(() => {
+    if (!data?.rentabiliteParBoutique.length) return [];
+    const caTotal = data.rentabiliteParBoutique.reduce(
+      (s, r) => s + Number(r.chiffreAffairesNet),
+      0,
+    );
+    const margeTotal = data.rentabiliteParBoutique.reduce(
+      (s, r) => s + Number(r.margeBrute),
+      0,
+    );
+    return [...data.rentabiliteParBoutique]
+      .sort((a, b) => Number(b.margeBrute) - Number(a.margeBrute))
+      .map((r) => {
+        const ca = Number(r.chiffreAffairesNet);
+        const cmv = Number(r.coutDesVentes);
+        const marge = Number(r.margeBrute);
+        const stock = Number(r.valeurStock);
+        return {
+          ...r,
+          ca,
+          cmv,
+          marge,
+          stock,
+          partCa: caTotal > 0 ? (ca / caTotal) * 100 : 0,
+          partMarge: margeTotal !== 0 ? (marge / margeTotal) * 100 : 0,
+          ratioCmv: ca > 0 ? (cmv / ca) * 100 : 0,
+          margeSurStock: stock > 0 ? (marge / stock) * 100 : null,
+          margeNegative: marge < 0,
+          margeFaible: marge >= 0 && Number(r.tauxMarge) < 15,
+        };
+      });
   }, [data]);
+
+  const margeReseau = useMemo(() => {
+    if (!rentabiliteRows.length) return null;
+    const ca = rentabiliteRows.reduce((s, r) => s + r.ca, 0);
+    const marge = rentabiliteRows.reduce((s, r) => s + r.marge, 0);
+    const cmv = rentabiliteRows.reduce((s, r) => s + r.cmv, 0);
+    const stock = rentabiliteRows.reduce((s, r) => s + r.stock, 0);
+    const vigilance = rentabiliteRows.filter(
+      (r) => r.margeNegative || r.margeFaible,
+    ).length;
+    const meilleure = rentabiliteRows[0];
+    const pire = rentabiliteRows[rentabiliteRows.length - 1];
+    return {
+      ca,
+      marge,
+      cmv,
+      stock,
+      taux: ca > 0 ? ((marge / ca) * 100).toFixed(1) : '0.0',
+      vigilance,
+      meilleure,
+      pire,
+    };
+  }, [rentabiliteRows]);
+
+  const rentabiliteChart = useMemo(
+    () =>
+      rentabiliteRows.slice(0, 8).map((r) => ({
+        name:
+          r.nomBoutique.length > 14
+            ? `${r.nomBoutique.slice(0, 12)}…`
+            : r.nomBoutique,
+        fullName: r.nomBoutique,
+        ca: r.ca,
+        marge: r.marge,
+        cmv: r.cmv,
+      })),
+    [rentabiliteRows],
+  );
+
+  const rentabiliteAffichee = useMemo(
+    () =>
+      sortRows(rentabiliteRows, sortRentab, (r, key) => {
+        switch (key) {
+          case 'boutique':
+            return r.nomBoutique;
+          case 'ca':
+            return r.ca;
+          case 'partCa':
+            return r.partCa;
+          case 'cmv':
+            return r.cmv;
+          case 'ratioCmv':
+            return r.ratioCmv;
+          case 'marge':
+            return r.marge;
+          case 'partMarge':
+            return r.partMarge;
+          case 'taux':
+            return Number(r.tauxMarge);
+          case 'stock':
+            return r.stock;
+          case 'margeSurStock':
+            return r.margeSurStock;
+          default:
+            return null;
+        }
+      }),
+    [rentabiliteRows, sortRentab],
+  );
 
   function applyPreset(p: Exclude<PeriodePreset, 'perso'>) {
     const r = rangeForPreset(p);
@@ -664,19 +804,58 @@ export function DashboardPage() {
                 </div>
                 <div className="kpi-label">Marge brute réseau</div>
                 <div className="kpi-value">{formatFcfa(margeReseau.marge)}</div>
-                <div className="kpi-hint">Taux {margeReseau.taux} %</div>
+                <div className="kpi-hint">
+                  Taux {margeReseau.taux} %
+                  {margeReseau.vigilance > 0
+                    ? ` · ${margeReseau.vigilance} vigilance`
+                    : ''}
+                </div>
               </Link>
             )}
           </div>
 
+          <div className="dash-sections-bar" role="toolbar" aria-label="Sections">
+            <span className="dash-sections-bar-label">Sections</span>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={allOpen}
+              onClick={expandAll}
+            >
+              <ChevronsUpDown size={14} /> Tout développer
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={allClosed}
+              onClick={collapseAll}
+            >
+              <ChevronsDownUp size={14} /> Tout réduire
+            </button>
+          </div>
+
           <div className="dash-layout">
-            <section className="panel dash-panel-span">
-              <div className="dash-panel-head">
-                <h2>Évolution du CA — 30 jours</h2>
-                <span className="dash-panel-meta">
-                  Période affichée {formatFcfa(data.chiffreAffaires.total)}
-                </span>
-              </div>
+            <DashSection
+              id="ca-evolution"
+              className="dash-panel-span"
+              title="Évolution du CA — 30 jours"
+              meta={`Période affichée ${formatFcfa(data.chiffreAffaires.total)}`}
+              open={openSections['ca-evolution']}
+              onToggle={toggleSection}
+              summary={
+                <p className="dash-section-summary-line">
+                  {serieChart.length} jour(s) · CA période{' '}
+                  <strong className="money">{formatFcfa(data.chiffreAffaires.total)}</strong>
+                  {tendance.deltaPct != null && (
+                    <>
+                      {' '}
+                      · tendance {tendance.deltaPct >= 0 ? '+' : ''}
+                      {tendance.deltaPct.toFixed(1)} %
+                    </>
+                  )}
+                </p>
+              }
+            >
               {serieChart.length === 0 ? (
                 <p className="lead">Aucune vente sur les 30 derniers jours.</p>
               ) : (
@@ -711,12 +890,34 @@ export function DashboardPage() {
                   </AreaChart>
                 </ResponsiveContainer>
               )}
-            </section>
+            </DashSection>
 
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>CA par boutique</h2>
-              </div>
+            <DashSection
+              id="ca-boutiques"
+              title="CA par boutique"
+              meta={`${data.chiffreAffaires.parBoutique.length} magasin(s)`}
+              open={openSections['ca-boutiques']}
+              onToggle={toggleSection}
+              summary={
+                data.chiffreAffaires.parBoutique.length === 0 ? (
+                  <p className="dash-section-summary-line">Aucune vente</p>
+                ) : (
+                  <ul className="dash-section-summary-list">
+                    {[...data.chiffreAffaires.parBoutique]
+                      .sort((a, b) => Number(b.montant) - Number(a.montant))
+                      .slice(0, 3)
+                      .map((b, i) => (
+                        <li key={b.boutiqueId}>
+                          <span>
+                            {i + 1}. {b.nomBoutique}
+                          </span>
+                          <span className="money">{formatFcfa(b.montant)}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )
+              }
+            >
               {data.chiffreAffaires.parBoutique.length === 0 ? (
                 <p className="lead">Aucune vente sur la période.</p>
               ) : (
@@ -740,12 +941,31 @@ export function DashboardPage() {
                     ))}
                 </ul>
               )}
-            </section>
+            </DashSection>
 
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>Modes de paiement</h2>
-              </div>
+            <DashSection
+              id="modes"
+              title="Modes de paiement"
+              meta={`${modesChart.length} mode(s)`}
+              open={openSections.modes}
+              onToggle={toggleSection}
+              summary={
+                modesChart.length === 0 ? (
+                  <p className="dash-section-summary-line">Aucune vente</p>
+                ) : (
+                  <ul className="dash-section-summary-list">
+                    {[...modesChart]
+                      .sort((a, b) => b.montant - a.montant)
+                      .map((m) => (
+                        <li key={m.modePaiement}>
+                          <span>{m.label}</span>
+                          <span className="money">{formatFcfa(m.montant)}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )
+              }
+            >
               {modesChart.length === 0 ? (
                 <p className="lead">Aucune vente sur la période.</p>
               ) : (
@@ -774,104 +994,347 @@ export function DashboardPage() {
                   </PieChart>
                 </ResponsiveContainer>
               )}
-            </section>
+            </DashSection>
           </div>
 
-          <section className="panel">
-            <div className="dash-panel-head">
-              <h2>Rentabilité par boutique</h2>
-              <span className="dash-panel-meta">Seuil vigilance marge &lt; 15 %</span>
-            </div>
-            {data.rentabiliteParBoutique.length === 0 ? (
+          <DashSection
+            id="rentabilite"
+            title="Rentabilité par boutique"
+            meta={
+              margeReseau
+                ? `Marge ${margeReseau.taux} % · seuil vigilance < 15 %`
+                : 'Seuil vigilance marge < 15 %'
+            }
+            open={openSections.rentabilite}
+            onToggle={toggleSection}
+            summary={
+              !margeReseau ? (
+                <p className="dash-section-summary-line">Aucune boutique</p>
+              ) : (
+                <div className="dash-rentab-summary">
+                  <div className="dash-rentab-summary-kpis">
+                    <span>
+                      Marge <strong className="money">{formatFcfa(margeReseau.marge)}</strong>
+                    </span>
+                    <span>Taux {margeReseau.taux} %</span>
+                    <span>
+                      {margeReseau.vigilance > 0
+                        ? `${margeReseau.vigilance} en vigilance`
+                        : 'Aucune vigilance'}
+                    </span>
+                  </div>
+                  <ul className="dash-section-summary-list">
+                    {rentabiliteRows.slice(0, 3).map((r) => (
+                      <li key={r.boutiqueId}>
+                        <span>
+                          {r.nomBoutique}
+                          {r.margeNegative || r.margeFaible ? ' · !' : ''}
+                        </span>
+                        <span className="money">
+                          {formatFcfa(r.marge)} · {r.tauxMarge} %
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            }
+          >
+            {rentabiliteRows.length === 0 ? (
               <p className="lead">Aucune boutique dans le périmètre.</p>
             ) : (
-              <div className="table-wrap">
-                <table className="pl-table">
-                  <thead>
-                    <tr>
-                      <th>Boutique</th>
-                      <th className="num">CA net</th>
-                      <th className="num">Coût des ventes</th>
-                      <th className="num">Marge brute</th>
-                      <th className="num">Taux</th>
-                      <th className="num">Stock valorisé</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...data.rentabiliteParBoutique]
-                      .sort((a, b) => Number(b.margeBrute) - Number(a.margeBrute))
-                      .map((r) => {
-                        const margeNegative = Number(r.margeBrute) < 0;
-                        const margeFaible = !margeNegative && Number(r.tauxMarge) < 15;
-                        return (
-                          <tr key={r.boutiqueId}>
-                            <td>
-                              <strong>{r.nomBoutique}</strong>{' '}
-                              <InfoTooltip insight={insightMargeBrute(r.margeBrute, r.tauxMarge)} />
-                            </td>
-                            <td className="num">{formatFcfa(r.chiffreAffairesNet)}</td>
-                            <td className="num">{formatFcfa(r.coutDesVentes)}</td>
-                            <td className="num">{formatFcfa(r.margeBrute)}</td>
-                            <td className="num">
-                              <span
-                                className={
-                                  margeNegative
-                                    ? 'dash-taux dash-taux-bad'
-                                    : margeFaible
-                                      ? 'dash-taux dash-taux-warn'
-                                      : 'dash-taux dash-taux-ok'
-                                }
-                              >
-                                {r.tauxMarge} %
-                              </span>
-                              {margeNegative && (
-                                <span className="badge badge-critical">Négative</span>
-                              )}
-                              {margeFaible && (
-                                <span className="badge badge-warning">Faible</span>
-                              )}
-                            </td>
-                            <td className="num">{formatFcfa(r.valeurStock)}</td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                  {margeReseau && (
-                    <tfoot>
+              <>
+                {margeReseau && (
+                  <div className="dash-rentab-kpis">
+                    <article className="dash-rentab-kpi">
+                      <div className="client-kpi-label">CA net</div>
+                      <div className="client-kpi-value client-kpi-value-sm money">
+                        {formatFcfa(margeReseau.ca)}
+                      </div>
+                    </article>
+                    <article className="dash-rentab-kpi">
+                      <div className="client-kpi-label">Coût des ventes</div>
+                      <div className="client-kpi-value client-kpi-value-sm money">
+                        {formatFcfa(margeReseau.cmv)}
+                      </div>
+                    </article>
+                    <article className="dash-rentab-kpi">
+                      <div className="client-kpi-label">Marge brute</div>
+                      <div className="client-kpi-value client-kpi-value-sm money">
+                        {formatFcfa(margeReseau.marge)}
+                      </div>
+                      <div className="client-kpi-hint">Taux {margeReseau.taux} %</div>
+                    </article>
+                    <article className="dash-rentab-kpi">
+                      <div className="client-kpi-label">Stock valorisé</div>
+                      <div className="client-kpi-value client-kpi-value-sm money">
+                        {formatFcfa(margeReseau.stock)}
+                      </div>
+                    </article>
+                    <article
+                      className={
+                        margeReseau.vigilance > 0
+                          ? 'dash-rentab-kpi dash-rentab-kpi-warn'
+                          : 'dash-rentab-kpi'
+                      }
+                    >
+                      <div className="client-kpi-label">Vigilance marge</div>
+                      <div className="client-kpi-value">{margeReseau.vigilance}</div>
+                      <div className="client-kpi-hint">
+                        boutiques &lt; 15 % ou négatives
+                      </div>
+                    </article>
+                    <article className="dash-rentab-kpi">
+                      <div className="client-kpi-label">Meilleure / plus faible</div>
+                      <div className="client-kpi-hint">
+                        {margeReseau.meilleure?.nomBoutique} (
+                        {margeReseau.meilleure?.tauxMarge} %)
+                      </div>
+                      <div className="client-kpi-hint">
+                        {margeReseau.pire?.nomBoutique} ({margeReseau.pire?.tauxMarge} %)
+                      </div>
+                    </article>
+                  </div>
+                )}
+
+                {rentabiliteChart.length > 0 && (
+                  <div className="dash-rentab-chart">
+                    <h3 className="dash-rentab-subtitle">CA net vs marge brute</h3>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={rentabiliteChart} margin={{ left: 4, right: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e9ef" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis
+                          tick={{ fontSize: 11 }}
+                          tickFormatter={(v: number) => formatCompact(v)}
+                          width={48}
+                        />
+                        <Tooltip
+                          contentStyle={tooltipStyle()}
+                          formatter={(value, name) => [
+                            formatFcfa(Number(value ?? 0)),
+                            name === 'ca' ? 'CA net' : name === 'marge' ? 'Marge' : 'CMV',
+                          ]}
+                          labelFormatter={(_, payload) =>
+                            String(payload?.[0]?.payload?.fullName ?? '')
+                          }
+                        />
+                        <Legend
+                          formatter={(value) =>
+                            value === 'ca' ? 'CA net' : value === 'marge' ? 'Marge' : 'CMV'
+                          }
+                        />
+                        <Bar dataKey="ca" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+                        <Bar dataKey="marge" fill="#0f766e" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                <div className="table-wrap">
+                  <table className="pl-table">
+                    <thead>
                       <tr>
-                        <th>Total périmètre</th>
-                        <th className="num">{formatFcfa(data.chiffreAffaires.total)}</th>
-                        <th className="num">
-                          {formatFcfa(
-                            data.rentabiliteParBoutique.reduce(
-                              (s, r) => s + Number(r.coutDesVentes),
-                              0,
-                            ),
-                          )}
-                        </th>
-                        <th className="num">{formatFcfa(margeReseau.marge)}</th>
-                        <th className="num">{margeReseau.taux} %</th>
-                        <th className="num">
-                          {formatFcfa(
-                            data.rentabiliteParBoutique.reduce(
-                              (s, r) => s + Number(r.valeurStock),
-                              0,
-                            ),
-                          )}
-                        </th>
+                        <SortHeader
+                          active={sortRentab?.key === 'boutique'}
+                          dir={sortRentab?.key === 'boutique' ? sortRentab.dir : 'asc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'boutique'))}
+                        >
+                          Boutique
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'ca'}
+                          dir={sortRentab?.key === 'ca' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'ca'))}
+                        >
+                          CA net
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'partCa'}
+                          dir={sortRentab?.key === 'partCa' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'partCa'))}
+                        >
+                          Part CA
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'cmv'}
+                          dir={sortRentab?.key === 'cmv' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'cmv'))}
+                        >
+                          CMV
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'ratioCmv'}
+                          dir={sortRentab?.key === 'ratioCmv' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'ratioCmv'))}
+                        >
+                          CMV/CA
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'marge'}
+                          dir={sortRentab?.key === 'marge' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'marge'))}
+                        >
+                          Marge brute
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'partMarge'}
+                          dir={sortRentab?.key === 'partMarge' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'partMarge'))}
+                        >
+                          Part marge
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'taux'}
+                          dir={sortRentab?.key === 'taux' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'taux'))}
+                        >
+                          Taux
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'stock'}
+                          dir={sortRentab?.key === 'stock' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'stock'))}
+                        >
+                          Stock
+                        </SortHeader>
+                        <SortHeader
+                          className="num"
+                          active={sortRentab?.key === 'margeSurStock'}
+                          dir={sortRentab?.key === 'margeSurStock' ? sortRentab.dir : 'desc'}
+                          onClick={() => setSortRentab((s) => toggleSort(s, 'margeSurStock'))}
+                        >
+                          Marge/stock
+                        </SortHeader>
                       </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {rentabiliteAffichee.map((r) => (
+                        <tr
+                          key={r.boutiqueId}
+                          className={
+                            r.margeNegative
+                              ? 'dash-rentab-row-bad'
+                              : r.margeFaible
+                                ? 'dash-rentab-row-warn'
+                                : undefined
+                          }
+                        >
+                          <td>
+                            <strong>{r.nomBoutique}</strong>{' '}
+                            <InfoTooltip
+                              insight={insightMargeBrute(r.margeBrute, r.tauxMarge)}
+                            />
+                          </td>
+                          <td className="num">{formatFcfa(r.ca)}</td>
+                          <td className="num">{r.partCa.toFixed(1)} %</td>
+                          <td className="num">{formatFcfa(r.cmv)}</td>
+                          <td className="num">{r.ratioCmv.toFixed(1)} %</td>
+                          <td className="num">{formatFcfa(r.marge)}</td>
+                          <td className="num">{r.partMarge.toFixed(1)} %</td>
+                          <td className="num">
+                            <span
+                              className={
+                                r.margeNegative
+                                  ? 'dash-taux dash-taux-bad'
+                                  : r.margeFaible
+                                    ? 'dash-taux dash-taux-warn'
+                                    : 'dash-taux dash-taux-ok'
+                              }
+                            >
+                              {r.tauxMarge} %
+                            </span>
+                            {r.margeNegative && (
+                              <span className="badge badge-critical">Négative</span>
+                            )}
+                            {r.margeFaible && (
+                              <span className="badge badge-warning">Faible</span>
+                            )}
+                          </td>
+                          <td className="num">{formatFcfa(r.stock)}</td>
+                          <td className="num">
+                            {r.margeSurStock == null
+                              ? '—'
+                              : `${r.margeSurStock.toFixed(1)} %`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {margeReseau && (
+                      <tfoot>
+                        <tr>
+                          <th>Total périmètre</th>
+                          <th className="num">{formatFcfa(margeReseau.ca)}</th>
+                          <th className="num">100 %</th>
+                          <th className="num">{formatFcfa(margeReseau.cmv)}</th>
+                          <th className="num">
+                            {margeReseau.ca > 0
+                              ? `${((margeReseau.cmv / margeReseau.ca) * 100).toFixed(1)} %`
+                              : '—'}
+                          </th>
+                          <th className="num">{formatFcfa(margeReseau.marge)}</th>
+                          <th className="num">100 %</th>
+                          <th className="num">{margeReseau.taux} %</th>
+                          <th className="num">{formatFcfa(margeReseau.stock)}</th>
+                          <th className="num">
+                            {margeReseau.stock > 0
+                              ? `${((margeReseau.marge / margeReseau.stock) * 100).toFixed(1)} %`
+                              : '—'}
+                          </th>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+                <p className="dash-rentab-footnote">
+                  Marge = CA net − coût des ventes (CMV). Seuil de vigilance UI : taux &lt; 15 %.
+                  Marge/stock = rendement de la marge sur le stock valorisé.{' '}
+                  <Link to="/finance?tab=resultat">Voir le compte de résultat →</Link>
+                </p>
+              </>
             )}
-          </section>
+          </DashSection>
 
           <div className="dash-layout dash-layout-3">
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>Pipeline versements</h2>
-              </div>
+            <DashSection
+              id="pipeline"
+              title="Pipeline versements"
+              open={openSections.pipeline}
+              onToggle={toggleSection}
+              summary={
+                <ul className="dash-section-summary-list">
+                  {STATUT_ORDER.filter((statut) => {
+                    const row = data.versements.parStatut.find((s) => s.statut === statut);
+                    return (row?.nombre ?? 0) > 0;
+                  })
+                    .slice(0, 3)
+                    .map((statut) => {
+                      const row = data.versements.parStatut.find((s) => s.statut === statut);
+                      return (
+                        <li key={statut}>
+                          <span>{STATUT_LABEL[statut]}</span>
+                          <span>
+                            {row?.nombre ?? 0} · {formatFcfa(row?.montant ?? '0')}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  {data.versements.parStatut.every((s) => s.nombre === 0) && (
+                    <li>
+                      <span>Aucun versement actif</span>
+                    </li>
+                  )}
+                </ul>
+              }
+            >
               <ul className="dash-pipeline">
                 {STATUT_ORDER.map((statut) => {
                   const row = data.versements.parStatut.find((s) => s.statut === statut);
@@ -885,16 +1348,30 @@ export function DashboardPage() {
                         <small> · {nombre}</small>
                       </span>
                       <span className="money">{formatFcfa(montant)}</span>
+                      <InfoTooltip insight={insightPipelineVersement(statut, nombre, montant)} />
                     </li>
                   );
                 })}
               </ul>
-            </section>
+            </DashSection>
 
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>Soldes de caisse</h2>
-              </div>
+            <DashSection
+              id="soldes"
+              title="Soldes de caisse"
+              meta={`${data.tresorerie.caisses.length} caisse(s)`}
+              open={openSections.soldes}
+              onToggle={toggleSection}
+              summary={
+                <p className="dash-section-summary-line">
+                  Auxiliaires{' '}
+                  <strong className="money">
+                    {formatFcfa(data.tresorerie.totalSoldesAuxiliaires)}
+                  </strong>
+                  {' · '}
+                  {data.tresorerie.caisses.length} caisse(s)
+                </p>
+              }
+            >
               {data.tresorerie.caisses.length === 0 ? (
                 <p className="lead">Aucune caisse dans le périmètre.</p>
               ) : (
@@ -924,24 +1401,44 @@ export function DashboardPage() {
                     </BarChart>
                   </ResponsiveContainer>
                   <ul>
-                    {data.tresorerie.caisses.map((c) => (
+                    {[...data.tresorerie.caisses]
+                      .sort((a, b) => Number(b.solde) - Number(a.solde))
+                      .map((c) => (
                       <li key={c.caisseId}>
                         <span>
                           {c.type === 'CENTRALE' ? 'Centrale' : 'Auxiliaire'}{' '}
                           <small style={{ color: 'var(--text-muted)' }}>{c.caisseId.slice(0, 8)}</small>
                         </span>
                         <span className="money">{formatFcfa(c.solde)}</span>
+                        <InfoTooltip insight={insightSoldeCaisse(c.type, c.solde)} />
                       </li>
                     ))}
                   </ul>
                 </>
               )}
-            </section>
+            </DashSection>
 
-            <section className="panel">
-              <div className="dash-panel-head">
-                <h2>Segments clients</h2>
-              </div>
+            <DashSection
+              id="segments"
+              title="Segments clients"
+              meta={`${data.crm.nombreClients} client(s)`}
+              open={openSections.segments}
+              onToggle={toggleSection}
+              summary={
+                data.crm.parSegment.length === 0 ? (
+                  <p className="dash-section-summary-line">Aucun client segmenté</p>
+                ) : (
+                  <ul className="dash-section-summary-list">
+                    {data.crm.parSegment.map((s) => (
+                      <li key={s.segment}>
+                        <span>{s.segment}</span>
+                        <span>{s.nombre}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              }
+            >
               {data.crm.parSegment.length === 0 ? (
                 <p className="lead">Aucun client segmenté.</p>
               ) : (
@@ -962,6 +1459,9 @@ export function DashboardPage() {
                           <span>
                             {s.nombre} <small>({part.toFixed(0)} %)</small>
                           </span>
+                          <InfoTooltip
+                            insight={insightSegmentClient(s.segment, s.nombre, data.crm.nombreClients)}
+                          />
                         </div>
                         <div className="dash-bar-track">
                           <div
@@ -977,7 +1477,7 @@ export function DashboardPage() {
                   })}
                 </ul>
               )}
-            </section>
+            </DashSection>
           </div>
 
           <nav className="dash-shortcuts" aria-label="Raccourcis">

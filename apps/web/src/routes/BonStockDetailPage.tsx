@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList } from 'lucide-react';
@@ -5,8 +6,16 @@ import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { fmtDateHeure } from '../lib/achats-ui';
+import { insightBonStatut } from '../lib/insights/stocks';
 import type { BonStockDto } from '../lib/types';
+
+const ETAPES_STEPPER: Array<{ key: 'BROUILLON' | 'PRET' | 'FAIT'; label: string }> = [
+  { key: 'BROUILLON', label: 'Brouillon' },
+  { key: 'PRET', label: 'Prêt' },
+  { key: 'FAIT', label: 'Fait' },
+];
 
 const ROLES_LECTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
@@ -119,14 +128,30 @@ export function BonStockDetailPage() {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => actionBon.mutate('valider')}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Valider le bon ${b.numero} ? Cette action pose les écritures de stock et n'est plus modifiable.`,
+                  )
+                ) {
+                  actionBon.mutate('valider');
+                }
+              }}
               disabled={actionBon.isPending}
             >
               Valider (Fait)
             </button>
           ) : null}
           {peutValider && (b.statut === 'BROUILLON' || b.statut === 'PRET') ? (
-            <button type="button" onClick={() => actionBon.mutate('annuler')} disabled={actionBon.isPending}>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Annuler le bon ${b.numero} ? Cette action est définitive.`)) {
+                  actionBon.mutate('annuler');
+                }
+              }}
+              disabled={actionBon.isPending}
+            >
               Annuler
             </button>
           ) : null}
@@ -144,6 +169,44 @@ export function BonStockDetailPage() {
           <p className="client-workspace-hero-sub">{TYPE_LABEL[b.type]}</p>
           <div className="client-workspace-chips">
             <span className={STATUT_BADGE[b.statut]}>{STATUT_LABEL[b.statut]}</span>
+            <InfoTooltip insight={insightBonStatut(b.statut, b.type)} />
+          </div>
+          <div className="bon-stepper" aria-label="Avancement du bon">
+            {ETAPES_STEPPER.map((etape, i) => {
+              const pointAnnulation = b.datePret ? 1 : 0;
+              const activeIndex =
+                b.statut === 'ANNULE'
+                  ? pointAnnulation
+                  : b.statut === 'FAIT'
+                    ? 2
+                    : ETAPES_STEPPER.findIndex((e) => e.key === b.statut);
+              const cls =
+                b.statut === 'FAIT'
+                  ? 'done'
+                  : b.statut === 'ANNULE'
+                    ? i < activeIndex
+                      ? 'done'
+                      : i === activeIndex
+                        ? 'annule'
+                        : ''
+                    : i < activeIndex
+                      ? 'done'
+                      : i === activeIndex
+                        ? 'actif'
+                        : '';
+              const contenu = cls === 'done' ? '✓' : cls === 'annule' ? '✕' : String(i + 1);
+              return (
+                <Fragment key={etape.key}>
+                  {i > 0 ? (
+                    <span className={i <= activeIndex ? 'bon-stepper-line done' : 'bon-stepper-line'} />
+                  ) : null}
+                  <div className={cls ? `bon-stepper-step ${cls}` : 'bon-stepper-step'}>
+                    <span className="bon-stepper-dot">{contenu}</span>
+                    <span>{etape.label}</span>
+                  </div>
+                </Fragment>
+              );
+            })}
           </div>
           <div className="client-workspace-meta">
             <span>

@@ -27,11 +27,13 @@ import {
   resolveZoneScopeForSuperviseur,
 } from '../boutiques/boutique-scope.util';
 import { TransactionsService } from '../transactions/transactions.service';
+import { FideliteService } from '../crm/fidelite/fidelite.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
 import { CreateRetourDto } from './dto/create-retour.dto';
 import { UpsertReservationDto } from './dto/paiement-reservation.dto';
+import { ListVentesQueryDto } from './dto/list-ventes-query.dto';
 
 // Rôles éligibles au comptage contradictoire (§5.1) : caissier boutique ou
 // responsable boutique — les deux profils "périmètre boutique" du référentiel.
@@ -60,6 +62,7 @@ export class VentesService {
     private readonly audit: AuditService,
     private readonly transactionsService: TransactionsService,
     private readonly stockService: StockService,
+    private readonly fideliteService: FideliteService,
   ) {}
 
   async ouvrirSession(
@@ -343,6 +346,14 @@ export class VentesService {
       }),
     });
 
+    // Fidélité auto §6.6 — 1 pt / 1000 FCFA (floor), hors replay idempotent.
+    await this.fideliteService.crediterDepuisVente({
+      clientId: dto.clientId,
+      montantTotal: vente.montantTotal,
+      venteId: vente.id,
+      utilisateurId: utilisateur.userId,
+    });
+
     return vente;
   }
 
@@ -529,25 +540,31 @@ export class VentesService {
     }));
     const totalEspeces =
       totaux.get(ModePaiement.ESPECES)?.total ?? new Prisma.Decimal(0);
-    const journal = ventes.map((vente) => ({
-      id: vente.id,
-      dateVente: vente.dateVente,
-      montantTotal: vente.montantTotal.toFixed(2),
-      modePaiement: vente.modePaiement,
-      paiements: (vente.paiements.length > 0
-        ? vente.paiements
-        : [
-            {
-              modePaiement: vente.modePaiement,
-              montant: vente.montantTotal,
-            },
-          ]
-      ).map((p) => ({
-        modePaiement: p.modePaiement,
-        montant: p.montant.toFixed(2),
-      })),
-      nbLignes: vente._count.lignes,
-    }));
+    const journal = ventes.map((vente) => {
+      const paiementsVente: Array<{
+        modePaiement: ModePaiement;
+        montant: Prisma.Decimal;
+      }> =
+        vente.paiements.length > 0
+          ? vente.paiements
+          : [
+              {
+                modePaiement: vente.modePaiement,
+                montant: vente.montantTotal,
+              },
+            ];
+      return {
+        id: vente.id,
+        dateVente: vente.dateVente,
+        montantTotal: vente.montantTotal.toFixed(2),
+        modePaiement: vente.modePaiement,
+        paiements: paiementsVente.map((p) => ({
+          modePaiement: p.modePaiement,
+          montant: p.montant.toFixed(2),
+        })),
+        nbLignes: vente._count.lignes,
+      };
+    });
     return { releve, totalEspeces, journal };
   }
 
@@ -767,7 +784,9 @@ export class VentesService {
   }
 
   async findAll(utilisateur: AuthenticatedUser) {
-    let sessions;
+    let sessions: Awaited<
+      ReturnType<typeof this.prisma.sessionCaisse.findMany>
+    >;
     if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
       sessions = await this.prisma.sessionCaisse.findMany({
         orderBy: { ouvertureDateHeure: 'desc' },
@@ -808,7 +827,9 @@ export class VentesService {
         row.sessionCaisseId,
         {
           nombreVentes: row._count._all,
-          caSession: (row._sum.montantTotal ?? new Prisma.Decimal(0)).toFixed(2),
+          caSession: (row._sum.montantTotal ?? new Prisma.Decimal(0)).toFixed(
+            2,
+          ),
         },
       ]),
     );
@@ -821,6 +842,104 @@ export class VentesService {
         caSession: s?.caSession ?? '0.00',
       };
     });
+  }
+
+  private async perimetreCaisseWhere(
+    utilisateur: AuthenticatedUser,
+  ): Promise<Prisma.CaisseWhereInput> {
+    if (ROLES_RESEAU_TRESORERIE.includes(utilisateur.role)) {
+      return {};
+    }
+    if (utilisateur.role === ROLE_SUPERVISEUR_ZONE) {
+      const zoneId = await resolveZoneScopeForSuperviseur(
+        this.prisma,
+        utilisateur,
+      );
+      return { boutique: { zoneId } };
+    }
+    if (ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)) {
+      return { boutiqueId: requireOwnBoutiqueId(utilisateur) };
+    }
+    throw new ForbiddenException(
+      `Rôle "${utilisateur.role}" non habilité à consulter les ventes.`,
+    );
+  }
+
+  async listerJournal(
+    utilisateur: AuthenticatedUser,
+    query: ListVentesQueryDto,
+  ) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 50;
+    const perimetre = await this.perimetreCaisseWhere(utilisateur);
+
+    if (
+      query.boutiqueId &&
+      ROLES_PERIMETRE_BOUTIQUE.includes(utilisateur.role)
+    ) {
+      const own = requireOwnBoutiqueId(utilisateur);
+      if (query.boutiqueId !== own) {
+        throw new ForbiddenException(
+          'Un rôle boutique ne peut consulter que les tickets de son magasin.',
+        );
+      }
+    }
+
+    const dateVente: Prisma.DateTimeFilter = {};
+    if (query.from) dateVente.gte = new Date(query.from);
+    if (query.to) dateVente.lte = new Date(query.to);
+
+    const where: Prisma.VenteWhereInput = {
+      caisse: {
+        ...perimetre,
+        ...(query.boutiqueId ? { boutiqueId: query.boutiqueId } : {}),
+      },
+      ...(query.from || query.to ? { dateVente } : {}),
+    };
+
+    const [total, ventes] = await this.prisma.$transaction([
+      this.prisma.vente.count({ where }),
+      this.prisma.vente.findMany({
+        where,
+        orderBy: { dateVente: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          client: { select: { id: true, nom: true, prenom: true } },
+          paiements: true,
+          caisse: {
+            select: {
+              id: true,
+              type: true,
+              code: true,
+              libelle: true,
+              boutiqueId: true,
+              boutique: { select: { id: true, nom: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      items: ventes.map((v) => ({
+        id: v.id,
+        dateVente: v.dateVente,
+        montantTotal: v.montantTotal.toFixed(2),
+        modePaiement: v.modePaiement,
+        sessionCaisseId: v.sessionCaisseId,
+        clientId: v.clientId,
+        client: v.client,
+        paiements: v.paiements.map((p) => ({
+          modePaiement: p.modePaiement,
+          montant: p.montant.toFixed(2),
+        })),
+        caisse: v.caisse,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async findOne(

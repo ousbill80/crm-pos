@@ -88,27 +88,28 @@ export function insightClientPos(client: ClientDto | null): Insight {
   };
 }
 
-export function insightMonnaiePos(recu: number, total: number): Insight {
+export function insightMonnaiePos(recu: number, partEspeces: number): Insight {
   const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
   if (recu <= 0) {
     return {
-      title: 'Espèces',
-      interpretation: `Total à encaisser : ${fmt(total)} FCFA. Saisir le montant reçu pour calculer la monnaie.`,
+      title: 'Billet client',
+      interpretation: `Part ticket espèces : ${fmt(partEspeces)} FCFA. Saisir le billet remis par le client pour calculer la monnaie.`,
       severity: 'info',
     };
   }
-  const rendu = recu - total;
+  const rendu = recu - partEspeces;
   if (rendu < 0) {
     return {
-      title: 'Montant insuffisant',
-      interpretation: `Reçu ${fmt(recu)} FCFA pour un total de ${fmt(total)} FCFA.`,
-      recommendation: 'Le reçu doit être au moins égal au total avant validation.',
+      title: 'Billet insuffisant',
+      interpretation: `Reçu ${fmt(recu)} FCFA pour une part espèces de ${fmt(partEspeces)} FCFA.`,
+      recommendation:
+        'Le billet doit couvrir au moins la part espèces du ticket (pas le total en paiement mixte).',
       severity: 'warning',
     };
   }
   return {
     title: 'Monnaie à rendre',
-    interpretation: `Reçu ${fmt(recu)} FCFA — monnaie ${fmt(rendu)} FCFA. Calcul d'interface uniquement : l'API n'enregistre que le mode ESPECES et le total.`,
+    interpretation: `Billet ${fmt(recu)} FCFA − part espèces ${fmt(partEspeces)} FCFA = monnaie ${fmt(rendu)} FCFA. Information caisse uniquement (non enregistrée en base).`,
     severity: 'ok',
   };
 }

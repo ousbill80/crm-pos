@@ -3,12 +3,16 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeftRight,
+  CheckCircle2,
   ClipboardList,
+  FileEdit,
   MapPin,
   Package,
+  PackageCheck,
   RefreshCw,
   Search,
   Warehouse,
+  XCircle,
 } from 'lucide-react';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
@@ -16,7 +20,14 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import { fmtDateHeure } from '../lib/achats-ui';
+import {
+  insightEmplacementUsage,
+  insightReapproRegle,
+} from '../lib/insights/stocks';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -29,6 +40,10 @@ import type {
   RegleReapproDto,
   StockQuantDto,
 } from '../lib/types';
+
+type ColonneBon = 'numero' | 'type' | 'statut' | 'lignes' | 'cree';
+type ColonneEmpl = 'code' | 'nom' | 'boutique' | 'reseau' | 'virtuel';
+type ColonneRegle = 'produit' | 'entrepot' | 'stock' | 'min' | 'max' | 'besoin';
 
 const ROLES_PILOTE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
@@ -120,6 +135,10 @@ export function OperationsStockPage() {
   const [filtreType, setFiltreType] = useState<BonStockDto['type'] | ''>('');
   const [rechercheBon, setRechercheBon] = useState('');
   const [rechercheEmpl, setRechercheEmpl] = useState('');
+  const [sortBons, setSortBons] = useState<SortState<ColonneBon> | null>(null);
+  const [sortEmpl, setSortEmpl] = useState<SortState<ColonneEmpl> | null>(null);
+  const [sortRegles, setSortRegles] = useState<SortState<ColonneRegle> | null>(null);
+  const [sousMinSeul, setSousMinSeul] = useState(false);
 
   const bonsQ = useQuery({
     queryKey: ['stocks', 'bons'],
@@ -222,14 +241,30 @@ export function OperationsStockPage() {
 
   const bonsFiltres = useMemo(() => {
     const q = rechercheBon.trim().toLowerCase();
-    return bons.filter((b) => {
+    const base = bons.filter((b) => {
       if (filtreStatut && b.statut !== filtreStatut) return false;
       if (filtreType && b.type !== filtreType) return false;
       if (!q) return true;
       const hay = `${b.numero} ${TYPE_LABEL[b.type]} ${b.entrepotSource?.nom ?? ''} ${b.entrepotDest?.nom ?? ''} ${b.lignes.map((l) => l.designation).join(' ')}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [bons, filtreStatut, filtreType, rechercheBon]);
+    return sortRows(base, sortBons, (b, key) => {
+      switch (key) {
+        case 'numero':
+          return b.numero;
+        case 'type':
+          return TYPE_LABEL[b.type];
+        case 'statut':
+          return STATUT_LABEL[b.statut];
+        case 'lignes':
+          return b.lignes.length;
+        case 'cree':
+          return b.dateCreation;
+        default:
+          return null;
+      }
+    });
+  }, [bons, filtreStatut, filtreType, rechercheBon, sortBons]);
 
   const kpisBons = useMemo(() => {
     return {
@@ -263,8 +298,26 @@ export function OperationsStockPage() {
       const k = e.usage ?? 'STOCK';
       map.set(k, [...(map.get(k) ?? []), e]);
     }
-    return [...map.entries()];
-  }, [entrepots, rechercheEmpl]);
+    const getValue = (e: EntrepotDto, key: ColonneEmpl) => {
+      switch (key) {
+        case 'code':
+          return e.code;
+        case 'nom':
+          return e.nom;
+        case 'boutique':
+          return e.boutique?.nom ?? '';
+        case 'reseau':
+          return e.reseau ? 1 : 0;
+        case 'virtuel':
+          return e.virtuel ? 1 : 0;
+        default:
+          return null;
+      }
+    };
+    return [...map.entries()].map(
+      ([usage, list]) => [usage, sortRows(list, sortEmpl, getValue)] as [string, EntrepotDto[]],
+    );
+  }, [entrepots, rechercheEmpl, sortEmpl]);
 
   const kpisEmpl = useMemo(() => {
     const stock = entrepots.filter((e) => (e.usage ?? 'STOCK') === 'STOCK' && !e.virtuel);
@@ -288,7 +341,7 @@ export function OperationsStockPage() {
     const ids = magasin.boutiqueId
       ? new Set(entrepots.map((e) => e.id))
       : null;
-    return (reapproQ.data ?? [])
+    const base = (reapproQ.data ?? [])
       .filter((r) => {
         if (!ids) return true;
         if (r.entrepot.boutiqueId) return r.entrepot.boutiqueId === magasin.boutiqueId;
@@ -300,9 +353,28 @@ export function OperationsStockPage() {
       const besoin = sousMin ? Math.max(0, r.max - stock) : 0;
       return { ...r, stock, sousMin, besoin };
     });
-  }, [reapproQ.data, qtyParCle, magasin.boutiqueId, entrepots]);
+    return sortRows(base, sortRegles, (r, key) => {
+      switch (key) {
+        case 'produit':
+          return r.produit.designation;
+        case 'entrepot':
+          return r.entrepot.nom;
+        case 'stock':
+          return r.stock;
+        case 'min':
+          return r.min;
+        case 'max':
+          return r.max;
+        case 'besoin':
+          return r.besoin;
+        default:
+          return null;
+      }
+    });
+  }, [reapproQ.data, qtyParCle, magasin.boutiqueId, entrepots, sortRegles]);
 
   const aRelancer = reglesEnrichies.filter((r) => r.sousMin);
+  const reglesAffichees = sousMinSeul ? aRelancer : reglesEnrichies;
 
   return (
     <div className="page-stack stock-module">
@@ -348,22 +420,84 @@ export function OperationsStockPage() {
       {vue === 'operations' ? (
         <>
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <article
+              className={
+                filtreStatut === 'BROUILLON' ? 'kpi-card dash-kpi kpi-actif' : 'kpi-card dash-kpi'
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => setFiltreStatut((s) => (s === 'BROUILLON' ? '' : 'BROUILLON'))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setFiltreStatut((s) => (s === 'BROUILLON' ? '' : 'BROUILLON'));
+              }}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <FileEdit size={16} />
+                </span>
+              </div>
               <div className="kpi-label">Brouillons</div>
               <div className="kpi-value">{kpisBons.brouillon}</div>
               <div className="kpi-hint">pas encore prêts</div>
             </article>
-            <article className="kpi-card dash-kpi kpi-warning">
+            <article
+              className={
+                filtreStatut === 'PRET'
+                  ? 'kpi-card dash-kpi kpi-warning kpi-actif'
+                  : 'kpi-card dash-kpi kpi-warning'
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => setFiltreStatut((s) => (s === 'PRET' ? '' : 'PRET'))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setFiltreStatut((s) => (s === 'PRET' ? '' : 'PRET'));
+              }}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <PackageCheck size={16} />
+                </span>
+              </div>
               <div className="kpi-label">Prêts</div>
               <div className="kpi-value">{kpisBons.pret}</div>
               <div className="kpi-hint">à valider pour bouger le stock</div>
             </article>
-            <article className="kpi-card dash-kpi">
+            <article
+              className={
+                filtreStatut === 'FAIT' ? 'kpi-card dash-kpi kpi-actif' : 'kpi-card dash-kpi'
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => setFiltreStatut((s) => (s === 'FAIT' ? '' : 'FAIT'))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setFiltreStatut((s) => (s === 'FAIT' ? '' : 'FAIT'));
+              }}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <CheckCircle2 size={16} />
+                </span>
+              </div>
               <div className="kpi-label">Faits</div>
               <div className="kpi-value">{kpisBons.fait}</div>
               <div className="kpi-hint">écritures de stock posées</div>
             </article>
-            <article className="kpi-card dash-kpi">
+            <article
+              className={
+                filtreStatut === 'ANNULE' ? 'kpi-card dash-kpi kpi-actif' : 'kpi-card dash-kpi'
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => setFiltreStatut((s) => (s === 'ANNULE' ? '' : 'ANNULE'))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setFiltreStatut((s) => (s === 'ANNULE' ? '' : 'ANNULE'));
+              }}
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <XCircle size={16} />
+                </span>
+              </div>
               <div className="kpi-label">Annulés</div>
               <div className="kpi-value">{kpisBons.annule}</div>
               <div className="kpi-hint">sans mouvement</div>
@@ -440,12 +574,42 @@ export function OperationsStockPage() {
                   <table>
                     <thead>
                       <tr>
-                        <th>N°</th>
-                        <th>Type</th>
-                        <th>Statut</th>
+                        <SortHeader
+                          active={sortBons?.key === 'numero'}
+                          dir={sortBons?.key === 'numero' ? sortBons.dir : 'asc'}
+                          onClick={() => setSortBons((s) => toggleSort(s, 'numero'))}
+                        >
+                          N°
+                        </SortHeader>
+                        <SortHeader
+                          active={sortBons?.key === 'type'}
+                          dir={sortBons?.key === 'type' ? sortBons.dir : 'asc'}
+                          onClick={() => setSortBons((s) => toggleSort(s, 'type'))}
+                        >
+                          Type
+                        </SortHeader>
+                        <SortHeader
+                          active={sortBons?.key === 'statut'}
+                          dir={sortBons?.key === 'statut' ? sortBons.dir : 'asc'}
+                          onClick={() => setSortBons((s) => toggleSort(s, 'statut'))}
+                        >
+                          Statut
+                        </SortHeader>
                         <th>Source → dest.</th>
-                        <th>Lignes</th>
-                        <th>Créé</th>
+                        <SortHeader
+                          active={sortBons?.key === 'lignes'}
+                          dir={sortBons?.key === 'lignes' ? sortBons.dir : 'asc'}
+                          onClick={() => setSortBons((s) => toggleSort(s, 'lignes'))}
+                        >
+                          Lignes
+                        </SortHeader>
+                        <SortHeader
+                          active={sortBons?.key === 'cree'}
+                          dir={sortBons?.key === 'cree' ? sortBons.dir : 'desc'}
+                          onClick={() => setSortBons((s) => toggleSort(s, 'cree'))}
+                        >
+                          Créé
+                        </SortHeader>
                       </tr>
                     </thead>
                     <tbody>
@@ -550,11 +714,42 @@ export function OperationsStockPage() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Code</th>
-                          <th>Nom</th>
-                          <th>Boutique</th>
-                          <th>Réseau</th>
-                          <th>Virtuel</th>
+                          <SortHeader
+                            active={sortEmpl?.key === 'code'}
+                            dir={sortEmpl?.key === 'code' ? sortEmpl.dir : 'asc'}
+                            onClick={() => setSortEmpl((s) => toggleSort(s, 'code'))}
+                          >
+                            Code
+                          </SortHeader>
+                          <SortHeader
+                            active={sortEmpl?.key === 'nom'}
+                            dir={sortEmpl?.key === 'nom' ? sortEmpl.dir : 'asc'}
+                            onClick={() => setSortEmpl((s) => toggleSort(s, 'nom'))}
+                          >
+                            Nom
+                          </SortHeader>
+                          <SortHeader
+                            active={sortEmpl?.key === 'boutique'}
+                            dir={sortEmpl?.key === 'boutique' ? sortEmpl.dir : 'asc'}
+                            onClick={() => setSortEmpl((s) => toggleSort(s, 'boutique'))}
+                          >
+                            Boutique
+                          </SortHeader>
+                          <SortHeader
+                            active={sortEmpl?.key === 'reseau'}
+                            dir={sortEmpl?.key === 'reseau' ? sortEmpl.dir : 'asc'}
+                            onClick={() => setSortEmpl((s) => toggleSort(s, 'reseau'))}
+                          >
+                            Réseau
+                          </SortHeader>
+                          <SortHeader
+                            active={sortEmpl?.key === 'virtuel'}
+                            dir={sortEmpl?.key === 'virtuel' ? sortEmpl.dir : 'asc'}
+                            onClick={() => setSortEmpl((s) => toggleSort(s, 'virtuel'))}
+                          >
+                            Virtuel
+                          </SortHeader>
+                          <th aria-label="Info" />
                         </tr>
                       </thead>
                       <tbody>
@@ -567,6 +762,15 @@ export function OperationsStockPage() {
                             <td>{e.boutique?.nom ?? e.boutiqueId}</td>
                             <td>{e.reseau ? 'Oui' : 'Non'}</td>
                             <td>{e.virtuel ? 'Oui' : 'Non'}</td>
+                            <td>
+                              <InfoTooltip
+                                insight={insightEmplacementUsage(
+                                  e.usage ?? 'STOCK',
+                                  Boolean(e.virtuel),
+                                  Boolean(e.reseau),
+                                )}
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -585,15 +789,35 @@ export function OperationsStockPage() {
             <FiltreMagasinSiege id="reappro-filtre-magasin" />
           </div>
           <div className="kpi-grid dash-kpi-grid">
-            <article className="kpi-card dash-kpi">
+            <article
+              className={
+                !sousMinSeul ? 'kpi-card dash-kpi kpi-actif' : 'kpi-card dash-kpi'
+              }
+              role="button"
+              tabIndex={0}
+              onClick={() => setSousMinSeul(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setSousMinSeul(false);
+              }}
+            >
               <div className="kpi-label">Règles</div>
               <div className="kpi-value">{reglesEnrichies.length}</div>
               <div className="kpi-hint">min/max par magasin</div>
             </article>
             <article
               className={
-                aRelancer.length > 0 ? 'kpi-card dash-kpi kpi-warning' : 'kpi-card dash-kpi'
+                aRelancer.length > 0
+                  ? sousMinSeul
+                    ? 'kpi-card dash-kpi kpi-warning kpi-actif'
+                    : 'kpi-card dash-kpi kpi-warning'
+                  : 'kpi-card dash-kpi'
               }
+              role="button"
+              tabIndex={0}
+              onClick={() => setSousMinSeul((s) => !s)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setSousMinSeul((s) => !s);
+              }}
             >
               <div className="kpi-label">Sous le min</div>
               <div className="kpi-value">{aRelancer.length}</div>
@@ -685,22 +909,62 @@ export function OperationsStockPage() {
               description="Définissez un min/max par magasin. Le lanceur transfère depuis le central, ou crée une commande d’achat si le hub est insuffisant."
             />
           ) : (
-            <ListPanel title="Règles et stock actuel">
+            <ListPanel title={`Règles et stock actuel (${reglesAffichees.length})`}>
+              {reglesAffichees.length === 0 ? (
+                <p className="lead">Aucune règle sous le min.</p>
+              ) : (
               <div className="clients-table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Produit</th>
-                      <th>Entrepôt</th>
-                      <th>Stock</th>
-                      <th>Min</th>
-                      <th>Max</th>
-                      <th>Besoin</th>
+                      <SortHeader
+                        active={sortRegles?.key === 'produit'}
+                        dir={sortRegles?.key === 'produit' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'produit'))}
+                      >
+                        Produit
+                      </SortHeader>
+                      <SortHeader
+                        active={sortRegles?.key === 'entrepot'}
+                        dir={sortRegles?.key === 'entrepot' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'entrepot'))}
+                      >
+                        Entrepôt
+                      </SortHeader>
+                      <SortHeader
+                        active={sortRegles?.key === 'stock'}
+                        dir={sortRegles?.key === 'stock' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'stock'))}
+                      >
+                        Stock
+                      </SortHeader>
+                      <SortHeader
+                        active={sortRegles?.key === 'min'}
+                        dir={sortRegles?.key === 'min' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'min'))}
+                      >
+                        Min
+                      </SortHeader>
+                      <SortHeader
+                        active={sortRegles?.key === 'max'}
+                        dir={sortRegles?.key === 'max' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'max'))}
+                      >
+                        Max
+                      </SortHeader>
+                      <SortHeader
+                        active={sortRegles?.key === 'besoin'}
+                        dir={sortRegles?.key === 'besoin' ? sortRegles.dir : 'asc'}
+                        onClick={() => setSortRegles((s) => toggleSort(s, 'besoin'))}
+                      >
+                        Besoin
+                      </SortHeader>
                       <th>Statut</th>
+                      <th aria-label="Info" />
                     </tr>
                   </thead>
                   <tbody>
-                    {reglesEnrichies.map((r) => (
+                    {reglesAffichees.map((r) => (
                       <tr key={r.id}>
                         <td>
                           <Link to={`/produits/${r.produitId}`}>{r.produit.designation}</Link>
@@ -721,11 +985,17 @@ export function OperationsStockPage() {
                             <span className="badge badge-ok">OK</span>
                           )}
                         </td>
+                        <td>
+                          <InfoTooltip
+                            insight={insightReapproRegle(r.stock, r.min, r.max, r.besoin)}
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              )}
               {aRelancer.length > 0 && peutPiloter ? (
                 <p className="lead" style={{ marginTop: 12 }}>
                   {aRelancer.length} magasin(s) sous le min — le lanceur crée des bons (Transférer)

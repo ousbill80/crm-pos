@@ -468,18 +468,32 @@ async function main() {
     });
   }
 
-  // Répartition multi-emplacement : surplus / sous-seuil / rupture pour
-  // alimenter le cockpit Inventaire (suggestions de transfert, valorisation).
-  const catalogue = [
+  // Catalogue démo — stocks élevés pour tests POS / circuit (pas de plafonds).
+  // Quelques références restent sous seuil / en rupture pour le cockpit inventaire.
+  const catalogue: Array<{
+    designation: string;
+    reference: string;
+    categorie: string;
+    prixUnitaire: number;
+    coutMoyenPondere: number;
+    principal: number;
+    reserve: number;
+    hub: number;
+    boutiques: number;
+    seuilReappro: number;
+    actif: boolean;
+  }> = [
     {
       designation: 'Coque silicone iPhone',
       reference: 'COQ-IP-SIL',
       categorie: 'Protection',
       prixUnitaire: 2500,
       coutMoyenPondere: 900,
-      principal: 40,
-      reserve: 12,
-      seuilReappro: 10,
+      principal: 180,
+      reserve: 60,
+      hub: 400,
+      boutiques: 120,
+      seuilReappro: 20,
       actif: true,
     },
     {
@@ -488,9 +502,11 @@ async function main() {
       categorie: 'Charge',
       prixUnitaire: 4500,
       coutMoyenPondere: 1800,
-      principal: 2,
-      reserve: 23,
-      seuilReappro: 30,
+      principal: 150,
+      reserve: 40,
+      hub: 350,
+      boutiques: 100,
+      seuilReappro: 25,
       actif: true,
     },
     {
@@ -499,9 +515,11 @@ async function main() {
       categorie: 'Audio',
       prixUnitaire: 12000,
       coutMoyenPondere: 6500,
-      principal: 0,
-      reserve: 15,
-      seuilReappro: 8,
+      principal: 90,
+      reserve: 30,
+      hub: 200,
+      boutiques: 70,
+      seuilReappro: 15,
       actif: true,
     },
     {
@@ -510,9 +528,11 @@ async function main() {
       categorie: 'Protection',
       prixUnitaire: 1500,
       coutMoyenPondere: 400,
-      principal: 60,
-      reserve: 8,
-      seuilReappro: 15,
+      principal: 250,
+      reserve: 80,
+      hub: 500,
+      boutiques: 150,
+      seuilReappro: 30,
       actif: true,
     },
     {
@@ -521,11 +541,119 @@ async function main() {
       categorie: 'Câbles',
       prixUnitaire: 2000,
       coutMoyenPondere: 700,
-      principal: 50,
-      reserve: 20,
+      principal: 220,
+      reserve: 70,
+      hub: 450,
+      boutiques: 140,
+      seuilReappro: 25,
+      actif: true,
+    },
+    {
+      designation: 'Powerbank 10 000 mAh',
+      reference: 'PWR-10K',
+      categorie: 'Charge',
+      prixUnitaire: 8500,
+      coutMoyenPondere: 4200,
+      principal: 100,
+      reserve: 35,
+      hub: 220,
+      boutiques: 80,
+      seuilReappro: 15,
+      actif: true,
+    },
+    {
+      designation: 'Coque Samsung A54',
+      reference: 'COQ-A54',
+      categorie: 'Protection',
+      prixUnitaire: 2800,
+      coutMoyenPondere: 950,
+      principal: 160,
+      reserve: 50,
+      hub: 300,
+      boutiques: 110,
+      seuilReappro: 20,
+      actif: true,
+    },
+    {
+      designation: 'Écouteurs filaires Jack 3.5',
+      reference: 'AUD-J35',
+      categorie: 'Audio',
+      prixUnitaire: 3500,
+      coutMoyenPondere: 1100,
+      principal: 140,
+      reserve: 45,
+      hub: 280,
+      boutiques: 90,
+      seuilReappro: 18,
+      actif: true,
+    },
+    {
+      designation: 'Câble Lightning 1m',
+      reference: 'CAB-LT-1M',
+      categorie: 'Câbles',
+      prixUnitaire: 2500,
+      coutMoyenPondere: 800,
+      principal: 170,
+      reserve: 55,
+      hub: 320,
+      boutiques: 100,
+      seuilReappro: 20,
+      actif: true,
+    },
+    {
+      designation: 'Adaptateur USB-C → Jack',
+      reference: 'ADP-C-J',
+      categorie: 'Accessoires',
+      prixUnitaire: 3000,
+      coutMoyenPondere: 900,
+      principal: 130,
+      reserve: 40,
+      hub: 250,
+      boutiques: 85,
+      seuilReappro: 15,
+      actif: true,
+    },
+    {
+      designation: 'Carte mémoire 64 Go',
+      reference: 'MEM-64',
+      categorie: 'Stockage',
+      prixUnitaire: 5500,
+      coutMoyenPondere: 2800,
+      principal: 110,
+      reserve: 35,
+      hub: 200,
+      boutiques: 75,
       seuilReappro: 12,
       actif: true,
     },
+    {
+      designation: 'Support téléphone bureau',
+      reference: 'ACC-SUP-B',
+      categorie: 'Accessoires',
+      prixUnitaire: 4000,
+      coutMoyenPondere: 1500,
+      principal: 95,
+      reserve: 30,
+      hub: 180,
+      boutiques: 65,
+      seuilReappro: 10,
+      actif: true,
+    },
+    // Cas inventaire : sous-seuil (tests alertes)
+    {
+      designation: 'Chargeur allume-cigare (sous seuil)',
+      reference: 'CHG-AUTO-SS',
+      categorie: 'Charge',
+      prixUnitaire: 3200,
+      coutMoyenPondere: 1200,
+      principal: 4,
+      reserve: 2,
+      hub: 8,
+      boutiques: 3,
+      seuilReappro: 20,
+      actif: true,
+    },
+    // Rupture volontaire
     {
       designation: 'Support voiture (fin de série)',
       reference: 'ACC-SUP-01',
@@ -534,6 +662,8 @@ async function main() {
       coutMoyenPondere: 1200,
       principal: 0,
       reserve: 0,
+      hub: 0,
+      boutiques: 0,
       seuilReappro: 4,
       actif: true,
     },
@@ -543,17 +673,35 @@ async function main() {
       categorie: 'Protection',
       prixUnitaire: 1500,
       coutMoyenPondere: 500,
-      principal: 4,
+      principal: 8,
       reserve: 0,
+      hub: 5,
+      boutiques: 0,
       seuilReappro: 5,
       actif: false,
     },
   ];
 
+  const destBoutiquesPos = [
+    boutiqueGsm.principal.id,
+    boutiqueCafe.principal.id,
+    ...pdv
+      .filter((p) => !['EXT', 'GSM', 'CAFE'].includes(p.code))
+      .map((p) => p.principal.id),
+  ];
+
   for (const article of catalogue) {
     let produit = await prisma.produit.findFirst({
-      where: { designation: article.designation },
+      where: {
+        OR: [
+          { reference: article.reference },
+          { designation: article.designation },
+        ],
+      },
     });
+    const imageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240"><rect width="240" height="240" rx="36" fill="#0F766E"/><text x="120" y="132" text-anchor="middle" font-family="sans-serif" font-size="40" font-weight="800" fill="#fff">${article.reference.slice(0, 6)}</text></svg>`,
+    )}`;
     if (!produit) {
       produit = await prisma.produit.create({
         data: {
@@ -565,20 +713,27 @@ async function main() {
           seuilReappro: article.seuilReappro,
           coutMoyenPondere: article.coutMoyenPondere,
           actif: article.actif,
+          imageUrl,
         },
       });
     } else {
       produit = await prisma.produit.update({
         where: { id: produit.id },
         data: {
+          designation: article.designation,
           reference: article.reference,
           categorie: article.categorie,
+          prixUnitaire: article.prixUnitaire,
           coutMoyenPondere: article.coutMoyenPondere,
           seuilReappro: article.seuilReappro,
           actif: article.actif,
+          imageUrl: produit.imageUrl?.startsWith('data:')
+            ? produit.imageUrl
+            : imageUrl,
         },
       });
     }
+
     await prisma.stockQuant.upsert({
       where: {
         produitId_entrepotId: {
@@ -586,11 +741,11 @@ async function main() {
           entrepotId: entrepot.id,
         },
       },
-      update: { quantite: Math.min(article.principal, 15) },
+      update: { quantite: article.principal },
       create: {
         produitId: produit.id,
         entrepotId: entrepot.id,
-        quantite: Math.min(article.principal, 15),
+        quantite: article.principal,
       },
     });
     await prisma.stockQuant.upsert({
@@ -600,15 +755,13 @@ async function main() {
           entrepotId: reserve.id,
         },
       },
-      update: { quantite: Math.min(article.reserve, 5) },
+      update: { quantite: article.reserve },
       create: {
         produitId: produit.id,
         entrepotId: reserve.id,
-        quantite: Math.min(article.reserve, 5),
+        quantite: article.reserve,
       },
     });
-    // Gros du stock sur hub STOCK (démo répartition Achats → boutiques).
-    const qtyHub = Math.max(article.principal, article.reserve, 10);
     await prisma.stockQuant.upsert({
       where: {
         produitId_entrepotId: {
@@ -616,30 +769,33 @@ async function main() {
           entrepotId: hubStock.id,
         },
       },
-      update: { quantite: qtyHub },
+      update: { quantite: article.hub },
       create: {
         produitId: produit.id,
         entrepotId: hubStock.id,
-        quantite: qtyHub,
+        quantite: article.hub,
       },
     });
-    // Petites quantités POS sur GSM et Café-Market.
-    for (const dest of [boutiqueGsm.principal, boutiqueCafe.principal]) {
+
+    for (const destId of destBoutiquesPos) {
       await prisma.stockQuant.upsert({
         where: {
           produitId_entrepotId: {
             produitId: produit.id,
-            entrepotId: dest.id,
+            entrepotId: destId,
           },
         },
-        update: { quantite: article.actif ? 3 : 0 },
+        update: {
+          quantite: article.actif ? article.boutiques : 0,
+        },
         create: {
           produitId: produit.id,
-          entrepotId: dest.id,
-          quantite: article.actif ? 3 : 0,
+          entrepotId: destId,
+          quantite: article.actif ? article.boutiques : 0,
         },
       });
     }
+
     const somme = await prisma.stockQuant.aggregate({
       where: { produitId: produit.id },
       _sum: { quantite: true },

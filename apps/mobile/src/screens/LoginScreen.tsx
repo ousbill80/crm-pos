@@ -1,35 +1,66 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { apiFetch, setToken } from '../api';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  COMPTES_DEMO,
+  LISTE_COMPTES_DEMO,
+  comptesDemoParFamille,
+  labelProfil,
+} from '@caisse-crm/shared';
+import { apiFetch } from '../api';
+import { useSession } from '../session-context';
+import { colors } from '../ui';
 
 const DEMO_PASSWORD = 'MotDePasse!123';
 
-export function LoginScreen({ onConnected }: { onConnected: () => void }) {
-  const [login, setLogin] = useState('demo-pos-caissier');
+/** Mapping boutique seed (démo locale) — le JWT porte l’id réel après login. */
+const HINT_BOUTIQUE: Partial<Record<string, string>> = {
+  'demo-pos-caissier': 'Boutique Extérieur',
+  'demo-pos-temoin': 'Boutique Extérieur',
+  'demo-convoyeur': 'Boutique Extérieur',
+  'demo-caissier-gsm': 'Boutique GSM',
+  'demo-resp-gsm': 'Boutique GSM',
+  'demo-caissier-cafe': 'Café-Market',
+  'demo-resp-cafe': 'Café-Market',
+  'demo-superviseur': 'Zone (boutique Ext.)',
+  'demo-dg': 'Réseau entier',
+  'demo-daf': 'Réseau entier',
+  'demo-central': 'Réseau entier',
+  'demo-controle': 'Réseau entier',
+  'demo-respsi': 'Système (hors trésorerie)',
+  'demo-crm': 'CRM (hors trésorerie)',
+};
+
+export function LoginScreen() {
+  const { signIn } = useSession();
+  const [login, setLogin] = useState(COMPTES_DEMO.CAISSIER_BOUTIQUE.login);
   const [password, setPassword] = useState(DEMO_PASSWORD);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const familles = useMemo(() => comptesDemoParFamille(), []);
 
-  async function submit() {
+  async function submit(loginOverride?: string) {
+    const id = loginOverride ?? login;
+    setLogin(id);
     setError(null);
     setPending(true);
     try {
-      const { accessToken } = await apiFetch<{ accessToken: string }>(
-        '/auth/login',
-        {
-          method: 'POST',
-          body: JSON.stringify({ login, password }),
-        },
-      );
-      setToken(accessToken);
-      onConnected();
+      const { accessToken, mustChangePassword } = await apiFetch<{
+        accessToken: string;
+        mustChangePassword: boolean;
+      }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ login: id, password }),
+      });
+      await signIn(accessToken, mustChangePassword);
     } catch {
       setError('Identifiants invalides ou API injoignable.');
     } finally {
@@ -37,54 +68,205 @@ export function LoginScreen({ onConnected }: { onConnected: () => void }) {
     }
   }
 
+  const actif = LISTE_COMPTES_DEMO.find((c) => c.login === login);
+
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.brand}>CaissePOS</Text>
-      <Text style={styles.title}>Connexion boutique</Text>
-      <TextInput
-        style={styles.input}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="Identifiant"
-        value={login}
-        onChangeText={setLogin}
-      />
-      <TextInput
-        style={styles.input}
-        secureTextEntry
-        placeholder="Mot de passe"
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable style={styles.btn} onPress={() => void submit()} disabled={pending}>
-        {pending ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnText}>Se connecter</Text>
-        )}
-      </Pressable>
-    </View>
+    <ScrollView
+      contentContainerStyle={styles.root}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.glowTop} />
+      <View style={styles.hero}>
+        <View style={styles.logoDisc}>
+          <Ionicons name="storefront" size={28} color={colors.accent} />
+        </View>
+        <Text style={styles.brand}>CAISSEPOS</Text>
+        <Text style={styles.headline}>Connexion</Text>
+        <Text style={styles.lead}>
+          Choisissez un profil (§4) — la boutique / le réseau suivent le compte.
+        </Text>
+      </View>
+
+      <View style={styles.panel}>
+        {familles.map((f) => (
+          <View key={f.famille} style={{ gap: 8 }}>
+            <Text style={styles.family}>{f.libelle}</Text>
+            <View style={styles.chips}>
+              {f.comptes.map((c) => {
+                const on = login === c.login;
+                return (
+                  <Pressable
+                    key={c.login}
+                    style={[styles.chip, on && styles.chipOn]}
+                    onPress={() => setLogin(c.login)}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                      {c.libelleCourt}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+
+        {actif ? (
+          <View style={styles.hintBox}>
+            <Text style={styles.hintTitle}>{labelProfil(actif.role)}</Text>
+            <Text style={styles.hintBody}>{actif.hint}</Text>
+            <Text style={styles.hintBody}>
+              {HINT_BOUTIQUE[actif.login] ?? 'Périmètre selon fiche utilisateur'}
+            </Text>
+            <Text style={styles.hintLogin}>{actif.login}</Text>
+          </View>
+        ) : null}
+
+        <TextInput
+          style={styles.field}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="Identifiant"
+          placeholderTextColor="#94A3B8"
+          value={login}
+          onChangeText={setLogin}
+        />
+        <TextInput
+          style={styles.field}
+          secureTextEntry
+          placeholder="Mot de passe"
+          placeholderTextColor="#94A3B8"
+          value={password}
+          onChangeText={setPassword}
+        />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable
+          style={styles.primaryBtn}
+          onPress={() => void submit()}
+          disabled={pending}
+        >
+          {pending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Se connecter</Text>
+          )}
+        </Pressable>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, padding: 24, justifyContent: 'center', gap: 12 },
-  brand: { fontSize: 14, letterSpacing: 2, fontWeight: '700' },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+  root: {
+    flexGrow: 1,
+    backgroundColor: '#ECF4F2',
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 36,
+    gap: 18,
   },
-  error: { color: '#b00020' },
-  btn: {
-    backgroundColor: '#111',
-    padding: 14,
-    borderRadius: 8,
+  glowTop: {
+    position: 'absolute',
+    top: -80,
+    right: -40,
+    width: 240,
+    height: 240,
+    borderRadius: 200,
+    backgroundColor: 'rgba(15, 118, 110, 0.14)',
+  },
+  hero: { alignItems: 'center', gap: 6 },
+  logoDisc: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CCFBF1',
+    marginBottom: 4,
+  },
+  brand: {
+    fontSize: 12,
+    letterSpacing: 3,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  headline: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  lead: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#64748B',
+    textAlign: 'center',
+    maxWidth: 320,
+  },
+  panel: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#DCE6E2',
+  },
+  family: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.muted,
+  },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#F8FAF9',
+  },
+  chipOn: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+  },
+  chipText: { fontWeight: '700', color: colors.text, fontSize: 13 },
+  chipTextOn: { color: colors.accentText },
+  hintBox: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  hintTitle: { fontWeight: '800', color: colors.accentText },
+  hintBody: { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  hintLogin: { fontSize: 12, fontWeight: '700', color: colors.accent, marginTop: 4 },
+  field: {
+    borderWidth: 1.5,
+    borderColor: '#C5D4CF',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+    backgroundColor: '#F8FAF9',
+  },
+  error: {
+    color: colors.danger,
+    backgroundColor: colors.dangerSoft,
+    padding: 10,
+    borderRadius: 10,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  primaryBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: 14,
+    paddingVertical: 15,
     alignItems: 'center',
   },
-  btnText: { color: '#fff', fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

@@ -386,17 +386,17 @@ export function ImportCatalogueModal({
               <div className="import-kpis" role="group" aria-label="Synthèse">
                 {(
                   [
-                    ['TOUS', `${apercu.totalLignes} lignes`],
-                    ['CREATE', `${apercu.aCreer} à créer`],
-                    ['UPDATE', `${apercu.aMettreAJour} à maj`],
-                    ['ERROR', `${apercu.enErreur} erreur(s)`],
-                    ['SKIP', `${apercu.aIgnorer} ignorée(s)`],
+                    ['TOUS', `${apercu.totalLignes} lignes`, ''],
+                    ['CREATE', `${apercu.aCreer} à créer`, 'import-kpi-create'],
+                    ['UPDATE', `${apercu.aMettreAJour} à maj`, 'import-kpi-update'],
+                    ['ERROR', `${apercu.enErreur} erreur(s)`, 'import-kpi-error'],
+                    ['SKIP', `${apercu.aIgnorer} ignorée(s)`, 'import-kpi-skip'],
                   ] as const
-                ).map(([id, label]) => (
+                ).map(([id, label, tone]) => (
                   <button
                     key={id}
                     type="button"
-                    className={filtre === id ? 'import-kpi actif' : 'import-kpi'}
+                    className={`import-kpi ${tone}${filtre === id ? ' actif' : ''}`.trim()}
                     onClick={() => setFiltre(id)}
                   >
                     {label}

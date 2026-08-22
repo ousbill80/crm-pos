@@ -1,24 +1,32 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRightLeft, Landmark, Wallet } from 'lucide-react';
+import { ArrowRightLeft, Landmark, Search, Wallet } from 'lucide-react';
 import {
   RoleLibelle,
   ROLES_REGULARISATION_LITIGE,
   ROLES_REGULARISATION_LITIGE_INTERNE,
   StatutTransaction,
+  TypeCaisse,
   TypeTransaction,
 } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
+import { PageHeader, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
   useFiltreMagasinSiege,
 } from '../components/FiltreMagasinSiege';
+import {
+  insightDroitLitige,
+  insightEcartLitige,
+  insightLitigeCategorie,
+  insightLitigesTransactions,
+} from '../lib/insights/transactions';
 import type { TransactionDto } from '../lib/types';
 
 function estLitigeInterne(t: TransactionDto): boolean {
@@ -30,6 +38,35 @@ function formatFcfa(value: string | number | undefined): string {
   const n = typeof value === 'string' ? Number(value) : value;
   if (Number.isNaN(n)) return String(value);
   return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
+}
+
+function labelTypeTx(type: string): string {
+  if (type === TypeTransaction.VENTE) return 'Encaissement';
+  if (type === TypeTransaction.SORTIE_FONDS) return 'Versement / sortie';
+  if (type === TypeTransaction.TRANSFERT_INTERNE) return 'Transfert interne';
+  return type;
+}
+
+function labelCaisseTx(t: TransactionDto): string {
+  const c = t.caisse;
+  if (!c) return 'Caisse';
+  if (c.type === TypeCaisse.TIROIR) {
+    return `${c.code ?? 'T??'} — ${c.libelle ?? 'Tiroir'}`;
+  }
+  if (c.type === TypeCaisse.MAGASIN) return c.libelle ?? 'Caisse magasin';
+  return c.libelle ?? 'Caisse centrale';
+}
+
+function nomMagasinTx(t: TransactionDto): string {
+  if (t.caisse?.boutique?.nom) return t.caisse.boutique.nom;
+  if (t.caisse?.type === TypeCaisse.CENTRALE) return 'Réseau';
+  return '—';
+}
+
+function quiRegularise(interne: boolean): string {
+  return interne
+    ? 'Responsable boutique / DAF'
+    : 'Contrôle interne / DAF';
 }
 
 type FiltreCategorie = 'tous' | 'interne' | 'centrale';
@@ -74,54 +111,92 @@ export function LitigesPage() {
     const needle = q.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((t) => {
-      const hay = `${t.type} ${t.montant} ${t.caisseId} ${t.id}`.toLowerCase();
+      const hay = [
+        estLitigeInterne(t) ? 'interne' : 'centrale',
+        labelTypeTx(t.type),
+        t.montant,
+        nomMagasinTx(t),
+        labelCaisseTx(t),
+      ]
+        .join(' ')
+        .toLowerCase();
       return hay.includes(needle);
     });
   }, [internes, centrales, filtre, q]);
 
   const montantInterne = internes.reduce((s, t) => s + Number(t.montant), 0);
   const montantCentrale = centrales.reduce((s, t) => s + Number(t.montant), 0);
+  const totalPerimetre = internes.length + centrales.length;
+  const totalReseau = litiges?.length ?? 0;
+  const filtreMasqueReseau = Boolean(magasin.boutiqueId) && totalReseau > totalPerimetre;
 
-  function renderGroup(title: string, rows: TransactionDto[], kind: 'interne' | 'centrale') {
+  const droitTexte =
+    peutRegulariserInterne || peutRegulariserCentrale
+      ? `Vous pouvez régulariser : ${[
+          peutRegulariserInterne ? 'internes' : null,
+          peutRegulariserCentrale ? 'centrale' : null,
+        ]
+          .filter(Boolean)
+          .join(' / ')}`
+      : 'Lecture seule';
+
+  function renderGroup(
+    title: string,
+    rows: TransactionDto[],
+    kind: 'interne' | 'centrale',
+  ) {
     if (filtre !== 'tous' && filtre !== kind) return null;
+    const visibles = rows.filter((t) => filtered.some((f) => f.id === t.id));
     return (
       <div className="litiges-tree-group">
         <div className="litiges-tree-group-label">
           {title}
-          <span className="litiges-tree-count">{rows.length}</span>
+          <span className="litiges-tree-count">{visibles.length}</span>
         </div>
-        {rows.length === 0 ? (
+        {visibles.length === 0 ? (
           <p className="lead litiges-tree-empty">Aucun litige dans cette catégorie.</p>
         ) : (
-          rows
-            .filter((t) => filtered.some((f) => f.id === t.id))
-            .map((t) => (
-              <button
+          visibles.map((t) => {
+            const interne = estLitigeInterne(t);
+            const peutAgir = interne ? peutRegulariserInterne : peutRegulariserCentrale;
+            return (
+              <div
                 key={t.id}
-                type="button"
                 className="litiges-node"
+                role="link"
+                tabIndex={0}
                 onClick={() => navigate(`/transactions/${t.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(`/transactions/${t.id}`);
+                  }
+                }}
               >
                 <span className="litiges-node-body">
                   <span className="litiges-node-title">
-                    <span
-                      className={
-                        estLitigeInterne(t) ? 'badge badge-warning' : 'badge badge-critical'
-                      }
-                    >
-                      {estLitigeInterne(t) ? 'INTERNE' : 'CENTRALE'}
-                    </span>{' '}
-                    {t.type}
+                    <span className={interne ? 'badge badge-warning' : 'badge badge-critical'}>
+                      {interne ? 'Interne' : 'Centrale'}
+                    </span>
+                    {labelTypeTx(t.type)}
+                    <InfoTooltip insight={insightEcartLitige(t, interne)} />
+                    {peutAgir ? (
+                      <span className="badge badge-ok">Vous pouvez régulariser</span>
+                    ) : null}
                   </span>
                   <span className="litiges-node-meta">
-                    {new Date(t.dateHeure).toLocaleString('fr-FR')}
+                    {nomMagasinTx(t)} · {labelCaisseTx(t)}
                     {' · '}
-                    <code>{t.caisseId.slice(0, 8)}…</code>
+                    {new Date(t.dateHeure).toLocaleString('fr-FR')}
+                  </span>
+                  <span className="litiges-node-qui">
+                    Régularisation : {quiRegularise(interne)}
                   </span>
                 </span>
                 <span className="litiges-node-montant money">{formatFcfa(t.montant)}</span>
-              </button>
-            ))
+              </div>
+            );
+          })
         )}
       </div>
     );
@@ -135,7 +210,9 @@ export function LitigesPage() {
           boutiqueId: magasin.boutiqueId,
           nomMagasin: magasin.nomMagasin,
           texteReseau:
-            'Internes (tiroir→magasin) · Centrale §6.4 — cliquez une ligne pour régulariser sur la fiche transaction',
+            'Écarts bloqués jusqu’à régularisation. Cliquez une ligne → fiche transaction.',
+          texteBoutique:
+            'Écarts bloqués jusqu’à régularisation. Cliquez une ligne → fiche transaction.',
         })}
         actions={
           <nav className="circuit-nav" aria-label="Circuit trésorerie">
@@ -153,32 +230,49 @@ export function LitigesPage() {
       />
 
       <section className="litiges-kpis" aria-label="Synthèse litiges">
-        <article className="litiges-kpi">
-          <div className="litiges-kpi-label">Total ouverts</div>
-          <div className="litiges-kpi-value">{internes.length + centrales.length}</div>
-        </article>
-        <article className="litiges-kpi">
-          <div className="litiges-kpi-label">Internes</div>
+        <button
+          type="button"
+          className={`litiges-kpi${filtre === 'tous' ? ' is-actif' : ''}`}
+          onClick={() => setFiltre('tous')}
+        >
+          <div className="litiges-kpi-label">
+            Total ouverts <InfoTooltip insight={insightLitigesTransactions(totalPerimetre)} />
+          </div>
+          <div className="litiges-kpi-value">{totalPerimetre}</div>
+          <div className="litiges-kpi-hint money">{formatFcfa(montantInterne + montantCentrale)}</div>
+        </button>
+        <button
+          type="button"
+          className={`litiges-kpi${filtre === 'interne' ? ' is-actif' : ''}`}
+          onClick={() => setFiltre('interne')}
+        >
+          <div className="litiges-kpi-label">
+            Internes · tiroir → magasin{' '}
+            <InfoTooltip insight={insightLitigeCategorie('interne', internes.length, montantInterne)} />
+          </div>
           <div className="litiges-kpi-value">{internes.length}</div>
           <div className="litiges-kpi-hint money">{formatFcfa(montantInterne)}</div>
-        </article>
-        <article className="litiges-kpi">
-          <div className="litiges-kpi-label">Centrale §6.4</div>
+        </button>
+        <button
+          type="button"
+          className={`litiges-kpi${filtre === 'centrale' ? ' is-actif' : ''}`}
+          onClick={() => setFiltre('centrale')}
+        >
+          <div className="litiges-kpi-label">
+            Centrale §6.4{' '}
+            <InfoTooltip insight={insightLitigeCategorie('centrale', centrales.length, montantCentrale)} />
+          </div>
           <div className="litiges-kpi-value">{centrales.length}</div>
           <div className="litiges-kpi-hint money">{formatFcfa(montantCentrale)}</div>
-        </article>
+        </button>
         <article className="litiges-kpi">
-          <div className="litiges-kpi-label">Votre droit</div>
-          <div className="litiges-kpi-hint">
-            {peutRegulariserInterne || peutRegulariserCentrale
-              ? [
-                  peutRegulariserInterne ? 'Internes' : null,
-                  peutRegulariserCentrale ? 'Centrale' : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : 'Lecture seule'}
+          <div className="litiges-kpi-label">
+            Votre droit{' '}
+            <InfoTooltip
+              insight={insightDroitLitige(peutRegulariserInterne, peutRegulariserCentrale)}
+            />
           </div>
+          <div className="litiges-kpi-droit">{droitTexte}</div>
         </article>
       </section>
 
@@ -187,33 +281,34 @@ export function LitigesPage() {
 
       {litiges && (
         <>
-          <div className="toolbar litiges-toolbar">
+          <div className="litiges-bar">
             <FiltreMagasinSiege id="litiges-filtre-magasin" />
             <div className="dash-presets" role="group" aria-label="Catégorie">
               {(
                 [
-                  ['tous', 'Tous'],
-                  ['interne', 'Internes'],
-                  ['centrale', 'Centrale'],
+                  ['tous', 'Tous', totalPerimetre],
+                  ['interne', 'Internes', internes.length],
+                  ['centrale', 'Centrale', centrales.length],
                 ] as const
-              ).map(([id, label]) => (
+              ).map(([id, label, n]) => (
                 <button
                   key={id}
                   type="button"
                   className={filtre === id ? 'dash-preset actif' : 'dash-preset'}
                   onClick={() => setFiltre(id)}
                 >
-                  {label}
+                  {label} {n}
                 </button>
               ))}
             </div>
             <label className="litiges-search">
-              Recherche
+              <Search size={14} aria-hidden />
               <input
                 type="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Type, montant, caisse…"
+                placeholder="Magasin, type, montant…"
+                aria-label="Rechercher un litige"
               />
             </label>
           </div>
@@ -222,16 +317,45 @@ export function LitigesPage() {
             title="Litiges ouverts"
             toolbar={<span className="dash-panel-meta">{filtered.length} affiché(s)</span>}
           >
-            {(internes.length + centrales.length) === 0 ? (
-              <EmptyState
-                title="Aucun litige"
-                description="Aucun écart bloqué sur votre périmètre. Le circuit §6.4 et les transferts internes sont sains."
-                action={
+            {totalPerimetre === 0 ? (
+              <div className="litiges-empty">
+                {filtreMasqueReseau ? (
+                  <p className="litiges-empty-warn" role="status">
+                    {totalReseau} litige{totalReseau > 1 ? 's' : ''} sur le réseau, hors de ce
+                    magasin. Élargissez le filtre pour les voir.
+                  </p>
+                ) : (
+                  <p className="lead">Aucun écart bloqué sur ce périmètre.</p>
+                )}
+                <div className="litiges-empty-cards">
+                  <article className="litiges-empty-card">
+                    <h3>Internes</h3>
+                    <p>
+                      Écart à la clôture tiroir → magasin (transfert interne). Régularisation :
+                      responsable boutique / DAF, sur la fiche transaction.
+                    </p>
+                  </article>
+                  <article className="litiges-empty-card">
+                    <h3>Centrale §6.4</h3>
+                    <p>
+                      Écart au rapprochement d’un versement magasin → centrale. Régularisation :
+                      Contrôle interne / DAF, sur la fiche transaction.
+                    </p>
+                  </article>
+                </div>
+                <div className="litiges-empty-actions">
                   <Link className="btn-secondary" to="/tresorerie">
-                    Retour trésorerie
+                    Trésorerie
                   </Link>
-                }
-              />
+                  <Link className="btn-ghost" to="/transactions?enCours=1">
+                    En cours
+                  </Link>
+                </div>
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="lead litiges-tree-empty" style={{ padding: '16px' }}>
+                Aucun litige pour cette recherche ou ce filtre.
+              </p>
             ) : (
               <div className="litiges-tree">
                 {renderGroup('Internes · tiroir → magasin', internes, 'interne')}

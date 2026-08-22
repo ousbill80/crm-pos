@@ -47,7 +47,16 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     return undefined as T;
   }
 
-  return (await res.json()) as T;
+  // Certains endpoints renvoient un 200 avec un corps vide (ex.
+  // POST /auth/change-password, /auth/logout : actions sans payload de
+  // retour). res.json() sur un corps vide lève un SyntaxError qui ferait
+  // échouer silencieusement l'appelant (onError générique masquant un
+  // succès réel) — on ne parse donc que s'il y a effectivement du texte.
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 // NestJS renvoie { message: string | string[] }. On expose le texte métier

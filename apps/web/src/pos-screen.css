@@ -301,6 +301,33 @@
   padding-bottom: 8px;
 }
 
+.pos-catalog-idle {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 200px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.pos-catalog-idle-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.pos-catalog-idle-hint {
+  margin: 0;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .pos-tile-wrap {
   position: relative;
 }
@@ -309,12 +336,12 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 0;
   width: 100%;
-  min-height: 128px;
-  padding: 12px;
+  min-height: 148px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -327,19 +354,50 @@
 
 .pos-tile-img {
   position: absolute;
-  inset: 0 0 42%;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 46%;
   width: 100%;
   object-fit: cover;
-  opacity: 0.92;
+  z-index: 0;
 }
 
-.pos-tile:has(.pos-tile-img) {
-  padding-top: 72px;
-}
-
-.pos-tile > *:not(.pos-tile-img) {
-  position: relative;
+/* Voile pour séparer photo et texte (lisibilité). */
+.pos-tile:has(.pos-tile-img)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 28%;
+  height: 22%;
   z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--surface) 55%, transparent) 55%,
+    var(--surface) 100%
+  );
+}
+
+.pos-tile-body {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  margin-top: auto;
+  padding: 10px 12px 12px;
+  background: var(--surface);
+  color: var(--text-h);
+}
+
+.pos-tile:has(.pos-tile-img) .pos-tile-body {
+  /* Garantit un fond opaque sous le texte, même si l’image déborde. */
+  box-shadow: 0 -10px 18px color-mix(in srgb, var(--surface) 88%, transparent);
 }
 
 .pos-tile:hover:not(:disabled) {
@@ -349,48 +407,73 @@
 
 .pos-tile.is-low {
   border-color: var(--warning-border);
+}
+
+.pos-tile.is-low .pos-tile-body {
   background: var(--warning-bg);
 }
 
 .pos-tile.is-empty {
-  opacity: 0.55;
+  opacity: 0.72;
   cursor: not-allowed;
 }
 
+.pos-tile.is-empty .pos-tile-img {
+  filter: grayscale(0.45);
+  opacity: 0.7;
+}
+
 .pos-tile-cat {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text, #134e4a);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pos-tile-name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   line-height: 1.25;
+  color: var(--text-h);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .pos-tile-sku {
   font-family: var(--mono);
   font-size: 11px;
+  font-weight: 600;
   color: var(--text-muted);
 }
 
 .pos-tile-price {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 15px;
+  color: var(--text-h);
+  letter-spacing: -0.02em;
 }
 
 .pos-tile-stock {
   font-size: 11.5px;
+  font-weight: 600;
   color: var(--text-muted);
 }
 
 .pos-tile.is-low .pos-tile-stock,
 .pos-tile.is-empty .pos-tile-stock {
   color: var(--warning);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .pos-tile.is-empty .pos-tile-stock {
@@ -401,6 +484,7 @@
   position: absolute;
   top: 8px;
   right: 8px;
+  z-index: 3;
   min-width: 24px;
   height: 24px;
   padding: 0 6px;
@@ -411,13 +495,17 @@
   font-size: 12px;
   display: grid;
   place-items: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
 }
 
 .pos-tile-tip {
   position: absolute;
   top: 6px;
   left: 6px;
-  z-index: 2;
+  z-index: 3;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border-radius: 999px;
+  padding: 2px;
 }
 
 .pos-ticket {
@@ -750,6 +838,36 @@
   color: var(--text-muted);
 }
 
+.pos-mixte-reste.is-ok {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pos-mixte-reste.is-over {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.pos-mixte-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.pos-mixte-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.pos-mixte-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 .pos-mixte-parts {
   list-style: none;
   margin: 0;
@@ -761,7 +879,7 @@
 
 .pos-mixte-parts li {
   display: grid;
-  grid-template-columns: 110px 1fr auto;
+  grid-template-columns: minmax(120px, 1fr) 1fr auto;
   gap: 8px;
   align-items: center;
 }
@@ -877,6 +995,53 @@
   border-radius: var(--radius-sm);
 }
 
+.pos-remise-pct {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pos-remise-pct input {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.pos-remise-suffix {
+  position: absolute;
+  right: 12px;
+  font-weight: 800;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.pos-remise-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pos-remise-chips .pos-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.pos-remise-chips .pos-chip.is-active {
+  background: var(--accent-soft, #ccfbf1);
+  border-color: var(--accent);
+  color: var(--accent-text, #134e4a);
+}
+
+.pos-remise-chips .pos-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .pos-order-totals {
   display: flex;
   flex-direction: column;
@@ -906,8 +1071,12 @@
   font-size: 1.05rem;
   font-weight: 700;
   padding: 14px 16px;
-  margin-top: 4px;
-  min-height: 48px;
+  margin-top: auto;
+  min-height: 52px;
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
 }
 
 .pos-pay-btn:hover:not(:disabled) {
@@ -1085,6 +1254,8 @@
   display: flex;
   flex-direction: column;
   padding: 16px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .pos-payment-side .pos-order-lines {
@@ -1110,10 +1281,25 @@
   font-size: 12px;
 }
 
+.pos-cash-section {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--accent-bg);
+}
+
+.pos-cash-title {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
 .pos-cash {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-top: 8px;
 }
 
 .pos-cash-head {
@@ -1380,66 +1566,250 @@ form.pos-gate-card {
   color: var(--text-h);
 }
 
-.pos-etat-section {
-  margin: 14px 0 0;
+.pos-etat-print {
+  min-height: calc(100svh - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0 32px;
+  background: transparent;
+  place-items: stretch;
+}
+
+.pos-etat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pos-etat-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-etat-doc {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px 32px 24px;
+}
+
+.pos-etat-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-etat-head-main h1 {
+  margin: 8px 0 6px;
+  font-size: clamp(1.25rem, 2vw, 1.55rem);
+  line-height: 1.2;
+  color: var(--text-h);
+}
+
+.pos-etat-explicatif {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--text);
+  max-width: 42rem;
+}
+
+.pos-etat-societe {
+  margin: 0;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.pos-etat-addr {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.pos-etat-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pos-etat-badge-x {
+  background: #e8f1fb;
+  color: #1b4f72;
+}
+
+.pos-etat-badge-z {
+  background: #e8f6ee;
+  color: #1b6b3a;
+}
+
+.pos-etat-head-meta {
+  margin: 0;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pos-etat-head-meta div {
+  display: grid;
+  gap: 2px;
+}
+
+.pos-etat-head-meta dt {
+  margin: 0;
   font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-etat-head-meta dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.pos-etat-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 8px;
+}
+
+.pos-etat-kpis article {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pos-etat-kpis span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-etat-kpis strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-h);
+  line-height: 1.2;
+}
+
+.pos-etat-block {
+  margin-top: 22px;
+}
+
+.pos-etat-block h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.pos-etat-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 .pos-etat-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  margin: 6px 0 10px;
+  margin: 0;
 }
 
 .pos-etat-table th,
 .pos-etat-table td {
-  padding: 4px 0;
-  border-bottom: 1px dashed var(--border);
-  vertical-align: top;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  text-align: left;
 }
 
-.pos-etat-table th {
+.pos-etat-table thead th {
   font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  text-align: left;
+  background: var(--bg);
 }
 
-.pos-etat-table th:nth-child(2),
-.pos-etat-table td:nth-child(2),
-.pos-etat-table th:nth-child(3),
-.pos-etat-table td:nth-child(3) {
+.pos-etat-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.pos-etat-table tfoot th,
+.pos-etat-table tfoot td {
+  border-bottom: none;
+  background: var(--bg);
+  font-weight: 800;
+}
+
+.pos-etat-table .num,
+.pos-etat-table th.num,
+.pos-etat-table td.num {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-.pos-etat-journal td:nth-child(2) {
-  text-align: left;
-}
-
-.pos-etat-ticket-id {
-  display: block;
-  font-size: 10px;
+.pos-etat-table code {
   font-family: var(--mono);
-  color: var(--text-muted);
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 650;
 }
 
-.pos-etat-print .pos-etat-card {
-  width: min(440px, 100%);
-  max-height: calc(100svh - 48px);
-  overflow: auto;
+.pos-etat-empty {
+  text-align: center !important;
+  color: var(--text-muted);
+  padding: 18px 12px !important;
+}
+
+.pos-etat-split {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 18px;
+}
+
+.pos-etat-split .pos-etat-table-wrap,
+.pos-etat-split .pos-etat-table {
+  border: none;
+}
+
+.pos-etat-split .pos-etat-table {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .pos-etat-tiroir {
-  margin: 10px 0 0;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: var(--radius-sm);
+  margin: 0;
+  padding: 4px 0;
 }
 
 .pos-etat-tiroir > div {
@@ -1447,6 +1817,12 @@ form.pos-gate-card {
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.pos-etat-tiroir > div:last-of-type {
+  border-bottom: none;
 }
 
 .pos-etat-tiroir dt {
@@ -1456,6 +1832,71 @@ form.pos-gate-card {
 
 .pos-etat-tiroir dd {
   margin: 0;
+  font-weight: 700;
+}
+
+.pos-etat-tiroir-emph {
+  font-size: 14px !important;
+}
+
+.pos-etat-tiroir-emph dd {
+  font-size: 1.05rem;
+}
+
+.pos-etat-tiroir-ecart dt,
+.pos-etat-tiroir-ecart dd {
+  color: #b42318;
+}
+
+.pos-etat-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.pos-etat-foot {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pos-etat-foot p {
+  margin: 0 0 4px;
+}
+
+.pos-etat-imprime {
+  font-size: 12px;
+}
+
+.pos-etat-imprime code {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+@media (max-width: 800px) {
+  .pos-etat-head,
+  .pos-etat-split,
+  .pos-etat-kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pos-etat-head {
+    flex-direction: column;
+  }
+
+  .pos-etat-doc {
+    padding: 18px 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  .pos-etat-kpis,
+  .pos-etat-split {
+    grid-template-columns: 1fr;
+  }
 }
 
 .pos-btn-ghost-link {
@@ -1519,6 +1960,20 @@ form.pos-gate-card {
   font-size: 1.5rem;
   margin: 12px 0;
   font-weight: 700;
+}
+
+.pos-receipt-cash {
+  margin: 0 0 8px;
+  padding: 8px 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+}
+
+.pos-receipt-cash p {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
 }
 
 .pos-receipt-actions {
@@ -1616,8 +2071,8 @@ form.pos-gate-card {
 
 @media print {
   @page {
-    size: 80mm auto;
-    margin: 4mm;
+    size: A4;
+    margin: 12mm;
   }
 
   body * {
@@ -1629,7 +2084,7 @@ form.pos-gate-card {
     visibility: visible;
   }
 
-  .pos-receipt {
+  .pos-receipt:not(.pos-etat-print) {
     position: absolute;
     inset: 0;
     background: #fff;
@@ -1637,12 +2092,30 @@ form.pos-gate-card {
     width: 72mm;
   }
 
-  .pos-receipt-card {
+  .pos-receipt:not(.pos-etat-print) .pos-receipt-card {
     box-shadow: none;
     border: none;
     width: 72mm;
     max-width: 72mm;
     font-size: 12px;
+  }
+
+  .pos-etat-print {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    padding: 0;
+    min-height: 0;
+    width: auto;
+    display: block;
+  }
+
+  .pos-etat-doc {
+    box-shadow: none;
+    border: none;
+    width: 100%;
+    max-width: none;
+    padding: 0;
   }
 
   .no-print {

@@ -586,23 +586,29 @@ export function CommandeAchatDetailPage() {
             }}
           >
             <p className="lead">La quantité ne peut pas dépasser le reste commandé.</p>
-            <label>Quantité</label>
+            <label htmlFor="recept-qty">Quantité</label>
             <input
+              id="recept-qty"
               type="number"
               min="1"
               value={qtyRec}
               onChange={(e) => setQtyRec(e.target.value)}
             />
-            <label>Prix d’achat réel</label>
+            <label htmlFor="recept-prix">Prix d’achat réel</label>
             <input
+              id="recept-prix"
               type="number"
               min="0.01"
               step="0.01"
               value={prixRec}
               onChange={(e) => setPrixRec(e.target.value)}
             />
-            <label>Entrepôt</label>
-            <select value={entrepotId} onChange={(e) => setEntrepotId(e.target.value)}>
+            <label htmlFor="recept-entrepot">Entrepôt</label>
+            <select
+              id="recept-entrepot"
+              value={entrepotId}
+              onChange={(e) => setEntrepotId(e.target.value)}
+            >
               <option value="">
                 {commandeGroupe ? 'Quai ENTREE hub (défaut)' : 'Défaut'}
               </option>

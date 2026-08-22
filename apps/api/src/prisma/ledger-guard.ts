@@ -84,6 +84,53 @@ export function guardTransactionCaisseDelegate(
   });
 }
 
+type CaisseDelegate = PrismaClient['caisse'];
+
+// Caisse.soldeCourant est une colonne de cache en lecture seule : le solde
+// réel se recalcule toujours depuis le journal transactionCaisse
+// (CaisseBalanceService.calculerSolde). Aucun service applicatif n'écrit
+// jamais ce champ ; ce garde-fou l'interdit aussi au niveau Prisma, y
+// compris pour un appel direct qui bypasserait les services (CLAUDE.md :
+// « interdit UPDATE caisse SET solde = solde - x »).
+function assertPasEcritureSolde(data: unknown): void {
+  if (
+    data !== null &&
+    typeof data === 'object' &&
+    Object.prototype.hasOwnProperty.call(data, 'soldeCourant')
+  ) {
+    throw new Error(
+      'Grand livre append-only : Caisse.soldeCourant ne se stocke jamais directement, il se recalcule depuis transaction_caisse (CaisseBalanceService).',
+    );
+  }
+}
+
+export function guardCaisseDelegate(delegate: CaisseDelegate): CaisseDelegate {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (prop === 'update') {
+        return async (args: Prisma.CaisseUpdateArgs) => {
+          assertPasEcritureSolde(args.data);
+          return target.update(args);
+        };
+      }
+      if (prop === 'updateMany') {
+        return async (args: Prisma.CaisseUpdateManyArgs) => {
+          assertPasEcritureSolde(args.data);
+          return target.updateMany(args);
+        };
+      }
+      if (prop === 'upsert') {
+        return async (args: Prisma.CaisseUpsertArgs) => {
+          assertPasEcritureSolde(args.create);
+          assertPasEcritureSolde(args.update);
+          return target.upsert(args);
+        };
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
 export function guardLedgerTransactionClient<T extends object>(tx: T): T {
   return new Proxy(tx, {
     get(target, prop, receiver) {
@@ -95,6 +142,11 @@ export function guardLedgerTransactionClient<T extends object>(tx: T): T {
       if (prop === 'transactionCaisse') {
         return guardTransactionCaisseDelegate(
           Reflect.get(target, prop, receiver) as TransactionCaisseDelegate,
+        );
+      }
+      if (prop === 'caisse') {
+        return guardCaisseDelegate(
+          Reflect.get(target, prop, receiver) as CaisseDelegate,
         );
       }
       return Reflect.get(target, prop, receiver);

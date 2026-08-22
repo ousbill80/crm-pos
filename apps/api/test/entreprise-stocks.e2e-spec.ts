@@ -186,8 +186,7 @@ describe('Entreprise + Stocks multi-emplacement (e2e)', () => {
     });
 
     it('enregistre le logo sans le dump base64 dans l’audit', async () => {
-      const dataUrl =
-        'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD';
+      const dataUrl = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBD';
       const response = await request(app.getHttpServer())
         .patch('/entreprise')
         .set(auth(tokens.respsi))

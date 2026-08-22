@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Entrepot } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -39,17 +41,30 @@ export class EntrepotsService {
     }
     await this.assertBoutiqueInScope(boutique.id, boutique.zoneId, user);
 
-    const entrepot = await this.prisma.entrepot.create({
-      data: {
-        nom: dto.nom,
-        code: dto.code,
-        boutiqueId: dto.boutiqueId,
-        type: dto.type ?? 'SECONDAIRE',
-        usage: dto.usage ?? 'STOCK',
-        reseau: dto.reseau ?? false,
-        virtuel: dto.virtuel ?? false,
-      },
-    });
+    let entrepot: Entrepot;
+    try {
+      entrepot = await this.prisma.entrepot.create({
+        data: {
+          nom: dto.nom,
+          code: dto.code,
+          boutiqueId: dto.boutiqueId,
+          type: dto.type ?? 'SECONDAIRE',
+          usage: dto.usage ?? 'STOCK',
+          reseau: dto.reseau ?? false,
+          virtuel: dto.virtuel ?? false,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `Un entrepôt avec le code "${dto.code}" existe déjà pour cette boutique.`,
+        );
+      }
+      throw error;
+    }
     await this.audit.record({
       utilisateurId: user.userId,
       action: 'ENTREPOT_CREATED',

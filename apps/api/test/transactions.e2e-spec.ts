@@ -366,7 +366,8 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
   // ---------------------------------------------------------------------
   // §6.4 / §4 / §6.2 — séparation des tâches : une caisse auxiliaire NE PEUT
   // JAMAIS réceptionner ni valider, appliqué côté serveur (403), pas
-  // seulement masqué côté UI. C'est le test le plus important du module.
+  // seulement masqué côté UI. Le client mobile (circuit magasin → centrale)
+  // consomme les mêmes endpoints : ces 403 valent aussi pour le téléphone.
   // ---------------------------------------------------------------------
   describe('séparation des tâches — RBAC serveur non contournable', () => {
     it('refuse (403) qu’un CAISSIER_BOUTIQUE réceptionne une transaction', async () => {

@@ -19,7 +19,13 @@ import {
   libellePerimetrePage,
   useFiltreMagasinSiege,
 } from '../components/FiltreMagasinSiege';
-import { insightStatutTransaction } from '../lib/insights/transactions';
+import {
+  insightEnCoursCircuit,
+  insightLitigesTransactions,
+  insightMontantEnTransit,
+  insightPerimetreTransactions,
+  insightStatutTransaction,
+} from '../lib/insights/transactions';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 import {
   enqueueTransactionInit,
@@ -28,15 +34,21 @@ import {
 import { sAbonnerSync } from '../lib/offline/auto-sync';
 import type { CaisseDto, TransactionDto } from '../lib/types';
 
-function labelCaisseOption(c: CaisseDto): string {
-  if (c.type === TypeCaisse.MAGASIN) {
-    return `Magasin · ${c.libelle ?? c.id.slice(0, 8)}`;
-  }
-  if (c.type === TypeCaisse.TIROIR) {
-    return `Tiroir · ${c.code ?? ''} ${c.libelle ?? ''}`.trim();
-  }
-  return `Centrale · ${c.libelle ?? c.id.slice(0, 8)}`;
-}
+const STATUT_LABEL: Record<string, string> = {
+  [StatutTransaction.INITIEE]: 'Initiée',
+  [StatutTransaction.EN_TRANSIT]: 'En transit',
+  [StatutTransaction.RECEPTIONNEE]: 'Réceptionnée',
+  [StatutTransaction.VALIDEE]: 'Validée',
+  [StatutTransaction.LITIGE]: 'Litige',
+};
+
+const STATUT_QUI: Record<string, string> = {
+  [StatutTransaction.INITIEE]: 'Boutique — mise en transit',
+  [StatutTransaction.EN_TRANSIT]: 'Caissier central — réceptionner',
+  [StatutTransaction.RECEPTIONNEE]: 'Caissier central — rapprocher',
+  [StatutTransaction.VALIDEE]: 'Soldée',
+  [StatutTransaction.LITIGE]: 'Contrôle interne / DAF',
+};
 
 const STATUTS_EN_COURS: StatutTransaction[] = [
   StatutTransaction.INITIEE,
@@ -53,9 +65,27 @@ const AGEING_HOURS: Record<string, { minH: number; maxH: number | null }> = {
 const STATUTS = Object.values(StatutTransaction);
 const TYPES = Object.values(TypeTransaction);
 
+function formatFcfa(value: string | number | undefined): string {
+  if (value === undefined) return '—';
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (Number.isNaN(n)) return String(value);
+  return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA`;
+}
+
+function labelCaisseOption(c: CaisseDto): string {
+  if (c.type === TypeCaisse.MAGASIN) {
+    return `Magasin · ${c.libelle ?? c.id.slice(0, 8)}`;
+  }
+  if (c.type === TypeCaisse.TIROIR) {
+    return `Tiroir · ${c.code ?? ''} ${c.libelle ?? ''}`.trim();
+  }
+  return `Centrale · ${c.libelle ?? c.id.slice(0, 8)}`;
+}
+
 function labelType(type: string) {
-  if (type === TypeTransaction.VENTE) return 'Encaissement (vente)';
+  if (type === TypeTransaction.VENTE) return 'Encaissement';
   if (type === TypeTransaction.SORTIE_FONDS) return 'Versement / sortie';
+  if (type === TypeTransaction.TRANSFERT_INTERNE) return 'Transfert interne';
   return type;
 }
 
@@ -67,15 +97,29 @@ function badgeStatut(statut: string) {
   return 'badge badge-neutral';
 }
 
+function nomMagasinTx(t: TransactionDto): string {
+  if (t.caisse?.boutique?.nom) return t.caisse.boutique.nom;
+  if (t.caisse?.type === TypeCaisse.CENTRALE) return 'Réseau';
+  return '—';
+}
+
+function labelCaisseTx(t: TransactionDto): string {
+  const c = t.caisse;
+  if (!c) return 'Caisse';
+  if (c.type === TypeCaisse.TIROIR) {
+    return `${c.code ?? 'T??'} — ${c.libelle ?? 'Tiroir'}`;
+  }
+  if (c.type === TypeCaisse.MAGASIN) return c.libelle ?? 'Caisse magasin';
+  return c.libelle ?? 'Caisse centrale';
+}
+
 function buildQuery(filters: {
-  statut: string;
   type: string;
   caisseId: string;
   from: string;
   to: string;
 }) {
   const params = new URLSearchParams();
-  if (filters.statut) params.set('statut', filters.statut);
   if (filters.type) params.set('type', filters.type);
   if (filters.caisseId) params.set('caisseId', filters.caisseId);
   if (filters.from) params.set('from', new Date(filters.from).toISOString());
@@ -131,7 +175,7 @@ function NouvelleTransactionForm({
         montant: Number(montant),
       });
       setError(
-        "Hors ligne ou erreur réseau — transaction mise en file d'attente (§6.7).",
+        "Hors ligne ou erreur réseau — versement mis en file d'attente (§6.7).",
       );
       onSuccess?.();
     },
@@ -145,7 +189,7 @@ function NouvelleTransactionForm({
   if (magasins.length === 0) {
     return (
       <p>
-        Aucune caisse MAGASIN disponible pour initier une SORTIE_FONDS vers la
+        Aucune caisse magasin disponible pour initier un versement vers la
         centrale.
       </p>
     );
@@ -161,7 +205,7 @@ function NouvelleTransactionForm({
           </option>
         ))}
       </select>
-      <p className="lead">Type : versement / sortie vers centrale (§6.4)</p>
+      <p className="lead">Versement / sortie vers la centrale — statut Initiée (§6.4).</p>
       <label htmlFor="montant">Montant</label>
       <input
         id="montant"
@@ -173,30 +217,38 @@ function NouvelleTransactionForm({
         required
       />
       <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-        Initier
+        Initier le versement
       </button>
       {error && <p role="alert">{error}</p>}
     </form>
   );
 }
 
-export function TransactionsPage() {
+export function TransactionsPage({
+  titre = 'Transactions',
+  typeDefaut = '',
+  statutDefaut = '',
+}: {
+  titre?: string;
+  typeDefaut?: string;
+  statutDefaut?: string;
+} = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const magasin = useFiltreMagasinSiege();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const enCours = searchParams.get('enCours') === '1';
   const ageingBucket = searchParams.get('ageing');
   const caisseIdParam = searchParams.get('caisseId') ?? '';
-  const statutParam = searchParams.get('statut') ?? '';
+  const statutParam = searchParams.get('statut') ?? statutDefaut;
+  const typeParam = searchParams.get('type') ?? typeDefaut;
   const peutInitier =
     user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
   useTresorerieRealtime(user !== null);
   const [pendingOffline, setPendingOffline] = useState(outboxCount());
   const [filters, setFilters] = useState({
     statut: statutParam,
-    type: '',
+    type: typeParam,
     caisseId: caisseIdParam,
     from: '',
     to: '',
@@ -221,6 +273,12 @@ export function TransactionsPage() {
   }, [statutParam]);
 
   useEffect(() => {
+    if (typeParam) {
+      setFilters((f) => (f.type === typeParam ? f : { ...f, type: typeParam }));
+    }
+  }, [typeParam]);
+
+  useEffect(() => {
     function rafraichir() {
       setPendingOffline(outboxCount());
     }
@@ -228,26 +286,25 @@ export function TransactionsPage() {
     return sAbonnerSync(rafraichir);
   }, []);
 
-  // Depuis /tresorerie?enCours=1 : on charge sans filtre statut API, filtre local.
-  const queryFilters = enCours ? { ...filters, statut: '' } : filters;
+  const queryFilters = useMemo(
+    () => ({
+      type: filters.type,
+      caisseId: filters.caisseId,
+      from: filters.from,
+      to: filters.to,
+    }),
+    [filters.type, filters.caisseId, filters.from, filters.to],
+  );
   const queryUrl = useMemo(() => buildQuery(queryFilters), [queryFilters]);
 
   const { data: transactions, isLoading, isError } = useQuery({
-    queryKey: ['transactions', queryFilters, enCours, ageingBucket],
+    queryKey: ['transactions', queryFilters],
     queryFn: () => apiFetch<TransactionDto[]>(queryUrl),
   });
 
-  const transactionsFiltrees = useMemo(() => {
+  const dansPerimetre = useMemo(() => {
     if (!transactions) return undefined;
     let rows = transactions;
-    if (enCours) {
-      rows = rows.filter((t) =>
-        STATUTS_EN_COURS.includes(t.statut as StatutTransaction),
-      );
-    }
-    if (filters.statut) {
-      rows = rows.filter((t) => t.statut === filters.statut);
-    }
     if (ageingBucket && AGEING_HOURS[ageingBucket]) {
       const { minH, maxH } = AGEING_HOURS[ageingBucket];
       const now = Date.now();
@@ -266,11 +323,37 @@ export function TransactionsPage() {
       );
     }
     return rows;
-  }, [transactions, enCours, ageingBucket, filters.statut, magasin.boutiqueId]);
+  }, [transactions, ageingBucket, magasin.boutiqueId]);
+
+  const transactionsFiltrees = useMemo(() => {
+    if (!dansPerimetre) return undefined;
+    let rows = dansPerimetre;
+    if (enCours && !filters.statut) {
+      rows = rows.filter((t) =>
+        STATUTS_EN_COURS.includes(t.statut as StatutTransaction),
+      );
+    }
+    if (filters.statut) {
+      rows = rows.filter((t) => t.statut === filters.statut);
+    }
+    return rows;
+  }, [dansPerimetre, enCours, filters.statut]);
+
+  const counts = useMemo(() => {
+    const map = new Map<string, { n: number; montant: number }>();
+    for (const s of STATUTS) map.set(s, { n: 0, montant: 0 });
+    for (const t of dansPerimetre ?? []) {
+      const cur = map.get(t.statut) ?? { n: 0, montant: 0 };
+      cur.n += 1;
+      cur.montant += Number(t.montant);
+      map.set(t.statut, cur);
+    }
+    return map;
+  }, [dansPerimetre]);
 
   const colonnesStatut = useMemo(() => {
-    if (enCours) return STATUTS_EN_COURS;
     if (filters.statut) return [filters.statut as StatutTransaction];
+    if (enCours) return STATUTS_EN_COURS;
     return STATUTS;
   }, [enCours, filters.statut]);
 
@@ -284,30 +367,61 @@ export function TransactionsPage() {
     return map;
   }, [transactionsFiltrees, colonnesStatut]);
 
+  const kpiEnCours = STATUTS_EN_COURS.reduce(
+    (s, st) => s + (counts.get(st)?.n ?? 0),
+    0,
+  );
+  const kpiLitiges = counts.get(StatutTransaction.LITIGE)?.n ?? 0;
+  const kpiTransit = counts.get(StatutTransaction.EN_TRANSIT)?.montant ?? 0;
+  const kpiTotal = dansPerimetre?.length ?? 0;
+
   const { data: caisses } = useQuery({
     queryKey: ['caisses'],
     queryFn: () => apiFetch<CaisseDto[]>('/caisses'),
   });
 
+  function choisirStatut(statut: string) {
+    const next = filters.statut === statut ? '' : statut;
+    setFilters((f) => ({ ...f, statut: next }));
+    setSearchParams((p) => {
+      const n = new URLSearchParams(p);
+      if (next) {
+        n.set('statut', next);
+        n.delete('enCours');
+      } else {
+        n.delete('statut');
+      }
+      return n;
+    });
+  }
+
+  const sousTitre = enCours && !filters.statut
+    ? ageingBucket && AGEING_HOURS[ageingBucket]
+      ? `Circuit en cours · ${ageingBucket.replace('_', '–')}`
+      : 'Circuit en cours — initiée, transit, réceptionnée.'
+    : 'Cliquez une étape ou une ligne → fiche transaction.';
+
   return (
     <div className="treso-module">
       <PageHeader
-        title="Transactions"
+        title={titre}
         subtitle={libellePerimetrePage(user?.role, {
           boutiqueId: magasin.boutiqueId,
           nomMagasin: magasin.nomMagasin,
-          texteReseau: enCours
-            ? ageingBucket && AGEING_HOURS[ageingBucket]
-              ? `En cours · ageing ${ageingBucket.replace('_', '–')}`
-              : 'Filtre : circuit en cours (initiée / transit / réceptionnée)'
-            : 'Circuit INITIÉE → EN_TRANSIT → RÉCEPTIONNÉE → VALIDÉE | LITIGE → VALIDÉE',
-          texteBoutique: 'Circuit du magasin — initiation et suivi des versements',
+          texteReseau: sousTitre,
+          texteBoutique: sousTitre,
         })}
         actions={
           <>
             <nav className="circuit-nav" aria-label="Circuit trésorerie">
               <Link className="circuit-nav-item" to="/tresorerie">
-                <Wallet size={14} /> Trésorerie
+                Vue
+              </Link>
+              <Link className="circuit-nav-item" to="/tresorerie/bordereaux">
+                <Wallet size={14} /> Bordereaux
+              </Link>
+              <Link className="circuit-nav-item" to="/tresorerie/reception">
+                Réception
               </Link>
               <Link className="circuit-nav-item" to="/litiges">
                 <Scale size={14} /> Litiges
@@ -327,14 +441,14 @@ export function TransactionsPage() {
                 className={vue === 'colonnes' ? 'btn-secondary is-active' : 'btn-secondary'}
                 onClick={() => setVue('colonnes')}
               >
-                Colonnes
+                Par étape
               </button>
               <button
                 type="button"
                 className={vue === 'liste' ? 'btn-secondary is-active' : 'btn-secondary'}
                 onClick={() => setVue('liste')}
               >
-                Liste
+                Tableau
               </button>
             </div>
             {peutInitier ? (
@@ -344,81 +458,150 @@ export function TransactionsPage() {
                 onClick={() => setModalOpen(true)}
                 disabled={!caisses}
               >
-                Nouvelle transaction
+                Nouveau versement
               </button>
             ) : null}
           </>
         }
       />
 
-      <ListPanel title="Filtres">
-        <div className="filters-row">
-          <FiltreMagasinSiege id="tx-filtre-magasin" />
-          <label>
-            Statut
-            <select
-              value={filters.statut}
-              onChange={(e) => setFilters((f) => ({ ...f, statut: e.target.value }))}
-              disabled={enCours}
-            >
-              <option value="">Tous</option>
-              {STATUTS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Type
-            <select
-              value={filters.type}
-              onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-            >
-              <option value="">Tous</option>
-              {TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {labelType(t)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Caisse
-            <select
-              value={filters.caisseId}
-              onChange={(e) => setFilters((f) => ({ ...f, caisseId: e.target.value }))}
-            >
-              <option value="">Toutes</option>
-              {(caisses ?? [])
-                .filter(
-                  (c) => !magasin.boutiqueId || c.boutiqueId === magasin.boutiqueId,
-                )
-                .map((c) => (
+      <section className="tx-kpis" aria-label="Synthèse circuit">
+        <button
+          type="button"
+          className={`tx-kpi${!enCours && !filters.statut && !ageingBucket ? ' is-actif' : ''}`}
+          onClick={() => {
+            setFilters((f) => ({ ...f, statut: '' }));
+            setSearchParams((p) => {
+              const n = new URLSearchParams(p);
+              n.delete('statut');
+              n.delete('enCours');
+              n.delete('ageing');
+              return n;
+            });
+          }}
+        >
+          <div className="tx-kpi-label">
+            Périmètre <InfoTooltip insight={insightPerimetreTransactions(kpiTotal)} />
+          </div>
+          <div className="tx-kpi-value">{kpiTotal}</div>
+          <div className="tx-kpi-hint">Toutes transactions</div>
+        </button>
+        <button
+          type="button"
+          className={`tx-kpi${enCours && !filters.statut ? ' is-actif' : ''}`}
+          onClick={() => {
+            setFilters((f) => ({ ...f, statut: '' }));
+            setSearchParams((p) => {
+              const n = new URLSearchParams(p);
+              n.delete('statut');
+              if (enCours) n.delete('enCours');
+              else n.set('enCours', '1');
+              return n;
+            });
+          }}
+        >
+          <div className="tx-kpi-label">
+            En cours §6.4 <InfoTooltip insight={insightEnCoursCircuit(kpiEnCours, kpiTotal)} />
+          </div>
+          <div className="tx-kpi-value">{kpiEnCours}</div>
+          <div className="tx-kpi-hint">hors validée / litige</div>
+        </button>
+        <Link className="tx-kpi" to="/litiges">
+          <div className="tx-kpi-label">
+            Litiges <InfoTooltip insight={insightLitigesTransactions(kpiLitiges)} />
+          </div>
+          <div className="tx-kpi-value">{kpiLitiges}</div>
+          <div className="tx-kpi-hint">ouvrir la file</div>
+        </Link>
+        <button
+          type="button"
+          className={`tx-kpi${filters.statut === StatutTransaction.EN_TRANSIT ? ' is-actif' : ''}`}
+          onClick={() => choisirStatut(StatutTransaction.EN_TRANSIT)}
+        >
+          <div className="tx-kpi-label">
+            En transit <InfoTooltip insight={insightMontantEnTransit(kpiTransit)} />
+          </div>
+          <div className="tx-kpi-value tx-kpi-value-sm money">{formatFcfa(kpiTransit)}</div>
+          <div className="tx-kpi-hint">Filtrer sur cette étape</div>
+        </button>
+      </section>
+
+      <ol className="tx-circuit" aria-label="Circuit §6.4">
+        {STATUTS.map((statut, i) => {
+          const c = counts.get(statut);
+          const actif = filters.statut === statut;
+          return (
+            <li key={statut}>
+              {i > 0 ? (
+                <span className="tx-circuit-arrow" aria-hidden>
+                  →
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className={`tx-circuit-step${actif ? ' is-actif' : ''}`}
+                onClick={() => choisirStatut(statut)}
+              >
+                <span className={badgeStatut(statut)}>{STATUT_LABEL[statut]}</span>
+                <strong>{c?.n ?? 0}</strong>
+                <small>{STATUT_QUI[statut]}</small>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="tx-bar">
+        <FiltreMagasinSiege id="tx-filtre-magasin" />
+        <label>
+          Type
+          <select
+            value={filters.type}
+            onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+          >
+            <option value="">Tous</option>
+            {TYPES.map((t) => (
+              <option key={t} value={t}>
+                {labelType(t)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Caisse
+          <select
+            value={filters.caisseId}
+            onChange={(e) => setFilters((f) => ({ ...f, caisseId: e.target.value }))}
+          >
+            <option value="">Toutes</option>
+            {(caisses ?? [])
+              .filter(
+                (c) => !magasin.boutiqueId || c.boutiqueId === magasin.boutiqueId,
+              )
+              .map((c) => (
                 <option key={c.id} value={c.id}>
                   {labelCaisseOption(c)}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Du
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
-            />
-          </label>
-          <label>
-            Au
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
-            />
-          </label>
-        </div>
-      </ListPanel>
+          </select>
+        </label>
+        <label>
+          Du
+          <input
+            type="date"
+            value={filters.from}
+            onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
+          />
+        </label>
+        <label>
+          Au
+          <input
+            type="date"
+            value={filters.to}
+            onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+          />
+        </label>
+      </div>
 
       {isLoading && <LoadingState label="Chargement des transactions..." />}
       {isError && <p role="alert">Erreur lors du chargement des transactions.</p>}
@@ -430,8 +613,13 @@ export function TransactionsPage() {
             return (
               <section key={statut} className="tx-kanban-col">
                 <header className="tx-kanban-col-head">
-                  <span className={badgeStatut(statut)}>{statut}</span>
-                  <InfoTooltip insight={insightStatutTransaction(statut)} />
+                  <div>
+                    <span className={badgeStatut(statut)}>
+                      {STATUT_LABEL[statut] ?? statut}
+                    </span>
+                    <InfoTooltip insight={insightStatutTransaction(statut)} />
+                    <div className="tx-kanban-qui">{STATUT_QUI[statut]}</div>
+                  </div>
                   <span className="tx-kanban-count">{cards.length}</span>
                 </header>
                 <div className="tx-kanban-cards">
@@ -452,12 +640,13 @@ export function TransactionsPage() {
                           }
                         }}
                       >
-                        <div className="tx-kanban-card-title">
-                          {new Date(t.dateHeure).toLocaleString()}
-                        </div>
-                        <div className="money">{t.montant} FCFA</div>
+                        <div className="money">{formatFcfa(t.montant)}</div>
+                        <div className="tx-kanban-card-title">{labelType(t.type)}</div>
                         <div className="tx-kanban-meta">
-                          {labelType(t.type)} · <code>{t.caisseId.slice(0, 8)}…</code>
+                          {nomMagasinTx(t)} · {labelCaisseTx(t)}
+                        </div>
+                        <div className="tx-kanban-meta">
+                          {new Date(t.dateHeure).toLocaleString('fr-FR')}
                         </div>
                       </article>
                     ))
@@ -483,7 +672,7 @@ export function TransactionsPage() {
                     onClick={() => setModalOpen(true)}
                     disabled={!caisses}
                   >
-                    Nouvelle transaction
+                    Nouveau versement
                   </button>
                 ) : undefined
               }
@@ -493,10 +682,11 @@ export function TransactionsPage() {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Magasin</th>
+                  <th>Caisse</th>
                   <th>Type</th>
                   <th>Montant</th>
                   <th>Statut</th>
-                  <th>Caisse</th>
                 </tr>
               </thead>
               <tbody>
@@ -515,16 +705,17 @@ export function TransactionsPage() {
                     }}
                   >
                     <td>
-                      <strong>{new Date(t.dateHeure).toLocaleString()}</strong>
+                      <strong>{new Date(t.dateHeure).toLocaleString('fr-FR')}</strong>
                     </td>
+                    <td>{nomMagasinTx(t)}</td>
+                    <td>{labelCaisseTx(t)}</td>
                     <td>{labelType(t.type)}</td>
-                    <td className="money">{t.montant} FCFA</td>
+                    <td className="money">{formatFcfa(t.montant)}</td>
                     <td>
-                      <span className={badgeStatut(t.statut)}>{t.statut}</span>{' '}
+                      <span className={badgeStatut(t.statut)}>
+                        {STATUT_LABEL[t.statut] ?? t.statut}
+                      </span>{' '}
                       <InfoTooltip insight={insightStatutTransaction(t.statut)} />
-                    </td>
-                    <td>
-                      <code>{t.caisseId.slice(0, 8)}…</code>
                     </td>
                   </tr>
                 ))}
@@ -535,7 +726,7 @@ export function TransactionsPage() {
       )}
 
       {peutInitier && caisses && (
-        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nouvelle transaction">
+        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nouveau versement">
           <NouvelleTransactionForm caisses={caisses} onSuccess={() => setModalOpen(false)} />
         </Modal>
       )}

@@ -8,7 +8,18 @@
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "lib": ["ES2022"]
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
   },
-  "include": ["App.tsx", "index.ts", "src"]
+  "include": [
+    "App.tsx",
+    "index.ts",
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts"
+  ],
+  "extends": "expo/tsconfig.base"
 }

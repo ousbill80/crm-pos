@@ -10,7 +10,19 @@ import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import {
+  insightInventaireAvancement,
+  insightInventaireEcartsKpi,
+  insightInventaireLigneEcart,
+  insightInventaireRestant,
+  insightInventaireValeurEcarts,
+} from '../lib/insights/stocks';
 import type { SessionInventaireDto } from '../lib/types';
+
+type ColonneLigne = 'produit' | 'theorique' | 'compte' | 'ecart' | 'cmp';
 
 const ROLES_LECTURE: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
@@ -73,6 +85,7 @@ export function InventaireDetailPage() {
   const [recherche, setRecherche] = useState('');
   const [comptageLocal, setComptageLocal] = useState<Record<string, string>>({});
   const [formErr, setFormErr] = useState<string | null>(null);
+  const [sortLignes, setSortLignes] = useState<SortState<ColonneLigne> | null>(null);
 
   const session = useQuery({
     queryKey: ['inventaires', sessionId],
@@ -159,7 +172,7 @@ export function InventaireDetailPage() {
 
   const lignes = useMemo(() => {
     const q = recherche.trim().toLowerCase();
-    return (detail?.lignes ?? []).filter((l) => {
+    const filtrees = (detail?.lignes ?? []).filter((l) => {
       if (
         filtreEcarts &&
         (l.quantiteComptee === null || l.quantiteComptee === l.quantiteTheorique)
@@ -170,7 +183,25 @@ export function InventaireDetailPage() {
       const hay = `${l.produit.designation} ${l.produit.reference ?? ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [detail, filtreEcarts, recherche]);
+    return sortRows(filtrees, sortLignes, (l, key) => {
+      switch (key) {
+        case 'produit':
+          return l.produit.designation;
+        case 'theorique':
+          return l.quantiteTheorique;
+        case 'compte':
+          return l.quantiteComptee;
+        case 'ecart':
+          return l.quantiteComptee === null
+            ? null
+            : l.quantiteComptee - l.quantiteTheorique;
+        case 'cmp':
+          return Number(l.produit.coutMoyenPondere);
+        default:
+          return null;
+      }
+    });
+  }, [detail, filtreEcarts, recherche, sortLignes]);
 
   if (!sessionId) return <p role="alert">Inventaire introuvable.</p>;
   if (!user) return <LoadingState label="Chargement..." />;
@@ -266,7 +297,12 @@ export function InventaireDetailPage() {
 
       <div className="client-kpi-grid">
         <article className="client-kpi-card">
-          <div className="client-kpi-label">Avancement</div>
+          <div className="client-kpi-label">
+            Avancement
+            <InfoTooltip
+              insight={insightInventaireAvancement(stats.comptees, stats.total, stats.ecarts)}
+            />
+          </div>
           <div className="client-kpi-value">{pct} %</div>
           <div className="client-kpi-hint">
             {stats.comptees} / {stats.total} lignes
@@ -276,19 +312,32 @@ export function InventaireDetailPage() {
           </div>
         </article>
         <article className="client-kpi-card">
-          <div className="client-kpi-label">Écarts</div>
+          <div className="client-kpi-label">
+            Écarts
+            <InfoTooltip insight={insightInventaireEcartsKpi(stats.ecarts, stats.unitesEcart)} />
+          </div>
           <div className="client-kpi-value">{stats.ecarts}</div>
           <div className="client-kpi-hint">{stats.unitesEcart} unité(s)</div>
         </article>
         <article className="client-kpi-card">
-          <div className="client-kpi-label">Écart valorisé (CMP)</div>
+          <div className="client-kpi-label">
+            Écart valorisé (CMP)
+            <InfoTooltip
+              insight={insightInventaireValeurEcarts(stats.valeurEcarts, stats.ecarts)}
+            />
+          </div>
           <div className="client-kpi-value client-kpi-value-sm money">
             {formatFcfa(stats.valeurEcarts)}
           </div>
           <div className="client-kpi-hint">indicatif — non écrit avant validation</div>
         </article>
         <article className="client-kpi-card">
-          <div className="client-kpi-label">Restant à compter</div>
+          <div className="client-kpi-label">
+            Restant à compter
+            <InfoTooltip
+              insight={insightInventaireRestant(stats.total - stats.comptees, stats.total)}
+            />
+          </div>
           <div className="client-kpi-value">{stats.total - stats.comptees}</div>
           <div className="client-kpi-hint">
             {stats.total === 0 ? 'session vide' : 'lignes sans saisie'}
@@ -398,11 +447,22 @@ export function InventaireDetailPage() {
           <table>
             <thead>
               <tr>
-                <th>Produit</th>
-                <th>Théorique</th>
-                <th>Compté</th>
-                <th>Écart</th>
-                <th>CMP</th>
+                <SortHeader active={sortLignes?.key === 'produit'} dir={sortLignes?.key === 'produit' ? sortLignes.dir : 'asc'} onClick={() => setSortLignes((s) => toggleSort(s, 'produit'))}>
+                  Produit
+                </SortHeader>
+                <SortHeader active={sortLignes?.key === 'theorique'} dir={sortLignes?.key === 'theorique' ? sortLignes.dir : 'asc'} onClick={() => setSortLignes((s) => toggleSort(s, 'theorique'))} className="num">
+                  Théorique
+                </SortHeader>
+                <SortHeader active={sortLignes?.key === 'compte'} dir={sortLignes?.key === 'compte' ? sortLignes.dir : 'asc'} onClick={() => setSortLignes((s) => toggleSort(s, 'compte'))} className="num">
+                  Compté
+                </SortHeader>
+                <SortHeader active={sortLignes?.key === 'ecart'} dir={sortLignes?.key === 'ecart' ? sortLignes.dir : 'desc'} onClick={() => setSortLignes((s) => toggleSort(s, 'ecart'))} className="num">
+                  Écart
+                </SortHeader>
+                <SortHeader active={sortLignes?.key === 'cmp'} dir={sortLignes?.key === 'cmp' ? sortLignes.dir : 'asc'} onClick={() => setSortLignes((s) => toggleSort(s, 'cmp'))} className="num">
+                  CMP
+                </SortHeader>
+                <th aria-label="Info" />
                 {detail.statut === 'EN_COURS' && peutCompter ? <th>Saisir</th> : null}
               </tr>
             </thead>
@@ -455,6 +515,15 @@ export function InventaireDetailPage() {
                         maximumFractionDigits: 0,
                       })}{' '}
                       FCFA
+                    </td>
+                    <td>
+                      <InfoTooltip
+                        insight={insightInventaireLigneEcart(
+                          l.quantiteTheorique,
+                          l.quantiteComptee,
+                          Number(l.produit.coutMoyenPondere),
+                        )}
+                      />
                     </td>
                     {detail.statut === 'EN_COURS' && peutCompter ? (
                       <td>

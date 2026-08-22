@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Eye, FileDown, ShoppingBag } from 'lucide-react';
+import {
+  Download,
+  DoorOpen,
+  Eye,
+  FileDown,
+  Receipt,
+  ShoppingBag,
+  ShoppingCart,
+  Wallet,
+} from 'lucide-react';
 import {
   RoleLibelle,
   StatutSessionCaisse,
@@ -11,6 +20,7 @@ import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { EtatCaissePrint } from '../components/pos/EtatCaissePrint';
 import {
   FiltreMagasinSiege,
@@ -18,6 +28,14 @@ import {
   useFiltreMagasinSiege,
 } from '../components/FiltreMagasinSiege';
 import type { BoutiqueDto, CaisseDto, SessionCaisseDto } from '../lib/types';
+import { libellesEtatCaisse } from '../lib/etat-caisse';
+import {
+  insightCaPeriode,
+  insightCaSessionsListees,
+  insightRepartitionModePaiement,
+  insightSessionsOuvertes,
+  insightTicketsListes,
+} from '../lib/insights/ventes';
 
 const ROLES_VENTES = rolesPourApp('ventes');
 const ROLES_POS = rolesPourApp('pos');
@@ -168,8 +186,8 @@ export function VentesPage() {
           boutiqueId: filtre.boutiqueId,
           nomMagasin: filtre.nomMagasin,
           texteReseau:
-            'Sessions de caisse, CA et états X/Z imprimables (§6.3.4)',
-          texteBoutique: 'Sessions et états imprimables de votre magasin',
+            'Sessions de caisse, CA et relevés imprimables (contrôle ou clôture)',
+          texteBoutique: 'Sessions et relevés imprimables de votre magasin',
         })}
         actions={
           <>
@@ -215,64 +233,139 @@ export function VentesPage() {
         </div>
       </div>
 
-      <div className="client-kpi-grid" style={{ marginBottom: 16 }}>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">CA période (reporting)</div>
-          <div className="client-kpi-value client-kpi-value-sm money">
-            {dashboardQ.isLoading ? '…' : formatFcfa(ca?.total)}
-          </div>
-        </article>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">CA sessions listées</div>
-          <div className="client-kpi-value client-kpi-value-sm money">
-            {formatFcfa(totauxListe.ca)}
-          </div>
-        </article>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">Tickets listés</div>
-          <div className="client-kpi-value">{totauxListe.tickets}</div>
-        </article>
-        <article className="client-kpi-card">
-          <div className="client-kpi-label">Sessions / ouvertes</div>
-          <div className="client-kpi-value">
-            {lignes.length}
-            <span className="client-kpi-hint">
-              {' '}
-              ·{' '}
-              {
-                lignes.filter((s) => s.statut === StatutSessionCaisse.OUVERTE)
-                  .length
-              }{' '}
-              ouvertes
-            </span>
-          </div>
-        </article>
-      </div>
+      {(() => {
+        const nbOuvertes = lignes.filter(
+          (s) => s.statut === StatutSessionCaisse.OUVERTE,
+        ).length;
+        return (
+          <section className="kpi-grid dash-kpi-grid" style={{ marginBottom: 16 }}>
+            <Link to="/ventes/reporting" className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <ShoppingCart size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightCaPeriode(
+                    ca?.total ?? '0',
+                    ca?.parBoutique.length ?? 0,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">CA période (reporting)</div>
+              <div className="kpi-value money">
+                {dashboardQ.isLoading ? '…' : formatFcfa(ca?.total)}
+              </div>
+              <div className="kpi-hint">Voir le reporting détaillé</div>
+            </Link>
+
+            <a href="#ventes-sessions-table" className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Wallet size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightCaSessionsListees(
+                    String(totauxListe.ca),
+                    lignes.length,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">CA sessions listées</div>
+              <div className="kpi-value money">{formatFcfa(totauxListe.ca)}</div>
+              <div className="kpi-hint">{lignes.length} session(s)</div>
+            </a>
+
+            <a href="#ventes-sessions-table" className="kpi-card dash-kpi">
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <Receipt size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightTicketsListes(
+                    totauxListe.tickets,
+                    lignes.length,
+                  )}
+                />
+              </div>
+              <div className="kpi-label">Tickets listés</div>
+              <div className="kpi-value">{totauxListe.tickets}</div>
+              <div className="kpi-hint">Sur les sessions affichées</div>
+            </a>
+
+            <button
+              type="button"
+              className={
+                nbOuvertes > 0
+                  ? 'kpi-card dash-kpi kpi-warning'
+                  : 'kpi-card dash-kpi'
+              }
+              onClick={() =>
+                setStatut(
+                  statut === StatutSessionCaisse.OUVERTE
+                    ? 'TOUTES'
+                    : StatutSessionCaisse.OUVERTE,
+                )
+              }
+            >
+              <div className="dash-kpi-top">
+                <span className="dash-kpi-icon">
+                  <DoorOpen size={16} />
+                </span>
+                <InfoTooltip
+                  insight={insightSessionsOuvertes(lignes.length, nbOuvertes)}
+                />
+              </div>
+              <div className="kpi-label">Sessions / ouvertes</div>
+              <div className="kpi-value">
+                {lignes.length}
+                <span className="kpi-hint"> · {nbOuvertes} ouvertes</span>
+              </div>
+              <div className="kpi-hint">Filtrer les sessions ouvertes</div>
+            </button>
+          </section>
+        );
+      })()}
 
       {(ca?.parModePaiement?.length ?? 0) > 0 && (
         <ListPanel title="Répartition par mode de paiement">
-          <ul className="pos-cloture-releve" style={{ padding: '8px 12px' }}>
-            {ca!.parModePaiement.map((m) => (
-              <li
-                key={m.modePaiement}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '6px 0',
-                }}
-              >
-                <span>{m.modePaiement}</span>
-                <strong className="money">{formatFcfa(m.montant)}</strong>
-              </li>
-            ))}
+          <ul className="dash-rank">
+            {(() => {
+              const modes = ca!.parModePaiement;
+              const total = modes.reduce((s, m) => s + Number(m.montant), 0);
+              const max = Math.max(...modes.map((m) => Number(m.montant)), 1);
+              return modes.map((m) => (
+                <li key={m.modePaiement}>
+                  <div className="dash-rank-row">
+                    <span className="dash-rank-name">
+                      {m.modePaiement}
+                      <InfoTooltip
+                        insight={insightRepartitionModePaiement(
+                          m.modePaiement,
+                          m.montant,
+                          total,
+                        )}
+                      />
+                    </span>
+                    <span className="money">{formatFcfa(m.montant)}</span>
+                  </div>
+                  <div className="dash-bar-track">
+                    <div
+                      className="dash-bar-fill"
+                      style={{ width: `${(Number(m.montant) / max) * 100}%` }}
+                    />
+                  </div>
+                </li>
+              ));
+            })()}
           </ul>
         </ListPanel>
       )}
 
-      <ListPanel title="Sessions de caisse — états imprimables">
+      <ListPanel title="Sessions de caisse — relevés imprimables" id="ventes-sessions-table">
         <p className="lead" style={{ margin: '0 0 12px', padding: '0 4px' }}>
-          État X = session ouverte (contrôle en cours) · État Z = clôture
-          (§6.3.4). Aperçu pour imprimer, PDF pour archiver.
+          <strong>Contrôle</strong> : la caisse est encore ouverte, aperçu des ventes
+          sans fermer le tiroir.{' '}
+          <strong>Clôture</strong> : la session est terminée, totaux de fin de poste.
         </p>
         {sessionsQ.isLoading && (
           <LoadingState label="Chargement des sessions…" />
@@ -298,7 +391,7 @@ export function VentesPage() {
                   <th>CA session</th>
                   <th>Fond initial</th>
                   <th>Fond compté</th>
-                  <th>État imprimable</th>
+                  <th>Relevé</th>
                 </tr>
               </thead>
               <tbody>
@@ -313,6 +406,7 @@ export function VentesPage() {
                       boutiqueNom.get(caisse.boutiqueId)) ||
                     '—';
                   const etat = typeEtat(s.statut);
+                  const lib = libellesEtatCaisse(etat);
                   const pdfBusy = pdfEnCours === s.id;
                   return (
                     <tr key={s.id}>
@@ -355,19 +449,15 @@ export function VentesPage() {
                             className={
                               etat === 'Z' ? 'badge badge-info' : 'badge badge-ok'
                             }
-                            title={
-                              etat === 'Z'
-                                ? 'État Z — clôture'
-                                : 'État X — session ouverte'
-                            }
+                            title={lib.sousTitre}
                           >
-                            État {etat}
+                            {lib.court}
                           </span>
                           <button
                             type="button"
                             className="btn-ghost"
                             onClick={() => setEtatSessionId(s.id)}
-                            title={`Aperçu imprimable État ${etat}`}
+                            title={lib.sousTitre}
                           >
                             <Eye size={14} /> Aperçu
                           </button>
@@ -376,7 +466,7 @@ export function VentesPage() {
                             className="btn-ghost"
                             disabled={pdfBusy}
                             onClick={() => void telechargerPdf(s)}
-                            title={`Télécharger le PDF État ${etat}`}
+                            title={`Télécharger le PDF — ${lib.titre}`}
                           >
                             <FileDown size={14} />
                             {pdfBusy ? 'PDF…' : 'PDF'}

@@ -7,16 +7,14 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { insightAlerte } from '../lib/insights/alertes';
+import {
+  hrefAlerte,
+  TYPE_LABEL,
+  type AlerteDto,
+} from '../lib/alertes-ui';
 
 // Alertes automatiques §6.7 — source unique : GET /alertes.
-export interface AlerteDto {
-  type: 'ECART_CAISSE' | 'VERSEMENT_EN_RETARD' | 'ACCES_REFUSE' | 'STOCK_BAS';
-  severite: 'WARNING' | 'CRITICAL';
-  message: string;
-  dateHeure: string;
-  entite: string;
-  entiteId: string;
-}
+export type { AlerteDto };
 
 function useAlertes() {
   return useQuery({
@@ -27,21 +25,6 @@ function useAlertes() {
 
 type FiltreSeverite = 'TOUS' | 'WARNING' | 'CRITICAL';
 type FiltreType = 'TOUS' | AlerteDto['type'];
-
-const TYPE_LABEL: Record<AlerteDto['type'], string> = {
-  ECART_CAISSE: 'Écart de caisse',
-  VERSEMENT_EN_RETARD: 'Versement en retard',
-  ACCES_REFUSE: 'Accès refusé',
-  STOCK_BAS: 'Stock bas',
-};
-
-function hrefAlerte(a: AlerteDto): string {
-  if (a.type === 'ECART_CAISSE' || a.type === 'VERSEMENT_EN_RETARD') {
-    return `/transactions/${a.entiteId}`;
-  }
-  if (a.type === 'STOCK_BAS') return `/produits/${a.entiteId}`;
-  return '/audit';
-}
 
 export function AlertesPage() {
   const navigate = useNavigate();

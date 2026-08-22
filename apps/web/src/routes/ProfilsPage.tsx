@@ -12,15 +12,33 @@ import {
   labelValidation,
   profilOf,
   rolesPourApp,
+  type AppProfilId,
   type ProfilMetier,
 } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import {
+  insightAccesApplication,
+  insightPerimetreRole,
+} from '../lib/insights/administration';
 import type { UtilisateurDto } from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = rolesPourApp('settings');
+
+type ColonneMatrice = 'application' | 'acces';
+
+interface LigneMatrice {
+  appId: AppProfilId;
+  label: string;
+  ouiCount: number;
+  partielCount: number;
+  acces: number;
+}
 
 function menusDuProfil(profil: ProfilMetier): string[] {
   const lignes: string[] = [];
@@ -44,6 +62,7 @@ export function ProfilsPage() {
 
   const selectedRole = (params.get('role') as RoleLibelle | null) ?? RoleLibelle.CAISSIER_BOUTIQUE;
   const profil = profilOf(selectedRole);
+  const [sortMatrice, setSortMatrice] = useState<SortState<ColonneMatrice> | null>(null);
 
   const users = useQuery({
     queryKey: ['utilisateurs'],
@@ -59,6 +78,21 @@ export function ProfilsPage() {
     }
     return map;
   }, [users.data]);
+
+  const ligneMatrice = useMemo(() => {
+    const base: LigneMatrice[] = APP_PROFIL_IDS.map((appId) => {
+      const ouiCount = LISTE_PROFILS.filter((p) => p.apps[appId] === true).length;
+      const partielCount = LISTE_PROFILS.filter((p) => Array.isArray(p.apps[appId])).length;
+      return {
+        appId,
+        label: APP_PROFIL_LIBELLES[appId],
+        ouiCount,
+        partielCount,
+        acces: ouiCount + partielCount,
+      };
+    });
+    return sortRows(base, sortMatrice, (r, key) => (key === 'application' ? r.label : r.acces));
+  }, [sortMatrice]);
 
   if (!peutLire) {
     return <Navigate to="/" replace />;
@@ -111,7 +145,9 @@ export function ProfilsPage() {
               <Shield size={20} />
               <div>
                 <p className="pl-eyebrow">{FAMILLE_PROFIL_LIBELLES[profil.famille]}</p>
-                <h2>{profil.libelle}</h2>
+                <h2>
+                  {profil.libelle} <InfoTooltip insight={insightPerimetreRole(profil.role)} />
+                </h2>
               </div>
             </header>
 
@@ -168,27 +204,53 @@ export function ProfilsPage() {
           <table className="pl-table">
             <thead>
               <tr>
-                <th>Application</th>
+                <SortHeader
+                  active={sortMatrice?.key === 'application'}
+                  dir={sortMatrice?.key === 'application' ? sortMatrice.dir : 'asc'}
+                  onClick={() => setSortMatrice((s) => toggleSort(s, 'application'))}
+                >
+                  Application
+                </SortHeader>
+                <SortHeader
+                  className="num"
+                  active={sortMatrice?.key === 'acces'}
+                  dir={sortMatrice?.key === 'acces' ? sortMatrice.dir : 'asc'}
+                  onClick={() => setSortMatrice((s) => toggleSort(s, 'acces'))}
+                >
+                  Accès
+                </SortHeader>
                 {LISTE_PROFILS.map((p) => (
                   <th key={p.role} title={p.libelle}>
                     {p.libelle.split(' ')[0]}
                   </th>
                 ))}
+                <th aria-label="Info" />
               </tr>
             </thead>
             <tbody>
-              {APP_PROFIL_IDS.map((appId) => (
-                <tr key={appId}>
-                  <td>{APP_PROFIL_LIBELLES[appId]}</td>
+              {ligneMatrice.map((ligne) => (
+                <tr key={ligne.appId}>
+                  <td>{ligne.label}</td>
+                  <td className="num">{ligne.acces}</td>
                   {LISTE_PROFILS.map((p) => {
-                    const ok = p.apps[appId] !== undefined;
-                    const partiel = Array.isArray(p.apps[appId]);
+                    const ok = p.apps[ligne.appId] !== undefined;
+                    const partiel = Array.isArray(p.apps[ligne.appId]);
                     return (
                       <td key={p.role} className="num">
                         {ok ? (partiel ? 'Partiel' : 'Oui') : '—'}
                       </td>
                     );
                   })}
+                  <td>
+                    <InfoTooltip
+                      insight={insightAccesApplication(
+                        ligne.label,
+                        ligne.ouiCount,
+                        ligne.partielCount,
+                        LISTE_PROFILS.length,
+                      )}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

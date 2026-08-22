@@ -140,6 +140,7 @@ export const CanalInteraction = {
   WHATSAPP: 'WHATSAPP',
   VISITE: 'VISITE',
   CAMPAGNE: 'CAMPAGNE',
+  EMAIL: 'EMAIL',
 } as const;
 export type CanalInteraction = (typeof CanalInteraction)[keyof typeof CanalInteraction];
 

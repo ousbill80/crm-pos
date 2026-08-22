@@ -2,14 +2,12 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { UnwrapTuple } from '@prisma/client/runtime/library';
 import {
+  guardCaisseDelegate,
   guardJournalAuditDelegate,
   guardLedgerTransactionClient,
   guardTransactionCaisseDelegate,
 } from './ledger-guard';
-import {
-  guardClientDelegate,
-  guardClientTransactionClient,
-} from './client-crypto-guard';
+import { dechiffrerClientsAuReposSiNecessaire } from './dechiffrer-clients-au-repos';
 
 @Injectable()
 export class PrismaService
@@ -31,27 +29,24 @@ export class PrismaService
       configurable: true,
       enumerable: true,
     });
-    // Chiffrement des données client sensibles (CLAUDE.md §6.7) : contact et
-    // adresse ne sont jamais écrits/lus en clair via ce delegate.
-    Object.defineProperty(this, 'client', {
-      value: guardClientDelegate(this.client),
+    Object.defineProperty(this, 'caisse', {
+      value: guardCaisseDelegate(this.caisse),
       configurable: true,
       enumerable: true,
     });
+    // Fiches client : clair au repos (décision §6.7) — pas de Proxy crypto.
   }
 
   async onModuleInit() {
     await this.$connect();
+    // Backfill one-shot si d’anciennes lignes AES-GCM restent en base.
+    await dechiffrerClientsAuReposSiNecessaire(this);
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
   }
 
-  // Surcharges identiques à celles de PrismaClient.$transaction (forme
-  // tableau et forme callback) : seule l'implémentation change, pour que
-  // le client `tx` fourni aux transactions interactives passe par les
-  // mêmes garde-fous que journalAudit/transactionCaisse au niveau racine.
   $transaction<P extends Prisma.PrismaPromise<unknown>[]>(
     arg: [...P],
     options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
@@ -77,9 +72,7 @@ export class PrismaService
     if (typeof arg === 'function') {
       return superTransaction(
         (tx: object) =>
-          (arg as (tx: object) => unknown)(
-            guardClientTransactionClient(guardLedgerTransactionClient(tx)),
-          ),
+          (arg as (tx: object) => unknown)(guardLedgerTransactionClient(tx)),
         options,
       );
     }

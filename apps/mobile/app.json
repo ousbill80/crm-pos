@@ -4,14 +4,31 @@
     "slug": "caisse-pos",
     "version": "0.0.1",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
+    "icon": "./assets/icon.png",
+    "platforms": ["ios", "android", "web"],
     "ios": {
       "bundleIdentifier": "sn.caissepos.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan des codes-barres produits en caisse."
+      }
     },
     "android": {
-      "package": "sn.caissepos.app"
+      "package": "sn.caissepos.app",
+      "permissions": ["CAMERA"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#7e14ff"
+      }
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Autoriser CaissePOS à utiliser la caméra pour scanner les articles."
+        }
+      ]
+    ],
     "extra": {
       "apiUrl": "http://localhost:3000"
     }

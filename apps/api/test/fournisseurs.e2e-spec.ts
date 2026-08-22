@@ -261,6 +261,17 @@ describe('Fournisseurs & réception de stock (e2e)', () => {
         .set(auth(tokens.daf))
         .expect(404);
     });
+
+    it('renvoie le fournisseur pour un rôle habilité', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/fournisseurs/${fournisseurId}`)
+        .set(auth(tokens.daf))
+        .expect(200);
+
+      const body = response.body as FournisseurDto;
+      expect(body.id).toBe(fournisseurId);
+      expect(body.nom).toBe('Distributeur Lecture Test');
+    });
   });
 
   describe('Réception de stock (ROLES_RECEPTION_STOCK)', () => {

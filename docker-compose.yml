@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: caisse
+      POSTGRES_PASSWORD: caisse
+      POSTGRES_DB: caisse_crm
+    ports:
+      - "5433:5432"
+    volumes:
+      - caisse_crm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caisse -d caisse_crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://caisse:caisse@db:5432/caisse_crm?schema=public
+      # Ne jamais garder ces valeurs par défaut en production — surcharger via
+      # un fichier .env à la racine (voir apps/api/.env.example).
+      JWT_SECRET: ${JWT_SECRET:-change-me-generate-with-openssl-rand-hex-32}
+      CLIENT_DATA_ENCRYPTION_KEY: ${CLIENT_DATA_ENCRYPTION_KEY:-change-me-generate-with-openssl-rand-hex-32}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  caisse_crm_pgdata:

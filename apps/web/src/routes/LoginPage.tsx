@@ -8,10 +8,28 @@ import {
   type CompteDemo,
 } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
-import { ApiError } from '../lib/api';
+import { ApiError, messageDepuisApi } from '../lib/api';
 
 /** Mot de passe unique des comptes seed — jamais exposé hors DEV. */
 const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
+
+// Un 429 (rate limiting anti-brute-force, §6.7) n'est pas un identifiant
+// invalide : l'annoncer comme tel induirait l'utilisateur en erreur sur ses
+// propres identifiants alors que le compte est simplement temporairement
+// throttlé (ou verrouillé après échecs répétés, cf. AuthService).
+function messageDeConnexion(err: unknown): string {
+  if (!(err instanceof ApiError)) {
+    return 'Impossible de contacter le serveur.';
+  }
+  if (err.status === 429) {
+    return 'Trop de tentatives de connexion. Réessayez dans une minute.';
+  }
+  const message = messageDepuisApi(err, 'Identifiants invalides.');
+  if (message.toLowerCase().includes('verrouill')) {
+    return message;
+  }
+  return 'Identifiants invalides.';
+}
 
 export function LoginPage() {
   const { isAuthenticated, user, login, logout } = useAuth();
@@ -49,11 +67,7 @@ export function LoginPage() {
       const next = await login(loginValue, password);
       navigate(homeForRole(next.role), { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? 'Identifiants invalides.'
-          : 'Impossible de contacter le serveur.',
-      );
+      setError(messageDeConnexion(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -70,9 +84,9 @@ export function LoginPage() {
       })
       .catch((err) => {
         setError(
-          err instanceof ApiError
+          err instanceof ApiError && err.status !== 429
             ? 'Identifiants invalides (seed manquant ?).'
-            : 'Impossible de contacter le serveur.',
+            : messageDeConnexion(err),
         );
       })
       .finally(() => setIsSubmitting(false));

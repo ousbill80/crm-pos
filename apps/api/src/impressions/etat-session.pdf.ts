@@ -16,9 +16,12 @@ function heureCourte(value: Date | string): string {
 }
 
 function libellePaiementEtat(v: EtatSessionPdfInput['ventes'][number]): string {
-  const parts = v.paiements.length > 0 ? v.paiements : [{ modePaiement: v.modePaiement, montant: v.montantTotal }];
+  const parts =
+    v.paiements.length > 0
+      ? v.paiements
+      : [{ modePaiement: v.modePaiement, montant: v.montantTotal }];
   if (parts.length === 1) {
-    return MODE_PAIEMENT_PDF[parts[0]!.modePaiement] ?? parts[0]!.modePaiement;
+    return MODE_PAIEMENT_PDF[parts[0].modePaiement] ?? parts[0].modePaiement;
   }
   return parts
     .map((p) => MODE_PAIEMENT_PDF[p.modePaiement] ?? p.modePaiement)
@@ -74,8 +77,8 @@ export function dessinerEtatSession(
 ): void {
   const titre =
     data.typeEtat === 'Z'
-      ? 'État Z — Clôture de caisse'
-      : 'Ventes du jour — État X';
+      ? 'Relevé de clôture — session fermée'
+      : 'Relevé de contrôle — session encore ouverte';
   const totalCa = data.releve.reduce((s, l) => s + Number(l.total), 0);
   const sessionCourt = data.sessionId.slice(0, 8).toUpperCase();
   const jour = fmtDatePdf(data.ouvertureDateHeure);
@@ -84,8 +87,8 @@ export function dessinerEtatSession(
   bandeauRapport(doc, titre, [
     `${data.boutiqueNom ?? 'Boutique'}  ·  ${data.caisseLibelle}  ·  ${jour}`,
     data.typeEtat === 'Z'
-      ? 'Session fermée. Totaux identiques à la clôture. L’écart est informatif.'
-      : 'Session ouverte. Journal des ventes du poste — ce n’est pas une clôture.',
+      ? 'La caisse est fermée. Ces totaux sont ceux de la fin de poste. L’écart tiroir est informatif.'
+      : 'La caisse est encore ouverte. Aperçu des ventes en cours : ce document ne ferme pas le tiroir.',
   ]);
 
   kpiRangee(doc, [
@@ -140,13 +143,7 @@ export function dessinerEtatSession(
     ]),
     {
       empty: 'Aucune vente sur cette session.',
-      pied: [
-        'Total',
-        String(data.nombreVentes),
-        '',
-        '',
-        fmtFcfaPdf(totalCa),
-      ],
+      pied: ['Total', String(data.nombreVentes), '', '', fmtFcfaPdf(totalCa)],
     },
   );
 

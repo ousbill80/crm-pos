@@ -108,7 +108,12 @@ describe('Produits — catalogue POS §6.3.2 (e2e)', () => {
     await creerUtilisateur('respsi', 'RESPONSABLE_SI', null, 1);
     await creerUtilisateur('direction', 'DIRECTION_GENERALE', null, 0);
     await creerUtilisateur('daf', 'DAF', null, 1);
-    await creerUtilisateur('caissier-boutique', 'CAISSIER_BOUTIQUE', boutique.id, 4);
+    await creerUtilisateur(
+      'caissier-boutique',
+      'CAISSIER_BOUTIQUE',
+      boutique.id,
+      4,
+    );
     await creerUtilisateur('respcrm', 'RESPONSABLE_CRM', null, 1);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

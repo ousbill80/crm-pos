@@ -18,6 +18,9 @@ import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import { ReceptionStockForm } from './FournisseursPage';
 import {
   badgeCommande,
@@ -29,6 +32,15 @@ import {
   STATUT_COMMANDE,
   STATUT_FACTURE,
 } from '../lib/achats-ui';
+import {
+  insightApprovisionnement,
+  insightCommandesOuvertes,
+  insightCumulAchatsFournisseur,
+  insightDernierPaiementFournisseur,
+  insightEncoursFournisseur,
+  insightFicheFournisseurCircuit,
+  insightPaiementsFournisseur,
+} from '../lib/insights/fournisseurs';
 import type {
   CommandeAchatDto,
   FactureFournisseurDto,
@@ -99,6 +111,21 @@ function exporterCsv(filename: string, lignes: string[][]) {
   URL.revokeObjectURL(url);
 }
 
+type ColArticle = 'designation' | 'unites' | 'montant' | 'dernierPrix' | 'variation' | 'derniere';
+type ColReception =
+  | 'date'
+  | 'produit'
+  | 'qte'
+  | 'prix'
+  | 'montant'
+  | 'entrepot'
+  | 'bl'
+  | 'bc'
+  | 'operateur';
+type ColCommande = 'numero' | 'statut' | 'date' | 'montant' | 'reception';
+type ColFacture = 'numero' | 'statut' | 'date' | 'montant' | 'reste';
+type ColPaiement = 'date' | 'facture' | 'mode' | 'montant' | 'ref' | 'operateur';
+
 type FicheForm = {
   nom: string;
   contact: string;
@@ -143,6 +170,11 @@ export function FournisseurDetailPage() {
   const [refPaiement, setRefPaiement] = useState('');
   const [fiche, setFiche] = useState<FicheForm | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
+  const [sortArticles, setSortArticles] = useState<SortState<ColArticle> | null>(null);
+  const [sortReceptions, setSortReceptions] = useState<SortState<ColReception> | null>(null);
+  const [sortCommandes, setSortCommandes] = useState<SortState<ColCommande> | null>(null);
+  const [sortFactures, setSortFactures] = useState<SortState<ColFacture> | null>(null);
+  const [sortPaiements, setSortPaiements] = useState<SortState<ColPaiement> | null>(null);
 
   const detail = useQuery({
     queryKey: ['fournisseurs', fournisseurId],
@@ -237,6 +269,10 @@ export function FournisseurDetailPage() {
   }, [facts]);
   const totalPaye = paiements.reduce((s, p) => s + Number(p.montant), 0);
   const totalReste = encours.reduce((s, x) => s + Number(x.resteAPayer), 0);
+  const unitesRestantesOuvertes = ouvertes.reduce(
+    (s, c) => s + Math.max(0, c.quantite - c.quantiteRecue),
+    0,
+  );
   const qTab = rechercheTab.trim().toLowerCase();
   const produitsFiltres = (detail.data?.produits ?? []).filter((p) => {
     if (!qTab) return true;
@@ -244,6 +280,24 @@ export function FournisseurDetailPage() {
       p.designation.toLowerCase().includes(qTab) ||
       (p.reference ?? '').toLowerCase().includes(qTab)
     );
+  });
+  const produitsTries = sortRows(produitsFiltres, sortArticles, (p, key) => {
+    switch (key) {
+      case 'designation':
+        return p.designation;
+      case 'unites':
+        return p.unites;
+      case 'montant':
+        return Number(p.montant);
+      case 'dernierPrix':
+        return Number(p.dernierPrix);
+      case 'variation':
+        return p.variationPct === null ? null : Number(p.variationPct);
+      case 'derniere':
+        return p.derniereReceptionAt;
+      default:
+        return null;
+    }
   });
   const receptionsFiltrees = (detail.data?.receptions ?? []).filter((r) => {
     if (!qTab) return true;
@@ -253,6 +307,80 @@ export function FournisseurDetailPage() {
       (r.entrepot?.nom ?? '').toLowerCase().includes(qTab) ||
       (r.commande?.numero ?? '').toLowerCase().includes(qTab)
     );
+  });
+  const receptionsTriees = sortRows(receptionsFiltrees, sortReceptions, (r, key) => {
+    switch (key) {
+      case 'date':
+        return r.dateReception;
+      case 'produit':
+        return r.produit?.designation ?? '';
+      case 'qte':
+        return r.quantite;
+      case 'prix':
+        return Number(r.prixAchat);
+      case 'montant':
+        return Number(r.montant);
+      case 'entrepot':
+        return r.entrepot?.nom ?? '';
+      case 'bl':
+        return r.reference ?? '';
+      case 'bc':
+        return r.commande?.numero ?? '';
+      case 'operateur':
+        return r.utilisateur ? `${r.utilisateur.prenom} ${r.utilisateur.nom}` : '';
+      default:
+        return null;
+    }
+  });
+  const cmdsTriees = sortRows(cmds, sortCommandes, (c, key) => {
+    switch (key) {
+      case 'numero':
+        return c.numero;
+      case 'statut':
+        return STATUT_COMMANDE[c.statut];
+      case 'date':
+        return c.dateCommande;
+      case 'montant':
+        return Number(c.montant);
+      case 'reception':
+        return c.quantite === 0 ? 0 : c.quantiteRecue / c.quantite;
+      default:
+        return null;
+    }
+  });
+  const factsTriees = sortRows(facts, sortFactures, (x, key) => {
+    switch (key) {
+      case 'numero':
+        return x.numero;
+      case 'statut':
+        return STATUT_FACTURE[x.statut];
+      case 'date':
+        return x.dateFacture;
+      case 'montant':
+        return Number(x.montant);
+      case 'reste':
+        return Number(x.resteAPayer);
+      default:
+        return null;
+    }
+  });
+  const paiementsTries = sortRows(paiements, sortPaiements, (p, key) => {
+    switch (key) {
+      case 'date':
+        return p.datePaiement;
+      case 'facture':
+        return p.factureNumero;
+      case 'mode':
+        return MODE_PAIEMENT_FOURN[p.mode] ?? p.mode;
+      case 'montant':
+        return Number(p.montant);
+      case 'ref':
+        return p.reference ?? '';
+      case 'operateur':
+        return p.utilisateur ? `${p.utilisateur.prenom} ${p.utilisateur.nom}` : '';
+      default:
+        return null;
+    }
   });
 
   function aller(id: Onglet) {
@@ -360,7 +488,9 @@ export function FournisseurDetailPage() {
           <Truck size={28} />
         </div>
         <div className="client-workspace-hero-main">
-          <h1>{f.nom}</h1>
+          <h1>
+            {f.nom} <InfoTooltip insight={insightFicheFournisseurCircuit()} />
+          </h1>
           <p className="client-workspace-hero-sub">
             {f.contact ?? 'Sans interlocuteur'}
             {f.telephone ? ` · ${f.telephone}` : ''}
@@ -420,12 +550,19 @@ export function FournisseurDetailPage() {
           <div className="client-workspace-section">
             <div className="client-kpi-grid">
               <button type="button" className="client-kpi-card" onClick={() => aller('receptions')}>
-                <div className="client-kpi-label">Réceptions</div>
+                <div className="client-kpi-label">
+                  Réceptions <InfoTooltip insight={insightApprovisionnement()} />
+                </div>
                 <div className="client-kpi-value">{f.nombreReceptions}</div>
                 <div className="client-kpi-hint">{f.unitesRecues} unité(s)</div>
               </button>
               <button type="button" className="client-kpi-card" onClick={() => aller('articles')}>
-                <div className="client-kpi-label">Cumul achats</div>
+                <div className="client-kpi-label">
+                  Cumul achats{' '}
+                  <InfoTooltip
+                    insight={insightCumulAchatsFournisseur(Number(f.montantCumule), f.produitsDistincts)}
+                  />
+                </div>
                 <div className="client-kpi-value client-kpi-value-sm money">
                   {fmtFcfa(f.montantCumule)}
                 </div>
@@ -436,7 +573,12 @@ export function FournisseurDetailPage() {
                 className={`client-kpi-card${ouvertes.length > 0 ? ' kpi-actif' : ''}`}
                 onClick={() => aller('commandes')}
               >
-                <div className="client-kpi-label">Commandes ouvertes</div>
+                <div className="client-kpi-label">
+                  Commandes ouvertes{' '}
+                  <InfoTooltip
+                    insight={insightCommandesOuvertes(ouvertes.length, unitesRestantesOuvertes)}
+                  />
+                </div>
                 <div className="client-kpi-value">{ouvertes.length}</div>
                 <div className="client-kpi-hint">{cmds.length} au total</div>
               </button>
@@ -445,7 +587,9 @@ export function FournisseurDetailPage() {
                 className={`client-kpi-card${encours.length > 0 ? ' kpi-actif' : ''}`}
                 onClick={() => aller('factures')}
               >
-                <div className="client-kpi-label">Encours factures</div>
+                <div className="client-kpi-label">
+                  Encours factures <InfoTooltip insight={insightEncoursFournisseur(totalReste)} />
+                </div>
                 <div className="client-kpi-value">{encours.length}</div>
                 <div className="client-kpi-hint">
                   {fmtFcfa(totalReste)} restant
@@ -456,7 +600,10 @@ export function FournisseurDetailPage() {
                 className={`client-kpi-card${paiements.length > 0 ? ' kpi-actif' : ''}`}
                 onClick={() => aller('paiements')}
               >
-                <div className="client-kpi-label">Paiements</div>
+                <div className="client-kpi-label">
+                  Paiements{' '}
+                  <InfoTooltip insight={insightPaiementsFournisseur(paiements.length, totalPaye)} />
+                </div>
                 <div className="client-kpi-value">{paiements.length}</div>
                 <div className="client-kpi-hint">{fmtFcfa(totalPaye)} versé(s)</div>
               </button>
@@ -679,16 +826,52 @@ export function FournisseurDetailPage() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Article</th>
-                        <th>Unités</th>
-                        <th>Cumul</th>
-                        <th>Dernier prix</th>
-                        <th>Variation</th>
-                        <th>Dernière</th>
+                        <SortHeader
+                          active={sortArticles?.key === 'designation'}
+                          dir={sortArticles?.key === 'designation' ? sortArticles.dir : 'asc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'designation'))}
+                        >
+                          Article
+                        </SortHeader>
+                        <SortHeader
+                          active={sortArticles?.key === 'unites'}
+                          dir={sortArticles?.key === 'unites' ? sortArticles.dir : 'asc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'unites'))}
+                        >
+                          Unités
+                        </SortHeader>
+                        <SortHeader
+                          active={sortArticles?.key === 'montant'}
+                          dir={sortArticles?.key === 'montant' ? sortArticles.dir : 'asc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'montant'))}
+                        >
+                          Cumul
+                        </SortHeader>
+                        <SortHeader
+                          active={sortArticles?.key === 'dernierPrix'}
+                          dir={sortArticles?.key === 'dernierPrix' ? sortArticles.dir : 'asc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'dernierPrix'))}
+                        >
+                          Dernier prix
+                        </SortHeader>
+                        <SortHeader
+                          active={sortArticles?.key === 'variation'}
+                          dir={sortArticles?.key === 'variation' ? sortArticles.dir : 'asc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'variation'))}
+                        >
+                          Variation
+                        </SortHeader>
+                        <SortHeader
+                          active={sortArticles?.key === 'derniere'}
+                          dir={sortArticles?.key === 'derniere' ? sortArticles.dir : 'desc'}
+                          onClick={() => setSortArticles((s) => toggleSort(s, 'derniere'))}
+                        >
+                          Dernière
+                        </SortHeader>
                       </tr>
                     </thead>
                     <tbody>
-                      {produitsFiltres.map((p) => (
+                      {produitsTries.map((p) => (
                         <tr
                           key={p.produitId}
                           className="produit-row"
@@ -773,19 +956,73 @@ export function FournisseurDetailPage() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Date</th>
-                        <th>Produit</th>
-                        <th>Qté</th>
-                        <th>Prix</th>
-                        <th>Montant</th>
-                        <th>Entrepôt</th>
-                        <th>BL</th>
-                        <th>BC</th>
-                        <th>Opérateur</th>
+                        <SortHeader
+                          active={sortReceptions?.key === 'date'}
+                          dir={sortReceptions?.key === 'date' ? sortReceptions.dir : 'desc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'date'))}
+                        >
+                          Date
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'produit'}
+                          dir={sortReceptions?.key === 'produit' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'produit'))}
+                        >
+                          Produit
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'qte'}
+                          dir={sortReceptions?.key === 'qte' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'qte'))}
+                        >
+                          Qté
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'prix'}
+                          dir={sortReceptions?.key === 'prix' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'prix'))}
+                        >
+                          Prix
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'montant'}
+                          dir={sortReceptions?.key === 'montant' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'montant'))}
+                        >
+                          Montant
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'entrepot'}
+                          dir={sortReceptions?.key === 'entrepot' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'entrepot'))}
+                        >
+                          Entrepôt
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'bl'}
+                          dir={sortReceptions?.key === 'bl' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'bl'))}
+                        >
+                          BL
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'bc'}
+                          dir={sortReceptions?.key === 'bc' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'bc'))}
+                        >
+                          BC
+                        </SortHeader>
+                        <SortHeader
+                          active={sortReceptions?.key === 'operateur'}
+                          dir={sortReceptions?.key === 'operateur' ? sortReceptions.dir : 'asc'}
+                          onClick={() => setSortReceptions((s) => toggleSort(s, 'operateur'))}
+                        >
+                          Opérateur
+                        </SortHeader>
                       </tr>
                     </thead>
                     <tbody>
-                      {receptionsFiltrees.map((r) => (
+                      {receptionsTriees.map((r) => (
                         <tr key={r.id}>
                           <td>{fmtDateHeure(r.dateReception)}</td>
                           <td>
@@ -852,15 +1089,45 @@ export function FournisseurDetailPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>N°</th>
-                      <th>Statut</th>
-                      <th>Date</th>
-                      <th>Montant</th>
-                      <th>Réception</th>
+                      <SortHeader
+                        active={sortCommandes?.key === 'numero'}
+                        dir={sortCommandes?.key === 'numero' ? sortCommandes.dir : 'asc'}
+                        onClick={() => setSortCommandes((s) => toggleSort(s, 'numero'))}
+                      >
+                        N°
+                      </SortHeader>
+                      <SortHeader
+                        active={sortCommandes?.key === 'statut'}
+                        dir={sortCommandes?.key === 'statut' ? sortCommandes.dir : 'asc'}
+                        onClick={() => setSortCommandes((s) => toggleSort(s, 'statut'))}
+                      >
+                        Statut
+                      </SortHeader>
+                      <SortHeader
+                        active={sortCommandes?.key === 'date'}
+                        dir={sortCommandes?.key === 'date' ? sortCommandes.dir : 'desc'}
+                        onClick={() => setSortCommandes((s) => toggleSort(s, 'date'))}
+                      >
+                        Date
+                      </SortHeader>
+                      <SortHeader
+                        active={sortCommandes?.key === 'montant'}
+                        dir={sortCommandes?.key === 'montant' ? sortCommandes.dir : 'asc'}
+                        onClick={() => setSortCommandes((s) => toggleSort(s, 'montant'))}
+                      >
+                        Montant
+                      </SortHeader>
+                      <SortHeader
+                        active={sortCommandes?.key === 'reception'}
+                        dir={sortCommandes?.key === 'reception' ? sortCommandes.dir : 'asc'}
+                        onClick={() => setSortCommandes((s) => toggleSort(s, 'reception'))}
+                      >
+                        Réception
+                      </SortHeader>
                     </tr>
                   </thead>
                   <tbody>
-                    {cmds.map((c) => (
+                    {cmdsTriees.map((c) => (
                       <tr
                         key={c.id}
                         className="produit-row"
@@ -911,15 +1178,45 @@ export function FournisseurDetailPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>N°</th>
-                      <th>Statut</th>
-                      <th>Date</th>
-                      <th>Montant</th>
-                      <th>Reste</th>
+                      <SortHeader
+                        active={sortFactures?.key === 'numero'}
+                        dir={sortFactures?.key === 'numero' ? sortFactures.dir : 'asc'}
+                        onClick={() => setSortFactures((s) => toggleSort(s, 'numero'))}
+                      >
+                        N°
+                      </SortHeader>
+                      <SortHeader
+                        active={sortFactures?.key === 'statut'}
+                        dir={sortFactures?.key === 'statut' ? sortFactures.dir : 'asc'}
+                        onClick={() => setSortFactures((s) => toggleSort(s, 'statut'))}
+                      >
+                        Statut
+                      </SortHeader>
+                      <SortHeader
+                        active={sortFactures?.key === 'date'}
+                        dir={sortFactures?.key === 'date' ? sortFactures.dir : 'desc'}
+                        onClick={() => setSortFactures((s) => toggleSort(s, 'date'))}
+                      >
+                        Date
+                      </SortHeader>
+                      <SortHeader
+                        active={sortFactures?.key === 'montant'}
+                        dir={sortFactures?.key === 'montant' ? sortFactures.dir : 'asc'}
+                        onClick={() => setSortFactures((s) => toggleSort(s, 'montant'))}
+                      >
+                        Montant
+                      </SortHeader>
+                      <SortHeader
+                        active={sortFactures?.key === 'reste'}
+                        dir={sortFactures?.key === 'reste' ? sortFactures.dir : 'asc'}
+                        onClick={() => setSortFactures((s) => toggleSort(s, 'reste'))}
+                      >
+                        Reste
+                      </SortHeader>
                     </tr>
                   </thead>
                   <tbody>
-                    {facts.map((x) => (
+                    {factsTriees.map((x) => (
                       <tr
                         key={x.id}
                         className="produit-row"
@@ -983,7 +1280,9 @@ export function FournisseurDetailPage() {
             </p>
             <div className="client-kpi-grid">
               <div className="client-kpi-card">
-                <div className="client-kpi-label">Versé</div>
+                <div className="client-kpi-label">
+                  Versé <InfoTooltip insight={insightPaiementsFournisseur(paiements.length, totalPaye)} />
+                </div>
                 <div className="client-kpi-value client-kpi-value-sm money">
                   {fmtFcfa(totalPaye)}
                 </div>
@@ -994,14 +1293,24 @@ export function FournisseurDetailPage() {
                 className={`client-kpi-card${totalReste > 0 ? ' kpi-actif' : ''}`}
                 onClick={() => aller('factures')}
               >
-                <div className="client-kpi-label">Reste dû</div>
+                <div className="client-kpi-label">
+                  Reste dû <InfoTooltip insight={insightEncoursFournisseur(totalReste)} />
+                </div>
                 <div className="client-kpi-value client-kpi-value-sm money">
                   {fmtFcfa(totalReste)}
                 </div>
                 <div className="client-kpi-hint">{encours.length} facture(s) ouverte(s)</div>
               </button>
               <div className="client-kpi-card">
-                <div className="client-kpi-label">Dernier paiement</div>
+                <div className="client-kpi-label">
+                  Dernier paiement{' '}
+                  <InfoTooltip
+                    insight={insightDernierPaiementFournisseur(
+                      paiements[0]?.datePaiement ?? null,
+                      paiements[0] ? Number(paiements[0].montant) : null,
+                    )}
+                  />
+                </div>
                 <div className="client-kpi-value client-kpi-value-sm">
                   {paiements[0] ? fmtDate(paiements[0].datePaiement) : '—'}
                 </div>
@@ -1046,16 +1355,52 @@ export function FournisseurDetailPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Facture</th>
-                      <th>Mode</th>
-                      <th>Montant</th>
-                      <th>Réf.</th>
-                      <th>Opérateur</th>
+                      <SortHeader
+                        active={sortPaiements?.key === 'date'}
+                        dir={sortPaiements?.key === 'date' ? sortPaiements.dir : 'desc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'date'))}
+                      >
+                        Date
+                      </SortHeader>
+                      <SortHeader
+                        active={sortPaiements?.key === 'facture'}
+                        dir={sortPaiements?.key === 'facture' ? sortPaiements.dir : 'asc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'facture'))}
+                      >
+                        Facture
+                      </SortHeader>
+                      <SortHeader
+                        active={sortPaiements?.key === 'mode'}
+                        dir={sortPaiements?.key === 'mode' ? sortPaiements.dir : 'asc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'mode'))}
+                      >
+                        Mode
+                      </SortHeader>
+                      <SortHeader
+                        active={sortPaiements?.key === 'montant'}
+                        dir={sortPaiements?.key === 'montant' ? sortPaiements.dir : 'asc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'montant'))}
+                      >
+                        Montant
+                      </SortHeader>
+                      <SortHeader
+                        active={sortPaiements?.key === 'ref'}
+                        dir={sortPaiements?.key === 'ref' ? sortPaiements.dir : 'asc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'ref'))}
+                      >
+                        Réf.
+                      </SortHeader>
+                      <SortHeader
+                        active={sortPaiements?.key === 'operateur'}
+                        dir={sortPaiements?.key === 'operateur' ? sortPaiements.dir : 'asc'}
+                        onClick={() => setSortPaiements((s) => toggleSort(s, 'operateur'))}
+                      >
+                        Opérateur
+                      </SortHeader>
                     </tr>
                   </thead>
                   <tbody>
-                    {paiements.map((p) => (
+                    {paiementsTries.map((p) => (
                       <tr
                         key={p.id}
                         className="produit-row"

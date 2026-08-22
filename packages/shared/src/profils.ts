@@ -21,7 +21,7 @@ export const APP_PROFIL_LIBELLES: Record<AppProfilId, string> = {
   produits: 'Produits',
   inventory: 'Stocks',
   purchase: 'Achats',
-  contacts: 'Contacts',
+  contacts: 'CRM',
   finance: 'Finance',
   treasury: 'Trésorerie',
   dashboard: 'Tableau de bord',
@@ -69,13 +69,27 @@ export interface ProfilMetier {
 }
 
 const POS: AccesApp = true;
+/** Siège / zone : journal des sessions POS, jamais l’écran d’encaissement (§4). */
+const POS_LECTURE: AccesApp = ['/ventes'];
 const VENTES: AccesApp = true;
 const CATALOGUE: AccesApp = true;
 const STOCKS_COMPLET: AccesApp = true;
 const STOCKS_CAISSIER: AccesApp = ['/stocks', '/inventaires'];
 const ACHATS: AccesApp = true;
+/**
+ * Caissier central : lecture réseau des fiches/commandes/factures (§ ROLES_LECTURE_ACHATS
+ * côté API) + paiement fournisseur (§ ROLES_PAIEMENT_FOURNISSEUR, grand livre Achats distinct
+ * de TRESORERIE_CAISSE). Pas de création fournisseur/commande/facture ni de réception.
+ */
+const ACHATS_TRESORERIE: AccesApp = ['/fournisseurs', '/achats/commandes', '/achats/factures'];
 const CONTACTS_COMPLET: AccesApp = true;
-const CONTACTS_SANS_CAMPAGNES: AccesApp = ['/clients'];
+const CONTACTS_SANS_CAMPAGNES: AccesApp = [
+  '/clients',
+  '/clients/pilotage',
+  '/clients/fidelite',
+  '/clients/segmentation',
+  '/clients/interactions',
+];
 const FINANCE: AccesApp = true;
 const TRESORERIE_COMPLET: AccesApp = true;
 const TRESORERIE_CAISSIER: AccesApp = ['/caisses', '/transactions'];
@@ -102,6 +116,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     validationCircuit: 'seuils',
     accueil: '/finance',
     apps: {
+      pos: POS_LECTURE,
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
@@ -125,6 +140,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     validationCircuit: 'niveau2',
     accueil: '/finance',
     apps: {
+      pos: POS_LECTURE,
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
@@ -148,9 +164,11 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     validationCircuit: 'centrale',
     accueil: '/finance',
     apps: {
+      pos: POS_LECTURE,
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
+      purchase: ACHATS_TRESORERIE,
       contacts: CONTACTS_SANS_CAMPAGNES,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
@@ -169,6 +187,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     validationCircuit: false,
     accueil: '/finance',
     apps: {
+      pos: POS_LECTURE,
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
@@ -190,6 +209,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     validationCircuit: false,
     accueil: '/dashboard',
     apps: {
+      pos: POS_LECTURE,
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
@@ -285,6 +305,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     accueil: '/clients',
     apps: {
       contacts: CONTACTS_COMPLET,
+      ventes: ['/ventes/devis'],
     },
     resume: 'Module CRM complet : fiches, segmentation, fidélité, campagnes (§6.6).',
     interdit: 'Pas d’accès caisse, stocks, finance, configuration SI.',
@@ -335,7 +356,10 @@ export function menuAutorise(
   if (acces === undefined) return false;
   if (acces === true) return true;
   const base = menuPath.split('?')[0];
-  return acces.some((p) => p === menuPath || p === base);
+  return acces.some((p) => {
+    const allowed = p.split('?')[0];
+    return base === allowed || base.startsWith(`${allowed}/`);
+  });
 }
 
 export function rolesPourMenu(

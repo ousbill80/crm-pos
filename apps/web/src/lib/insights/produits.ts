@@ -177,3 +177,62 @@ export function insightDormant(stock: number, valeurStock: string): Insight {
     severity: stock > 0 ? 'warning' : 'neutral',
   };
 }
+
+export function insightCatalogueActif(actifs: number, inactifs: number): Insight {
+  const total = actifs + inactifs;
+  return {
+    title: 'Catalogue actif',
+    interpretation:
+      inactifs > 0
+        ? `${actifs} produit(s) actif(s) sur ${total} au catalogue — ${inactifs} désactivé(s), invendables au POS mais historique conservé.`
+        : `${actifs} produit(s) actifs, tous vendables au POS.`,
+    recommendation: inactifs > 0 ? 'Filtrer sur « Inactifs » pour réactiver ou nettoyer les fiches obsolètes.' : undefined,
+    severity: 'info',
+  };
+}
+
+export function insightRupturesCatalogue(n: number): Insight {
+  return {
+    title: 'Ruptures',
+    interpretation:
+      n > 0
+        ? `${n} produit(s) à 0 en stock réseau — plus rien à vendre tant qu'un réassort ou transfert n'est fait.`
+        : 'Aucune rupture sur le catalogue actif.',
+    recommendation: n > 0 ? 'Filtrer pour prioriser un réapprovisionnement ou un transfert entre entrepôts.' : undefined,
+    severity: n > 0 ? 'critical' : 'ok',
+  };
+}
+
+export function insightSousSeuilCatalogue(n: number): Insight {
+  return {
+    title: 'Sous le seuil',
+    interpretation:
+      n > 0
+        ? `${n} produit(s) encore en stock mais à ou sous le seuil de réapprovisionnement (déclenche l'alerte STOCK_BAS §6.7).`
+        : 'Aucun produit sous son seuil de réapprovisionnement.',
+    recommendation: n > 0 ? 'Filtrer pour planifier un réassort avant la rupture.' : undefined,
+    severity: n > 0 ? 'warning' : 'ok',
+  };
+}
+
+export function insightValeurStockCatalogue(valeurStock: string, nombreActifs: number): Insight {
+  const valeur = Number(valeurStock);
+  const moyenne = nombreActifs > 0 ? valeur / nombreActifs : 0;
+  return {
+    title: 'Valeur du stock',
+    interpretation: `${valeurStock} FCFA de stock valorisé au CMP, soit ${moyenne.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA en moyenne par produit actif.`,
+    severity: 'neutral',
+  };
+}
+
+export function insightPrixSousCmp(n: number): Insight {
+  return {
+    title: 'Prix < CMP',
+    interpretation:
+      n > 0
+        ? `${n} produit(s) vendu(s) sous leur coût moyen pondéré : chaque vente de ces articles génère une perte.`
+        : 'Aucun produit vendu sous son coût moyen pondéré.',
+    recommendation: n > 0 ? 'Corriger le prix de vente en priorité sur ces fiches.' : undefined,
+    severity: n > 0 ? 'critical' : 'ok',
+  };
+}

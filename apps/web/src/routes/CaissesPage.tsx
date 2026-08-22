@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowRightLeft,
@@ -23,7 +23,16 @@ import {
   libellePerimetrePage,
   useFiltreMagasinSiege,
 } from '../components/FiltreMagasinSiege';
-import { insightSoldeCaisse, insightTypeCaisse } from '../lib/insights/caisses';
+import {
+  insightLedgerCredits,
+  insightLedgerDebits,
+  insightLedgerEcritures,
+  insightLedgerPipeline,
+  insightNbTypeCaisse,
+  insightPerimetreCaisses,
+  insightSoldeCaisse,
+  insightTypeCaisse,
+} from '../lib/insights/caisses';
 import type {
   BoutiqueDto,
   CaisseDto,
@@ -92,10 +101,59 @@ function TypeIcon({ type, size = 16 }: { type: string; size?: number }) {
   return <Monitor size={size} />;
 }
 
+function avatarClass(type: string): string {
+  if (type === TypeCaisse.CENTRALE) return 'caisses-node-centrale';
+  if (type === TypeCaisse.MAGASIN) return 'caisses-node-magasin';
+  return 'caisses-node-drawer';
+}
+
+function roleCircuit(type: string): { titre: string; texte: string; qui: string } {
+  if (type === TypeCaisse.CENTRALE) {
+    return {
+      titre: 'Caisse centrale',
+      texte: 'Réceptionne et valide les versements magasin (SORTIE_FONDS).',
+      qui: 'Caissier central / DAF — pas la boutique',
+    };
+  }
+  if (type === TypeCaisse.MAGASIN) {
+    return {
+      titre: 'Cash office magasin',
+      texte: 'Reçoit les clôtures de tiroirs. Initie les versements vers la centrale.',
+      qui: 'Responsable / caissier boutique — initiation seulement',
+    };
+  }
+  return {
+    titre: 'Tiroir POS',
+    texte: 'Encaisse les ventes. À la clôture, transfert interne vers le magasin.',
+    qui: 'Caissier boutique — jamais de validation §6.4',
+  };
+}
+
+function CircuitPosition({ type }: { type: string }) {
+  const etapes: Array<{ id: TypeCaisse; label: string }> = [
+    { id: TypeCaisse.TIROIR, label: 'Tiroir' },
+    { id: TypeCaisse.MAGASIN, label: 'Magasin' },
+    { id: TypeCaisse.CENTRALE, label: 'Centrale' },
+  ];
+  return (
+    <ol className="caisses-circuit" aria-label="Position dans le circuit">
+      {etapes.map((e, i) => (
+        <li
+          key={e.id}
+          className={e.id === type ? 'is-current' : undefined}
+        >
+          {i > 0 ? <span className="caisses-circuit-arrow" aria-hidden>→</span> : null}
+          <span>{e.label}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function SoldeValue({ caisseId }: { caisseId: string }) {
   const { data, isLoading, isError } = useSolde(caisseId);
-  if (isLoading) return <span className="caisses-muted">Calcul…</span>;
-  if (isError) return <span className="caisses-muted">Erreur</span>;
+  if (isLoading) return <span className="caisses-muted">…</span>;
+  if (isError) return <span className="caisses-muted">—</span>;
   return <span className="money">{formatFcfa(data?.solde)}</span>;
 }
 
@@ -200,7 +258,9 @@ function MouvementsCaisse({
             <BookOpen size={15} />
           </span>
           <div>
-            <div className="caisses-kpi-label">Écritures</div>
+            <div className="caisses-kpi-label">
+              Écritures <InfoTooltip insight={insightLedgerEcritures(totaux.n)} />
+            </div>
             <div className="caisses-kpi-value">{totaux.n}</div>
           </div>
         </article>
@@ -209,7 +269,9 @@ function MouvementsCaisse({
             +
           </span>
           <div>
-            <div className="caisses-kpi-label">Crédits</div>
+            <div className="caisses-kpi-label">
+              Crédits <InfoTooltip insight={insightLedgerCredits(totaux.credits)} />
+            </div>
             <div className="caisses-kpi-value money caisses-credit">
               {formatFcfa(totaux.credits)}
             </div>
@@ -220,7 +282,9 @@ function MouvementsCaisse({
             −
           </span>
           <div>
-            <div className="caisses-kpi-label">Débits</div>
+            <div className="caisses-kpi-label">
+              Débits <InfoTooltip insight={insightLedgerDebits(totaux.debits)} />
+            </div>
             <div className="caisses-kpi-value money caisses-debit">
               {formatFcfa(totaux.debits)}
             </div>
@@ -231,7 +295,9 @@ function MouvementsCaisse({
             <ArrowRightLeft size={15} />
           </span>
           <div>
-            <div className="caisses-kpi-label">En cours</div>
+            <div className="caisses-kpi-label">
+              En cours <InfoTooltip insight={insightLedgerPipeline(pipeline.length)} />
+            </div>
             <div className="caisses-kpi-value">{pipeline.length}</div>
           </div>
         </article>
@@ -900,7 +966,6 @@ interface NoeudBoutique {
 
 export function CaissesPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: caisses, isLoading, isError } = useCaisses();
@@ -963,15 +1028,27 @@ export function CaissesPage() {
     return boutiques?.find((x) => x.id === boutiqueId)?.nom ?? 'Boutique';
   }
 
-  function isGroupeOuvert(key: string): boolean {
-    return groupesOuverts[key] !== false;
+  function isGroupeOuvert(key: string, boutiqueId: string | null): boolean {
+    if (Object.prototype.hasOwnProperty.call(groupesOuverts, key)) {
+      return groupesOuverts[key] === true;
+    }
+    if (q.trim()) return true;
+    return Boolean(selectedId && boutiqueId && caisses?.find((c) => c.id === selectedId)?.boutiqueId === boutiqueId);
   }
 
-  function toggleGroupe(key: string) {
-    setGroupesOuverts((prev) => ({
-      ...prev,
-      [key]: !(prev[key] !== false),
-    }));
+  function toggleGroupe(key: string, boutiqueId: string | null) {
+    const ouvert = isGroupeOuvert(key, boutiqueId);
+    setGroupesOuverts((prev) => ({ ...prev, [key]: !ouvert }));
+  }
+
+  function selecterCaisse(id: string) {
+    setSelectedId(id);
+    setSearchParams((p) => {
+      const n = new URLSearchParams(p);
+      n.set('vue', 'structure');
+      n.set('caisseId', id);
+      return n;
+    }, { replace: true });
   }
 
   const filtered = useMemo(() => {
@@ -1162,7 +1239,7 @@ export function CaissesPage() {
         <section className="caisses-livre-special panel" aria-label="Grand livre">
           <header className="caisses-livre-special-head">
             <div className="caisses-livre-special-title">
-              <span className={`caisses-detail-avatar caisses-node-${selected.type.toLowerCase()}`}>
+              <span className={`caisses-detail-avatar ${avatarClass(selected.type)}`}>
                 <TypeIcon type={selected.type} size={20} />
               </span>
               <div>
@@ -1302,43 +1379,42 @@ export function CaissesPage() {
       {caisses && vue === 'structure' && (
         <>
           <section className="caisses-kpis" aria-label="Synthèse caisses">
-            <article className="caisses-kpi">
-              <span className="caisses-kpi-icon">
-                <Landmark size={16} />
-              </span>
-              <div>
-                <div className="caisses-kpi-label">Centrale</div>
-                <div className="caisses-kpi-value">
-                  {caisses.some((c) => c.type === TypeCaisse.CENTRALE)
-                    ? '1'
-                    : '0'}
+            {(
+              [
+                [TypeCaisse.CENTRALE, 'Centrale', Landmark, caisses.filter((c) => c.type === TypeCaisse.CENTRALE).length],
+                [TypeCaisse.MAGASIN, 'Magasins', Store, counts.magasins],
+                [TypeCaisse.TIROIR, 'Tiroirs', Monitor, counts.tiroirs],
+              ] as const
+            ).map(([type, lab, Icon, n]) => (
+              <button
+                key={type}
+                type="button"
+                className={`caisses-kpi${filtreType === type ? ' is-actif' : ''}`}
+                onClick={() => setFiltreType((t) => (t === type ? '' : type))}
+              >
+                <span className="caisses-kpi-icon">
+                  <Icon size={16} />
+                </span>
+                <div>
+                  <div className="caisses-kpi-label">
+                    {lab} <InfoTooltip insight={insightNbTypeCaisse(type, n)} />
+                  </div>
+                  <div className="caisses-kpi-value">{n}</div>
+                  <div className="caisses-kpi-hint">Filtrer le circuit</div>
                 </div>
-              </div>
-            </article>
-            <article className="caisses-kpi">
-              <span className="caisses-kpi-icon">
-                <Store size={16} />
-              </span>
-              <div>
-                <div className="caisses-kpi-label">Magasins</div>
-                <div className="caisses-kpi-value">{counts.magasins}</div>
-              </div>
-            </article>
-            <article className="caisses-kpi">
-              <span className="caisses-kpi-icon">
-                <Monitor size={16} />
-              </span>
-              <div>
-                <div className="caisses-kpi-label">Tiroirs</div>
-                <div className="caisses-kpi-value">{counts.tiroirs}</div>
-              </div>
-            </article>
+              </button>
+            ))}
             <article className="caisses-kpi">
               <span className="caisses-kpi-icon">
                 <BookOpen size={16} />
               </span>
               <div>
-                <div className="caisses-kpi-label">Périmètre</div>
+                <div className="caisses-kpi-label">
+                  Périmètre{' '}
+                  <InfoTooltip
+                    insight={insightPerimetreCaisses(counts.totale, counts.inactifs)}
+                  />
+                </div>
                 <div className="caisses-kpi-value">{counts.totale}</div>
                 {counts.inactifs > 0 ? (
                   <div className="caisses-kpi-hint">{counts.inactifs} inactif(s)</div>
@@ -1348,23 +1424,16 @@ export function CaissesPage() {
           </section>
 
           <section className="caisses-structure-filters panel" aria-label="Filtres structure">
-            <div className="caisses-structure-filters-head">
-              <div>
-                <h3>Structure du circuit</h3>
-                <p>
-                  Filtrez par boutique, type ou recherche — {filtered.length}{' '}
-                  caisse(s) visible(s)
-                </p>
-              </div>
-              <div className="caisses-structure-chips" role="group" aria-label="Type rapide">
+            <div className="caisses-structure-bar">
+              <div className="caisses-structure-chips" role="group" aria-label="Type">
                 {(
                   [
-                    ['', 'Tous'],
-                    [TypeCaisse.CENTRALE, 'Centrale'],
-                    [TypeCaisse.MAGASIN, 'Magasins'],
-                    [TypeCaisse.TIROIR, 'Tiroirs'],
+                    ['', 'Tous', counts.totale],
+                    [TypeCaisse.CENTRALE, 'Centrale', caisses.filter((c) => c.type === TypeCaisse.CENTRALE).length],
+                    [TypeCaisse.MAGASIN, 'Magasins', counts.magasins],
+                    [TypeCaisse.TIROIR, 'Tiroirs', counts.tiroirs],
                   ] as const
-                ).map(([val, lab]) => (
+                ).map(([val, lab, n]) => (
                   <button
                     key={lab}
                     type="button"
@@ -1376,18 +1445,18 @@ export function CaissesPage() {
                     onClick={() => setFiltreType(val)}
                   >
                     {lab}
+                    <span>{n}</span>
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="toolbar caisses-toolbar">
               <label className="caisses-search">
-                <Search size={14} />
+                <Search size={14} aria-hidden />
                 <input
                   type="search"
-                  placeholder="Rechercher code, libellé…"
+                  placeholder="Code, magasin, tiroir…"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
+                  aria-label="Rechercher une caisse"
                 />
               </label>
               <label>
@@ -1417,7 +1486,7 @@ export function CaissesPage() {
                   checked={masquerInactifs}
                   onChange={(e) => setMasquerInactifs(e.target.checked)}
                 />
-                Masquer inactifs
+                Actives seulement
               </label>
               <div className="caisses-structure-expand">
                 <button
@@ -1448,10 +1517,10 @@ export function CaissesPage() {
 
           <div className="caisses-layout">
             <ListPanel
-              title="Arborescence"
+              title="Circuit"
               toolbar={
                 <span className="dash-panel-meta">
-                  {filtered.length} caisse(s) · {arbres.length} boutique(s)
+                  {filtered.length} caisse(s) · {arbres.length} magasin(s)
                 </span>
               }
             >
@@ -1474,9 +1543,7 @@ export function CaissesPage() {
                             ? 'caisses-node caisses-node-active'
                             : 'caisses-node'
                         }
-                        onClick={() => {
-                          navigate(`/caisses/${centrale.id}`);
-                        }}
+                        onClick={() => selecterCaisse(centrale.id)}
                       >
                         <span className="caisses-node-icon caisses-node-centrale">
                           <TypeIcon type={centrale.type} />
@@ -1491,16 +1558,13 @@ export function CaissesPage() {
                             </span>
                           </span>
                         </span>
-                        <span className="caisses-node-solde">
-                          <SoldeValue caisseId={centrale.id} />
-                        </span>
                       </button>
                     </div>
                   )}
 
                   {arbres.map((node) => {
                     const key = node.boutiqueId ?? node.nom;
-                    const ouvert = isGroupeOuvert(key);
+                    const ouvert = isGroupeOuvert(key, node.boutiqueId);
                     const nb =
                       node.magasins.length + node.tiroirs.length;
                     return (
@@ -1508,7 +1572,7 @@ export function CaissesPage() {
                         <button
                           type="button"
                           className="caisses-tree-group-toggle"
-                          onClick={() => toggleGroupe(key)}
+                          onClick={() => toggleGroupe(key, node.boutiqueId)}
                           aria-expanded={ouvert}
                         >
                           {ouvert ? (
@@ -1537,9 +1601,7 @@ export function CaissesPage() {
                                     ? 'caisses-node caisses-node-active'
                                     : 'caisses-node'
                                 }
-                                onClick={() => {
-                                  navigate(`/caisses/${m.id}`);
-                                }}
+                                onClick={() => selecterCaisse(m.id)}
                               >
                                 <span className="caisses-node-icon caisses-node-magasin">
                                   <TypeIcon type={m.type} />
@@ -1552,13 +1614,7 @@ export function CaissesPage() {
                                     <span className={typeBadgeClass(m.type)}>
                                       {typeLabel(m.type)}
                                     </span>
-                                    <span className="caisses-muted">
-                                      Cash office
-                                    </span>
                                   </span>
-                                </span>
-                                <span className="caisses-node-solde">
-                                  <SoldeValue caisseId={m.id} />
                                 </span>
                               </button>
                             ))}
@@ -1578,9 +1634,7 @@ export function CaissesPage() {
                                 ]
                                   .filter(Boolean)
                                   .join(' ')}
-                                onClick={() => {
-                                  navigate(`/caisses/${t.id}`);
-                                }}
+                                onClick={() => selecterCaisse(t.id)}
                               >
                                 <span className="caisses-node-rail" aria-hidden />
                                 <span className="caisses-node-icon caisses-node-drawer">
@@ -1598,15 +1652,8 @@ export function CaissesPage() {
                                       <span className="badge badge-warning">
                                         Inactif
                                       </span>
-                                    ) : (
-                                      <span className="caisses-muted">
-                                        Poste POS
-                                      </span>
-                                    )}
+                                    ) : null}
                                   </span>
-                                </span>
-                                <span className="caisses-node-solde">
-                                  <SoldeValue caisseId={t.id} />
                                 </span>
                               </button>
                             ))}
@@ -1634,9 +1681,7 @@ export function CaissesPage() {
               ) : (
                 <>
                   <header className="caisses-detail-hero">
-                    <span
-                      className={`caisses-detail-avatar caisses-node-${selected.type.toLowerCase()}`}
-                    >
+                    <span className={`caisses-detail-avatar ${avatarClass(selected.type)}`}>
                       <TypeIcon type={selected.type} size={22} />
                     </span>
                     <div className="caisses-detail-hero-main">
@@ -1656,6 +1701,7 @@ export function CaissesPage() {
                           : nomBoutique(selected.boutiqueId)}
                         {selected.code ? ` · ${selected.code}` : ''}
                       </p>
+                      <CircuitPosition type={selected.type} />
                     </div>
                     <div className="caisses-detail-solde">
                       <div className="caisses-kpi-label">
@@ -1665,9 +1711,17 @@ export function CaissesPage() {
                       <div className="caisses-detail-solde-value money">
                         {selectedSolde.isLoading
                           ? '…'
-                          : formatFcfa(selectedSolde.data?.solde)}
+                          : selectedSolde.isError
+                            ? '—'
+                            : formatFcfa(selectedSolde.data?.solde)}
                       </div>
-                      <div className="caisses-muted">Grand livre append-only</div>
+                      <div className="caisses-muted">
+                        {selectedSolde.isLoading
+                          ? 'Calcul depuis le grand livre'
+                          : Number(selectedSolde.data?.solde) === 0
+                            ? 'Aucune écriture validée'
+                            : 'Recalculé — jamais stocké'}
+                      </div>
                     </div>
                   </header>
 
@@ -1699,77 +1753,80 @@ export function CaissesPage() {
                   </div>
 
                   <div className="caisses-detail-panel">
-                      <dl className="caisses-dl">
-                        <div>
-                          <dt>Rôle dans le circuit</dt>
-                          <dd>
-                            {selected.type === TypeCaisse.TIROIR &&
-                              'Encaissement client (session POS). Transfert interne vers le magasin à la clôture.'}
-                            {selected.type === TypeCaisse.MAGASIN &&
-                              (() => {
-                                const nbTiroirs =
-                                  arbres.find(
-                                    (n) => n.boutiqueId === selected.boutiqueId,
-                                  )?.tiroirs.length ?? 0;
-                                return `Cash office boutique — ${nbTiroirs} tiroir(s) rattaché(s). Reçoit les transferts internes ; initie les SORTIE_FONDS vers la centrale (§6.4).`;
-                              })()}
-                            {selected.type === TypeCaisse.CENTRALE &&
-                              'Réception et validation des versements magasin — Caissier central / DAF uniquement.'}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Identifiant</dt>
-                          <dd>
-                            <details>
-                              <summary>Afficher l’UUID</summary>
+                      {(() => {
+                        const role = roleCircuit(selected.type);
+                        const nbTiroirs =
+                          selected.type === TypeCaisse.MAGASIN
+                            ? (arbres.find((n) => n.boutiqueId === selected.boutiqueId)
+                                ?.tiroirs.length ?? 0)
+                            : 0;
+                        return (
+                          <>
+                            <article className="caisses-role-card">
+                              <h3>{role.titre}</h3>
+                              <p>{role.texte}</p>
+                              {selected.type === TypeCaisse.MAGASIN ? (
+                                <p className="caisses-muted">
+                                  {nbTiroirs} tiroir{nbTiroirs > 1 ? 's' : ''} rattaché
+                                  {nbTiroirs > 1 ? 's' : ''} à ce magasin.
+                                </p>
+                              ) : null}
+                              <p className="caisses-role-qui">{role.qui}</p>
+                            </article>
+                            <div className="caisses-detail-actions">
+                              <Link className="btn-primary" to={`/caisses/${selected.id}`}>
+                                Ouvrir la fiche
+                              </Link>
+                              {selected.type === TypeCaisse.CENTRALE ? (
+                                <Link className="btn-secondary" to="/transactions?enCours=1">
+                                  <ArrowRightLeft size={14} /> Versements en cours
+                                </Link>
+                              ) : null}
+                              {selected.type === TypeCaisse.MAGASIN ? (
+                                <Link
+                                  className="btn-secondary"
+                                  to={`/transactions?caisseId=${selected.id}`}
+                                >
+                                  <ArrowRightLeft size={14} /> Versements
+                                </Link>
+                              ) : null}
+                              {selected.type === TypeCaisse.TIROIR ? (
+                                <Link className="btn-secondary" to="/pos">
+                                  <Monitor size={14} /> Ouvrir le POS
+                                </Link>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="btn-ghost"
+                                onClick={() => {
+                                  setVue('livre');
+                                  setSearchParams((p) => {
+                                    const n = new URLSearchParams(p);
+                                    n.set('vue', 'livre');
+                                    n.set('caisseId', selected.id);
+                                    return n;
+                                  });
+                                }}
+                              >
+                                <BookOpen size={14} /> Grand livre
+                              </button>
+                              {peutConfigTiroirs && selected.type === TypeCaisse.TIROIR ? (
+                                <button
+                                  type="button"
+                                  className="btn-ghost"
+                                  onClick={() => setVue('gestion')}
+                                >
+                                  Gérer les tiroirs
+                                </button>
+                              ) : null}
+                            </div>
+                            <details className="caisses-uuid">
+                              <summary>Identifiant technique</summary>
                               <code>{selected.id}</code>
                             </details>
-                          </dd>
-                        </div>
-                      </dl>
-
-                      <div className="caisses-detail-actions">
-                        <Link className="btn-primary" to={`/caisses/${selected.id}`}>
-                          Ouvrir la fiche
-                        </Link>
-                        {selected.type === TypeCaisse.MAGASIN ? (
-                          <Link
-                            className="btn-primary"
-                            to={`/transactions?caisseId=${selected.id}`}
-                          >
-                            <ArrowRightLeft size={14} /> Initier / suivre versements
-                          </Link>
-                        ) : null}
-                        {selected.type === TypeCaisse.TIROIR ? (
-                          <Link className="btn-primary" to="/pos">
-                            <Monitor size={14} /> Ouvrir le POS
-                          </Link>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => {
-                            setVue('livre');
-                            setSearchParams((p) => {
-                              const n = new URLSearchParams(p);
-                              n.set('vue', 'livre');
-                              n.set('caisseId', selected.id);
-                              return n;
-                            });
-                          }}
-                        >
-                          <BookOpen size={14} /> Voir le grand livre
-                        </button>
-                        {peutConfigTiroirs && selected.type === TypeCaisse.TIROIR ? (
-                          <button
-                            type="button"
-                            className="btn-ghost"
-                            onClick={() => setVue('gestion')}
-                          >
-                            Gérer les tiroirs
-                          </button>
-                        ) : null}
-                      </div>
+                          </>
+                        );
+                      })()}
                     </div>
                 </>
               )}

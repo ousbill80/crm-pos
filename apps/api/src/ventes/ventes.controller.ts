@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  Query,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -23,6 +24,7 @@ import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
 import { CreateRetourDto } from './dto/create-retour.dto';
 import { UpsertReservationDto } from './dto/paiement-reservation.dto';
+import { ListVentesQueryDto } from './dto/list-ventes-query.dto';
 import { dessinerEtatSession } from '../impressions/etat-session.pdf';
 import { pipePdf } from '../impressions/pdf.util';
 
@@ -32,6 +34,15 @@ import { pipePdf } from '../impressions/pdf.util';
 @Controller('ventes')
 export class VentesController {
   constructor(private readonly ventesService: VentesService) {}
+
+  @Get()
+  @Roles(...ROLES_LECTURE_CAISSES)
+  listerJournal(
+    @CurrentUser() utilisateur: AuthenticatedUser,
+    @Query() query: ListVentesQueryDto,
+  ) {
+    return this.ventesService.listerJournal(utilisateur, query);
+  }
 
   @Get('temoins-eligibles')
   @Roles(...ROLES_POS_ECRITURE)
@@ -171,7 +182,7 @@ export class VentesController {
       res,
       `${prefix}-session-${etat.sessionId}.pdf`,
       (doc) => dessinerEtatSession(doc, etat),
-      `${prefix === 'etat-z' ? 'État Z' : 'État X'} · document de caisse §6.3.4`,
+      `${etat.typeEtat === 'Z' ? 'Relevé de clôture' : 'Relevé de contrôle'} · document de caisse`,
     );
   }
 }

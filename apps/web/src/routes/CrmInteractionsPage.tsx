@@ -16,7 +16,6 @@ import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { CrmKpiGrid, CrmKpiWidget } from '../components/CrmKpiWidget';
-import { InfoTooltip } from '../components/InfoTooltip';
 import { SortHeader } from '../components/SortHeader';
 import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import { CRM_KPI, pctPart } from '../lib/crm-kpi-accents';
@@ -419,16 +418,26 @@ export function CrmInteractionsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Client</th>
-                      <th>Canal</th>
-                      <th>Type</th>
-                      <th>Contenu</th>
+                      <SortHeader active={sortReseau?.key === 'date'} dir={sortReseau?.key === 'date' ? sortReseau.dir : 'desc'} onClick={() => setSortReseau((s) => toggleSort(s, 'date'))}>
+                        Date
+                      </SortHeader>
+                      <SortHeader active={sortReseau?.key === 'client'} dir={sortReseau?.key === 'client' ? sortReseau.dir : 'asc'} onClick={() => setSortReseau((s) => toggleSort(s, 'client'))}>
+                        Client
+                      </SortHeader>
+                      <SortHeader active={sortReseau?.key === 'canal'} dir={sortReseau?.key === 'canal' ? sortReseau.dir : 'asc'} onClick={() => setSortReseau((s) => toggleSort(s, 'canal'))}>
+                        Canal
+                      </SortHeader>
+                      <SortHeader active={sortReseau?.key === 'type'} dir={sortReseau?.key === 'type' ? sortReseau.dir : 'asc'} onClick={() => setSortReseau((s) => toggleSort(s, 'type'))}>
+                        Type
+                      </SortHeader>
+                      <SortHeader active={sortReseau?.key === 'contenu'} dir={sortReseau?.key === 'contenu' ? sortReseau.dir : 'asc'} onClick={() => setSortReseau((s) => toggleSort(s, 'contenu'))}>
+                        Contenu
+                      </SortHeader>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {reseauQ.data!.items.map((ix) => (
+                    {reseauItemsTries.map((ix) => (
                       <tr key={ix.id}>
                         <td>
                           <span className="crm-interaction-date">
@@ -501,9 +510,15 @@ export function CrmInteractionsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Client</th>
-                    <th>Contact</th>
-                    <th>Segment</th>
+                    <SortHeader active={sortSuggestions?.key === 'client'} dir={sortSuggestions?.key === 'client' ? sortSuggestions.dir : 'asc'} onClick={() => setSortSuggestions((s) => toggleSort(s, 'client'))}>
+                      Client
+                    </SortHeader>
+                    <SortHeader active={sortSuggestions?.key === 'contact'} dir={sortSuggestions?.key === 'contact' ? sortSuggestions.dir : 'asc'} onClick={() => setSortSuggestions((s) => toggleSort(s, 'contact'))}>
+                      Contact
+                    </SortHeader>
+                    <SortHeader active={sortSuggestions?.key === 'segment'} dir={sortSuggestions?.key === 'segment' ? sortSuggestions.dir : 'asc'} onClick={() => setSortSuggestions((s) => toggleSort(s, 'segment'))}>
+                      Segment
+                    </SortHeader>
                     <th />
                   </tr>
                 </thead>
@@ -569,6 +584,7 @@ export function CrmInteractionsPage() {
                 hint="Journal de la fiche"
                 icon={ScrollText}
                 accent={CRM_KPI.interactions}
+                insight={insightInteractionsClient(interactionsQ.data!.length)}
               />
               {Object.values(CanalInteraction)
                 .filter((c) => (clientCanalStats[c] ?? 0) > 0)
@@ -661,14 +677,22 @@ export function CrmInteractionsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Canal</th>
-                      <th>Type</th>
-                      <th>Contenu</th>
+                      <SortHeader active={sortJournalClient?.key === 'date'} dir={sortJournalClient?.key === 'date' ? sortJournalClient.dir : 'desc'} onClick={() => setSortJournalClient((s) => toggleSort(s, 'date'))}>
+                        Date
+                      </SortHeader>
+                      <SortHeader active={sortJournalClient?.key === 'canal'} dir={sortJournalClient?.key === 'canal' ? sortJournalClient.dir : 'asc'} onClick={() => setSortJournalClient((s) => toggleSort(s, 'canal'))}>
+                        Canal
+                      </SortHeader>
+                      <SortHeader active={sortJournalClient?.key === 'type'} dir={sortJournalClient?.key === 'type' ? sortJournalClient.dir : 'asc'} onClick={() => setSortJournalClient((s) => toggleSort(s, 'type'))}>
+                        Type
+                      </SortHeader>
+                      <SortHeader active={sortJournalClient?.key === 'contenu'} dir={sortJournalClient?.key === 'contenu' ? sortJournalClient.dir : 'asc'} onClick={() => setSortJournalClient((s) => toggleSort(s, 'contenu'))}>
+                        Contenu
+                      </SortHeader>
                     </tr>
                   </thead>
                   <tbody>
-                    {interactionsQ.data!.map((ix) => (
+                    {journalClientTrie.map((ix) => (
                       <tr key={ix.id}>
                         <td>
                           {new Date(ix.date).toLocaleString('fr-FR')}

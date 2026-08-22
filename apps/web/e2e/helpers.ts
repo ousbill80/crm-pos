@@ -13,6 +13,32 @@ export async function loginPos(page: Page): Promise<void> {
   await page.waitForURL(/\/pos/);
 }
 
+const API = process.env.VITE_API_URL ?? 'http://localhost:3000';
+
+/**
+ * Connexion rapide par injection de token (comme loginPos) mais pour
+ * n'importe quel compte démo — évite de repasser par le formulaire de
+ * login pour chaque spec hors POS.
+ */
+export async function loginAs(
+  page: Page,
+  request: import('@playwright/test').APIRequestContext,
+  login: string,
+  gotoPath = '/',
+): Promise<void> {
+  const res = await request.post(`${API}/auth/login`, {
+    data: { login, password: DEMO_PASSWORD },
+  });
+  if (!res.ok()) {
+    throw new Error(`Login démo échoué pour ${login}: ${await res.text()}`);
+  }
+  const { accessToken } = (await res.json()) as { accessToken: string };
+  await page.addInitScript((token: string) => {
+    localStorage.setItem('caisse-crm.accessToken', token);
+  }, accessToken);
+  await page.goto(gotoPath);
+}
+
 export async function ouvrirPosteSiBesoin(page: Page): Promise<void> {
   const openForm = page.getByTestId('pos-open');
   const shell = page.getByTestId('pos-shell');
@@ -56,6 +82,8 @@ export async function abandonnerFileSiPresente(page: Page): Promise<void> {
 }
 
 export async function ajouterArticleEnStock(page: Page): Promise<void> {
+  const search = page.getByTestId('pos-search-input');
+  await search.fill(SKU_STOCK);
   const tile = page.getByTestId(`pos-tile-${SKU_STOCK}`);
   await expect(tile).toBeVisible();
   await tile.click();

@@ -11,7 +11,6 @@ import {
   Scale,
   TrendingDown,
   TrendingUp,
-  Truck,
   Wallet,
 } from 'lucide-react';
 import {
@@ -237,7 +236,7 @@ function CompteResultatPanel({
     <div className="pl-module">
       <header className="pl-header">
         <div>
-          <p className="pl-eyebrow">Pôle central · Compte de résultat</p>
+          <p className="pl-eyebrow">Pôle central · Résultat ventes</p>
           <h2>Résultat d’exploitation réseau</h2>
           <p className="pl-periode">{periodeLabel(dateFrom, dateTo)}</p>
         </div>
@@ -607,7 +606,7 @@ export function FinancePage() {
 
   const tabs: Array<{ id: Onglet; label: string }> = [
     { id: 'vue', label: 'Vue DAF' },
-    { id: 'resultat', label: 'Compte de résultat' },
+    { id: 'resultat', label: 'Résultat ventes' },
     { id: 'stocks', label: 'Stocks & valorisation' },
     { id: 'tresorerie', label: 'Trésorerie' },
   ];
@@ -620,18 +619,12 @@ export function FinancePage() {
           boutiqueId: magasin.boutiqueId,
           nomMagasin: magasin.nomMagasin,
           texteReseau:
-            'Pôle central DAF — résultat ventes, stocks, analyse et trésorerie réseau',
+            'Pilotage DAF — résultat ventes, stocks et trésorerie (pas une comptabilité générale)',
         })}
         actions={
           <div className="page-header-actions-row">
             <FiltreMagasinSiege id="finance-filtre-magasin" />
             <nav className="circuit-nav" aria-label="Liens Finance">
-              <Link className="circuit-nav-item" to="/achats/factures">
-                <Truck size={14} /> Factures
-              </Link>
-              <Link className="circuit-nav-item" to="/achats/commandes">
-                <Package size={14} /> Commandes
-              </Link>
               <Link className="circuit-nav-item" to="/litiges">
                 <Scale size={14} /> Litiges
               </Link>

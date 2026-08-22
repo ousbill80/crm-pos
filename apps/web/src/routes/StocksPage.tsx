@@ -33,6 +33,8 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -103,6 +105,17 @@ const COULEURS_STATUT: Record<StatutStockLigne, string> = {
 
 type VueNiveaux = 'liste' | 'matrice';
 type FiltreStatut = 'TOUS' | StatutStockLigne;
+type ColonneNiveau =
+  | 'designation'
+  | 'categorie'
+  | 'statut'
+  | 'stock'
+  | 'prevu'
+  | 'seuil'
+  | 'valeur'
+  | 'ventes'
+  | 'couverture';
+type ColonneMouvement = 'date' | 'type' | 'produit' | 'entrepot' | 'delta' | 'apres';
 
 function formatFcfa(value: string | number): string {
   const n = typeof value === 'number' ? value : Number(value);
@@ -213,6 +226,8 @@ export function StocksPage() {
   const [recherche, setRecherche] = useState('');
   const [vue, setVue] = useState<VueNiveaux>('liste');
   const [filtreTypeMvt, setFiltreTypeMvt] = useState('');
+  const [sortNiveaux, setSortNiveaux] = useState<SortState<ColonneNiveau> | null>(null);
+  const [sortMvt, setSortMvt] = useState<SortState<ColonneMouvement> | null>(null);
   const [modalAjuster, setModalAjuster] = useState(false);
   const [modalTransferer, setModalTransferer] = useState(false);
 
@@ -337,7 +352,7 @@ export function StocksPage() {
 
   const lignesFiltrees = useMemo(() => {
     const q = recherche.trim().toLowerCase();
-    return (syntheseAffichee?.lignes ?? []).filter((ligne) => {
+    const base = (syntheseAffichee?.lignes ?? []).filter((ligne) => {
       if (!voirInactifs && !ligne.actif) return false;
       if (filtreStatut !== 'TOUS' && ligne.statut !== filtreStatut) return false;
       if (filtreCategorie && ligne.categorie !== filtreCategorie) return false;
@@ -352,6 +367,30 @@ export function StocksPage() {
       }
       return true;
     });
+    return sortRows(base, sortNiveaux, (ligne, key) => {
+      switch (key) {
+        case 'designation':
+          return ligne.designation;
+        case 'categorie':
+          return ligne.categorie;
+        case 'statut':
+          return ligne.statut;
+        case 'stock':
+          return ligne.stockReseau;
+        case 'prevu':
+          return ligne.stockPrevu ?? ligne.stockReseau;
+        case 'seuil':
+          return ligne.seuilReappro;
+        case 'valeur':
+          return Number(ligne.valeur);
+        case 'ventes':
+          return ligne.ventesUnites14j;
+        case 'couverture':
+          return ligne.couvertureJours;
+        default:
+          return null;
+      }
+    });
   }, [
     syntheseAffichee?.lignes,
     filtreStatut,
@@ -359,6 +398,7 @@ export function StocksPage() {
     recherche,
     voirInactifs,
     couvertureFaible,
+    sortNiveaux,
   ]);
 
   const mouvementsFiltres = useMemo(() => {
@@ -366,7 +406,7 @@ export function StocksPage() {
     const idsMagasin = magasin.boutiqueId
       ? new Set(entrepotOptions.map((e) => e.id))
       : null;
-    return (mouvements.data ?? []).filter((m) => {
+    const base = (mouvements.data ?? []).filter((m) => {
       if (idsMagasin && m.entrepotId && !idsMagasin.has(m.entrepotId)) return false;
       if (filtreTypeMvt && m.type !== filtreTypeMvt) return false;
       if (!q) return true;
@@ -376,6 +416,30 @@ export function StocksPage() {
         '';
       return designation.toLowerCase().includes(q);
     });
+    return sortRows(base, sortMvt, (m, key) => {
+      switch (key) {
+        case 'date':
+          return m.dateHeure;
+        case 'type':
+          return TYPE_MOUVEMENT[m.type];
+        case 'produit':
+          return (
+            m.produit?.designation ??
+            produits.data?.find((p) => p.id === m.produitId)?.designation ??
+            ''
+          );
+        case 'entrepot':
+          return (
+            m.entrepot?.code ?? entrepotOptions.find((e) => e.id === m.entrepotId)?.code ?? ''
+          );
+        case 'delta':
+          return m.quantite;
+        case 'apres':
+          return m.stockApres;
+        default:
+          return null;
+      }
+    });
   }, [
     mouvements.data,
     filtreTypeMvt,
@@ -383,6 +447,7 @@ export function StocksPage() {
     produits.data,
     magasin.boutiqueId,
     entrepotOptions,
+    sortMvt,
   ]);
 
   const statutChart = useMemo(() => {
@@ -1179,15 +1244,69 @@ export function StocksPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Produit</th>
-                    <th>Catégorie</th>
-                    <th>Statut</th>
-                    <th>{libelleStockColonne}</th>
-                    <th>Prévu</th>
-                    <th>Seuil</th>
-                    <th>Valeur</th>
-                    <th>Ventes {data.fenetreVentesJours} j</th>
-                    <th>Couverture</th>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'designation'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'designation'))}
+                    >
+                      Produit
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'categorie'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'categorie'))}
+                    >
+                      Catégorie
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'statut'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'statut'))}
+                    >
+                      Statut
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'stock'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'stock'))}
+                    >
+                      {libelleStockColonne}
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'prevu'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'prevu'))}
+                    >
+                      Prévu
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'seuil'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'seuil'))}
+                    >
+                      Seuil
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'valeur'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'valeur'))}
+                    >
+                      Valeur
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'ventes'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'ventes'))}
+                    >
+                      Ventes {data.fenetreVentesJours} j
+                    </SortHeader>
+                    <SortHeader
+                      active={sortNiveaux?.key === 'couverture'}
+                      dir={sortNiveaux?.dir ?? 'asc'}
+                      onClick={() => setSortNiveaux((s) => toggleSort(s, 'couverture'))}
+                    >
+                      Couverture
+                    </SortHeader>
                     {entrepotCols.map((e) => (
                       <th key={e.entrepotId} title={`${e.nom} — ${e.nomBoutique}`}>
                         {e.code}
@@ -1456,12 +1575,48 @@ export function StocksPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Produit</th>
-                  <th>Entrepôt</th>
-                  <th>Δ</th>
-                  <th>Après</th>
+                  <SortHeader
+                    active={sortMvt?.key === 'date'}
+                    dir={sortMvt?.dir ?? 'desc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'date'))}
+                  >
+                    Date
+                  </SortHeader>
+                  <SortHeader
+                    active={sortMvt?.key === 'type'}
+                    dir={sortMvt?.dir ?? 'asc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'type'))}
+                  >
+                    Type
+                  </SortHeader>
+                  <SortHeader
+                    active={sortMvt?.key === 'produit'}
+                    dir={sortMvt?.dir ?? 'asc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'produit'))}
+                  >
+                    Produit
+                  </SortHeader>
+                  <SortHeader
+                    active={sortMvt?.key === 'entrepot'}
+                    dir={sortMvt?.dir ?? 'asc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'entrepot'))}
+                  >
+                    Entrepôt
+                  </SortHeader>
+                  <SortHeader
+                    active={sortMvt?.key === 'delta'}
+                    dir={sortMvt?.dir ?? 'asc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'delta'))}
+                  >
+                    Δ
+                  </SortHeader>
+                  <SortHeader
+                    active={sortMvt?.key === 'apres'}
+                    dir={sortMvt?.dir ?? 'asc'}
+                    onClick={() => setSortMvt((s) => toggleSort(s, 'apres'))}
+                  >
+                    Après
+                  </SortHeader>
                   <th>Par</th>
                   <th>Réf.</th>
                 </tr>

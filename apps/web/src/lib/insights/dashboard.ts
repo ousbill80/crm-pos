@@ -270,6 +270,24 @@ export function insightProjectionLiquidite(
   };
 }
 
+export function insightPipelineVersement(statut: string, nombre: number, montant: string): Insight {
+  const labels: Record<string, string> = {
+    INITIEE: 'Initiée par la boutique — attend la mise en transit.',
+    EN_TRANSIT: 'En transit vers le Caissier Central — pas encore réceptionnée.',
+    RECEPTIONNEE: 'Réceptionnée par le Caissier Central — attend le rapprochement.',
+    VALIDEE: 'Validée après rapprochement sans écart — étape finale (§6.4).',
+    LITIGE: 'Écart détecté au rapprochement — bloquée jusqu\'à régularisation par le Contrôle interne.',
+  };
+  return {
+    title: `Versements — ${statut}`,
+    interpretation:
+      nombre > 0
+        ? `${nombre} versement(s) pour ${montant} FCFA à ce statut. ${labels[statut] ?? ''}`
+        : `Aucun versement à ce statut actuellement. ${labels[statut] ?? ''}`,
+    severity: statut === 'LITIGE' && nombre > 0 ? 'critical' : 'neutral',
+  };
+}
+
 export function insightAgeingVersements(bucket: string, nombre: number): Insight {
   const labels: Record<string, string> = {
     '0_24h': 'moins de 24 h',
