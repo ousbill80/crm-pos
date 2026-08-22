@@ -11,3 +11,4 @@ apps/api/generated/
 .postgres-data/
 .postgres-run/
 .claude/
+/backups/
