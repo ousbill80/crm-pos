@@ -1,20 +1,39 @@
-// Seuils du programme de fidélité et de la segmentation client (§6.6).
-//
-// Le cahier des charges demande un "programme de fidélité par paliers" et
-// une "segmentation paramétrable" mais ne fixe aucun seuil numérique.
-// Choix d'interprétation (documenté ici et signalé dans le rapport de fin
-// de tâche) : seuils simples et raisonnables, codés en dur pour cette
-// première itération plutôt qu'une table de paramétrage en base — à
-// remplacer par une véritable configuration admin si le besoin est confirmé
-// avec l'utilisateur.
+// Seuils par défaut du programme de fidélité et de la segmentation (§6.6).
+// Valeurs actives : fiche Societe (paramétrables). Ces constantes restent
+// le repli si la fiche n’existe pas encore.
 
-// Points de fidélité cumulés à partir desquels le palier change.
 export const SEUIL_FIDELITE_ARGENT = 500;
 export const SEUIL_FIDELITE_OR = 2000;
-
-// Nombre de ventes historisées (Vente.clientId) à partir duquel un client
-// est proposé pour un changement de segment lors d'un recalcul explicite
-// (endpoint dédié, jamais déclenché automatiquement à la création d'une
-// vente : la création de ventes est hors périmètre de ce module CRM).
 export const SEUIL_SEGMENT_REGULIER_NB_VENTES = 5;
 export const SEUIL_SEGMENT_VIP_NB_VENTES = 15;
+
+/**
+ * Crédit auto à l’encaissement POS (client rattaché).
+ * Interprétation documentée (CDC §6.6 ne fixe pas le taux) :
+ * 1 point / 1000 FCFA de montantTotal, arrondi inférieur (floor)
+ * pour ne pas sur-créditer.
+ */
+export const FIDELITE_FCFA_PAR_POINT = 1000;
+
+export function pointsFideliteDepuisMontant(
+  montantTotal: number | string,
+): number {
+  const n =
+    typeof montantTotal === 'string' ? Number(montantTotal) : montantTotal;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n / FIDELITE_FCFA_PAR_POINT);
+}
+
+export type SeuilsCrm = {
+  seuilFideliteArgent: number;
+  seuilFideliteOr: number;
+  seuilSegmentRegulier: number;
+  seuilSegmentVip: number;
+};
+
+export const SEUILS_CRM_DEFAUT: SeuilsCrm = {
+  seuilFideliteArgent: SEUIL_FIDELITE_ARGENT,
+  seuilFideliteOr: SEUIL_FIDELITE_OR,
+  seuilSegmentRegulier: SEUIL_SEGMENT_REGULIER_NB_VENTES,
+  seuilSegmentVip: SEUIL_SEGMENT_VIP_NB_VENTES,
+};

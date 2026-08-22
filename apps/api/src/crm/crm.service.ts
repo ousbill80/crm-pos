@@ -9,27 +9,16 @@ import { TypeClient } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../auth/types';
-import {
-  ROLES_PERIMETRE_BOUTIQUE,
-} from '../caisses/access-scope.constants';
+import { ROLES_PERIMETRE_BOUTIQUE } from '../caisses/access-scope.constants';
 import { requireOwnBoutiqueId } from '../boutiques/boutique-scope.util';
-import { hasherContact } from '../prisma/field-crypto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsQueryDto } from './dto/list-clients-query.dto';
-import {
-  SEUIL_SEGMENT_REGULIER_NB_VENTES,
-  SEUIL_SEGMENT_VIP_NB_VENTES,
-} from './crm-thresholds.constants';
+import { UpdateCrmParametresDto } from './dto/update-crm-parametres.dto';
+import { lireSeuilsCrm } from './crm-seuils';
+import { SEUILS_CRM_DEFAUT, type SeuilsCrm } from './crm-thresholds.constants';
 
-type ClientPublic = Omit<Client, 'contactHash'>;
-
-function publierClient<T extends { contactHash?: string | null }>(
-  client: T,
-): Omit<T, 'contactHash'> {
-  const { contactHash: _h, ...reste } = client;
-  return reste;
-}
+type ClientPublic = Client;
 
 // Fiche unique réseau (§6.6) : findOne / historique restent réseau.
 // Liste d’exploitation magasin pour les rôles boutique ; `q` = recherche
@@ -64,7 +53,7 @@ export class ClientsService {
           adresse: dto.adresse?.trim() || null,
           dateNaissance:
             typeClient === TypeClient.PHYSIQUE && dto.dateNaissance
-              ? new Date(dto.dateNaissance)
+              ? dto.dateNaissance
               : null,
           consentementMarketing: dto.consentementMarketing ?? false,
           boutiqueOrigineId: user.boutiqueId,
@@ -94,7 +83,7 @@ export class ClientsService {
       details: libelle,
     });
 
-    return publierClient(client);
+    return client;
   }
 
   async findAll(query: ListClientsQueryDto, user: AuthenticatedUser) {
@@ -114,7 +103,7 @@ export class ClientsService {
       where.OR = [
         { nom: { contains: q, mode: 'insensitive' } },
         { prenom: { contains: q, mode: 'insensitive' } },
-        { contactHash: hasherContact(q) },
+        { contact: { contains: q, mode: 'insensitive' } },
       ];
     } else if (ROLES_PERIMETRE_BOUTIQUE.includes(user.role)) {
       const boutiqueId = requireOwnBoutiqueId(user);
@@ -124,12 +113,11 @@ export class ClientsService {
       ];
     }
 
-    const clients = await this.prisma.client.findMany({
+    return this.prisma.client.findMany({
       where,
       include: { fidelite: true },
       orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
     });
-    return clients.map(publierClient);
   }
 
   async findOne(id: string) {
@@ -140,7 +128,7 @@ export class ClientsService {
     if (!client) {
       throw new NotFoundException(`Client "${id}" introuvable.`);
     }
-    return publierClient(client);
+    return client;
   }
 
   async update(
@@ -158,9 +146,7 @@ export class ClientsService {
         prenom: dto.prenom,
         contact: dto.contact,
         adresse: dto.adresse,
-        dateNaissance: dto.dateNaissance
-          ? new Date(dto.dateNaissance)
-          : undefined,
+        dateNaissance: dto.dateNaissance ? dto.dateNaissance : undefined,
         consentementMarketing: dto.consentementMarketing,
         segment: dto.segment,
       },
@@ -174,7 +160,7 @@ export class ClientsService {
       details: JSON.stringify(dto),
     });
 
-    return publierClient(client);
+    return client;
   }
 
   // Historique d'achats réseau du client (§6.6 : "historique d'achats
@@ -324,26 +310,22 @@ export class ClientsService {
     };
   }
 
-  // Recalcul de segment basé sur le nombre de ventes historisées du client
-  // (§6.6 : "segmentation paramétrable"). Choix d'interprétation : ce
-  // recalcul est déclenché explicitement par un rôle habilité (jamais
-  // automatiquement à la création d'une vente, qui est hors périmètre de ce
-  // module) et se base sur des seuils codés en dur documentés dans
-  // crm-thresholds.constants.ts.
+  // Recalcul de segment (§6.6) : seuils lus sur Societe (paramétrables).
   async recalculerSegment(
     id: string,
     utilisateurId: string,
   ): Promise<ClientPublic> {
     await this.findOne(id);
+    const seuils = await lireSeuilsCrm(this.prisma);
 
     const nombreVentes = await this.prisma.vente.count({
       where: { clientId: id },
     });
 
     let segment: Client['segment'];
-    if (nombreVentes >= SEUIL_SEGMENT_VIP_NB_VENTES) {
+    if (nombreVentes >= seuils.seuilSegmentVip) {
       segment = 'VIP';
-    } else if (nombreVentes >= SEUIL_SEGMENT_REGULIER_NB_VENTES) {
+    } else if (nombreVentes >= seuils.seuilSegmentRegulier) {
       segment = 'REGULIER';
     } else {
       segment = 'NOUVEAU';
@@ -362,6 +344,147 @@ export class ClientsService {
       details: `Segment recalculé sur ${nombreVentes} vente(s) -> ${segment}`,
     });
 
-    return publierClient(client);
+    return client;
+  }
+
+  async ensureSociete() {
+    const existing = await this.prisma.societe.findFirst();
+    if (existing) return existing;
+    return this.prisma.societe.create({
+      data: {
+        raisonSociale: 'CaissePOS',
+        adresse: 'Siège',
+        devise: 'XOF',
+      },
+    });
+  }
+
+  async getParametres(): Promise<SeuilsCrm> {
+    await this.ensureSociete();
+    return lireSeuilsCrm(this.prisma);
+  }
+
+  async updateParametres(
+    dto: UpdateCrmParametresDto,
+    utilisateurId: string,
+  ): Promise<SeuilsCrm> {
+    const societe = await this.ensureSociete();
+    const argent = dto.seuilFideliteArgent ?? societe.seuilFideliteArgent;
+    const or = dto.seuilFideliteOr ?? societe.seuilFideliteOr;
+    if (or <= argent) {
+      throw new BadRequestException(
+        'Le seuil Or doit être strictement supérieur au seuil Argent.',
+      );
+    }
+    const regulier = dto.seuilSegmentRegulier ?? societe.seuilSegmentRegulier;
+    const vip = dto.seuilSegmentVip ?? societe.seuilSegmentVip;
+    if (vip <= regulier) {
+      throw new BadRequestException(
+        'Le seuil VIP doit être strictement supérieur au seuil Régulier.',
+      );
+    }
+    await this.prisma.societe.update({
+      where: { id: societe.id },
+      data: {
+        ...(dto.seuilFideliteArgent !== undefined
+          ? { seuilFideliteArgent: dto.seuilFideliteArgent }
+          : {}),
+        ...(dto.seuilFideliteOr !== undefined
+          ? { seuilFideliteOr: dto.seuilFideliteOr }
+          : {}),
+        ...(dto.seuilSegmentRegulier !== undefined
+          ? { seuilSegmentRegulier: dto.seuilSegmentRegulier }
+          : {}),
+        ...(dto.seuilSegmentVip !== undefined
+          ? { seuilSegmentVip: dto.seuilSegmentVip }
+          : {}),
+      },
+    });
+    const seuils = await lireSeuilsCrm(this.prisma);
+    await this.audit.record({
+      utilisateurId,
+      action: 'CRM_SEUILS_UPDATED',
+      entite: 'Societe',
+      entiteId: societe.id,
+      details: `Argent ${seuils.seuilFideliteArgent} / Or ${seuils.seuilFideliteOr} · Régulier ${seuils.seuilSegmentRegulier} / VIP ${seuils.seuilSegmentVip}`,
+    });
+    return seuils;
+  }
+
+  async tableauDeBordReseau() {
+    const seuils = await lireSeuilsCrm(this.prisma);
+    const [parSegment, parPalier, caIdentifie, caAnonyme, campagnes] =
+      await Promise.all([
+        this.prisma.client.groupBy({
+          by: ['segment'],
+          _count: { _all: true },
+        }),
+        this.prisma.fidelite.groupBy({
+          by: ['niveau'],
+          _count: { _all: true },
+        }),
+        this.prisma.vente.aggregate({
+          where: { clientId: { not: null } },
+          _sum: { montantTotal: true },
+          _count: { _all: true },
+        }),
+        this.prisma.vente.aggregate({
+          where: { clientId: null },
+          _sum: { montantTotal: true },
+          _count: { _all: true },
+        }),
+        this.prisma.campagneCrm.findMany({
+          orderBy: { dateCreation: 'desc' },
+          take: 8,
+          select: {
+            id: true,
+            nom: true,
+            canal: true,
+            dateCreation: true,
+            dateEnvoi: true,
+            segment: true,
+            niveauFidelite: true,
+          },
+        }),
+      ]);
+
+    const effectifsSegment: Record<string, number> = {
+      NOUVEAU: 0,
+      REGULIER: 0,
+      VIP: 0,
+    };
+    let totalClients = 0;
+    for (const row of parSegment) {
+      effectifsSegment[row.segment] = row._count._all;
+      totalClients += row._count._all;
+    }
+    const effectifsPalier: Record<string, number> = {
+      BRONZE: 0,
+      ARGENT: 0,
+      OR: 0,
+    };
+    for (const row of parPalier) {
+      effectifsPalier[row.niveau] = row._count._all;
+    }
+
+    return {
+      seuils: seuils ?? SEUILS_CRM_DEFAUT,
+      effectifs: {
+        total: totalClients,
+        parSegment: effectifsSegment,
+        parPalier: effectifsPalier,
+      },
+      ca: {
+        identifie: (
+          caIdentifie._sum.montantTotal ?? new Prisma.Decimal(0)
+        ).toFixed(2),
+        anonyme: (caAnonyme._sum.montantTotal ?? new Prisma.Decimal(0)).toFixed(
+          2,
+        ),
+        ticketsIdentifies: caIdentifie._count._all,
+        ticketsAnonymes: caAnonyme._count._all,
+      },
+      campagnes,
+    };
   }
 }

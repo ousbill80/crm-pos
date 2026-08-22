@@ -3,7 +3,6 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-route
 import {
   Grid2x2,
   LayoutDashboard,
-  LogOut,
   Package,
   PieChart,
   Settings,
@@ -18,13 +17,16 @@ import {
 import {
   accueilApp,
   homeForRole,
+  menuAutorise,
   RoleLibelle,
+  ROLES_VALIDATION_CAISSE_CENTRALE,
   rolesPourApp,
   rolesPourMenu,
   type AppProfilId,
 } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
-import { TopbarSystray } from '../components/Topbar';
+import { TopbarSystray, TopbarUserMenu } from '../components/Topbar';
+import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
 
 type AppMenu = { to: string; label: string; roles?: RoleLibelle[] };
 
@@ -64,10 +66,17 @@ const APPS: AppDef[] = [
     roles: rolesPourApp('ventes'),
     menus: [
       { to: '/ventes', label: 'Vue d’ensemble' },
+      { to: '/ventes/tickets', label: 'Journal des tickets' },
+      { to: '/ventes/reporting', label: 'Reporting' },
+      {
+        to: '/ventes/devis',
+        label: 'Devis clients',
+        roles: rolesPourMenu('ventes', '/ventes/devis'),
+      },
       {
         to: '/pos',
         label: 'Point de vente',
-        roles: rolesPourApp('pos'),
+        roles: rolesPourMenu('pos', '/pos'),
       },
     ],
   },
@@ -129,8 +138,8 @@ const APPS: AppDef[] = [
   },
   {
     id: 'contacts',
-    name: 'Contacts',
-    color: '#875A7B',
+    name: 'CRM',
+    color: '#5B6ABF',
     icon: Users,
     home: '/clients',
     match: ['/clients', '/campagnes'],
@@ -138,9 +147,34 @@ const APPS: AppDef[] = [
     menus: [
       { to: '/clients', label: 'Clients', roles: rolesPourMenu('contacts', '/clients') },
       {
+        to: '/clients/pilotage',
+        label: 'Pilotage',
+        roles: rolesPourMenu('contacts', '/clients/pilotage'),
+      },
+      {
+        to: '/clients/fidelite',
+        label: 'Fidélité',
+        roles: rolesPourMenu('contacts', '/clients/fidelite'),
+      },
+      {
+        to: '/clients/segmentation',
+        label: 'Segmentation',
+        roles: rolesPourMenu('contacts', '/clients/segmentation'),
+      },
+      {
+        to: '/clients/interactions',
+        label: 'Interactions',
+        roles: rolesPourMenu('contacts', '/clients/interactions'),
+      },
+      {
         to: '/campagnes',
         label: 'Campagnes',
         roles: rolesPourMenu('contacts', '/campagnes'),
+      },
+      {
+        to: '/clients/parametres',
+        label: 'Paramètres',
+        roles: rolesPourMenu('contacts', '/clients/parametres'),
       },
     ],
   },
@@ -154,11 +188,9 @@ const APPS: AppDef[] = [
     roles: rolesPourApp('finance'),
     menus: [
       { to: '/finance', label: 'Vue DAF' },
-      { to: '/finance?tab=resultat', label: 'Compte de résultat' },
+      { to: '/finance?tab=resultat', label: 'Résultat ventes' },
       { to: '/finance?tab=stocks', label: 'Stocks & valorisation' },
       { to: '/finance?tab=tresorerie', label: 'Trésorerie' },
-      { to: '/achats/factures', label: 'Factures fournisseurs' },
-      { to: '/achats/commandes', label: 'Commandes' },
     ],
   },
   {
@@ -174,6 +206,16 @@ const APPS: AppDef[] = [
         to: '/tresorerie',
         label: 'Vue d’ensemble',
         roles: rolesPourMenu('treasury', '/tresorerie'),
+      },
+      {
+        to: '/tresorerie/bordereaux',
+        label: 'Bordereaux',
+        roles: rolesPourMenu('treasury', '/tresorerie'),
+      },
+      {
+        to: '/tresorerie/reception',
+        label: 'Réception centrale',
+        roles: ROLES_VALIDATION_CAISSE_CENTRALE,
       },
       {
         to: '/transactions',
@@ -222,6 +264,21 @@ const APPS: AppDef[] = [
         roles: rolesPourMenu('settings', '/entreprise'),
       },
       {
+        to: '/entreprise?tab=zones',
+        label: 'Zones',
+        roles: rolesPourMenu('settings', '/entreprise'),
+      },
+      {
+        to: '/entreprise?tab=magasins',
+        label: 'Magasins',
+        roles: rolesPourMenu('settings', '/entreprise'),
+      },
+      {
+        to: '/entreprise?tab=caisses',
+        label: 'Caisses (structure)',
+        roles: rolesPourMenu('settings', '/entreprise'),
+      },
+      {
         to: '/audit',
         label: "Journal d'audit",
         roles: rolesPourMenu('settings', '/audit'),
@@ -246,6 +303,7 @@ function appHome(app: AppDef, role: RoleLibelle): string {
 function pathAllowed(pathname: string, role: RoleLibelle): boolean {
   const app = resolveApp(pathname);
   if (!app.roles.includes(role)) return false;
+  if (!menuAutorise(role, app.id, pathname)) return false;
   const matches = app.menus
     .map((menu) => ({ menu, base: menu.to.split('?')[0] }))
     .filter(
@@ -262,10 +320,10 @@ export function ProtectedRoute() {
   const location = useLocation();
   const navigate = useNavigate();
   const [appsOpen, setAppsOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const appsRef = useRef<HTMLDivElement>(null);
-  const userRef = useRef<HTMLDivElement>(null);
   const role = user?.role as RoleLibelle | undefined;
+
+  useTresorerieRealtime(user !== null);
 
   const currentApp = useMemo(
     () => resolveApp(location.pathname),
@@ -277,31 +335,29 @@ export function ProtectedRoute() {
     );
   }, [role]);
   const visibleMenus = useMemo(() => {
-    return currentApp.menus.filter(
-      (menu) => !menu.roles || (role !== undefined && menu.roles.includes(role)),
-    );
+    return currentApp.menus.filter((menu) => {
+      if (role === undefined) return false;
+      if (menu.roles && !menu.roles.includes(role)) return false;
+      return menuAutorise(role, currentApp.id, menu.to);
+    });
   }, [currentApp, role]);
   const isPos = location.pathname.startsWith('/pos');
 
   useEffect(() => {
     setAppsOpen(false);
-    setUserOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!appsOpen && !userOpen) return;
+    if (!appsOpen) return;
     function onPointerDown(event: MouseEvent) {
       const target = event.target as Node;
       if (appsOpen && appsRef.current && !appsRef.current.contains(target)) {
         setAppsOpen(false);
       }
-      if (userOpen && userRef.current && !userRef.current.contains(target)) {
-        setUserOpen(false);
-      }
     }
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [appsOpen, userOpen]);
+  }, [appsOpen]);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -343,7 +399,6 @@ export function ProtectedRoute() {
               aria-haspopup="dialog"
               aria-label="Applications"
               onClick={() => {
-                setUserOpen(false);
                 setAppsOpen((v) => !v);
               }}
             >
@@ -421,42 +476,15 @@ export function ProtectedRoute() {
 
         <div className="odoo-navbar-right">
           <TopbarSystray />
-          <div className="odoo-user" ref={userRef}>
-            <button
-              type="button"
-              className="odoo-user-btn"
-              aria-expanded={userOpen}
-              aria-haspopup="menu"
-              onClick={() => {
-                setAppsOpen(false);
-                setUserOpen((v) => !v);
+          {user && (
+            <TopbarUserMenu
+              user={user}
+              onLogout={() => {
+                logout();
+                navigate('/login', { replace: true });
               }}
-            >
-              <span className="odoo-user-avatar">
-                {(user?.login ?? '?').slice(0, 2).toUpperCase()}
-              </span>
-            </button>
-            {userOpen && (
-              <div className="odoo-user-menu" role="menu">
-                <div className="odoo-user-menu-meta">
-                  <strong>{user?.login}</strong>
-                  <span>{user?.role}</span>
-                </div>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setUserOpen(false);
-                    logout();
-                    navigate('/login', { replace: true });
-                  }}
-                >
-                  <LogOut size={15} />
-                  Déconnexion
-                </button>
-              </div>
-            )}
-          </div>
+            />
+          )}
         </div>
       </header>
 

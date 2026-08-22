@@ -7,11 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import {
-  NiveauFidelite,
-  SegmentClient,
-  TypeClient,
-} from '@caisse-crm/shared';
+import { NiveauFidelite, SegmentClient, TypeClient } from '@caisse-crm/shared';
 
 // Ciblage campagne / exploitation magasin (§6.6) : segment, fidélité, type,
 // consentement marketing, recherche nom/téléphone (`q`).

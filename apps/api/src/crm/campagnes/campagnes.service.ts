@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { CampagneCrm } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { CreateCampagneDto } from '../dto/create-campagne.dto';
 import { toCsv, type CsvPrimitive } from '../../common/csv.util';
+import { envoyerEmail, envoyerSms } from '../campagne-envoi';
 
 export interface ContactCible extends Record<string, CsvPrimitive> {
   clientId: string;
@@ -105,5 +110,70 @@ export class CampagnesService {
       { key: 'contact', header: 'Contact' },
       { key: 'pointsCumules', header: 'Points fidélité' },
     ]);
+  }
+
+  async envoyer(
+    id: string,
+    utilisateurId: string,
+  ): Promise<{
+    envoyes: number;
+    canal: string;
+    dateEnvoi: Date;
+  }> {
+    const campagne = await this.findOne(id);
+    const destinataires = await this.contacts(id);
+    if (destinataires.length === 0) {
+      throw new BadRequestException(
+        'Aucun contact ciblé (consentement + coordonnée). Exportez le CSV ou élargissez le ciblage.',
+      );
+    }
+
+    const canalSms = campagne.canal === 'SMS' || campagne.canal === 'WHATSAPP';
+    if (canalSms && !process.env.SMS_GATEWAY_URL) {
+      throw new BadRequestException(
+        'Passerelle SMS non configurée (SMS_GATEWAY_URL). Utilisez l’export CSV.',
+      );
+    }
+    if (!canalSms && !process.env.SMTP_HOST) {
+      throw new BadRequestException(
+        'SMTP non configuré (SMTP_HOST). Utilisez l’export CSV.',
+      );
+    }
+
+    for (const dest of destinataires) {
+      const to = dest.contact?.trim();
+      if (!to) continue;
+      if (canalSms) {
+        await envoyerSms(to, campagne.message);
+      } else {
+        await envoyerEmail(to, campagne.nom, campagne.message);
+      }
+      await this.prisma.interactionCrm.create({
+        data: {
+          clientId: dest.clientId,
+          type: 'CAMPAGNE',
+          canal: campagne.canal,
+          contenu: campagne.message,
+        },
+      });
+    }
+
+    const dateEnvoi = new Date();
+    await this.prisma.campagneCrm.update({
+      where: { id: campagne.id },
+      data: { dateEnvoi },
+    });
+    await this.audit.record({
+      utilisateurId,
+      action: 'CAMPAGNE_CRM_ENVOYEE',
+      entite: 'CampagneCrm',
+      entiteId: campagne.id,
+      details: `Envoi ${campagne.canal} · ${destinataires.length} destinataire(s) · « ${campagne.nom} »`,
+    });
+    return {
+      envoyes: destinataires.length,
+      canal: campagne.canal,
+      dateEnvoi,
+    };
   }
 }

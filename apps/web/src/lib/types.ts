@@ -160,6 +160,7 @@ export interface CampagneCrmDto {
   niveauFidelite: NiveauFidelite | null;
   canal: CanalInteraction;
   dateCreation: string;
+  dateEnvoi?: string | null;
   createdById: string;
 }
 
@@ -187,6 +188,61 @@ export interface TableauDeBordClientDto {
   niveauFidelite: NiveauFidelite;
   /** Boutiques où le client a déjà acheté (dérivé des ventes, §6.6). */
   pointsDeVente: PointDeVenteClientDto[];
+}
+
+export interface CrmParametresDto {
+  seuilFideliteArgent: number;
+  seuilFideliteOr: number;
+  seuilSegmentRegulier: number;
+  seuilSegmentVip: number;
+}
+
+export interface TableauDeBordCrmDto {
+  seuils: CrmParametresDto;
+  effectifs: {
+    total: number;
+    parSegment: Record<string, number>;
+    parPalier: Record<string, number>;
+  };
+  ca: {
+    identifie: string;
+    anonyme: string;
+    ticketsIdentifies: number;
+    ticketsAnonymes: number;
+  };
+  campagnes: Array<{
+    id: string;
+    nom: string;
+    canal: CanalInteraction;
+    dateCreation: string;
+    dateEnvoi: string | null;
+    segment: SegmentClient | null;
+    niveauFidelite: NiveauFidelite | null;
+  }>;
+}
+
+export interface JournalVentesDto {
+  items: Array<{
+    id: string;
+    dateVente: string;
+    montantTotal: string;
+    modePaiement: ModePaiement;
+    sessionCaisseId: string;
+    clientId: string | null;
+    client: { id: string; nom: string; prenom: string | null } | null;
+    paiements: PaiementVenteDto[];
+    caisse: {
+      id: string;
+      type: string;
+      code: string | null;
+      libelle: string | null;
+      boutiqueId: string | null;
+      boutique: { id: string; nom: string } | null;
+    };
+  }>;
+  total: number;
+  page: number;
+  limit: number;
 }
 
 export type StatutStock = 'RUPTURE' | 'SOUS_SEUIL' | 'OK';
@@ -691,6 +747,10 @@ export interface SocieteDto {
   devise: string;
   logoUrl: string | null;
   delaiVersementHeures: number;
+  seuilFideliteArgent?: number;
+  seuilFideliteOr?: number;
+  seuilSegmentRegulier?: number;
+  seuilSegmentVip?: number;
 }
 
 export interface ZoneDto {

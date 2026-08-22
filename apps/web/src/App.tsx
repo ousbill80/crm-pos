@@ -10,6 +10,9 @@ import { CaisseDetailPage } from './routes/CaisseDetailPage';
 import { ClientDetailPage } from './routes/ClientDetailPage';
 import { CrmClientsPage } from './routes/CrmClientsPage';
 import { CrmCampagnesPage } from './routes/CrmCampagnesPage';
+import { CrmFidelitePage } from './routes/CrmFidelitePage';
+import { CrmSegmentationPage } from './routes/CrmSegmentationPage';
+import { CrmInteractionsPage } from './routes/CrmInteractionsPage';
 import { DashboardPage } from './routes/DashboardPage';
 import { EntreprisePage } from './routes/EntreprisePage';
 import { FournisseursPage } from './routes/FournisseursPage';
@@ -36,6 +39,13 @@ import { TransactionsPage } from './routes/TransactionsPage';
 import { TransactionDetailPage } from './routes/TransactionDetailPage';
 import { TresoreriePage } from './routes/TresoreriePage';
 import { VentesPage } from './routes/VentesPage';
+import { VentesTicketsPage } from './routes/VentesTicketsPage';
+import { VentesReportingPage } from './routes/VentesReportingPage';
+import { DevisPage } from './routes/DevisPage';
+import { DevisDetailPage } from './routes/DevisDetailPage';
+import { CrmPilotagePage } from './routes/CrmPilotagePage';
+import { CrmParametresPage } from './routes/CrmParametresPage';
+import { BordereauxPage, ReceptionCentralePage } from './routes/TresorerieFilesPage';
 import './App.css';
 import './pos-screen.css';
 
@@ -48,14 +58,25 @@ function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/alertes" element={<AlertesPage />} />
         <Route path="/tresorerie" element={<TresoreriePage />} />
+        <Route path="/tresorerie/bordereaux" element={<BordereauxPage />} />
+        <Route path="/tresorerie/reception" element={<ReceptionCentralePage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/ventes" element={<VentesPage />} />
+        <Route path="/ventes/tickets" element={<VentesTicketsPage />} />
+        <Route path="/ventes/reporting" element={<VentesReportingPage />} />
+        <Route path="/ventes/devis" element={<DevisPage />} />
+        <Route path="/ventes/devis/:devisId" element={<DevisDetailPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
         <Route path="/caisses/:caisseId" element={<CaisseDetailPage />} />
         <Route path="/litiges" element={<LitigesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />
+        <Route path="/clients/pilotage" element={<CrmPilotagePage />} />
+        <Route path="/clients/parametres" element={<CrmParametresPage />} />
+        <Route path="/clients/fidelite" element={<CrmFidelitePage />} />
+        <Route path="/clients/segmentation" element={<CrmSegmentationPage />} />
+        <Route path="/clients/interactions" element={<CrmInteractionsPage />} />
         <Route path="/clients/:clientId" element={<ClientDetailPage />} />
         <Route path="/campagnes" element={<CrmCampagnesPage />} />
         <Route path="/produits" element={<ProduitsPage />} />

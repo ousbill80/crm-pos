@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, UserPlus, X } from 'lucide-react';
+import { Search, Star, UserPlus, Building2, MailCheck, ListFilter, X } from 'lucide-react';
 import {
   NiveauFidelite,
   RoleLibelle,
@@ -14,6 +14,7 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { CrmKpiGrid, CrmKpiWidget } from '../components/CrmKpiWidget';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -27,6 +28,7 @@ import {
   insightFicheReseau,
   insightTypeClient,
 } from '../lib/insights/crm';
+import { CRM_KPI, pctPart } from '../lib/crm-kpi-accents';
 import type { ClientDto } from '../lib/types';
 
 // Miroir de crm-roles.constants.ts (apps/api/src/crm) : ce module n'expose
@@ -464,6 +466,26 @@ export function CrmClientsPage() {
   const { data: clientsBruts, isLoading, isError, isFetching } =
     useClients(filtres);
 
+  const statsQ = useQuery({
+    queryKey: ['crm-clients', 'stats-kpis', magasin.boutiqueId],
+    queryFn: () => apiFetch<ClientDto[]>('/crm/clients'),
+  });
+
+  const statsClients = useMemo(() => {
+    const list = statsQ.data ?? [];
+    if (!magasin.boutiqueId) return list;
+    return list.filter((c) => c.boutiqueOrigineId === magasin.boutiqueId);
+  }, [statsQ.data, magasin.boutiqueId]);
+
+  const kpis = useMemo(() => {
+    return {
+      total: statsClients.length,
+      vip: statsClients.filter((c) => c.segment === SegmentClient.VIP).length,
+      marketing: statsClients.filter((c) => c.consentementMarketing).length,
+      morales: statsClients.filter((c) => c.typeClient === TypeClient.MORALE).length,
+    };
+  }, [statsClients]);
+
   const clients = useMemo(() => {
     if (!clientsBruts) return clientsBruts;
     if (!magasin.boutiqueId) return clientsBruts;
@@ -480,15 +502,13 @@ export function CrmClientsPage() {
     qInput.trim().length >= 2 ||
     Boolean(magasin.boutiqueId);
 
-  const kpis = useMemo(() => {
-    const list = clients ?? [];
-    return {
-      total: list.length,
-      vip: list.filter((c) => c.segment === SegmentClient.VIP).length,
-      marketing: list.filter((c) => c.consentementMarketing).length,
-      morales: list.filter((c) => c.typeClient === TypeClient.MORALE).length,
-    };
-  }, [clients]);
+  function toggleFiltre<T extends string>(
+    courant: T,
+    valeur: T,
+    setter: (v: T | '') => void,
+  ) {
+    setter(courant === valeur ? '' : valeur);
+  }
 
   function resetFiltres() {
     setQInput('');
@@ -607,27 +627,61 @@ export function CrmClientsPage() {
       </div>
 
       {!isLoading && clients && (
-        <div className="client-kpi-grid crm-clients-kpis">
-          <article className="client-kpi-card">
-            <div className="client-kpi-label">Résultats</div>
-            <div className="client-kpi-value">
-              {kpis.total}
-              {isFetching ? '…' : ''}
-            </div>
-          </article>
-          <article className="client-kpi-card">
-            <div className="client-kpi-label">VIP</div>
-            <div className="client-kpi-value">{kpis.vip}</div>
-          </article>
-          <article className="client-kpi-card">
-            <div className="client-kpi-label">Consentement marketing</div>
-            <div className="client-kpi-value">{kpis.marketing}</div>
-          </article>
-          <article className="client-kpi-card">
-            <div className="client-kpi-label">Personnes morales</div>
-            <div className="client-kpi-value">{kpis.morales}</div>
-          </article>
-        </div>
+        <CrmKpiGrid className="crm-clients-kpis">
+          <CrmKpiWidget
+            label="Résultats"
+            value={
+              filtresActifs
+                ? `${clients.length}${isFetching ? '…' : ''} / ${kpis.total}`
+                : `${kpis.total}${isFetching ? '…' : ''}`
+            }
+            hint={
+              filtresActifs
+                ? 'Filtres actifs — cliquer pour réinitialiser'
+                : 'Fiches sur le périmètre'
+            }
+            icon={ListFilter}
+            accent={CRM_KPI.accent}
+            active={filtresActifs}
+            onClick={filtresActifs ? resetFiltres : undefined}
+          />
+          <CrmKpiWidget
+            label="VIP"
+            value={kpis.vip}
+            hint="Segment haute valeur"
+            badge={pctPart(kpis.vip, kpis.total)}
+            icon={Star}
+            accent={CRM_KPI.vip}
+            active={segment === SegmentClient.VIP}
+            onClick={() =>
+              toggleFiltre(segment, SegmentClient.VIP, setSegment)
+            }
+          />
+          <CrmKpiWidget
+            label="Consentement marketing"
+            value={kpis.marketing}
+            hint="Campagnes ciblées autorisées"
+            badge={pctPart(kpis.marketing, kpis.total)}
+            icon={MailCheck}
+            accent={CRM_KPI.marketing}
+            active={consentement === 'oui'}
+            onClick={() =>
+              toggleFiltre(consentement, 'oui', setConsentement)
+            }
+          />
+          <CrmKpiWidget
+            label="Personnes morales"
+            value={kpis.morales}
+            hint="Entreprises / associations"
+            badge={pctPart(kpis.morales, kpis.total)}
+            icon={Building2}
+            accent={CRM_KPI.morales}
+            active={typeClient === TypeClient.MORALE}
+            onClick={() =>
+              toggleFiltre(typeClient, TypeClient.MORALE, setTypeClient)
+            }
+          />
+        </CrmKpiGrid>
       )}
 
       {isLoading && <LoadingState label="Chargement des clients…" />}

@@ -51,4 +51,10 @@ export class CampagnesController {
     );
     res.send(csv);
   }
+
+  @Post(':id/envoyer')
+  @Roles(...CRM_ROLES_ADMIN)
+  envoyer(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.campagnesService.envoyer(id, user.userId);
+  }
 }

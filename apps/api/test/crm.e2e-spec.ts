@@ -802,12 +802,12 @@ describe('CRM (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Chiffrement des données sensibles (§6.7) — contact/adresse ne doivent
-  // jamais transiter en clair en base, seulement dans l'API applicative.
+  // Données client au repos (§6.7 décision produit) — clair en base ;
+  // mots de passe = bcrypt uniquement (pas de chiffrement fiche client).
   // ---------------------------------------------------------------------
 
-  describe('Chiffrement des données client sensibles', () => {
-    it('stocke contact et adresse chiffrés en base tout en les renvoyant en clair via l’API', async () => {
+  describe('Fiches client en clair au repos', () => {
+    it('stocke contact et adresse en clair (identiques à l’API)', async () => {
       const contactClair = '+225 07 12 34 56 78';
       const adresseClaire = 'Cocody, Abidjan';
 
@@ -829,49 +829,28 @@ describe('CRM (e2e)', () => {
         { contact: string | null; adresse: string | null }[]
       >`SELECT contact, adresse FROM client WHERE id = ${client.id}`;
       const [ligneBrute] = lignesBrutes;
-      expect(ligneBrute.contact).not.toBeNull();
-      expect(ligneBrute.contact).not.toBe(contactClair);
-      expect(ligneBrute.adresse).not.toBeNull();
-      expect(ligneBrute.adresse).not.toBe(adresseClaire);
-
-      const lecture = await request(app.getHttpServer())
-        .get(`/crm/clients/${client.id}`)
-        .set('Authorization', authHeader('RESPONSABLE_CRM'))
-        .expect(200);
-      const clientLu = body<ClientResponseBody>(lecture);
-      expect(clientLu.contact).toBe(contactClair);
-      expect(clientLu.adresse).toBe(adresseClaire);
+      expect(ligneBrute.contact).toBe(contactClair);
+      expect(ligneBrute.adresse).toBe(adresseClaire);
     });
 
-    it('rechiffre avec un ciphertext différent après modification, tout en exposant le nouveau clair via l’API', async () => {
-      const creation = await request(app.getHttpServer())
+    it('recherche par contact en clair (contains)', async () => {
+      await request(app.getHttpServer())
         .post('/crm/clients')
         .set('Authorization', authHeader('RESPONSABLE_CRM'))
-        .send({ nom: 'Sawadogo', prenom: 'Fatimata', contact: '0700000099' })
+        .send({
+          nom: 'Diallo',
+          prenom: 'Awa',
+          contact: '0700112233',
+        })
         .expect(201);
-      const client = body<ClientResponseBody>(creation);
 
-      const [avant] = await env.prisma.$queryRaw<
-        { contact: string | null }[]
-      >`SELECT contact FROM client WHERE id = ${client.id}`;
-
-      const modification = await request(app.getHttpServer())
-        .patch(`/crm/clients/${client.id}`)
+      const response = await request(app.getHttpServer())
+        .get('/crm/clients?q=0700112233')
         .set('Authorization', authHeader('RESPONSABLE_CRM'))
-        .send({ adresse: 'Yopougon, Abidjan' })
         .expect(200);
-      expect(body<ClientResponseBody>(modification).adresse).toBe(
-        'Yopougon, Abidjan',
-      );
 
-      const [apres] = await env.prisma.$queryRaw<
-        { contact: string | null; adresse: string | null }[]
-      >`SELECT contact, adresse FROM client WHERE id = ${client.id}`;
-      // contact non touché par le PATCH : ciphertext stable (pas de
-      // rechiffrement superflu d'un champ non modifié).
-      expect(apres.contact).toBe(avant.contact);
-      expect(apres.adresse).not.toBeNull();
-      expect(apres.adresse).not.toBe('Yopougon, Abidjan');
+      const liste = response.body as ClientResponseBody[];
+      expect(liste.some((c) => c.contact === '0700112233')).toBe(true);
     });
   });
 });

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ClientsService } from './crm.service';
 import { ClientsController } from './crm.controller';
+import { CrmReseauController } from './crm-reseau.controller';
 import { FideliteService } from './fidelite/fidelite.service';
 import { FideliteController } from './fidelite/fidelite.controller';
 import { InteractionsService } from './interactions/interactions.service';
 import { InteractionsController } from './interactions/interactions.controller';
+import { InteractionsReseauController } from './interactions/interactions-reseau.controller';
 import { CampagnesService } from './campagnes/campagnes.service';
 import { CampagnesController } from './campagnes/campagnes.controller';
 
@@ -15,8 +17,10 @@ import { CampagnesController } from './campagnes/campagnes.controller';
 // réimportés ici.
 @Module({
   controllers: [
+    CrmReseauController,
     ClientsController,
     FideliteController,
+    InteractionsReseauController,
     InteractionsController,
     CampagnesController,
   ],

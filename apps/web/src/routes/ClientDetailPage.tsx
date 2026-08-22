@@ -1,7 +1,7 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
-import { FicheClient } from '../components/FicheClient';
+import { FicheClient, type OngletFicheClient } from '../components/FicheClient';
 import { LoadingState } from '../components/LoadingState';
 
 const ROLES_CREATION_CLIENT: RoleLibelle[] = [
@@ -12,10 +12,25 @@ const ROLES_CREATION_CLIENT: RoleLibelle[] = [
 
 const ROLES_ADMIN_CRM: RoleLibelle[] = [RoleLibelle.RESPONSABLE_CRM];
 
+const ONGLET_VALIDES = new Set<OngletFicheClient>([
+  'apercu',
+  'identite',
+  'achats',
+  'devis',
+  'fidelite',
+  'interactions',
+]);
+
 export function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const tabParam = params.get('tab');
+  const ongletInitial =
+    tabParam && ONGLET_VALIDES.has(tabParam as OngletFicheClient)
+      ? (tabParam as OngletFicheClient)
+      : 'apercu';
 
   if (!clientId) {
     return <p role="alert">Client introuvable.</p>;
@@ -33,6 +48,7 @@ export function ClientDetailPage() {
       clientId={clientId}
       peutAdmin={peutAdmin}
       peutCreer={peutCreer}
+      ongletInitial={ongletInitial}
       onBack={() => navigate('/clients')}
     />
   );
