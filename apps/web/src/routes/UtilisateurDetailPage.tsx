@@ -8,11 +8,17 @@ import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { EmptyState } from '../components/PageChrome';
 import { SelectProfil } from '../components/SelectProfil';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { SortHeader } from '../components/SortHeader';
+import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
+import { insightAuditAction, insightPerimetreRole } from '../lib/insights/administration';
 import type {
   BoutiqueDto,
   JournalAuditPageDto,
   UtilisateurDto,
 } from '../lib/types';
+
+type ColonneAudit = 'date' | 'action' | 'entite' | 'details';
 
 const ROLES_LECTURE_AUDIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
@@ -47,6 +53,7 @@ export function UtilisateurDetailPage() {
   const [onglet, setOnglet] = useState<Onglet>('identite');
   const [error, setError] = useState<string | null>(null);
   const [mdpTemp, setMdpTemp] = useState<string | null>(null);
+  const [sortAudit, setSortAudit] = useState<SortState<ColonneAudit> | null>(null);
 
   const detail = useQuery({
     queryKey: ['utilisateurs', userId],
@@ -169,7 +176,8 @@ export function UtilisateurDetailPage() {
           <p className="lead">
             {u.login} · {labelProfil(u.role.libelle)} ·{' '}
             {labelPerimetre(profilOf(u.role.libelle).perimetre)}
-            {u.boutiqueId ? ` · ${boutiqueNom}` : ''}
+            {u.boutiqueId ? ` · ${boutiqueNom}` : ''}{' '}
+            <InfoTooltip insight={insightPerimetreRole(u.role.libelle)} />
           </p>
         </div>
         <div className="cfg-chip-row">
@@ -395,14 +403,36 @@ export function UtilisateurDetailPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Action</th>
-                    <th>Entité</th>
-                    <th>Détails</th>
+                    <SortHeader active={sortAudit?.key === 'date'} dir={sortAudit?.key === 'date' ? sortAudit.dir : 'desc'} onClick={() => setSortAudit((s) => toggleSort(s, 'date'))}>
+                      Date
+                    </SortHeader>
+                    <SortHeader active={sortAudit?.key === 'action'} dir={sortAudit?.key === 'action' ? sortAudit.dir : 'asc'} onClick={() => setSortAudit((s) => toggleSort(s, 'action'))}>
+                      Action
+                    </SortHeader>
+                    <SortHeader active={sortAudit?.key === 'entite'} dir={sortAudit?.key === 'entite' ? sortAudit.dir : 'asc'} onClick={() => setSortAudit((s) => toggleSort(s, 'entite'))}>
+                      Entité
+                    </SortHeader>
+                    <SortHeader active={sortAudit?.key === 'details'} dir={sortAudit?.key === 'details' ? sortAudit.dir : 'asc'} onClick={() => setSortAudit((s) => toggleSort(s, 'details'))}>
+                      Détails
+                    </SortHeader>
+                    <th aria-label="Info" />
                   </tr>
                 </thead>
                 <tbody>
-                  {activite.data.data.map((e) => (
+                  {sortRows(activite.data.data, sortAudit, (row, key) => {
+                    switch (key) {
+                      case 'date':
+                        return row.dateHeure;
+                      case 'action':
+                        return row.action;
+                      case 'entite':
+                        return row.entite;
+                      case 'details':
+                        return row.details ?? '';
+                      default:
+                        return null;
+                    }
+                  }).map((e) => (
                     <tr key={e.id}>
                       <td>{fmtDate(e.dateHeure)}</td>
                       <td>
@@ -418,6 +448,9 @@ export function UtilisateurDetailPage() {
                             ? `${e.details.slice(0, 80)}…`
                             : e.details
                           : '—'}
+                      </td>
+                      <td>
+                        <InfoTooltip insight={insightAuditAction(e.action)} />
                       </td>
                     </tr>
                   ))}

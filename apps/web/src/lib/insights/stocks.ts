@@ -304,6 +304,37 @@ export function insightInventaireRestant(restant: number, total: number): Insigh
   };
 }
 
+// Traçabilité d'un mouvement de stock unitaire — chaque ligne du journal des
+// stocks est une écriture immuable (grand livre append-only, CLAUDE.md).
+export function insightMouvementTracabilite(
+  type: 'RECEPTION' | 'VENTE' | 'RETOUR' | 'AJUSTEMENT' | 'TRANSFERT_OUT' | 'TRANSFERT_IN' | 'SCRAP',
+  quantite: number,
+  stockApres: number,
+): Insight {
+  if (type === 'AJUSTEMENT') {
+    return {
+      title: 'Écriture d’ajustement',
+      interpretation: `Correction posée après validation d’un inventaire ou d’un contrôle SI, pour ${
+        quantite > 0 ? `+${quantite}` : quantite
+      } unité(s), amenant le stock à ${stockApres}. Écriture figée, non modifiable a posteriori.`,
+      recommendation: 'Toute nouvelle correction se fait par une écriture compensatoire, jamais par édition de celle-ci.',
+      severity: 'warning',
+    };
+  }
+  if (type === 'SCRAP') {
+    return {
+      title: 'Rebut',
+      interpretation: `${Math.abs(quantite)} unité(s) sorties du stock pour mise au rebut, amenant le stock à ${stockApres}. Écriture figée du journal des mouvements.`,
+      severity: 'critical',
+    };
+  }
+  return {
+    title: 'Mouvement tracé',
+    interpretation: `Ce mouvement fait partie du journal immuable des stocks : il ne peut être ni modifié ni supprimé, seulement compensé par un mouvement inverse tracé. Stock résultant : ${stockApres} unité(s).`,
+    severity: 'neutral',
+  };
+}
+
 export function insightInventaireLigneEcart(
   quantiteTheorique: number,
   quantiteComptee: number | null,

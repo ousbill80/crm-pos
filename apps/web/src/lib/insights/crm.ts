@@ -332,6 +332,49 @@ export function insightCampagnesPilotage(count: number): Insight {
   };
 }
 
+// --- Page Campagnes (§6.6) — cartes de campagnes, ciblage et diffusion ---
+
+export function insightCampagneCiblage(
+  segment: string | null | undefined,
+  niveauFidelite: string | null | undefined,
+): Insight {
+  if (!segment && !niveauFidelite) {
+    return {
+      title: 'Ciblage',
+      interpretation:
+        'Aucun filtre de ciblage : la campagne inclut tous les clients avec consentement marketing accordé et un contact joignable, tous segments et paliers confondus.',
+      severity: 'neutral',
+    };
+  }
+  const criteres = [
+    segment ? `segment ${labelSegmentFr(segment)}` : null,
+    niveauFidelite ? `palier ${niveauFidelite}` : null,
+  ]
+    .filter(Boolean)
+    .join(' et ');
+  return {
+    title: 'Ciblage',
+    interpretation: `Restreint au ${criteres}, parmi les clients avec consentement marketing accordé et un contact joignable.`,
+    severity: 'info',
+  };
+}
+
+export function insightCampagneStatutEnvoi(dateEnvoi: string | null | undefined): Insight {
+  if (dateEnvoi) {
+    return {
+      title: 'Envoyée',
+      interpretation: `Diffusée le ${new Date(dateEnvoi).toLocaleString('fr-FR')}. Le contenu et le ciblage de cette campagne restent consultables mais ne sont plus modifiables une fois envoyée.`,
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'CSV seulement',
+    interpretation:
+      'Aucune diffusion enregistrée : cette campagne sert pour l’instant à exporter la liste de contacts ciblés (CSV), sans envoi tracé.',
+    severity: 'neutral',
+  };
+}
+
 // --- Page Interactions CRM (§6.6) — journal réseau et par fiche client ---
 
 export function insightJournalReseauTotal(totalApi: number, totalItems: number): Insight {

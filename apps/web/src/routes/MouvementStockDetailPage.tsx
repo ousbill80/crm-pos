@@ -4,6 +4,8 @@ import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { insightMouvementTracabilite } from '../lib/insights/stocks';
 import type { MouvementStockDto } from '../lib/types';
 
 const ROLES_LECTURE: RoleLibelle[] = [
@@ -114,7 +116,10 @@ export function MouvementStockDetailPage() {
         </div>
       </header>
 
-      <p className="lead">{TYPE_SENS[data.type]}</p>
+      <p className="lead">
+        {TYPE_SENS[data.type]}{' '}
+        <InfoTooltip insight={insightMouvementTracabilite(data.type, data.quantite, data.stockApres)} />
+      </p>
 
       <dl className="clients-dl">
         <div>

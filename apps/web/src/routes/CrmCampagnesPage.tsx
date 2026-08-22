@@ -24,7 +24,9 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { CrmKpiGrid, CrmKpiWidget } from '../components/CrmKpiWidget';
+import { InfoTooltip } from '../components/InfoTooltip';
 import { CRM_KPI, pctPart } from '../lib/crm-kpi-accents';
+import { insightCampagneCiblage, insightCampagneStatutEnvoi } from '../lib/insights/crm';
 import type { CampagneCrmDto, ContactCampagneDto } from '../lib/types';
 
 const ROLES_ADMIN_CRM: RoleLibelle[] = [RoleLibelle.RESPONSABLE_CRM];
@@ -235,11 +237,15 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
             <span className="badge badge-neutral">
               {labelPalier(campagne.niveauFidelite)}
             </span>
+            <InfoTooltip
+              insight={insightCampagneCiblage(campagne.segment, campagne.niveauFidelite)}
+            />
             {campagne.dateEnvoi ? (
               <span className="badge badge-ok">Envoyée</span>
             ) : (
               <span className="badge badge-neutral">CSV seulement</span>
             )}
+            <InfoTooltip insight={insightCampagneStatutEnvoi(campagne.dateEnvoi)} />
           </div>
         </div>
         <time className="crm-campagne-date" dateTime={campagne.dateCreation}>
