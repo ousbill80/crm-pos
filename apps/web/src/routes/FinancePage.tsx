@@ -658,6 +658,18 @@ export function FinancePage() {
               >
                 <FileText size={14} /> PDF
               </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() =>
+                  void apiDownload(
+                    '/reporting/export-comptable.csv',
+                    'export-comptable.csv',
+                  )
+                }
+              >
+                <Download size={14} /> Export comptable
+              </button>
             </div>
           </div>
         }

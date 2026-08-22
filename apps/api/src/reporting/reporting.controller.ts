@@ -12,6 +12,7 @@ import { ReportingService } from './reporting.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { VentesQuotidiennesQueryDto } from './dto/ventes-quotidiennes-query.dto';
 import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
+import { ExportComptableQueryDto } from './dto/export-comptable-query.dto';
 import {
   dessinerDafPdf,
   dessinerDashboardPdf,
@@ -147,6 +148,23 @@ export class ReportingController {
     const csv = await this.reportingService.getVentesCsv(user, query);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="ventes.csv"');
+    res.send(csv);
+  }
+
+  /** Export comptable du grand livre (§6.3.4, §6.7). */
+  @Get('export-comptable.csv')
+  @Roles(...ROLES_RESEAU_TRESORERIE)
+  async exportComptableCsv(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExportComptableQueryDto,
+    @Res() res: Response,
+  ) {
+    const csv = await this.reportingService.getExportComptableCsv(user, query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="export-comptable.csv"',
+    );
     res.send(csv);
   }
 }

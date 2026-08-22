@@ -24,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
 import { toCsv } from '../common/csv.util';
 import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
+import { ExportComptableQueryDto } from './dto/export-comptable-query.dto';
 
 export interface PeriodeFiltre {
   dateFrom?: string;
@@ -38,6 +39,33 @@ function periodeWhere(
     ...(periode.dateFrom ? { gte: new Date(periode.dateFrom) } : {}),
     ...(periode.dateTo ? { lte: new Date(periode.dateTo) } : {}),
   };
+}
+
+function libelleJournalTransaction(type: TypeTransaction): string {
+  switch (type) {
+    case TypeTransaction.VENTE:
+      return 'Ventes';
+    case TypeTransaction.SORTIE_FONDS:
+      return 'Versements';
+    case TypeTransaction.TRANSFERT_INTERNE:
+      return 'Transferts internes';
+  }
+}
+
+function libelleLigneTransaction(
+  type: TypeTransaction,
+  estContrepartie: boolean,
+): string {
+  switch (type) {
+    case TypeTransaction.VENTE:
+      return 'Vente encaissée';
+    case TypeTransaction.SORTIE_FONDS:
+      return 'Versement vers la centrale';
+    case TypeTransaction.TRANSFERT_INTERNE:
+      return estContrepartie
+        ? 'Transfert interne — réception'
+        : 'Transfert interne — émission';
+  }
 }
 
 // Reporting consolidé — §6.3.4 / §6.7 du cahier des charges.
@@ -726,6 +754,69 @@ export class ReportingService {
         { key: 'clientId', header: 'Client' },
       ],
     );
+  }
+
+  // Export comptable du grand livre (§6.3.4, §6.7) — uniquement les écritures
+  // VALIDEE (append-only, aucune ligne rétroactive) : date, référence,
+  // journal, libellé, débit, crédit, solde courant cumulé chronologiquement.
+  async getExportComptableCsv(
+    user: AuthenticatedUser,
+    query: ExportComptableQueryDto,
+  ): Promise<string> {
+    if (!ROLES_RESEAU_TRESORERIE.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité à l'export comptable du grand livre.`,
+      );
+    }
+
+    const transactions = await this.prisma.transactionCaisse.findMany({
+      where: {
+        statut: StatutTransaction.VALIDEE,
+        ...(query.caisseId ? { caisseId: query.caisseId } : {}),
+        dateHeure: periodeWhere(query),
+      },
+      orderBy: { dateHeure: 'asc' },
+      select: {
+        id: true,
+        type: true,
+        montant: true,
+        dateHeure: true,
+        caisseId: true,
+        transactionSourceId: true,
+      },
+    });
+
+    let solde = new Prisma.Decimal(0);
+    const lignes = transactions.map((t) => {
+      const estContrepartie = t.transactionSourceId !== null;
+      const estCredit =
+        t.type === TypeTransaction.VENTE ||
+        (t.type === TypeTransaction.TRANSFERT_INTERNE && estContrepartie);
+      const debit = estCredit ? new Prisma.Decimal(0) : t.montant;
+      const credit = estCredit ? t.montant : new Prisma.Decimal(0);
+      solde = solde.plus(credit).minus(debit);
+      return {
+        date: t.dateHeure,
+        reference: t.id,
+        journal: libelleJournalTransaction(t.type),
+        libelle: libelleLigneTransaction(t.type, estContrepartie),
+        caisseId: t.caisseId,
+        debit: debit.toFixed(2),
+        credit: credit.toFixed(2),
+        solde: solde.toFixed(2),
+      };
+    });
+
+    return toCsv(lignes, [
+      { key: 'date', header: 'Date' },
+      { key: 'reference', header: 'Référence' },
+      { key: 'journal', header: 'Journal' },
+      { key: 'libelle', header: 'Libellé' },
+      { key: 'caisseId', header: 'Caisse' },
+      { key: 'debit', header: 'Débit' },
+      { key: 'credit', header: 'Crédit' },
+      { key: 'solde', header: 'Solde courant' },
+    ]);
   }
 
   async enteteSociete(): Promise<SocieteEntete | null> {
