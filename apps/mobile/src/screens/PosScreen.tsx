@@ -334,6 +334,17 @@ export function PosScreen({ navigation, route }: Props) {
     );
   }, [produits, rechercheProduit]);
 
+  // Index référence → produit (recalculé seulement quand le catalogue change)
+  // pour un lookup O(1) au scan/à la saisie "3xREF", au lieu d'un `find`
+  // linéaire répété à chaque article scanné en caisse.
+  const produitsParReference = useMemo(() => {
+    const index = new Map<string, Produit>();
+    for (const p of produits) {
+      if (p.reference) index.set(p.reference.toLowerCase(), p);
+    }
+    return index;
+  }, [produits]);
+
   const chargerCatalogue = useCallback(async (sessionId?: string) => {
     try {
       const catalog = await apiFetch<Produit[]>('/produits');
@@ -573,9 +584,7 @@ export function PosScreen({ navigation, route }: Props) {
     const qte = Math.max(1, Number(prefix[1]));
     const query = prefix[2].trim().toLowerCase();
     if (!query) return;
-    const exact = produits.find(
-      (p) => p.reference && p.reference.toLowerCase() === query,
-    );
+    const exact = produitsParReference.get(query);
     if (exact) {
       ajouter(exact, qte);
       setRechercheProduit('');
@@ -630,7 +639,7 @@ export function PosScreen({ navigation, route }: Props) {
   useEffect(() => {
     const code = route.params?.scannedCode;
     if (!code || !session) return;
-    const trouve = produits.find((p) => p.reference === code);
+    const trouve = produitsParReference.get(code.toLowerCase());
     if (trouve) {
       ajouter(trouve);
       setError(null);
