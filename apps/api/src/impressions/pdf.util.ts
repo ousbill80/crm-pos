@@ -25,32 +25,48 @@ export const MODE_PAIEMENT_PDF: Record<string, string> = {
   AUTRE: 'Autre',
 };
 
+/**
+ * Helvetica (WinAnsi) n’a pas l’espace fine insécable U+202F que
+ * `toLocaleString('fr-FR')` utilise comme séparateur de milliers.
+ * L’octet bas de U+202F est 0x2F = « / » → impression « 2 /000 FCFA ».
+ */
+export function latiniserTextePdf(s: string): string {
+  return s.replace(/[\u00a0\u202f\u2007\u2009\u200a]/g, ' ');
+}
+
+export function fmtNombrePdf(
+  n: number,
+  options?: Intl.NumberFormatOptions,
+): string {
+  return latiniserTextePdf(n.toLocaleString('fr-FR', options));
+}
+
 export function fmtFcfaPdf(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return '—';
-  return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+  return `${fmtNombrePdf(Math.round(n))} FCFA`;
 }
 
 export function fmtPctPdf(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return '—';
-  return `${n.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`;
+  return `${fmtNombrePdf(n, { maximumFractionDigits: 1 })} %`;
 }
 
 export function fmtDatePdf(value: Date | string | null | undefined): string {
   if (!value) return '—';
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('fr-FR');
+  return latiniserTextePdf(d.toLocaleString('fr-FR'));
 }
 
 export function fmtJourPdf(value: Date | string | null | undefined): string {
   if (!value) return '—';
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('fr-FR');
+  return latiniserTextePdf(d.toLocaleDateString('fr-FR'));
 }
 
 export function fmtPeriodePdf(

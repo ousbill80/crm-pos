@@ -105,6 +105,24 @@ test.describe('Impression étiquettes catalogue — flux lot + RBAC', () => {
     expect(produitApres.codeBarresGenere).toBe(true);
   });
 
+  test('DAF imprime depuis la fiche produit', async ({ page, request }) => {
+    await loginAs(page, request, 'demo-daf', `/produits/${produitId}`);
+    await expect(page.getByRole('heading', { name: designation })).toBeVisible();
+
+    const hero = page.locator('header.client-workspace-hero');
+    await hero.getByRole('button', { name: /Imprimer l.étiquette/ }).click();
+
+    const modal = page.getByRole('dialog', { name: 'Imprimer les étiquettes' });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByText('2 500 FCFA')).toBeVisible();
+    await expect(modal.getByText(/2\s*\/\s*000/)).toHaveCount(0);
+
+    const downloadPromise = page.waitForEvent('download');
+    await modal.getByRole('button', { name: 'Imprimer les étiquettes' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe('etiquettes-produits.pdf');
+  });
+
   test('Caissier boutique (hors écriture catalogue) : ni bouton, ni accès API direct', async ({
     page,
     request,
@@ -113,6 +131,9 @@ test.describe('Impression étiquettes catalogue — flux lot + RBAC', () => {
 
     await expect(
       page.getByRole('button', { name: 'Sélection pour étiquettes' }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: /Imprimer l.étiquette/ }),
     ).toHaveCount(0);
 
     const tokenCaissier = await tokenPour('demo-caissier-gsm');

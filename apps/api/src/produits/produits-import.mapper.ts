@@ -8,6 +8,7 @@ export const CHAMPS_IMPORT = [
   'codeBarres',
   'categorie',
   'description',
+  'typeProduit',
   'prixUnitaire',
   'seuilReappro',
   'actif',
@@ -64,6 +65,7 @@ const ALIAS: Record<ChampImport, string[]> = {
     'groupe',
   ],
   description: ['description', 'desc', 'details', 'détails', 'commentaire'],
+  typeProduit: ['typeproduit', 'type', 'nature', 'articleprestation', 'kind'],
   prixUnitaire: [
     'prixunitaire',
     'prix',
@@ -131,8 +133,12 @@ export function normaliserEntete(valeur: string): string {
     .trim();
 }
 
-export function proposerMapping(enTetes: string[]): MappingImport {
+export function proposerMappingDetaille(enTetes: string[]): {
+  mapping: MappingImport;
+  scores: Partial<Record<ChampImport, number>>;
+} {
   const mapping: MappingImport = {};
+  const scores: Partial<Record<ChampImport, number>> = {};
   const pris = new Set<string>();
 
   const meilleur = (
@@ -158,10 +164,34 @@ export function proposerMapping(enTetes: string[]): MappingImport {
     const hit = meilleur(champ);
     if (hit && hit.score >= 60) {
       mapping[champ] = hit.header;
+      scores[champ] = hit.score;
       pris.add(hit.header);
     }
   }
-  return mapping;
+  return { mapping, scores };
+}
+
+export function proposerMapping(enTetes: string[]): MappingImport {
+  return proposerMappingDetaille(enTetes).mapping;
+}
+
+export function scoreMapping(enTetes: string[]): number {
+  return Object.keys(proposerMapping(enTetes)).length;
+}
+
+/** Première ligne qui ressemble à des en-têtes catalogue (ignore un titre). */
+export function detecterLigneEntetes(matrix: string[][]): number {
+  let best = 0;
+  let bestScore = -1;
+  const lim = Math.min(12, matrix.length);
+  for (let i = 0; i < lim; i++) {
+    const score = scoreMapping(matrix[i].map((h) => h.trim()));
+    if (score > bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return bestScore >= 2 ? best : 0;
 }
 
 /** 100 = égalité, 80 = préfixe long, 60 = alias contenu dans l’en-tête. */
@@ -181,7 +211,11 @@ export function scoreAlias(enteteNorm: string, alias: string): number {
 export function parseNombre(valeur: string): number | null {
   const raw = valeur.trim();
   if (!raw) return null;
-  let s = raw.replace(/\s/g, '').replace(/[€$]/g, '');
+  let s = raw
+    .replace(/fcfa/gi, '')
+    .replace(/xof/gi, '')
+    .replace(/\s/g, '')
+    .replace(/[€$]/g, '');
   const hasComma = s.includes(',');
   const hasDot = s.includes('.');
   if (hasComma && hasDot) {
@@ -212,6 +246,44 @@ export function parseBooleen(valeur: string): boolean | null {
   return null;
 }
 
+export function parseTypeProduit(
+  valeur: string,
+): 'ARTICLE' | 'PRESTATION' | null {
+  const n = normaliserEntete(valeur);
+  if (!n) return null;
+  if (
+    [
+      'article',
+      'produit',
+      'stock',
+      'goods',
+      'physical',
+      'marchandise',
+    ].includes(n)
+  ) {
+    return 'ARTICLE';
+  }
+  if (
+    ['prestation', 'service', 'services', 'sansstock', 'immatériel'].includes(n)
+  ) {
+    return 'PRESTATION';
+  }
+  return null;
+}
+
+/** Codes-barres Excel parfois en notation scientifique (3.66E+12). */
+export function normaliserCodeBarres(valeur: string): string {
+  const raw = valeur.trim().replace(/\s/g, '');
+  if (!raw) return '';
+  const sci = raw.match(/^(\d+(?:\.\d+)?)e\+?(\d+)$/i);
+  if (sci) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return String(Math.round(n));
+  }
+  if (/^\d+\.0+$/.test(raw)) return raw.replace(/\.0+$/, '');
+  return raw;
+}
+
 export interface LigneImportParse {
   index: number;
   designation?: string;
@@ -219,6 +291,7 @@ export interface LigneImportParse {
   codeBarres?: string;
   categorie?: string;
   description?: string;
+  typeProduit?: 'ARTICLE' | 'PRESTATION';
   prixUnitaire?: number;
   seuilReappro?: number | null;
   actif?: boolean;
@@ -256,9 +329,10 @@ export function parserLigneCatalogue(
 
   const designation = get('designation');
   const reference = get('reference');
-  const codeBarres = get('codeBarres');
+  const codeBarres = normaliserCodeBarres(get('codeBarres'));
   const categorie = get('categorie');
   const description = get('description');
+  const typeRaw = get('typeProduit');
   const prixRaw = get('prixUnitaire');
   const seuilRaw = get('seuilReappro');
   const actifRaw = get('actif');
@@ -277,6 +351,15 @@ export function parserLigneCatalogue(
   if (description) parsed.description = description.slice(0, 500);
   if (attributs) parsed.attributs = attributs.slice(0, 160);
   if (uniteMesure) parsed.uniteMesure = uniteMesure.slice(0, 16);
+
+  if (typeRaw) {
+    const typeProduit = parseTypeProduit(typeRaw);
+    if (!typeProduit) {
+      avertissements.push(`Type ignoré (« ${typeRaw} ») — article par défaut.`);
+    } else {
+      parsed.typeProduit = typeProduit;
+    }
+  }
 
   if (prixRaw) {
     const prix = parseNombre(prixRaw);

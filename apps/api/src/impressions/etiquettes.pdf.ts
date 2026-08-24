@@ -1,4 +1,5 @@
 import bwipjs from 'bwip-js';
+import { fmtFcfaPdf } from './pdf.util';
 
 // Impression d'étiquettes code-barres en lot (Catalogue). Page dédiée : ne
 // réutilise pas pipePdf (conçu pour des rapports A4 avec bandeau/pied de
@@ -52,7 +53,7 @@ async function genererImageCodeBarres(codeBarres: string): Promise<Buffer> {
 function fmtPrixEtiquette(prixUnitaire: string): string {
   const n = Number(prixUnitaire);
   if (!Number.isFinite(n)) return prixUnitaire;
-  return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+  return fmtFcfaPdf(n);
 }
 
 interface EtiquetteUnitaire {
@@ -181,6 +182,15 @@ function dessinerPlancheA4(
     const hauteurCellule = hauteurUtile / A4_RANGEES;
     const x = A4_MARGE + col * largeurCellule;
     const y = A4_MARGE + row * hauteurCellule;
+
+    // Repère de découpe : une planche A4 se découpe aux ciseaux/massicot,
+    // le pointillé indique la limite exacte de chaque étiquette.
+    doc
+      .dash(1.5, { space: 1.5 })
+      .rect(x, y, largeurCellule, hauteurCellule)
+      .stroke('#94a3b8');
+    doc.undash();
+
     dessinerContenuEtiquette(doc, data, article, image, {
       x: x + 4,
       y: y + 4,

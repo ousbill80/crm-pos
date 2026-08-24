@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Package,
   ShoppingBag,
+  Tag,
   Warehouse,
 } from 'lucide-react';
 import { ModePaiement } from '@caisse-crm/shared';
@@ -15,6 +16,7 @@ import { apiFetch, messageDepuisApi } from '../lib/api';
 import { compresserImage } from '../lib/compress-image';
 import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
+import { EtiquettesModal } from './EtiquettesModal';
 import {
   insightCouverture,
   insightMargeUnitaire,
@@ -924,6 +926,8 @@ export function FicheProduit({
   const mvtsQ = useMouvements(produitId);
   const [onglet, setOnglet] = useState<OngletFiche>('apercu');
   const [edition, setEdition] = useState(false);
+  const [modalEtiquettes, setModalEtiquettes] = useState(false);
+  const [qteEtiquette, setQteEtiquette] = useState(1);
 
   const toggleActif = useMutation({
     mutationFn: (actif: boolean) =>
@@ -1061,6 +1065,20 @@ export function FicheProduit({
               <strong>CMP</strong> {formatFcfa(produit.coutMoyenPondere)}
             </span>
           </div>
+          {peutGerer ? (
+            <div className="client-workspace-hero-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setQteEtiquette(1);
+                  setModalEtiquettes(true);
+                }}
+              >
+                <Tag size={14} /> Imprimer l’étiquette
+              </button>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -1275,6 +1293,29 @@ export function FicheProduit({
           </div>
         )}
       </section>
+
+      {peutGerer ? (
+        <EtiquettesModal
+          open={modalEtiquettes}
+          onClose={() => setModalEtiquettes(false)}
+          articles={[
+            {
+              produitId: produit.id,
+              designation: produit.designation,
+              reference: produit.reference,
+              codeBarres: produit.codeBarres,
+              prixUnitaire: produit.prixUnitaire,
+              quantite: qteEtiquette,
+            },
+          ]}
+          onQuantiteChange={(_id, quantite) => setQteEtiquette(quantite)}
+          onRemove={() => setModalEtiquettes(false)}
+          onImprime={() => {
+            setModalEtiquettes(false);
+            void queryClient.invalidateQueries({ queryKey: ['produits'] });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

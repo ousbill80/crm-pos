@@ -8,6 +8,7 @@ import {
   enTeteSociete,
   fmtDatePdf,
   fmtFcfaPdf,
+  fmtNombrePdf,
   fmtPctPdf,
   fmtPeriodePdf,
   kpiRangee,
@@ -340,7 +341,7 @@ export function dessinerDafPdf(
       valeur:
         data.stocks.couvertureMediane == null
           ? '—'
-          : `${data.stocks.couvertureMediane.toLocaleString('fr-FR')} j`,
+          : `${fmtNombrePdf(data.stocks.couvertureMediane)} j`,
     },
   ]);
   tableauPdf(
@@ -354,7 +355,7 @@ export function dessinerDafPdf(
     ],
     data.stocks.parBoutique.map((b) => [
       b.nomBoutique,
-      b.unites.toLocaleString('fr-FR'),
+      fmtNombrePdf(b.unites),
       fmtFcfaPdf(b.valeur),
       String(b.ruptures),
       String(b.sousSeuil),

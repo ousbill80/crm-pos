@@ -2777,7 +2777,7 @@ a.link-button:hover {
   padding: 12px 16px;
   margin-top: 12px;
   background: var(--surface, #fff);
-  border: 1px solid var(--border, #e2e6ea);
+  border: 1px solid var(--accent);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   font-weight: 600;
@@ -2787,6 +2787,19 @@ a.link-button:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.produit-col-check {
+  width: 44px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.produit-col-check input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .produits-fiche-head {
@@ -2878,6 +2891,426 @@ a.link-button:hover {
   margin: 0;
   font-size: 12.5px;
   color: var(--warning);
+}
+
+.form-hint-success {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--success);
+}
+
+.kpi-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.etiq-modal {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.etiq-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.etiq-qte-commune {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.etiq-qte-commune label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.etiq-qte-commune input {
+  width: 88px;
+}
+
+.etiq-lignes-wrap {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.etiq-lignes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.etiq-lignes th,
+.etiq-lignes td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.etiq-lignes th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+.etiq-lignes tr {
+  cursor: pointer;
+}
+
+.etiq-lignes tr.is-apercu td {
+  background: var(--accent-bg);
+}
+
+.etiq-lignes input[type='number'] {
+  width: 72px;
+}
+
+.etiq-fieldset {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.etiq-fieldset legend {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.etiq-fieldset .checkbox-row {
+  margin: 6px 0;
+}
+
+.etiq-fieldset select {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.etiq-format-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.etiq-format-cards label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--bg);
+}
+
+.etiq-format-cards label.is-active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.etiq-format-cards input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.etiq-format-cards strong {
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.etiq-format-cards span {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.etiq-apercu {
+  position: sticky;
+  top: 0;
+  padding: 14px;
+  background: linear-gradient(180deg, #e8eef3 0%, #dfe6ee 100%);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.etiq-apercu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.etiq-apercu-head h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-h);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.etiq-apercu-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.etiq-apercu-stage {
+  display: flex;
+  justify-content: center;
+  padding: 16px 8px 12px;
+}
+
+.etiq-apercu-label {
+  width: min(100%, 280px);
+  aspect-ratio: 50 / 30;
+  filter: drop-shadow(0 8px 18px rgba(26, 35, 50, 0.16));
+}
+
+.etiq-face {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 12px 8px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 2px;
+  text-align: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.etiq-nom {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.2;
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.etiq-boutique,
+.etiq-ref,
+.etiq-code {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #475569;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.etiq-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #111;
+}
+
+.etiq-boutique.is-placeholder {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+.etiq-prix {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111;
+}
+
+.etiq-barres {
+  display: block;
+  width: 92%;
+  height: 36px;
+  margin: 4px 0 2px;
+}
+
+.etiq-apercu-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.etiq-page-a4 {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 148px);
+  margin: 0 auto 8px;
+  padding: 6px 6px 5px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: var(--shadow);
+  aspect-ratio: 210 / 297;
+  box-sizing: border-box;
+}
+
+.etiq-page-a4-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  gap: 2px;
+  min-height: 0;
+}
+
+.etiq-page-a4-grid span {
+  display: block;
+  background: #e8eef3;
+  border: 1px dashed #94a3b8;
+  min-height: 0;
+}
+
+.etiq-page-a4-grid span.is-on {
+  background: var(--accent);
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+.etiq-page-a4-foot {
+  margin: 5px 0 0;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.etiq-page-a4-foot strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+.etiq-page-a4-foot span {
+  display: block;
+  font-size: 9px;
+  font-weight: 650;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+.etiq-page-rouleau {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.etiq-page-rouleau-band {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.etiq-page-rouleau-band span {
+  width: 36px;
+  height: 22px;
+  background: #fff;
+  border: 1px dashed #94a3b8;
+  border-radius: 2px;
+  opacity: 0.55;
+}
+
+.etiq-page-rouleau-band span.is-on {
+  width: 44px;
+  height: 26px;
+  opacity: 1;
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.etiq-apercu-meta {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  text-align: center;
+}
+
+.etiq-apercu-meta + .etiq-apercu-meta {
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.etiq-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+@media (max-width: 800px) {
+  .etiq-modal {
+    grid-template-columns: 1fr;
+  }
+
+  .etiq-apercu {
+    position: static;
+    order: -1;
+  }
+
+  .etiq-format-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .import-drop {
@@ -3542,6 +3975,13 @@ a.link-button:hover {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-right: 6px;
+}
+
+.client-workspace-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .client-workspace-tabs {

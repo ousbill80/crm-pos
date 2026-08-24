@@ -43,6 +43,8 @@
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NFCReaderUsageDescription</key>
+    <string>Autoriser CaissePOS à lire les tags NFC pour identifier un article.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>
@@ -56,8 +58,6 @@
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your microphone</string>
-    <key>NFCReaderUsageDescription</key>
-    <string>Autoriser CaissePOS à lire les tags NFC pour identifier un article.</string>
     <key>RCTNewArchEnabled</key>
     <true/>
     <key>UILaunchStoryboardName</key>

@@ -192,7 +192,14 @@ function NouvelleCampagneForm({ onSuccess }: { onSuccess?: () => void }) {
   );
 }
 
-function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
+function CampagneItem({
+  campagne,
+  peutGerer,
+}: {
+  campagne: CampagneCrmDto;
+  peutGerer: boolean;
+}) {
+  const queryClient = useQueryClient();
   const [ouvert, setOuvert] = useState(false);
   const { data: contacts, isLoading } = useContactsCampagne(
     ouvert ? campagne.id : null,
@@ -200,6 +207,17 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
   const [exportError, setExportError] = useState<string | null>(null);
   const meta = CANAL_META[campagne.canal];
   const Icon = meta.icon;
+
+  const envoiMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ envoyes: number; canal: string; dateEnvoi: string }>(
+        `/crm/campagnes/${campagne.id}/envoyer`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['crm-campagnes'] });
+    },
+  });
 
   async function exporter() {
     try {
@@ -211,6 +229,17 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
     } catch {
       setExportError('Échec de l’export CSV.');
     }
+  }
+
+  function envoyer() {
+    if (
+      !window.confirm(
+        `Envoyer « ${campagne.nom} » à tous les contacts ciblés ? Cette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
+    envoiMutation.mutate();
   }
 
   return (
@@ -260,8 +289,35 @@ function CampagneItem({ campagne }: { campagne: CampagneCrmDto }) {
         <button type="button" className="btn-secondary" onClick={() => void exporter()}>
           <Download size={14} aria-hidden /> Exporter CSV
         </button>
+        {peutGerer && (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={Boolean(campagne.dateEnvoi) || envoiMutation.isPending}
+            onClick={envoyer}
+          >
+            <Send size={14} aria-hidden />
+            {campagne.dateEnvoi
+              ? 'Déjà envoyée'
+              : envoiMutation.isPending
+                ? 'Envoi en cours…'
+                : 'Envoyer la campagne'}
+          </button>
+        )}
       </div>
       {exportError && <p role="alert">{exportError}</p>}
+      {envoiMutation.isSuccess && (
+        <p className="lead" role="status">
+          Campagne envoyée à {envoiMutation.data.envoyes} contact(s).
+        </p>
+      )}
+      {envoiMutation.isError && (
+        <p role="alert">
+          {envoiMutation.error instanceof Error
+            ? envoiMutation.error.message
+            : "Échec de l'envoi de la campagne."}
+        </p>
+      )}
       {ouvert &&
         (isLoading ? (
           <LoadingState label="Chargement des contacts..." />
@@ -420,7 +476,7 @@ export function CrmCampagnesPage() {
         {campagnesFiltrees.length > 0 && (
           <div className="crm-campagnes-list">
             {campagnesFiltrees.map((c) => (
-              <CampagneItem key={c.id} campagne={c} />
+              <CampagneItem key={c.id} campagne={c} peutGerer={peutGerer} />
             ))}
           </div>
         )}

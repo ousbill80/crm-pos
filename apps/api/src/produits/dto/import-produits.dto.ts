@@ -34,6 +34,10 @@ export class MappingImportProduitsDto {
 
   @IsOptional()
   @IsString()
+  typeProduit?: string | null;
+
+  @IsOptional()
+  @IsString()
   prixUnitaire?: string | null;
 
   @IsOptional()
@@ -78,6 +82,11 @@ export class ApercuImportProduitsDto {
   @IsString()
   @MaxLength(255)
   nomFichier?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nomFeuille?: string;
 
   @IsOptional()
   @IsArray()

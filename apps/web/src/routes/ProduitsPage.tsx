@@ -449,6 +449,8 @@ export function ProduitsPage() {
           produitId,
           designation: produit.designation,
           reference: produit.reference,
+          codeBarres: produit.codeBarres ?? null,
+          prixUnitaire: produit.prixUnitaire,
           quantite,
         };
       })
@@ -512,13 +514,27 @@ export function ProduitsPage() {
             {peutGerer ? (
               <button
                 type="button"
+                className={modeSelectionEtiquettes ? 'btn-primary' : undefined}
                 aria-pressed={modeSelectionEtiquettes}
                 onClick={() => {
-                  setModeSelectionEtiquettes((prev) => !prev);
-                  if (modeSelectionEtiquettes) setSelectionEtiquettes(new Map());
+                  if (modeSelectionEtiquettes) {
+                    setModeSelectionEtiquettes(false);
+                    setSelectionEtiquettes(new Map());
+                    return;
+                  }
+                  setModeSelectionEtiquettes(true);
+                  window.setTimeout(() => {
+                    document.getElementById('produits-table')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  }, 0);
                 }}
               >
-                <Tag size={14} /> Sélection pour étiquettes
+                <Tag size={14} />
+                {modeSelectionEtiquettes
+                  ? 'Annuler la sélection'
+                  : 'Sélection pour étiquettes'}
               </button>
             ) : null}
             {peutGerer ? (
@@ -843,7 +859,11 @@ export function ProduitsPage() {
             </div>
 
             <ListPanel
-              title={`${produitsTries.length} produit(s) — cliquez une ligne pour ouvrir la fiche`}
+              title={
+                modeSelectionEtiquettes
+                  ? `${produitsTries.length} produit(s) — cochez les articles à étiqueter`
+                  : `${produitsTries.length} produit(s) — cliquez une ligne pour ouvrir la fiche`
+              }
               id="produits-table"
             >
               {produitsTries.length === 0 ? (
@@ -880,7 +900,7 @@ export function ProduitsPage() {
                   <thead>
                     <tr>
                       {modeSelectionEtiquettes && (
-                        <th>
+                        <th className="produit-col-check">
                           <input
                             type="checkbox"
                             aria-label="Tout sélectionner (résultats filtrés)"
@@ -953,7 +973,10 @@ export function ProduitsPage() {
                         }}
                       >
                         {modeSelectionEtiquettes && (
-                          <td onClick={(e) => e.stopPropagation()}>
+                          <td
+                            className="produit-col-check"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <input
                               type="checkbox"
                               aria-label={`Sélectionner ${p.designation}`}
@@ -1015,20 +1038,28 @@ export function ProduitsPage() {
         </div>
       )}
 
-      {modeSelectionEtiquettes && selectionEtiquettes.size > 0 && (
+      {modeSelectionEtiquettes && (
         <div className="selection-toolbar" role="toolbar" aria-label="Sélection étiquettes">
-          <span>{selectionEtiquettes.size} article(s) sélectionné(s)</span>
+          <span>
+            {selectionEtiquettes.size === 0
+              ? 'Cochez les articles dans le tableau ci-dessus, puis imprimez.'
+              : `${selectionEtiquettes.size} article(s) sélectionné(s)`}
+          </span>
           <div className="selection-toolbar-actions">
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => setSelectionEtiquettes(new Map())}
+              onClick={() => {
+                setSelectionEtiquettes(new Map());
+                setModeSelectionEtiquettes(false);
+              }}
             >
-              Vider la sélection
+              Annuler
             </button>
             <button
               type="button"
               className="btn-primary"
+              disabled={selectionEtiquettes.size === 0}
               onClick={() => setModalEtiquettes(true)}
             >
               <Tag size={14} /> Imprimer les étiquettes
@@ -1063,6 +1094,7 @@ export function ProduitsPage() {
           open={modalEtiquettes}
           onClose={() => setModalEtiquettes(false)}
           articles={articlesSelectionnes}
+          boutiqueIdDefaut={magasin.boutiqueId}
           onQuantiteChange={(produitId, quantite) =>
             setSelectionEtiquettes((prev) => {
               const next = new Map(prev);
