@@ -67,6 +67,16 @@ export const ui = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  success: {
+    color: colors.ok,
+    backgroundColor: colors.chipOn,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -128,12 +138,14 @@ export const ui = StyleSheet.create({
   kpi: { fontSize: 22, fontWeight: '800', color: colors.text },
   headerActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

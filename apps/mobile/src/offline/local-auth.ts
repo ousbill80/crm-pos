@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import type { RoleLibelle } from '@caisse-crm/shared';
+import { isAccessTokenExpired } from '../session-jwt';
 
 const CACHE_KEY = 'caisse-crm.offline.identifiants';
 const ITERATIONS = 20_000;
@@ -89,8 +90,7 @@ async function deriverMotDePasse(
 /**
  * À appeler après un login principal réussi en ligne (§6.7) — jamais avant
  * une confirmation réseau réelle. `accessToken` est le JWT obtenu à cet
- * instant, réutilisé tel quel (même une fois expiré) pour authentifier les
- * requêtes envoyées pendant une coupure ultérieure.
+ * instant. Il n'est jamais accepté localement au-delà de son expiration.
  */
 export async function cacherIdentifiants(
   login: string,
@@ -133,7 +133,10 @@ export async function verifierIdentifiantsLocal(
     return { ok: false, verrouille: true, verrouJusqua: entree.verrouJusqua };
   }
 
-  if (maintenant - entree.memoriseLe > FENETRE_AUTONOMIE_MS) {
+  if (
+    maintenant - entree.memoriseLe > FENETRE_AUTONOMIE_MS ||
+    isAccessTokenExpired(entree.accessToken)
+  ) {
     return { ok: false, perime: true };
   }
 

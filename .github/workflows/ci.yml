@@ -42,8 +42,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker images
+      - name: Build Docker images (dev)
         run: docker compose build
+
+      - name: Build Docker images (prod)
+        run: |
+          cp .env.prod.example .env.prod.ci
+          sed -i 's/change-me-generate-with-openssl-rand-hex-32/ci-test-secret-not-for-production/g' .env.prod.ci
+          docker compose --env-file .env.prod.ci -f docker-compose.prod.yml build
 
   playwright-e2e:
     runs-on: ubuntu-latest

@@ -343,7 +343,9 @@ export class VentesService {
               remiseFidelite = montantTotal
                 .times(pct)
                 .dividedBy(100)
-                .toDecimalPlaces(2);
+                // FCFA encaissé sans centimes : même arrondi que les clients
+                // web/mobile et les parts de paiement.
+                .toDecimalPlaces(0);
               montantTotal = montantTotal.minus(remiseFidelite);
             }
           }

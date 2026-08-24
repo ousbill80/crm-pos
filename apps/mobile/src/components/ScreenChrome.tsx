@@ -23,6 +23,8 @@ export function ScreenHeader({
           onPress={onBack}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={backLabel}
         >
           <Ionicons name="chevron-back" size={18} color={colors.accent} />
           <Text style={ui.link}>{backLabel}</Text>
@@ -55,6 +57,7 @@ export function IconAction({
     <Pressable
       onPress={onPress}
       style={[ui.iconBtn, { position: 'relative' }]}
+      accessibilityRole="button"
       accessibilityLabel={label}
       hitSlop={4}
     >

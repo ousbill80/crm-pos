@@ -1,0 +1,2 @@
+# Certificats TLS (fullchain.pem + privkey.pem) — ne pas committer.
+# Voir DEPLOIEMENT.md pour Let's Encrypt / certificat interne.

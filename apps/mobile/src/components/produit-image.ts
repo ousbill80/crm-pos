@@ -1,6 +1,5 @@
 import { colors } from '../ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
+import { API_BASE_URL } from '../api-config';
 
 /**
  * URL image produit fiable sur web/mobile.
@@ -24,7 +23,7 @@ export function resolveProduitImageUrl(
       }
       return u;
     }
-    if (u.startsWith('/')) return `${API_BASE}${u}`;
+    if (u.startsWith('/')) return `${API_BASE_URL}${u}`;
     return u;
   }
   return svgPlaceholder(label);

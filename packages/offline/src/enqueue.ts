@@ -1,4 +1,5 @@
 import type { OfflineStore, OutboxMethod, OutboxOp } from './types';
+import { withOutboxLock } from './outbox-lock';
 
 function newOpId(): string {
   try {
@@ -34,8 +35,10 @@ export async function enqueueOp(
     createdAt: new Date().toISOString(),
     ...(partial.resolvesPlaceholder ? { resolvesPlaceholder: partial.resolvesPlaceholder } : {}),
   };
-  const queue = await store.listOutbox();
-  await store.replaceOutbox([...queue, op]);
+  await withOutboxLock(async () => {
+    const queue = await store.listOutbox();
+    await store.replaceOutbox([...queue, op]);
+  });
   return op;
 }
 
@@ -112,6 +115,29 @@ export async function enqueueVenteOp(
     path: `/ventes/sessions/${sessionId}/ventes`,
     method: 'POST',
     body,
+  });
+}
+
+/** Retour/avoir POS idempotent, rejoué à la reconnexion. */
+export async function enqueueRetourOp(
+  store: OfflineStore,
+  sessionId: string,
+  body: {
+    ligneVenteId: string;
+    quantite: number;
+    clientOperationId?: string;
+  },
+): Promise<OutboxOp> {
+  const clientOperationId = body.clientOperationId ?? newOpId();
+  return enqueueOp(store, {
+    id: clientOperationId,
+    path: `/ventes/sessions/${sessionId}/retours`,
+    method: 'POST',
+    body: {
+      ligneVenteId: body.ligneVenteId,
+      quantite: body.quantite,
+      clientOperationId,
+    },
   });
 }
 

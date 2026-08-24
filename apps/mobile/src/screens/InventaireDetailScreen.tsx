@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Platform,
   Pressable,
   Text,
   TextInput,
@@ -110,6 +112,21 @@ export function InventaireDetailScreen({ navigation, route }: Props) {
     await run(() => compterLigne(sessionId, ligne.produitId, qte));
   }
 
+  function confirmer(
+    titre: string,
+    message: string,
+    action: () => void,
+  ) {
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm?.(`${titre}\n\n${message}`)) action();
+      return;
+    }
+    Alert.alert(titre, message, [
+      { text: 'Retour', style: 'cancel' },
+      { text: 'Confirmer', style: 'destructive', onPress: action },
+    ]);
+  }
+
   if (!session) {
     return (
       <View style={ui.center}>
@@ -155,7 +172,13 @@ export function InventaireDetailScreen({ navigation, route }: Props) {
           <Pressable
             style={ui.btnGhost}
             disabled={pending}
-            onPress={() => void run(() => annulerInventaire(sessionId))}
+            onPress={() =>
+              confirmer(
+                'Annuler l’inventaire',
+                'Le comptage en cours sera définitivement abandonné.',
+                () => void run(() => annulerInventaire(sessionId)),
+              )
+            }
           >
             <Text style={[ui.btnGhostText, { color: colors.danger }]}>
               Annuler
@@ -168,7 +191,13 @@ export function InventaireDetailScreen({ navigation, route }: Props) {
         <Pressable
           style={[ui.btn, (pending || progress.n < progress.t) && ui.btnOff]}
           disabled={pending || progress.n < progress.t}
-          onPress={() => void run(() => validerInventaire(sessionId))}
+          onPress={() =>
+            confirmer(
+              'Valider l’inventaire',
+              'Les écarts créeront des mouvements de stock append-only.',
+              () => void run(() => validerInventaire(sessionId)),
+            )
+          }
         >
           <Text style={ui.btnText}>
             Valider l’inventaire

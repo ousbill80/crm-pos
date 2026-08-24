@@ -3,7 +3,10 @@ import { useEffect } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 import { createMemoryStore, setOfflineStore } from '@caisse-crm/offline';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { ChangePasswordScreen } from './src/screens/ChangePasswordScreen';
@@ -79,7 +82,9 @@ export default function App() {
       <StatusBar style="auto" />
       <SessionProvider>
         <NavigationContainer>
-          <Root />
+          <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            <Root />
+          </SafeAreaView>
         </NavigationContainer>
       </SessionProvider>
     </SafeAreaProvider>

@@ -1,0 +1,102 @@
+# Stack production — passerelle unique (SPA + API + WebSocket), DB/API non exposées.
+#
+# Prérequis : copier .env.prod.example → .env.prod et renseigner les secrets.
+#
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# Sauvegarde : COMPOSE_FILE=docker-compose.prod.yml scripts/backup-postgres.sh
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-caisse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-caisse_crm}
+    volumes:
+      - caisse_crm_pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-caisse} -d ${POSTGRES_DB:-caisse_crm}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-caisse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-caisse_crm}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
+      SEED_ON_START: "false"
+      # Origines autorisées (mobile Expo, admin externe). Vide = CORS fermé (web same-origin OK).
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      SMS_GATEWAY_URL: ${SMS_GATEWAY_URL:-}
+      SMS_GATEWAY_TOKEN: ${SMS_GATEWAY_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-0}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      ALERTES_INTERVALLE_MINUTES: ${ALERTES_INTERVALLE_MINUTES:-15}
+      PORT: 3000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+    networks:
+      - backend
+
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.prod
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TLS_ENABLED: ${TLS_ENABLED:-0}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ${TLS_CERTS_DIR:-./deploy/certs}:/etc/nginx/certs:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1/health | grep -q ok || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      - backend
+      - frontend
+
+networks:
+  backend:
+    internal: true
+  frontend:
+
+volumes:
+  caisse_crm_pgdata_prod:

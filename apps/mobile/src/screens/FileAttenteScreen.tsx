@@ -27,6 +27,7 @@ export function FileAttenteScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bloquees = ops.filter((op) => op.blockedAt).length;
 
   const charger = useCallback(async () => {
     const rows = await getOfflineStore().listOutbox();
@@ -58,7 +59,11 @@ export function FileAttenteScreen({ navigation }: Props) {
     <View style={ui.wrap}>
       <ScreenHeader
         title="File hors-ligne"
-        subtitle="Opérations en attente d’envoi — sync auto à la reconnexion (§6.7)."
+        subtitle={
+          bloquees > 0
+            ? `${bloquees} opération(s) refusée(s) à traiter — aucun rejeu automatique.`
+            : 'Opérations en attente d’envoi — sync auto à la reconnexion (§6.7).'
+        }
         onBack={() => navigation.goBack()}
         backLabel="Fermer"
       />
@@ -90,6 +95,12 @@ export function FileAttenteScreen({ navigation }: Props) {
               <Text style={{ fontWeight: '800', color: colors.text }}>
                 {libelleOp(item)}
               </Text>
+              {item.blockedAt ? (
+                <Banner tone="danger">
+                  Refus serveur — opération bloquée, non rejouée
+                  {item.lastError ? ` : ${item.lastError}` : '.'}
+                </Banner>
+              ) : null}
               <Text style={ui.muted}>
                 {new Date(item.createdAt).toLocaleString('fr-FR')}
               </Text>

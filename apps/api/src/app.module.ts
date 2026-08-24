@@ -28,6 +28,16 @@ import { EntrepotsModule } from './entrepots/entrepots.module';
 import { EntrepriseModule } from './entreprise/entreprise.module';
 import { UsersModule } from './users/users.module';
 
+const apiRateLimitConfigure = Number(
+  process.env.API_RATE_LIMIT_PER_MINUTE ?? 600,
+);
+const API_RATE_LIMIT_PER_MINUTE =
+  process.env.NODE_ENV === 'test'
+    ? 100_000
+    : Number.isFinite(apiRateLimitConfigure)
+      ? Math.max(60, apiRateLimitConfigure)
+      : 600;
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -35,11 +45,11 @@ import { UsersModule } from './users/users.module';
     // Rate limiting générique (§6.7) : limite globale généreuse, resserrée
     // spécifiquement sur /auth/login et /auth/change-password via @Throttle.
     // Jest force NODE_ENV=test par défaut ; les suites e2e enchaînent
-    // largement plus de 20 requêtes/minute sur un même process serveur
+    // largement plus de requêtes/minute sur un même process serveur
     // (beforeAll partagé par fichier de test) — on desserre donc la limite
     // globale en test uniquement, jamais en production.
     ThrottlerModule.forRoot([
-      { ttl: 60_000, limit: process.env.NODE_ENV === 'test' ? 100_000 : 20 },
+      { ttl: 60_000, limit: API_RATE_LIMIT_PER_MINUTE },
     ]),
     PrismaModule,
     AuditModule,

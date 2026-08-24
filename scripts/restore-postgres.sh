@@ -17,6 +17,15 @@ set -euo pipefail
 POSTGRES_SERVICE="${POSTGRES_SERVICE:-db}"
 POSTGRES_USER="${POSTGRES_USER:-caisse}"
 POSTGRES_DB_DEFAULT="${POSTGRES_DB:-caisse_crm}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+
+compose() {
+  if [ -n "${COMPOSE_ENV_FILE:-}" ]; then
+    docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" "$@"
+  fi
+}
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <fichier.dump> [--target-db NOM]" >&2
@@ -55,17 +64,17 @@ if [ "$confirmation" != "RESTAURER" ]; then
 fi
 
 filename="$(basename "$BACKUP_FILE")"
-docker compose cp "$BACKUP_FILE" "${POSTGRES_SERVICE}:/tmp/${filename}"
+compose cp "$BACKUP_FILE" "${POSTGRES_SERVICE}:/tmp/${filename}"
 
 # Base cible recréée depuis 'postgres' pour pouvoir DROP/CREATE la base
 # cible sans connexion active dessus (les connexions existantes sont
 # terminées explicitement d'abord).
-docker compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c \
+compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${TARGET_DB}' AND pid <> pg_backend_pid();"
-docker compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${TARGET_DB}\";"
-docker compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${TARGET_DB}\" OWNER \"${POSTGRES_USER}\";"
+compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"${TARGET_DB}\";"
+compose exec -T "$POSTGRES_SERVICE" psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"${TARGET_DB}\" OWNER \"${POSTGRES_USER}\";"
 
-docker compose exec -T "$POSTGRES_SERVICE" pg_restore -U "$POSTGRES_USER" -d "$TARGET_DB" --no-owner --clean --if-exists "/tmp/${filename}"
-docker compose exec -T "$POSTGRES_SERVICE" rm -f "/tmp/${filename}"
+compose exec -T "$POSTGRES_SERVICE" pg_restore -U "$POSTGRES_USER" -d "$TARGET_DB" --no-owner --clean --if-exists "/tmp/${filename}"
+compose exec -T "$POSTGRES_SERVICE" rm -f "/tmp/${filename}"
 
 echo "Restauration terminée sur la base '${TARGET_DB}'."

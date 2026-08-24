@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,6 +14,7 @@ import { initierSortieFonds, listCaisses } from '../api/tresorerie';
 import { Chip, ScreenHeader } from '../components/ScreenChrome';
 import { newClientOperationId } from '../lib/id';
 import { tenterFlushMobile } from '../offline/auto-sync';
+import { estErreurHorsLigne } from '../offline/erreurs';
 import { colors, ui } from '../ui';
 import type { CaisseDto, CircuitStackParamList } from '../navigation/types';
 
@@ -24,7 +25,9 @@ export function NouveauVersementScreen({ navigation }: Props) {
   const [caisseId, setCaisseId] = useState('');
   const [montant, setMontant] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const soumissionEnCours = useRef(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,9 +46,17 @@ export function NouveauVersementScreen({ navigation }: Props) {
   }, []);
 
   async function submit() {
-    if (!caisseId || Number(montant) <= 0) return;
+    if (
+      soumissionEnCours.current ||
+      !caisseId ||
+      Number(montant) <= 0
+    ) {
+      return;
+    }
+    soumissionEnCours.current = true;
     setPending(true);
     setError(null);
+    setInfo(null);
     const clientOperationId = newClientOperationId();
     try {
       const created = await initierSortieFonds({
@@ -55,17 +66,24 @@ export function NouveauVersementScreen({ navigation }: Props) {
       });
       navigation.replace('CircuitDetail', { transactionId: created.id });
     } catch (err) {
-      await enqueueSortieFondsOp(getOfflineStore(), {
-        caisseId,
-        montant: Number(montant),
-        clientOperationId,
-      });
-      void tenterFlushMobile();
-      setError(
-        err instanceof ApiError
-          ? `${err.message} — versement mis en file locale (§6.7).`
-          : 'Hors ligne — versement mis en file locale (§6.7).',
-      );
+      if (estErreurHorsLigne(err)) {
+        await enqueueSortieFondsOp(getOfflineStore(), {
+          caisseId,
+          montant: Number(montant),
+          clientOperationId,
+        });
+        void tenterFlushMobile();
+        setInfo(
+          'Hors ligne — versement enregistré une seule fois dans la file locale (§6.7).',
+        );
+      } else {
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Le versement n'a pas pu être initié.",
+        );
+        soumissionEnCours.current = false;
+      }
     } finally {
       setPending(false);
     }
@@ -110,12 +128,24 @@ export function NouveauVersementScreen({ navigation }: Props) {
         onChangeText={setMontant}
       />
       {error ? <Text style={ui.error}>{error}</Text> : null}
+      {info ? <Text style={ui.success}>{info}</Text> : null}
       <Pressable
-        style={[ui.btn, (pending || !caisseId || Number(montant) <= 0) && ui.btnOff]}
-        disabled={pending || !caisseId || Number(montant) <= 0}
+        style={[
+          ui.btn,
+          (pending ||
+            info !== null ||
+            !caisseId ||
+            Number(montant) <= 0) &&
+            ui.btnOff,
+        ]}
+        disabled={
+          pending || info !== null || !caisseId || Number(montant) <= 0
+        }
         onPress={() => void submit()}
       >
-        <Text style={ui.btnText}>Initier le versement</Text>
+        <Text style={ui.btnText}>
+          {info ? 'Versement en attente de synchronisation' : 'Initier le versement'}
+        </Text>
       </Pressable>
     </View>
   );

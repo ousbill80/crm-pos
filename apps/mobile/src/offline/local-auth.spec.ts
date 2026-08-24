@@ -38,6 +38,11 @@ const INFOS_CACHE = {
   mustChangePassword: false,
 };
 
+function tokenAvecExpiration(exp: number): string {
+  const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
+  return `header.${payload}.signature`;
+}
+
 describe('local-auth — vérification hors ligne des identifiants (§6.7)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -110,6 +115,19 @@ describe('local-auth — vérification hors ligne des identifiants (§6.7)', () 
     await cacherIdentifiants('caissier-b1', 'MotDePasse!123', INFOS_CACHE);
 
     vi.setSystemTime(new Date(Date.now() + FENETRE_AUTONOMIE_MS + 1000));
+
+    const perime = await verifierIdentifiantsLocal(
+      'caissier-b1',
+      'MotDePasse!123',
+    );
+    expect(perime).toEqual({ ok: false, perime: true });
+  }, 20_000);
+
+  it('refuse un JWT expiré même dans la fenêtre locale de 24h', async () => {
+    await cacherIdentifiants('caissier-b1', 'MotDePasse!123', {
+      ...INFOS_CACHE,
+      accessToken: tokenAvecExpiration(Math.floor(Date.now() / 1000) - 1),
+    });
 
     const perime = await verifierIdentifiantsLocal(
       'caissier-b1',

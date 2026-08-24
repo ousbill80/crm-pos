@@ -14,6 +14,12 @@ export interface OutboxOp {
    * ouverte hors ligne puis vendue/clôturée dans le même lot).
    */
   resolvesPlaceholder?: string;
+  /**
+   * Une erreur métier permanente (4xx) ne doit jamais être rejouée en boucle.
+   * L'op reste visible pour traitement humain, mais le flush l'ignore.
+   */
+  blockedAt?: string;
+  lastError?: string;
 }
 
 export interface OfflineStore {

@@ -1,4 +1,16 @@
 import type { OfflineStore, OutboxOp } from './types';
+import { withOutboxLock } from './outbox-lock';
+
+export interface FlushOutboxOptions {
+  /** Retourne false pour une erreur métier permanente qui exige une action humaine. */
+  shouldRetry?: (error: unknown, op: OutboxOp) => boolean;
+  onPermanentFailure?: (error: unknown, op: OutboxOp) => void | Promise<void>;
+}
+
+function messageErreur(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message.slice(0, 300);
+  return 'Opération refusée définitivement par le serveur.';
+}
 
 function extraireIdReel(reponse: unknown): string | null {
   if (reponse && typeof reponse === 'object' && 'id' in reponse) {
@@ -48,6 +60,7 @@ function substituerDansLot(ops: OutboxOp[], placeholder: string, reel: string): 
 export async function flushOutbox(
   store: OfflineStore,
   send: (op: OutboxOp) => Promise<unknown>,
+  options: FlushOutboxOptions = {},
 ): Promise<{ flushed: number; remaining: number }> {
   let queue = await store.listOutbox();
   if (queue.length === 0) return { flushed: 0, remaining: 0 };
@@ -57,6 +70,10 @@ export async function flushOutbox(
   let flushed = 0;
   for (let i = 0; i < queue.length; i += 1) {
     const op = queue[i]!;
+    if (op.blockedAt) {
+      remaining.push(op);
+      continue;
+    }
     try {
       const reponse = await send(op);
       flushed += 1;
@@ -69,13 +86,26 @@ export async function flushOutbox(
           );
         }
       }
-    } catch {
-      remaining.push(op);
+    } catch (error) {
+      const retry = options.shouldRetry?.(error, op) ?? true;
+      if (!retry) await options.onPermanentFailure?.(error, op);
+      remaining.push(
+        retry
+          ? op
+          : {
+              ...op,
+              blockedAt: new Date().toISOString(),
+              lastError: messageErreur(error),
+            },
+      );
     }
   }
-  const latest = await store.listOutbox();
-  const arrivees = latest.filter((op) => !vus.has(op.id));
-  const next = [...remaining, ...arrivees];
-  await store.replaceOutbox(next);
+  const next = await withOutboxLock(async () => {
+    const latest = await store.listOutbox();
+    const arrivees = latest.filter((op) => !vus.has(op.id));
+    const updated = [...remaining, ...arrivees];
+    await store.replaceOutbox(updated);
+    return updated;
+  });
   return { flushed, remaining: next.length };
 }

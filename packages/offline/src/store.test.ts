@@ -135,6 +135,50 @@ describe('flushOutbox — append-only', () => {
     expect((await store.listOutbox()).map((o) => o.id)).toEqual(['v2']);
   });
 
+  it('sérialise les enqueues concurrents sans perdre une opération', async () => {
+    const store = createMemoryStore();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        enqueueVenteOp(store, 'session-1', {
+          clientOperationId: `vente-${index}`,
+          lignes: [],
+        }),
+      ),
+    );
+
+    const queue = await store.listOutbox();
+    expect(queue).toHaveLength(20);
+    expect(new Set(queue.map((item) => item.body.clientOperationId)).size).toBe(20);
+  });
+
+  it('bloque une erreur métier permanente et ne la rejoue plus', async () => {
+    const store = createMemoryStore();
+    await store.replaceOutbox([
+      op({
+        id: 'vente-refusee',
+        path: '/ventes/sessions/s/ventes',
+      }),
+    ]);
+    let appels = 0;
+    const send = async () => {
+      appels += 1;
+      throw new Error('Stock insuffisant');
+    };
+
+    const first = await flushOutbox(store, send, {
+      shouldRetry: () => false,
+    });
+    expect(first).toEqual({ flushed: 0, remaining: 1 });
+    expect((await store.listOutbox())[0]).toMatchObject({
+      id: 'vente-refusee',
+      lastError: 'Stock insuffisant',
+    });
+    expect((await store.listOutbox())[0]?.blockedAt).toBeTruthy();
+
+    await flushOutbox(store, send, { shouldRetry: () => false });
+    expect(appels).toBe(1);
+  });
+
   it('enqueueSortieFondsOp pose un POST /transactions idempotent', async () => {
     const store = createMemoryStore();
     const queued = await enqueueSortieFondsOp(store, {

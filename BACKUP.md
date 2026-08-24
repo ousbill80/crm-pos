@@ -19,6 +19,12 @@ base).
 ## Sauvegarde
 
 ```
+COMPOSE_FILE=docker-compose.prod.yml COMPOSE_ENV_FILE=.env.prod scripts/backup-postgres.sh
+```
+
+En développement (`docker-compose.yml`) :
+
+```
 scripts/backup-postgres.sh
 ```
 

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -81,6 +84,21 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
     }
   }
 
+  function confirmerAction(
+    titre: string,
+    message: string,
+    action: () => void,
+  ) {
+    if (Platform.OS === 'web') {
+      if (globalThis.confirm?.(`${titre}\n\n${message}`)) action();
+      return;
+    }
+    Alert.alert(titre, message, [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Confirmer', style: 'destructive', onPress: action },
+    ]);
+  }
+
   if (!tx) {
     return (
       <View style={ui.center}>
@@ -97,7 +115,11 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
   const type = tx.type as (typeof TypeTransaction)[keyof typeof TypeTransaction];
 
   return (
-    <ScrollView contentContainerStyle={ui.wrap}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView contentContainerStyle={ui.wrap}>
       <ScreenHeader
         title={labelType(tx.type)}
         subtitle={`${new Date(tx.dateHeure).toLocaleString('fr-FR')} · ${tx.caisse?.boutique?.nom ?? '—'} · ${tx.caisse?.libelle ?? tx.caisseId}`}
@@ -121,7 +143,13 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
         <Pressable
           style={ui.btn}
           disabled={pending}
-          onPress={() => void run(() => passerEnTransit(tx.id))}
+          onPress={() =>
+            confirmerAction(
+              'Passer en transit',
+              'Cette transition financière sera journalisée.',
+              () => void run(() => passerEnTransit(tx.id)),
+            )
+          }
         >
           <Text style={ui.btnText}>Passer en transit</Text>
         </Pressable>
@@ -131,7 +159,13 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
         <Pressable
           style={ui.btn}
           disabled={pending}
-          onPress={() => void run(() => receptionner(tx.id))}
+          onPress={() =>
+            confirmerAction(
+              'Réceptionner le versement',
+              `Confirmer la réception de ${formatFcfa(tx.montant)} ?`,
+              () => void run(() => receptionner(tx.id)),
+            )
+          }
         >
           <Text style={ui.btnText}>Réceptionner</Text>
         </Pressable>
@@ -160,7 +194,12 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
             style={ui.btn}
             disabled={pending}
             onPress={() =>
-              void run(() => rapprocher(tx.id, Number(montantRecu)))
+              confirmerAction(
+                'Confirmer le rapprochement',
+                `Montant reçu : ${formatFcfa(Number(montantRecu))}. Cette action peut ouvrir un litige.`,
+                () =>
+                  void run(() => rapprocher(tx.id, Number(montantRecu))),
+              )
             }
           >
             <Text style={ui.btnText}>Confirmer le rapprochement</Text>
@@ -210,11 +249,16 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
             style={[ui.btn, !motif.trim() && ui.btnOff]}
             disabled={pending || !motif.trim()}
             onPress={() =>
-              void run(() =>
-                regulariser(tx.id, {
-                  montantRetenu: Number(montantRetenu),
-                  motif: motif.trim(),
-                }),
+              confirmerAction(
+                'Régulariser le litige',
+                `Montant retenu : ${formatFcfa(Number(montantRetenu))}. La transaction passera à Validée.`,
+                () =>
+                  void run(() =>
+                    regulariser(tx.id, {
+                      montantRetenu: Number(montantRetenu),
+                      motif: motif.trim(),
+                    }),
+                  ),
               )
             }
           >
@@ -222,6 +266,7 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
           </Pressable>
         </View>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

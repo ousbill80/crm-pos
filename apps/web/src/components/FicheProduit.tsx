@@ -1303,7 +1303,7 @@ export function FicheProduit({
               produitId: produit.id,
               designation: produit.designation,
               reference: produit.reference,
-              codeBarres: produit.codeBarres,
+              codeBarres: produit.codeBarres ?? null,
               prixUnitaire: produit.prixUnitaire,
               quantite: qteEtiquette,
             },

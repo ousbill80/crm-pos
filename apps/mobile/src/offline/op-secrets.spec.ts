@@ -45,6 +45,29 @@ describe('op-secrets — mots de passe témoin de la file hors-ligne (§6.7)', (
     });
   });
 
+  it('rehydrate un secret imbriqué sans le persister dans le corps SQLite', async () => {
+    await stasherSecretOp('vente-1', {
+      'derogation.password': 'SecretResponsable!',
+    });
+    const bodyPersistable = {
+      lignes: [{ produitId: 'p1', quantite: 1 }],
+      derogation: {
+        motifs: ['STOCK_INSUFFISANT'],
+        login: 'responsable',
+      },
+    };
+
+    const body = await rehydraterSecretOp('vente-1', bodyPersistable);
+    expect(bodyPersistable).not.toHaveProperty('derogation.password');
+    expect(body).toMatchObject({
+      derogation: {
+        motifs: ['STOCK_INSUFFISANT'],
+        login: 'responsable',
+        password: 'SecretResponsable!',
+      },
+    });
+  });
+
   it('purge un secret après envoi réussi, sans affecter les autres ops en file', async () => {
     await stasherSecretOp('op-1', { temoinPassword: 'a' });
     await stasherSecretOp('op-2', { temoinPassword: 'b' });

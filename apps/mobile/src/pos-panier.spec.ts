@@ -16,6 +16,7 @@ import {
   plafondRemise,
   recuEspecesParDefaut,
   repartitionComplete,
+  remiseFideliteFcfa,
   resteARepartir,
   stockDisponible,
   syntheseEncaissement,
@@ -67,8 +68,26 @@ describe('totaux & remise %', () => {
     expect(plafondRemise(10000)).toBe(2000);
     expect(montantRemiseDepuisPourcent(10000, 10)).toBe(1000);
     expect(montantRemiseDepuisPourcent(10000, 20)).toBe(2000);
-    expect(montantRemiseDepuisPourcent(10000, 25)).toBe(2000);
+    expect(montantRemiseDepuisPourcent(10000, 25)).toBe(2500);
     expect(montantRemiseDepuisPourcent(3200, 10)).toBe(320);
+  });
+
+  it('ne dépasse jamais 20 % par ligne sans dérogation, même avec les arrondis', () => {
+    const panier: LignePanier[] = [
+      { produitId: 'a', designation: 'A', prixUnitaire: '1', quantite: 1, remise: 0 },
+      { produitId: 'b', designation: 'B', prixUnitaire: '99', quantite: 1, remise: 0 },
+      { produitId: 'c', designation: 'C', prixUnitaire: '9900', quantite: 1, remise: 0 },
+    ];
+    const avec = appliquerRemisePanier(panier, 2000);
+    expect(avec[0]?.remise).toBeLessThanOrEqual(0);
+    expect(avec[1]?.remise).toBeLessThanOrEqual(19);
+    expect(avec[2]?.remise).toBeLessThanOrEqual(1980);
+  });
+
+  it('calcule l’avantage fidélité en FCFA entiers comme le serveur', () => {
+    expect(remiseFideliteFcfa(9500, 5)).toBe(475);
+    expect(remiseFideliteFcfa(999, 2.5)).toBe(25);
+    expect(remiseFideliteFcfa(1000, 0)).toBe(0);
   });
 
   it('10 % sur ticket 3200 → net 2880', () => {
@@ -252,6 +271,11 @@ describe('stock — plafond quantité au panier', () => {
   it('stockDisponible ne descend jamais sous zéro', () => {
     expect(stockDisponible(5, 8)).toBe(0);
     expect(stockDisponible(0, 0)).toBe(0);
+  });
+
+  it('soustrait les tickets en attente et les ventes non synchronisées', () => {
+    expect(stockDisponible(10, 2, 3, 4)).toBe(1);
+    expect(stockDisponible(5, 0, 4, 2)).toBe(0);
   });
 
   it('atteintLimiteStock détecte qu’une unité de plus dépasserait le stock', () => {

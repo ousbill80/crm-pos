@@ -133,7 +133,11 @@ export function listerVentesSession(sessionId: string) {
 /** Retour/avoir partiel sur une ligne de vente (§ solde net ESPECES). */
 export function creerRetour(
   sessionId: string,
-  dto: { ligneVenteId: string; quantite: number },
+  dto: {
+    ligneVenteId: string;
+    quantite: number;
+    clientOperationId: string;
+  },
 ) {
   return apiFetch<RetourVenteDto>(`/ventes/sessions/${sessionId}/retours`, {
     method: 'POST',

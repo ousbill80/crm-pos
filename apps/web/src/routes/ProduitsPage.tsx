@@ -442,19 +442,20 @@ export function ProduitsPage() {
   const articlesSelectionnes: ArticleEtiquetteSelection[] = useMemo(() => {
     const parId = new Map(produitsTries.map((p) => [p.id, p]));
     return Array.from(selectionEtiquettes.entries())
-      .map(([produitId, quantite]) => {
+      .flatMap<ArticleEtiquetteSelection>(([produitId, quantite]) => {
         const produit = parId.get(produitId);
-        if (!produit) return null;
-        return {
-          produitId,
-          designation: produit.designation,
-          reference: produit.reference,
-          codeBarres: produit.codeBarres ?? null,
-          prixUnitaire: produit.prixUnitaire,
-          quantite,
-        };
-      })
-      .filter((a): a is ArticleEtiquetteSelection => a !== null);
+        if (!produit) return [];
+        return [
+          {
+            produitId,
+            designation: produit.designation,
+            reference: produit.reference,
+            codeBarres: produit.codeBarres ?? null,
+            prixUnitaire: produit.prixUnitaire,
+            quantite,
+          },
+        ];
+      });
   }, [selectionEtiquettes, produitsTries]);
 
   function resetFiltres() {

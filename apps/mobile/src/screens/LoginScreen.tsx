@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,6 +28,7 @@ import {
 import { colors } from '../ui';
 
 const DEMO_PASSWORD = 'MotDePasse!123';
+const DEMO_LOGIN_ENABLED = __DEV__;
 
 /** Mapping boutique seed (démo locale) — le JWT porte l’id réel après login. */
 const HINT_BOUTIQUE: Partial<Record<string, string>> = {
@@ -47,12 +50,19 @@ const HINT_BOUTIQUE: Partial<Record<string, string>> = {
 
 export function LoginScreen() {
   const { signIn } = useSession();
-  const [login, setLogin] = useState(COMPTES_DEMO.CAISSIER_BOUTIQUE.login);
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [login, setLogin] = useState(
+    DEMO_LOGIN_ENABLED ? COMPTES_DEMO.CAISSIER_BOUTIQUE.login : '',
+  );
+  const [password, setPassword] = useState(
+    DEMO_LOGIN_ENABLED ? DEMO_PASSWORD : '',
+  );
   const [error, setError] = useState<string | null>(null);
   const [infoHorsLigne, setInfoHorsLigne] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const familles = useMemo(() => comptesDemoParFamille(), []);
+  const familles = useMemo(
+    () => (DEMO_LOGIN_ENABLED ? comptesDemoParFamille() : []),
+    [],
+  );
 
   async function tenterConnexionHorsLigne(id: string): Promise<boolean> {
     const resultat = await verifierIdentifiantsLocal(id, password);
@@ -126,10 +136,14 @@ export function LoginScreen() {
   const actif = LISTE_COMPTES_DEMO.find((c) => c.login === login);
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.root}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <ScrollView
+        contentContainerStyle={styles.root}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.glowTop} />
       <View style={styles.hero}>
         <View style={styles.logoDisc}>
@@ -138,7 +152,9 @@ export function LoginScreen() {
         <Text style={styles.brand}>CAISSEPOS</Text>
         <Text style={styles.headline}>Connexion</Text>
         <Text style={styles.lead}>
-          Choisissez un profil (§4) — la boutique / le réseau suivent le compte.
+          {DEMO_LOGIN_ENABLED
+            ? 'Choisissez un profil (§4) — la boutique / le réseau suivent le compte.'
+            : 'Connectez-vous avec votre compte individuel.'}
         </Text>
       </View>
 
@@ -165,7 +181,7 @@ export function LoginScreen() {
           </View>
         ))}
 
-        {actif ? (
+        {DEMO_LOGIN_ENABLED && actif ? (
           <View style={styles.hintBox}>
             <Text style={styles.hintTitle}>{labelProfil(actif.role)}</Text>
             <Text style={styles.hintBody}>{actif.hint}</Text>
@@ -209,7 +225,8 @@ export function LoginScreen() {
           )}
         </Pressable>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

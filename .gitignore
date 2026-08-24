@@ -3,6 +3,7 @@ dist/
 build/
 .env
 .env.local
+.env.prod
 *.log
 .DS_Store
 coverage/
@@ -12,3 +13,6 @@ apps/api/generated/
 .postgres-run/
 .claude/
 /backups/
+deploy/certs/*.pem
+deploy/certs/*.key
+deploy/certs/*.crt

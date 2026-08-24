@@ -36,9 +36,6 @@
       ],
       "expo-secure-store",
       "expo-sqlite"
-    ],
-    "extra": {
-      "apiUrl": "http://localhost:3000"
-    }
+    ]
   }
 }

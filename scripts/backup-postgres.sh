@@ -10,6 +10,8 @@ set -euo pipefail
 #   scripts/backup-postgres.sh
 #
 # Variables d'environnement (alignées sur docker-compose.yml) :
+#   COMPOSE_FILE       Fichier compose (défaut: docker-compose.yml)
+#   COMPOSE_ENV_FILE   Fichier .env pour compose (ex. .env.prod)
 #   POSTGRES_SERVICE   Nom du service docker compose (défaut: db)
 #   POSTGRES_USER       (défaut: caisse)
 #   POSTGRES_DB         (défaut: caisse_crm)
@@ -19,9 +21,18 @@ set -euo pipefail
 POSTGRES_SERVICE="${POSTGRES_SERVICE:-db}"
 POSTGRES_USER="${POSTGRES_USER:-caisse}"
 POSTGRES_DB="${POSTGRES_DB:-caisse_crm}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-${ROOT_DIR}/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
+
+compose() {
+  if [ -n "${COMPOSE_ENV_FILE:-}" ]; then
+    docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" "$@"
+  fi
+}
 
 mkdir -p "$BACKUP_DIR"
 
@@ -30,9 +41,9 @@ filename="${POSTGRES_DB}_${timestamp}.dump"
 target="${BACKUP_DIR}/${filename}"
 
 echo "Sauvegarde de la base '${POSTGRES_DB}' (service ${POSTGRES_SERVICE}) vers ${target}..."
-docker compose exec -T "$POSTGRES_SERVICE" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "/tmp/${filename}"
-docker compose cp "${POSTGRES_SERVICE}:/tmp/${filename}" "$target"
-docker compose exec -T "$POSTGRES_SERVICE" rm -f "/tmp/${filename}"
+compose exec -T "$POSTGRES_SERVICE" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f "/tmp/${filename}"
+compose cp "${POSTGRES_SERVICE}:/tmp/${filename}" "$target"
+compose exec -T "$POSTGRES_SERVICE" rm -f "/tmp/${filename}"
 
 echo "Sauvegarde terminée : ${target} ($(du -h "$target" | cut -f1))"
 

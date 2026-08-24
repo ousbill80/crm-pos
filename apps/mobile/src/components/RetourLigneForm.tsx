@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { enqueueRetourOp, getOfflineStore } from '@caisse-crm/offline';
 import { ApiError } from '../api';
 import { creerRetour, type LigneVenteDto, type RetourVenteDto } from '../api/ventes';
+import { newClientOperationId } from '../lib/id';
+import { tenterFlushMobile } from '../offline/auto-sync';
+import { estErreurHorsLigne } from '../offline/erreurs';
 import { colors, ui } from '../ui';
 
 /**
@@ -38,16 +42,39 @@ export function RetourLigneForm({
     }
     setPending(true);
     setError(null);
+    const clientOperationId = newClientOperationId();
     try {
       const retour = await creerRetour(sessionId, {
         ligneVenteId: ligne.id,
         quantite: q,
+        clientOperationId,
       });
       setOuvert(false);
       setQuantite('1');
       onRetour(retour);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Retour impossible.');
+      if (estErreurHorsLigne(err)) {
+        await enqueueRetourOp(getOfflineStore(), sessionId, {
+          ligneVenteId: ligne.id,
+          quantite: q,
+          clientOperationId,
+        });
+        onRetour({
+          id: clientOperationId,
+          venteId: ligne.venteId,
+          ligneVenteId: ligne.id,
+          quantite: q,
+          montantRembourse: '0',
+          sessionCaisseId: sessionId,
+          utilisateurId: 'offline',
+          dateHeure: new Date().toISOString(),
+        });
+        setOuvert(false);
+        setQuantite('1');
+        void tenterFlushMobile();
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Retour impossible.');
+      }
     } finally {
       setPending(false);
     }

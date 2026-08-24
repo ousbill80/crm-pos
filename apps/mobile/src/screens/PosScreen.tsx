@@ -55,11 +55,15 @@ import {
 } from '../components/DerogationPanel';
 import { newClientOperationId } from '../lib/id';
 import { useRootNavigation } from '../navigation/use-root-navigation';
-import { useOutboxPending } from '../offline/use-outbox-pending';
+import {
+  useOutboxOperations,
+  useOutboxPending,
+} from '../offline/use-outbox-pending';
 import { tenterFlushMobile } from '../offline/auto-sync';
 import { estErreurHorsLigne } from '../offline/erreurs';
 import { verifierIdentifiantsLocal } from '../offline/local-auth';
 import { stasherSecretOp } from '../offline/op-secrets';
+import { quantiteProduitDansVentesOutbox } from '../offline/stock-outbox';
 import {
   formatNumeroAttente,
   hydrateHolds,
@@ -80,7 +84,6 @@ import type {
 } from '../navigation/types';
 import {
   appliquerRemisePanier,
-  atteintLimiteStock,
   modePrincipal,
   MODES_POS,
   montantRemiseDepuisPourcent,
@@ -92,6 +95,7 @@ import {
   REMISE_MAX_RATIO,
   recuEspecesParDefaut,
   repartitionComplete,
+  remiseFideliteFcfa,
   resteARepartir,
   stockDisponible,
   synchroniserPartsAuTotal,
@@ -138,6 +142,16 @@ interface ClotureResultat {
   fondCompte: number;
 }
 
+interface ParametresCrmPos {
+  avantageFideliteArgentPct: number;
+  avantageFideliteOrPct: number;
+}
+
+const PARAMETRES_CRM_DEFAUT: ParametresCrmPos = {
+  avantageFideliteArgentPct: 0,
+  avantageFideliteOrPct: 0,
+};
+
 const CACHE_CATALOG = 'catalog';
 
 type EtapePos = 'commande' | 'paiement' | 'ticket';
@@ -146,6 +160,8 @@ export function PosScreen({ navigation, route }: Props) {
   const root = useRootNavigation();
   const { signOut, user } = useSession();
   const pendingOutbox = useOutboxPending();
+  const { ops: operationsOutbox, refresh: rafraichirOperationsOutbox } =
+    useOutboxOperations();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -166,6 +182,9 @@ export function PosScreen({ navigation, route }: Props) {
   const [remiseSaisie, setRemiseSaisie] = useState('0');
   const [parts, setParts] = useState<PartPaiement[]>(() => partsInitiales(0));
   const [client, setClient] = useState<ClientMini | null>(null);
+  const [parametresCrm, setParametresCrm] = useState<ParametresCrmPos>(
+    PARAMETRES_CRM_DEFAUT,
+  );
   const [pending, setPending] = useState(false);
   const [clotureOn, setClotureOn] = useState(false);
   const [fondCompteCloture, setFondCompteCloture] = useState('0');
@@ -190,15 +209,46 @@ export function PosScreen({ navigation, route }: Props) {
   const panierAvecRemise = useMemo(() => {
     const pct = Number(remiseSaisie) || 0;
     const montant = montantRemiseDepuisPourcent(totalBrut(panier), pct);
-    return appliquerRemisePanier(panier, montant);
-  }, [panier, remiseSaisie]);
-  const total = useMemo(() => totalNet(panierAvecRemise), [panierAvecRemise]);
+    const avecDerogation =
+      pct > REMISE_MAX_RATIO * 100 &&
+      derogation?.login.trim() !== '' &&
+      derogation?.password.trim() !== '';
+    return appliquerRemisePanier(panier, montant, avecDerogation);
+  }, [panier, remiseSaisie, derogation]);
+
+  const stockDisponibleLocal = useCallback(
+    (produit: Produit, quantitePanier: number, tickets = holds) => {
+      if (typeof produit.stock !== 'number') return null;
+      return stockDisponible(
+        produit.stock,
+        quantitePanier,
+        quantiteParquee(tickets, produit.id),
+        quantiteProduitDansVentesOutbox(operationsOutbox, produit.id),
+      );
+    },
+    [holds, operationsOutbox],
+  );
+  const totalAvantFidelite = useMemo(
+    () => totalNet(panierAvecRemise),
+    [panierAvecRemise],
+  );
+  const pctFidelite =
+    client?.fidelite?.niveau === 'OR'
+      ? parametresCrm.avantageFideliteOrPct
+      : client?.fidelite?.niveau === 'ARGENT'
+        ? parametresCrm.avantageFideliteArgentPct
+        : 0;
+  const remiseFidelite = remiseFideliteFcfa(
+    totalAvantFidelite,
+    pctFidelite,
+  );
+  const total = totalAvantFidelite - remiseFidelite;
   const brut = useMemo(() => totalBrut(panier), [panier]);
   const plafondPct = REMISE_MAX_RATIO * 100;
   const remisePct = Number(remiseSaisie) || 0;
   const remiseMontant = useMemo(
-    () => montantRemiseDepuisPourcent(brut, remisePct),
-    [brut, remisePct],
+    () => panierAvecRemise.reduce((somme, ligne) => somme + ligne.remise, 0),
+    [panierAvecRemise],
   );
   const remiseDepasse = remisePct > plafondPct + 1e-9;
   // Un article déjà au panier peut dépasser le stock connu si le catalogue
@@ -208,9 +258,13 @@ export function PosScreen({ navigation, route }: Props) {
     () =>
       panier.some((l) => {
         const p = produits.find((x) => x.id === l.produitId);
-        return typeof p?.stock === 'number' && l.quantite > p.stock;
+        return (
+          p !== undefined &&
+          typeof p.stock === 'number' &&
+          l.quantite > (stockDisponibleLocal(p, 0) ?? 0)
+        );
       }),
-    [panier, produits],
+    [panier, produits, stockDisponibleLocal],
   );
   const chefs = useMemo(
     () => temoins.filter((t) => t.role === 'RESPONSABLE_BOUTIQUE'),
@@ -347,20 +401,34 @@ export function PosScreen({ navigation, route }: Props) {
 
   const chargerCatalogue = useCallback(async (sessionId?: string) => {
     try {
-      const catalog = await apiFetch<Produit[]>('/produits');
+      const [catalog, crm] = await Promise.all([
+        apiFetch<Produit[]>('/produits'),
+        apiFetch<ParametresCrmPos>('/crm/parametres'),
+      ]);
       const actifs = catalog.filter((p) => p.actif !== false);
       setProduits(actifs);
-      await getOfflineStore().setCache(CACHE_CATALOG, { produits: actifs });
+      setParametresCrm(crm);
+      await getOfflineStore().setCache(CACHE_CATALOG, {
+        produits: actifs,
+        parametresCrm: crm,
+      });
       if (sessionId) {
-        await getOfflineStore().setCache(sessionId, { produits: actifs });
+        await getOfflineStore().setCache(sessionId, {
+          produits: actifs,
+          parametresCrm: crm,
+        });
       }
       return actifs;
     } catch {
       const cached = (await getOfflineStore().getCache(CACHE_CATALOG)) as {
         produits?: Produit[];
+        parametresCrm?: ParametresCrmPos;
       } | null;
       if (cached?.produits?.length) {
         setProduits(cached.produits);
+        setParametresCrm(
+          cached.parametresCrm ?? PARAMETRES_CRM_DEFAUT,
+        );
         setInfo('Catalogue local (hors ligne).');
         return cached.produits;
       }
@@ -462,6 +530,7 @@ export function PosScreen({ navigation, route }: Props) {
     if (!caisse) return;
     setPending(true);
     setError(null);
+    const clientOperationId = newClientOperationId();
     try {
       const created = await apiFetch<Session>('/ventes/sessions', {
         method: 'POST',
@@ -470,6 +539,7 @@ export function PosScreen({ navigation, route }: Props) {
           fondInitial: Number(fond) || 0,
           temoinLogin,
           temoinPassword,
+          clientOperationId,
         }),
       });
       setSession(created);
@@ -489,7 +559,7 @@ export function PosScreen({ navigation, route }: Props) {
             caisseId: caisse.id,
             fondInitial: Number(fond) || 0,
             temoinLogin,
-            clientOperationId: newClientOperationId(),
+            clientOperationId,
           },
         );
         await stasherSecretOp(op.id, { temoinPassword });
@@ -520,8 +590,8 @@ export function PosScreen({ navigation, route }: Props) {
     // Jamais dépasser le stock connu, sauf dérogation STOCK_INSUFFISANT déjà
     // renseignée (chef de caisse) — validation finale toujours server-side.
     if (
-      typeof p.stock === 'number' &&
-      atteintLimiteStock(p.stock, dejaAuPanier) &&
+      stockDisponibleLocal(p, dejaAuPanier) !== null &&
+      stockDisponibleLocal(p, dejaAuPanier) === 0 &&
       !stockOverrideActif
     ) {
       setError(
@@ -536,7 +606,7 @@ export function PosScreen({ navigation, route }: Props) {
     const demande = Math.max(1, qteDemandee ?? 1);
     const ajout =
       typeof p.stock === 'number' && !stockOverrideActif
-        ? Math.min(demande, stockDisponible(p.stock, dejaAuPanier))
+        ? Math.min(demande, stockDisponibleLocal(p, dejaAuPanier) ?? 0)
         : demande;
     if (ajout <= 0) return;
     setPanier((prev) => {
@@ -694,7 +764,7 @@ export function PosScreen({ navigation, route }: Props) {
         }
         const stockConnu = typeof p.stock === 'number';
         const dispo = stockConnu
-          ? (p.stock as number) - quantiteParquee(autres, ligne.produitId)
+          ? (stockDisponibleLocal(p, 0, autres) ?? 0)
           : ligne.quantite;
         const quantite = Math.min(ligne.quantite, Math.max(0, dispo));
         if (quantite <= 0) {
@@ -1037,7 +1107,27 @@ export function PosScreen({ navigation, route }: Props) {
       void chargerCatalogue(session.id);
     } catch (err) {
       if (estErreurHorsLigne(err)) {
-        await enqueueVenteOp(getOfflineStore(), session.id, body);
+        const bodyPersistable =
+          derogationValide && derogation
+            ? {
+                ...body,
+                derogation: {
+                  motifs: derogation.motifs,
+                  login: derogation.login,
+                },
+              }
+            : body;
+        const op = await enqueueVenteOp(
+          getOfflineStore(),
+          session.id,
+          bodyPersistable,
+        );
+        if (derogationValide && derogation) {
+          await stasherSecretOp(op.id, {
+            'derogation.password': derogation.password,
+          });
+        }
+        await rafraichirOperationsOutbox();
         setTicket(ticketDepuisPanier(clientOperationId, paiements, true));
         setEtape('ticket');
         setPanier([]);
@@ -1544,7 +1634,7 @@ export function PosScreen({ navigation, route }: Props) {
               const inPanier = panier.find((l) => l.produitId === item.id);
               const stockConnu = typeof item.stock === 'number';
               const dispo = stockConnu
-                ? stockDisponible(item.stock as number, inPanier?.quantite ?? 0)
+                ? stockDisponibleLocal(item, inPanier?.quantite ?? 0)
                 : null;
               const rupture = stockConnu && (dispo as number) <= 0;
               const tuileBloquee = rupture && !stockOverrideActif;
@@ -1693,7 +1783,14 @@ export function PosScreen({ navigation, route }: Props) {
         </View>
         {remisePct > 0 && !remiseDepasse ? (
           <Text style={ui.muted}>
-            {remisePct} % = −{formatFcfa(remiseMontant)} · net {formatFcfa(total)}
+            {remisePct} % = −{formatFcfa(remiseMontant)} · sous-total{' '}
+            {formatFcfa(totalAvantFidelite)}
+          </Text>
+        ) : null}
+        {remiseFidelite > 0 ? (
+          <Text style={ui.muted}>
+            Avantage fidélité {pctFidelite} % = −{formatFcfa(remiseFidelite)} ·
+            net à payer {formatFcfa(total)}
           </Text>
         ) : null}
 

@@ -10,6 +10,24 @@ const STORE_KEY = 'caisse-crm.offline.opSecrets';
 // l'envoi puis purgés dès l'envoi réussi (§6.7 : « jamais journalisé »).
 type SecretsParOp = Record<string, Record<string, string>>;
 
+function injecterSecret(
+  body: Record<string, unknown>,
+  chemin: string,
+  valeur: string,
+): Record<string, unknown> {
+  const [cle, ...suite] = chemin.split('.');
+  if (!cle) return body;
+  if (suite.length === 0) return { ...body, [cle]: valeur };
+  const actuel =
+    body[cle] && typeof body[cle] === 'object' && !Array.isArray(body[cle])
+      ? (body[cle] as Record<string, unknown>)
+      : {};
+  return {
+    ...body,
+    [cle]: injecterSecret(actuel, suite.join('.'), valeur),
+  };
+}
+
 async function lire(): Promise<SecretsParOp> {
   const raw = await SecureStore.getItemAsync(STORE_KEY);
   if (!raw) return {};
@@ -42,7 +60,11 @@ export async function rehydraterSecretOp(
   const secrets = await lire();
   const champs = secrets[opId];
   if (!champs) return body;
-  return { ...body, ...champs };
+  return Object.entries(champs).reduce(
+    (courant, [chemin, valeur]) =>
+      injecterSecret(courant, chemin, valeur),
+    body,
+  );
 }
 
 /** À appeler après l'envoi réussi de l'op — le secret ne doit pas survivre à la synchronisation. */

@@ -19,6 +19,10 @@ export interface ClientMini {
   nom: string;
   prenom: string | null;
   contact: string | null;
+  fidelite?: {
+    niveau: 'BRONZE' | 'ARGENT' | 'OR';
+    pointsCumules?: number;
+  } | null;
 }
 
 export function libelleClient(c: ClientMini) {

@@ -18,7 +18,10 @@ import { RolesGuard } from './guards/roles.guard';
         if (!secret) {
           throw new Error('JWT_SECRET doit être défini (voir apps/api/.env)');
         }
-        return { secret, signOptions: { expiresIn: '8h' } };
+        // Aligné sur la fenêtre d'autonomie POS hors ligne de 24 h (§6.7).
+        // Une durée différente recréerait une session locale impossible à
+        // synchroniser à la reconnexion.
+        return { secret, signOptions: { expiresIn: '24h' } };
       },
     }),
   ],

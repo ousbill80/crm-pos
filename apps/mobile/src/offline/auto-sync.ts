@@ -53,6 +53,17 @@ async function envoyer(
 
 const CLOTURE_SUFFIX = /\/cloture$/;
 
+function erreurSynchronisationRetentable(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return (
+    error.status === 0 ||
+    error.status === 401 ||
+    error.status === 408 ||
+    error.status === 429 ||
+    error.status >= 500
+  );
+}
+
 /**
  * Rehydrate les champs sensibles (mot de passe témoin) stashés hors du
  * corps stocké en file avant l'envoi (§6.7 — jamais journalisés en clair
@@ -114,7 +125,12 @@ export async function tenterFlushMobile(): Promise<{
       arreterRelance();
       return { flushed: 0, remaining: 0 };
     }
-    const result = await flushOutbox(getOfflineStore(), envoyerOp);
+    const result = await flushOutbox(getOfflineStore(), envoyerOp, {
+      shouldRetry: erreurSynchronisationRetentable,
+      onPermanentFailure: async (_error, op) => {
+        await purgerSecretOp(op.id);
+      },
+    });
     if (result.flushed > 0) onFlushed?.();
     if (result.remaining === 0) {
       delai = DELAI_MIN_MS;

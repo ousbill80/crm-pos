@@ -48,18 +48,33 @@ export function totalNet(panier: LignePanier[]): number {
   );
 }
 
+export function remiseFideliteFcfa(totalAvantFidelite: number, pct: number): number {
+  if (totalAvantFidelite <= 0 || pct <= 0) return 0;
+  return Math.min(
+    totalAvantFidelite,
+    arrondiFcfa((totalAvantFidelite * pct) / 100),
+  );
+}
+
 export function plafondRemise(brut: number): number {
   return arrondiFcfa(brut * REMISE_MAX_RATIO);
 }
 
 /**
  * Quantité restant disponible à l'ajout pour un produit, compte tenu de ce
- * qui est déjà au panier. Jamais négative (miroir de `stockDisponible` web,
- * `apps/web/src/routes/PosPage.tsx:2167-2173`, simplifié : pas de réservation
- * hors-ligne/outbox côté mobile).
+ * qui est déjà au panier, réservé dans les tickets en attente et consommé par
+ * les ventes locales non synchronisées. Jamais négative.
  */
-export function stockDisponible(stock: number, quantitePanier: number): number {
-  return Math.max(0, stock - quantitePanier);
+export function stockDisponible(
+  stock: number,
+  quantitePanier: number,
+  quantiteParquee = 0,
+  quantiteOutbox = 0,
+): number {
+  return Math.max(
+    0,
+    stock - quantitePanier - quantiteParquee - quantiteOutbox,
+  );
 }
 
 /**
@@ -71,15 +86,15 @@ export function atteintLimiteStock(stock: number, quantiteActuelle: number): boo
 }
 
 /**
- * Remise saisie en % → montant FCFA.
- * Plafonnée à 20 % du brut (serveur refuse au-delà sans dérogation).
+ * Remise saisie en % → montant FCFA. Le montant demandé n'est pas tronqué :
+ * au-delà de 20 %, l'UI exige une dérogation et le serveur la vérifie.
  */
 export function montantRemiseDepuisPourcent(
   brut: number,
   pourcent: number,
 ): number {
   if (brut <= 0 || pourcent <= 0) return 0;
-  const pct = Math.min(Math.max(0, pourcent), REMISE_MAX_RATIO * 100);
+  const pct = Math.max(0, pourcent);
   return arrondiFcfa((brut * pct) / 100);
 }
 
@@ -87,20 +102,27 @@ export function montantRemiseDepuisPourcent(
 export function appliquerRemisePanier(
   panier: LignePanier[],
   remiseTotale: number,
+  autoriserDepassement = false,
 ): LignePanier[] {
   const brut = totalBrut(panier);
   if (remiseTotale <= 0 || brut <= 0) {
     return panier.map((l) => ({ ...l, remise: 0 }));
   }
   const plafond = Math.min(arrondiFcfa(remiseTotale), brut);
-  let cumul = 0;
+  let reste = plafond;
   return panier.map((l, i) => {
-    if (i === panier.length - 1) {
-      return { ...l, remise: Math.max(0, plafond - cumul) };
-    }
-    const part = arrondiFcfa((brutLigne(l) / brut) * plafond);
-    cumul += part;
-    return { ...l, remise: part };
+    const brutDeLigne = brutLigne(l);
+    const cible =
+      i === panier.length - 1
+        ? reste
+        : arrondiFcfa((brutDeLigne / brut) * plafond);
+    const maxSansDerogation = Math.floor(brutDeLigne * REMISE_MAX_RATIO);
+    const remise = Math.max(
+      0,
+      Math.min(cible, autoriserDepassement ? brutDeLigne : maxSansDerogation),
+    );
+    reste -= remise;
+    return { ...l, remise };
   });
 }
 

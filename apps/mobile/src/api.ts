@@ -2,9 +2,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
+import { API_BASE_URL } from './api-config';
 
 export class ApiError extends Error {
   status: number;
@@ -13,6 +11,33 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.code = code;
+  }
+}
+
+const API_TIMEOUT_MS = 25_000;
+
+async function fetchAvecTimeout(
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const signalExterne = init.signal;
+  const propagerAbort = () => controller.abort();
+  signalExterne?.addEventListener('abort', propagerAbort, { once: true });
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ApiError(
+        0,
+        'Délai API dépassé — vérifiez la connexion puis réessayez.',
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signalExterne?.removeEventListener('abort', propagerAbort);
   }
 }
 
@@ -55,7 +80,7 @@ function parseErrorBody(text: string): { message: string; code?: string } {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetchAvecTimeout(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -80,7 +105,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
  * (document réel, pas capture d’écran).
  */
 export async function apiPrintPdf(path: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetchAvecTimeout(`${API_BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -145,7 +170,7 @@ export async function apiDownloadPdf(
   path: string,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetchAvecTimeout(`${API_BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {

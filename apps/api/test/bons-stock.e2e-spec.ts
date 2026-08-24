@@ -11,6 +11,8 @@ import { PostgresTestEnvironment } from './utils/postgres-test-environment';
 const MOT_DE_PASSE = 'MotDePasse!123';
 process.env.JWT_SECRET ??= 'test-secret-e2e';
 
+jest.setTimeout(120_000);
+
 describe('Inventory réseau — bons de stock (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;

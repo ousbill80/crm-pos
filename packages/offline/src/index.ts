@@ -5,6 +5,7 @@ export { flushOutbox } from './flush';
 export {
   enqueueOp,
   enqueueVenteOp,
+  enqueueRetourOp,
   enqueueSortieFondsOp,
   enqueueReservationOp,
   enqueueLiberationOp,
