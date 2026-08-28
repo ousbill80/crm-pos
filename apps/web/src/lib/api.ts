@@ -29,11 +29,12 @@ export function setMustChangePasswordListener(listener: (() => void) | null) {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
+  const isFormData = init?.body instanceof FormData;
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
@@ -149,6 +150,44 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Ouvre un PDF authentifié et déclenche la boîte d’impression navigateur. */
+export async function apiPrintPdf(path: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body || res.statusText);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!win) {
+    URL.revokeObjectURL(url);
+    throw new Error(
+      'Fenêtre bloquée — autorisez les pop-ups pour imprimer le devis.',
+    );
+  }
+  const revoke = () => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  };
+  // Chrome charge le PDF viewer de façon asynchrone
+  win.addEventListener('load', () => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      /* viewer PDF natif : l’utilisateur imprime via Ctrl/Cmd+P */
+    }
+  });
+  window.setTimeout(revoke, 120_000);
 }
 
 // Variante POST + corps JSON (ex. impression d'étiquettes : liste

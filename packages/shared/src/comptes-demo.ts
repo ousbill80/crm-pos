@@ -34,6 +34,30 @@ export const COMPTES_DEMO: Record<RoleLibelle, CompteDemo> = {
     libelleCourt: 'DAF',
     hint: 'Finance · validation niveau 2',
   },
+  ACHATS: {
+    login: 'demo-achats',
+    role: RoleLibelle.ACHATS,
+    libelleCourt: 'Achats',
+    hint: 'Fournisseurs · demandes · commandes',
+  },
+  LOGISTIQUE_TRANSIT_DOUANE: {
+    login: 'demo-logistique',
+    role: RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+    libelleCourt: 'Logistique',
+    hint: 'Transit · douane · réception',
+  },
+  QUALITE_STOCKS: {
+    login: 'demo-qualite',
+    role: RoleLibelle.QUALITE_STOCKS,
+    libelleCourt: 'Qualité',
+    hint: 'Contrôle qualité · stocks',
+  },
+  RAF_COMPTABLE: {
+    login: 'demo-raf',
+    role: RoleLibelle.RAF_COMPTABLE,
+    libelleCourt: 'RAF',
+    hint: 'Factures · comptabilité',
+  },
   CAISSIER_CENTRAL: {
     login: 'demo-central',
     role: RoleLibelle.CAISSIER_CENTRAL,
@@ -84,9 +108,7 @@ export const COMPTES_DEMO: Record<RoleLibelle, CompteDemo> = {
   },
 };
 
-export const LISTE_COMPTES_DEMO: CompteDemo[] = LISTE_PROFILS.map(
-  (p) => COMPTES_DEMO[p.role],
-);
+export const LISTE_COMPTES_DEMO: CompteDemo[] = LISTE_PROFILS.map((p) => COMPTES_DEMO[p.role]);
 
 export function comptesDemoParFamille(): Array<{
   famille: FamilleProfil;
@@ -96,6 +118,8 @@ export function comptesDemoParFamille(): Array<{
   const ordre: FamilleProfil[] = [
     FAMILLE_PROFIL.DIRECTION,
     FAMILLE_PROFIL.TRESORERIE,
+    FAMILLE_PROFIL.APPROVISIONNEMENT,
+    FAMILLE_PROFIL.COMPTABILITE,
     FAMILLE_PROFIL.ZONE,
     FAMILLE_PROFIL.BOUTIQUE,
     FAMILLE_PROFIL.SUPPORT,
@@ -103,8 +127,6 @@ export function comptesDemoParFamille(): Array<{
   return ordre.map((famille) => ({
     famille,
     libelle: FAMILLE_PROFIL_LIBELLES[famille],
-    comptes: LISTE_COMPTES_DEMO.filter(
-      (c) => PROFILS[c.role].famille === famille,
-    ),
+    comptes: LISTE_COMPTES_DEMO.filter((c) => PROFILS[c.role].famille === famille),
   }));
 }

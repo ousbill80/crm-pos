@@ -272,6 +272,10 @@ export interface ProduitDto {
   strategieSortie?: 'FIFO' | 'FEFO';
   attributs?: string | null;
   imageUrl?: string | null;
+  prixWeb?: string | null;
+  visibleWeb?: boolean;
+  slug?: string | null;
+  tauxTva?: string | null;
 }
 
 export interface ProduitsSyntheseDto {
@@ -675,12 +679,22 @@ export interface CommandeAchatDto {
   fournisseur: { id: string; nom: string; actif: boolean };
   statut:
     | 'BROUILLON'
+    | 'SOUMISE_APPROBATION'
+    | 'APPROUVEE'
+    | 'REJETEE'
+    | 'EN_PRODUCTION'
+    | 'EXPEDIEE'
+    | 'EN_TRANSIT'
+    | 'EN_DOUANE'
+    | 'DEDOUANEE'
     | 'CONFIRMEE'
     | 'PARTIELLEMENT_RECEPTIONNEE'
     | 'RECEPTIONNEE'
     | 'CLOTUREE'
     | 'ANNULEE';
   notes: string | null;
+  devise?: string;
+  proformaReference?: string | null;
   dateCommande: string;
   dateConfirmation: string | null;
   dateCloture: string | null;
@@ -714,21 +728,38 @@ export interface FactureFournisseurDto {
   fournisseurId: string;
   fournisseur: { id: string; nom: string };
   statut: 'BROUILLON' | 'COMPTABILISEE' | 'PARTIELLEMENT_PAYEE' | 'PAYEE' | 'ANNULEE';
+  statutRapprochement?:
+    | 'A_RAPPROCHER'
+    | 'RAPPROCHEE'
+    | 'LITIGE'
+    | 'EXCEPTEE'
+    | string;
+  typeDocument?: 'FACTURE' | 'AVOIR' | string;
+  clientOperationId?: string | null;
   dateFacture: string;
+  dateDocument?: string | null;
   dateEcheance: string | null;
   notes: string | null;
+  devise?: string;
   montant: string;
+  totalHt?: string | null;
+  totalTaxes?: string | null;
+  totalRetenues?: string | null;
+  totalTtc?: string | null;
+  netAPayer?: string | null;
   montantPaye: string;
   resteAPayer: string;
   createur?: { id: string; nom: string; prenom: string } | null;
   lignes: Array<{
     id: string;
-    receptionId: string;
-    produit: { id: string; designation: string; reference: string | null };
+    receptionId: string | null;
+    ligneCommandeId?: string | null;
+    ligneQualiteId?: string | null;
+    produit: { id: string; designation: string; reference: string | null } | null;
     quantite: number;
     prixUnitaire: string;
     montant: string;
-    dateReception?: string;
+    dateReception?: string | null;
     reference?: string | null;
     commande?: { id: string; numero: string } | null;
   }>;

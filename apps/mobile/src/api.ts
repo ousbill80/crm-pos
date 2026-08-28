@@ -100,6 +100,25 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return (await res.json()) as T;
 }
 
+/** Envoi multipart authentifié avec le même timeout que les appels JSON. */
+export async function apiFetchMultipart<T>(
+  path: string,
+  form: FormData,
+): Promise<T> {
+  const res = await fetchAvecTimeout(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const text = (await res.text()) || res.statusText;
+    const { message, code } = parseErrorBody(text);
+    if (res.status === 401) onUnauthorized?.();
+    throw new ApiError(res.status, message, code);
+  }
+  return (await res.json()) as T;
+}
+
 /**
  * Télécharge un PDF authentifié puis ouvre le dialogue d’impression
  * (document réel, pas capture d’écran).

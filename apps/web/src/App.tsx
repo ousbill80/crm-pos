@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { PwaHost } from './components/PwaHost';
 import { AlertesPage } from './routes/AlertesPage';
 import { AuditPage } from './routes/AuditPage';
 import { ControleCoherencePage } from './routes/ControleCoherencePage';
@@ -44,15 +45,29 @@ import { VentesTicketsPage } from './routes/VentesTicketsPage';
 import { VentesReportingPage } from './routes/VentesReportingPage';
 import { DevisPage } from './routes/DevisPage';
 import { DevisDetailPage } from './routes/DevisDetailPage';
+import { FacturesClientPage } from './routes/FacturesClientPage';
+import { FactureClientDetailPage } from './routes/FactureClientDetailPage';
+import CommandesWebPage from './routes/CommandesWebPage';
+import CommandeWebDetailPage from './routes/CommandeWebDetailPage';
+import PosCommandeWebScanPage from './routes/PosCommandeWebScanPage';
+import ParametresShopPage from './routes/ParametresShopPage';
+import ZonesLivraisonPage from './routes/ZonesLivraisonPage';
 import { CrmPilotagePage } from './routes/CrmPilotagePage';
 import { CrmParametresPage } from './routes/CrmParametresPage';
 import { BordereauxPage, ReceptionCentralePage } from './routes/TresorerieFilesPage';
+import { P2pPlanningPage } from './routes/P2pPlanningPage';
+import { P2pReceiptsPage } from './routes/P2pReceiptsPage';
+import { P2pReceiptDetailPage } from './routes/P2pReceiptDetailPage';
+import { P2pAccountingPage } from './routes/P2pAccountingPage';
+import { AccountingAiPage } from './routes/AccountingAiPage';
 import './App.css';
 import './pos-screen.css';
 
 function App() {
   return (
-    <Routes>
+    <>
+      <PwaHost />
+      <Routes>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
@@ -67,6 +82,19 @@ function App() {
         <Route path="/ventes/reporting" element={<VentesReportingPage />} />
         <Route path="/ventes/devis" element={<DevisPage />} />
         <Route path="/ventes/devis/:devisId" element={<DevisDetailPage />} />
+        <Route path="/ventes/factures" element={<FacturesClientPage />} />
+        <Route path="/ventes/factures/:factureId" element={<FactureClientDetailPage />} />
+        <Route path="/ventes/commandes-web" element={<CommandesWebPage />} />
+        <Route
+          path="/ventes/commandes-web/:commandeId"
+          element={<CommandeWebDetailPage />}
+        />
+        <Route
+          path="/ventes/commandes-web-scan"
+          element={<PosCommandeWebScanPage />}
+        />
+        <Route path="/ventes/parametres-shop" element={<ParametresShopPage />} />
+        <Route path="/ventes/zones-livraison" element={<ZonesLivraisonPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/transactions/:transactionId" element={<TransactionDetailPage />} />
         <Route path="/caisses" element={<CaissesPage />} />
@@ -95,8 +123,14 @@ function App() {
         <Route path="/fournisseurs/:fournisseurId" element={<FournisseurDetailPage />} />
         <Route path="/achats/commandes" element={<CommandesAchatsPage />} />
         <Route path="/achats/commandes/:commandeId" element={<CommandeAchatDetailPage />} />
+        <Route path="/achats/planning" element={<P2pPlanningPage />} />
+        <Route path="/achats/consultations" element={<P2pPlanningPage />} />
+        <Route path="/achats/receptions" element={<P2pReceiptsPage />} />
+        <Route path="/achats/receptions/:receptionId" element={<P2pReceiptDetailPage />} />
         <Route path="/achats/factures" element={<FacturesFournisseurPage />} />
         <Route path="/achats/factures/:factureId" element={<FactureFournisseurDetailPage />} />
+        <Route path="/finance/comptabilite" element={<P2pAccountingPage />} />
+        <Route path="/finance/accounting-ai" element={<AccountingAiPage />} />
         <Route path="/entreprise" element={<EntreprisePage />} />
         <Route path="/utilisateurs" element={<UtilisateursPage />} />
         <Route path="/utilisateurs/:userId" element={<UtilisateurDetailPage />} />
@@ -107,6 +141,7 @@ function App() {
         <Route path="/pos" element={<PosPage />} />
       </Route>
     </Routes>
+    </>
   );
 }
 

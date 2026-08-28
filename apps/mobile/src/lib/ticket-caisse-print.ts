@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import * as Print from 'expo-print';
-import { ModePaiement } from '@caisse-crm/shared';
+import { ENSEIGNE, ModePaiement } from '@caisse-crm/shared';
 import { formatFcfa } from '../circuit/actions';
 import { MODES_POS } from '../pos-panier';
 import type { TicketVenteData } from '../components/PosTicketRecu';
@@ -86,7 +86,6 @@ export function buildTicketCaisseHtml(params: {
         </table>`
       : '';
 
-  const raison = societe?.raisonSociale?.trim() || 'CaissePOS';
   const date = new Date(ticket.dateVente).toLocaleString('fr-FR');
   const idCourt = ticket.id.slice(0, 8).toUpperCase();
 
@@ -95,6 +94,11 @@ export function buildTicketCaisseHtml(params: {
 <head>
   <meta charset="utf-8" />
   <title>Ticket ${esc(idCourt)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap"
+    rel="stylesheet"
+  />
   <style>
     @page { size: 72mm auto; margin: 2mm; }
     * { box-sizing: border-box; }
@@ -116,11 +120,21 @@ export function buildTicketCaisseHtml(params: {
       padding: 4mm 3mm 8mm;
     }
     .center { text-align: center; }
-    .brand {
-      font-size: 15px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .logo { text-align: center; line-height: 1; margin: 0 0 6px; }
+    .logo-major {
+      display: block;
+      font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+      font-size: 28px;
+      letter-spacing: 0.12em;
+      color: #000;
+    }
+    .logo-auto {
+      display: block;
+      font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.32em;
+      color: #000;
+      margin-top: 3px;
     }
     .shop { font-weight: 700; margin-top: 2px; }
     .addr { font-size: 11px; color: #222; margin: 1px 0; }
@@ -166,7 +180,10 @@ export function buildTicketCaisseHtml(params: {
 </head>
 <body>
   <div class="ticket">
-    <div class="center brand">${esc(raison)}</div>
+    <div class="logo" aria-label="${esc(ENSEIGNE.nom)}">
+      <span class="logo-major">${esc(ENSEIGNE.ligne1)}</span>
+      <span class="logo-auto">${esc(ENSEIGNE.ligne2)}</span>
+    </div>
     ${boutiqueNom ? `<div class="center shop">${esc(boutiqueNom)}</div>` : ''}
     ${
       societe?.adresse

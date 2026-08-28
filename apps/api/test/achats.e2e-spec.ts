@@ -58,8 +58,29 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     return { Authorization: `Bearer ${token}` };
   }
 
+  async function confirmerCommandeP2p(commandeId: string, saisieToken: string) {
+    await request(app.getHttpServer())
+      .post(`/achats/commandes/${commandeId}/soumettre`)
+      .set(auth(saisieToken))
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/achats/commandes/${commandeId}/approuver`)
+      .set(auth(tokens.daf))
+      .expect(201);
+    return request(app.getHttpServer())
+      .post(`/achats/commandes/${commandeId}/confirmer`)
+      .set(auth(tokens.daf))
+      .expect(201);
+  }
+
   beforeAll(async () => {
     await env.start();
+    await env.prisma.societe.create({
+      data: {
+        raisonSociale: 'Société Achats e2e',
+        adresse: 'Abidjan',
+      },
+    });
     const zone = await env.prisma.zone.create({
       data: { nomZone: 'Zone Achats' },
     });
@@ -108,6 +129,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     entrepotId = quai.id;
 
     await creerUtilisateur('respsi-achats', 'RESPONSABLE_SI', null, 1);
+    await creerUtilisateur('achats-achats', 'ACHATS', null, 2);
     await creerUtilisateur('daf-achats', 'DAF', null, 1);
     await creerUtilisateur('central-achats', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur(
@@ -150,6 +172,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     await app.init();
 
     tokens.respsi = await login('respsi-achats');
+    tokens.achats = await login('achats-achats');
     tokens.daf = await login('daf-achats');
     tokens.central = await login('central-achats');
     tokens.caissier = await login('caissier-achats');
@@ -214,10 +237,19 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       .expect(403);
   });
 
-  it('autorise le DAF à créer et confirmer une commande', async () => {
-    const created = await request(app.getHttpServer())
+  it('sépare la saisie ACHATS de l’approbation DAF', async () => {
+    await request(app.getHttpServer())
       .post('/achats/commandes')
       .set(auth(tokens.daf))
+      .send({
+        fournisseurId,
+        lignes: [{ produitId, quantite: 2, prixUnitaire: 800 }],
+      })
+      .expect(403);
+
+    const created = await request(app.getHttpServer())
+      .post('/achats/commandes')
+      .set(auth(tokens.achats))
       .send({
         fournisseurId,
         lignes: [{ produitId, quantite: 2, prixUnitaire: 800 }],
@@ -226,14 +258,16 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     const commande = created.body as { id: string; statut: string };
     expect(commande.statut).toBe('BROUILLON');
 
-    const confirmee = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/achats/commandes/${commande.id}/confirmer`)
       .set(auth(tokens.daf))
-      .expect(201);
+      .expect(400);
+
+    const confirmee = await confirmerCommandeP2p(commande.id, tokens.achats);
     expect((confirmee.body as { statut: string }).statut).toBe('CONFIRMEE');
   });
 
-  it('refuse la réception et l’annulation hors machine à états, puis déroule le cycle complet', async () => {
+  it('refuse les transitions invalides et le paiement direct hors workflow P2P', async () => {
     const created = await request(app.getHttpServer())
       .post('/achats/commandes')
       .set(auth(tokens.respsi))
@@ -262,10 +296,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       })
       .expect(400);
 
-    const confirmee = await request(app.getHttpServer())
-      .post(`/achats/commandes/${commande.id}/confirmer`)
-      .set(auth(tokens.respsi))
-      .expect(201);
+    const confirmee = await confirmerCommandeP2p(commande.id, tokens.respsi);
     expect((confirmee.body as { statut: string }).statut).toBe('CONFIRMEE');
 
     const auditConfirm = await env.prisma.journalAudit.findFirst({
@@ -400,13 +431,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       .post(`/achats/factures/${factureId}/paiements`)
       .set(auth(tokens.daf))
       .send({ montant: 100, mode: 'VIREMENT' })
-      .expect(400);
-
-    const compta = await request(app.getHttpServer())
-      .post(`/achats/factures/${factureId}/comptabiliser`)
-      .set(auth(tokens.daf))
-      .expect(201);
-    expect((compta.body as { statut: string }).statut).toBe('COMPTABILISEE');
+      .expect(403);
 
     await request(app.getHttpServer())
       .post(`/achats/factures/${factureId}/paiements`)
@@ -418,29 +443,11 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       .set(auth(tokens.caissier))
       .send({ montant: 1000, mode: 'VIREMENT' })
       .expect(403);
-
-    const partielPaye = await request(app.getHttpServer())
-      .post(`/achats/factures/${factureId}/paiements`)
-      .set(auth(tokens.daf))
-      .send({ montant: 2000, mode: 'VIREMENT', reference: 'VIR-1' })
-      .expect(201);
-    expect((partielPaye.body as { statut: string }).statut).toBe(
-      'PARTIELLEMENT_PAYEE',
-    );
-
     await request(app.getHttpServer())
       .post(`/achats/factures/${factureId}/paiements`)
       .set(auth(tokens.central))
-      .send({ montant: 999999, mode: 'ESPECES' })
-      .expect(400);
-
-    const solde = await request(app.getHttpServer())
-      .post(`/achats/factures/${factureId}/paiements`)
-      .set(auth(tokens.central))
-      .send({ montant: 4 * 900 + 6 * 950 - 2000, mode: 'ESPECES' })
-      .expect(201);
-    expect((solde.body as { statut: string }).statut).toBe('PAYEE');
-    expect(Number((solde.body as { resteAPayer: string }).resteAPayer)).toBe(0);
+      .send({ montant: 1000, mode: 'VIREMENT' })
+      .expect(403);
 
     const synthese = await request(app.getHttpServer())
       .get('/fournisseurs/synthese')
@@ -456,7 +463,7 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     expect((cloturee.body as { statut: string }).statut).toBe('CLOTUREE');
   });
 
-  it('autorise RESPONSABLE_BOUTIQUE à créer et confirmer une commande de sa boutique', async () => {
+  it('autorise RESPONSABLE_BOUTIQUE à créer, mais réserve la confirmation au DAF', async () => {
     const created = await request(app.getHttpServer())
       .post('/achats/commandes')
       .set(auth(tokens.respboutique))
@@ -469,6 +476,12 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/achats/commandes/${id}/confirmer`)
       .set(auth(tokens.respboutique))
-      .expect(201);
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`/achats/commandes/${id}/approuver`)
+      .set(auth(tokens.respboutique))
+      .expect(403);
+    const confirmee = await confirmerCommandeP2p(id, tokens.respboutique);
+    expect((confirmee.body as { statut: string }).statut).toBe('CONFIRMEE');
   });
 });

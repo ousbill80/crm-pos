@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Pencil,
   Phone,
+  Receipt,
   RefreshCw,
   ShoppingBag,
   User,
@@ -24,6 +25,11 @@ import {
 } from '@caisse-crm/shared';
 import { libellePaiements } from '../lib/paiement-vente';
 import { badgeDevis, STATUT_DEVIS, type StatutDevis } from '../lib/devis-ui';
+import {
+  badgeFacture,
+  STATUT_FACTURE,
+  type StatutFactureClient,
+} from '../lib/facture-client-ui';
 import { apiFetch } from '../lib/api';
 import { LoadingState } from './LoadingState';
 import { EmptyState } from './PageChrome';
@@ -60,6 +66,7 @@ export type OngletFicheClient =
   | 'identite'
   | 'achats'
   | 'devis'
+  | 'factures'
   | 'fidelite'
   | 'interactions';
 
@@ -611,6 +618,83 @@ function DevisSection({ clientId }: { clientId: string }) {
   );
 }
 
+interface FactureClientItem {
+  id: string;
+  numero: string;
+  statut: string;
+  montantTtc: string;
+  solde: string;
+  createdAt: string;
+  lignes: unknown[];
+}
+
+function FacturesSection({ clientId }: { clientId: string }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['factures-client', 'client', clientId],
+    queryFn: () =>
+      apiFetch<FactureClientItem[]>(
+        `/factures-client?clientId=${encodeURIComponent(clientId)}`,
+      ),
+  });
+
+  if (isLoading) return <LoadingState label="Chargement des factures…" />;
+  if (isError) {
+    return (
+      <p role="alert">
+        Impossible de charger les factures (droits lecture facture requis).
+      </p>
+    );
+  }
+  if (!data || data.length === 0) {
+    return (
+      <EmptyState
+        title="Aucune facture"
+        description="Créez une facture B2B depuis Ventes → Factures clients, ou transformez un devis accepté."
+      />
+    );
+  }
+
+  return (
+    <div className="clients-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Statut</th>
+            <th className="num">TTC</th>
+            <th className="num">Solde</th>
+            <th>Créée</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((f) => (
+            <tr key={f.id}>
+              <td>
+                <strong>{f.numero}</strong>
+              </td>
+              <td>
+                <span className={badgeFacture(f.statut)}>
+                  {STATUT_FACTURE[f.statut as StatutFactureClient] ?? f.statut}
+                </span>
+              </td>
+              <td className="num money">{formatFcfa(f.montantTtc)}</td>
+              <td className="num money">{formatFcfa(f.solde)}</td>
+              <td>{new Date(f.createdAt).toLocaleString('fr-FR')}</td>
+              <td>
+                <Link to={`/ventes/factures/${f.id}`}>Ouvrir</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="lead" style={{ marginTop: 12 }}>
+        <Link to="/ventes/factures">Toutes les factures →</Link>
+      </p>
+    </div>
+  );
+}
+
 function FideliteSection({
   client,
   peutAdmin,
@@ -1060,6 +1144,7 @@ export function FicheClient({
     { id: 'identite', label: 'Identité', icon: morale ? Building2 : User },
     { id: 'achats', label: 'Achats', icon: ShoppingBag, count: tdb?.nombreAchats },
     { id: 'devis', label: 'Devis', icon: FileText },
+    { id: 'factures', label: 'Factures', icon: Receipt },
     { id: 'fidelite', label: 'Fidélité', icon: Gift },
     { id: 'interactions', label: 'Interactions', icon: MessageSquare, count: nbInter },
   ];
@@ -1463,6 +1548,18 @@ export function FicheClient({
             </p>
             <div className="panel client-workspace-card">
               <DevisSection clientId={client.id} />
+            </div>
+          </div>
+        )}
+
+        {onglet === 'factures' && (
+          <div className="client-workspace-section">
+            <h2>Factures client</h2>
+            <p className="lead">
+              Pièces B2B (HT + TVA) — distinctes des tickets POS (§ facture client).
+            </p>
+            <div className="panel client-workspace-card">
+              <FacturesSection clientId={client.id} />
             </div>
           </div>
         )}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Pause, Printer, X } from 'lucide-react';
 import { InfoTooltip } from '../InfoTooltip';
+import { MajorBrandMark } from '../MajorBrandMark';
 import { insightCommandeEnAttente } from '../../lib/insights/pos';
 import {
   MOTIFS_ATTENTE,
@@ -293,7 +294,7 @@ export function CouponAttente({
   return (
     <div className="pos-receipt">
       <div className="pos-receipt-card ticket pos-coupon-attente">
-        <div className="pos-receipt-brand">CaissePOS</div>
+        <MajorBrandMark />
         {boutiqueNom && <p className="pos-receipt-shop">{boutiqueNom}</p>}
         <p className="pos-coupon-kicker">Coupon de reprise — ce n’est pas un ticket de caisse</p>
         <h2>N° {formatNumeroAttente(hold.numero)}</h2>

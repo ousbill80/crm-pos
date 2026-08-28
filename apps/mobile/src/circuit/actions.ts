@@ -9,6 +9,7 @@ import {
   TypeTransaction,
   profilOf,
 } from '@caisse-crm/shared';
+import { hasP2pMobileAccess } from '../p2p/permissions';
 
 /** POS écriture : `apps.pos === true` (caissier / responsable), pas la lecture siège. */
 export function peutEncaisserPos(role: RoleLibelle): boolean {
@@ -26,10 +27,14 @@ export function accesInventaireMobile(role: RoleLibelle): boolean {
 }
 
 export function accesAppMobile(role: RoleLibelle): boolean {
-  return accesTresorerieMobile(role) || accesInventaireMobile(role);
+  return (
+    accesTresorerieMobile(role) ||
+    accesInventaireMobile(role) ||
+    hasP2pMobileAccess(role)
+  );
 }
 
-export type OngletMobile = 'Caisse' | 'Circuit' | 'Caisses' | 'Inventaire';
+export type OngletMobile = 'Caisse' | 'Circuit' | 'Caisses' | 'Inventaire' | 'P2p';
 
 export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
   const tabs: OngletMobile[] = [];
@@ -41,12 +46,14 @@ export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
     );
   }
   if (accesInventaireMobile(role)) tabs.push('Inventaire');
+  if (hasP2pMobileAccess(role)) tabs.push('P2p');
   return tabs;
 }
 
 export function accueilOnglet(role: RoleLibelle): OngletMobile {
   if (peutEncaisserPos(role)) return 'Caisse';
   if (accesTresorerieMobile(role)) return 'Circuit';
+  if (hasP2pMobileAccess(role)) return 'P2p';
   return 'Inventaire';
 }
 

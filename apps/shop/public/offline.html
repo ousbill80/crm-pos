@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1A1C22" />
+    <title>Hors ligne — MAJOR AUTO PARTS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #1a1c22;
+        --gold: #c9a227;
+        --muted: #a8b0bc;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        font-family: system-ui, -apple-system, sans-serif;
+        background: radial-gradient(circle at top, #2a2f3a, var(--ink) 55%);
+        color: #f4f5f7;
+      }
+      main {
+        max-width: 28rem;
+        text-align: center;
+      }
+      .mark {
+        letter-spacing: 0.12em;
+        font-weight: 800;
+        color: var(--gold);
+        margin-bottom: 1.25rem;
+      }
+      h1 {
+        font-size: 1.45rem;
+        margin: 0 0 0.6rem;
+      }
+      p {
+        margin: 0 0 1.4rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      a {
+        display: inline-block;
+        padding: 0.75rem 1.2rem;
+        border-radius: 999px;
+        background: var(--gold);
+        color: #12141a;
+        font-weight: 700;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">MAJOR AUTO PARTS</div>
+      <h1>Vous êtes hors ligne</h1>
+      <p>
+        La boutique reste consultable dès que le réseau revient. Les pages déjà
+        ouvertes peuvent encore être en cache.
+      </p>
+      <a href="/">Réessayer</a>
+    </main>
+  </body>
+</html>

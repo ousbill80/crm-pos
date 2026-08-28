@@ -16,6 +16,14 @@ export function fmtDate(iso: string | null | undefined): string {
 
 export const STATUT_COMMANDE: Record<CommandeAchatDto['statut'], string> = {
   BROUILLON: 'Brouillon',
+  SOUMISE_APPROBATION: 'Soumise à approbation',
+  APPROUVEE: 'Approuvée',
+  REJETEE: 'Rejetée',
+  EN_PRODUCTION: 'En production',
+  EXPEDIEE: 'Expédiée',
+  EN_TRANSIT: 'En transit',
+  EN_DOUANE: 'En douane',
+  DEDOUANEE: 'Dédouanée',
   CONFIRMEE: 'Confirmée',
   PARTIELLEMENT_RECEPTIONNEE: 'Réception partielle',
   RECEPTIONNEE: 'Réceptionnée',
@@ -25,6 +33,7 @@ export const STATUT_COMMANDE: Record<CommandeAchatDto['statut'], string> = {
 
 export function badgeCommande(statut: CommandeAchatDto['statut']): string {
   if (statut === 'ANNULEE') return 'badge';
+  if (statut === 'REJETEE') return 'badge badge-critical';
   if (statut === 'CLOTUREE' || statut === 'RECEPTIONNEE') return 'badge badge-ok';
   if (statut === 'PARTIELLEMENT_RECEPTIONNEE') return 'badge badge-warning';
   if (statut === 'CONFIRMEE') return 'badge badge-warning';
@@ -45,6 +54,20 @@ export function badgeFacture(statut: FactureFournisseurDto['statut']): string {
     return 'badge badge-warning';
   }
   if (statut === 'ANNULEE') return 'badge';
+  return 'badge';
+}
+
+export const STATUT_RAPPROCHEMENT: Record<string, string> = {
+  A_RAPPROCHER: 'À rapprocher',
+  RAPPROCHEE: 'Rapprochée 3 voies',
+  LITIGE: 'Litige rapprochement',
+  EXCEPTEE: 'Exception DAF/DG',
+};
+
+export function badgeRapprochement(statut: string | undefined | null): string {
+  if (statut === 'RAPPROCHEE') return 'badge badge-ok';
+  if (statut === 'LITIGE') return 'badge badge-critical';
+  if (statut === 'EXCEPTEE') return 'badge badge-warning';
   return 'badge';
 }
 

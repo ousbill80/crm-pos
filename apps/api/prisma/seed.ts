@@ -1,14 +1,802 @@
 // Seed démo CaissePOS : rôles, société, zone/boutique/caisse/entrepôt,
-// utilisateurs démo, produits + quants.
-import { PrismaClient } from '@prisma/client';
+// utilisateurs démo, produits + quants, socle P2P (fiscal / SYSCOHADA / approbations).
+import { PrismaClient, TypeJournalComptable, TypeTaxeAchat } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { periodesMensuellesExercice } from '../src/accounting-gl/exercice-scaffold';
 
 const prisma = new PrismaClient();
 const MOT_DE_PASSE = 'MotDePasse!123';
 
+/**
+ * Seuils démo RegleApprobationAchat (XOF) — valeurs explicites du seed uniquement,
+ * jamais reprises comme défauts silencieux dans les services métier.
+ * Alignés sur ROLES_APPROBATION_* (DAF / DG) : Achats saisit, DAF/DG décident.
+ * - niveau 1 DAF : 0 → 5 000 000
+ * - niveau 2 DIRECTION_GENERALE : 5 000 000,01 → illimité
+ */
+const DEMO_APPROBATION_ACHATS = {
+  niveau1: {
+    role: 'DAF',
+    montantMin: '0',
+    montantMax: '5000000',
+  },
+  niveau2: {
+    role: 'DIRECTION_GENERALE',
+    montantMin: '5000000.01',
+    montantMax: null as string | null,
+  },
+} as const;
+
+async function seedP2pFoundations(societeId: string) {
+  const annee = new Date().getUTCFullYear();
+  const debutAnnee = new Date(Date.UTC(annee, 0, 1));
+  const finAnnee = new Date(Date.UTC(annee, 11, 31, 23, 59, 59, 999));
+
+  const referentiel = await prisma.referentielFiscal.upsert({
+    where: {
+      societeId_code_version: { societeId, code: 'CI', version: 1 },
+    },
+    update: {
+      pays: 'CI',
+      libelle: 'Référentiel fiscal Côte d’Ivoire (CGI) — démo',
+      valideDu: debutAnnee,
+      valideAu: null,
+      actif: true,
+    },
+    create: {
+      societeId,
+      code: 'CI',
+      version: 1,
+      pays: 'CI',
+      libelle: 'Référentiel fiscal Côte d’Ivoire (CGI) — démo',
+      valideDu: debutAnnee,
+      actif: true,
+    },
+  });
+
+  // Taux paramétrables (placeholders) — le métier lit la base, pas des constantes code.
+  const tauxFiscaux: Array<{
+    code: string;
+    libelle: string;
+    type: TypeTaxeAchat;
+    taux: string;
+    compteComptableCode: string | null;
+  }> = [
+    {
+      code: 'TVA18',
+      libelle: 'TVA 18 %',
+      type: TypeTaxeAchat.TVA,
+      taux: '18',
+      compteComptableCode: '4452',
+    },
+    {
+      code: 'DD_PLACEHOLDER',
+      libelle: 'Droits de douane (taux démo configurable)',
+      type: TypeTaxeAchat.DROIT_DOUANE,
+      taux: '5',
+      compteComptableCode: null,
+    },
+    {
+      code: 'RETENUE_PLACEHOLDER',
+      libelle: 'Retenue à la source (taux démo configurable)',
+      type: TypeTaxeAchat.RETENUE,
+      taux: '2.2',
+      compteComptableCode: null,
+    },
+  ];
+  for (const taux of tauxFiscaux) {
+    await prisma.tauxFiscalAchat.upsert({
+      where: {
+        referentielId_code: {
+          referentielId: referentiel.id,
+          code: taux.code,
+        },
+      },
+      update: {
+        libelle: taux.libelle,
+        type: taux.type,
+        taux: taux.taux,
+        compteComptableCode: taux.compteComptableCode,
+        actif: true,
+      },
+      create: {
+        referentielId: referentiel.id,
+        code: taux.code,
+        libelle: taux.libelle,
+        type: taux.type,
+        taux: taux.taux,
+        compteComptableCode: taux.compteComptableCode,
+        actif: true,
+      },
+    });
+  }
+
+  // Plan SYSCOHADA opérationnel (retail XOF) — classes 1–7 + comptes
+  // mouvementés par P2P / POS / shop. Pas la liasse officielle OHADA.
+  const comptes: Array<{ numero: string; intitule: string }> = [
+    { numero: '1', intitule: 'Comptes de ressources durables' },
+    { numero: '10', intitule: 'Capital' },
+    { numero: '101', intitule: 'Capital social' },
+    { numero: '11', intitule: 'Réserves' },
+    { numero: '12', intitule: 'Report à nouveau' },
+    { numero: '13', intitule: 'Résultat net' },
+    { numero: '2', intitule: 'Comptes d’actif immobilisé' },
+    { numero: '21', intitule: 'Immobilisations corporelles' },
+    { numero: '28', intitule: 'Amortissements' },
+    { numero: '3', intitule: 'Comptes de stocks' },
+    { numero: '31', intitule: 'Marchandises' },
+    { numero: '4', intitule: 'Comptes de tiers' },
+    { numero: '40', intitule: 'Fournisseurs et comptes rattachés' },
+    { numero: '401', intitule: 'Fournisseurs' },
+    { numero: '408', intitule: 'Fournisseurs — factures non parvenues' },
+    { numero: '603', intitule: 'Variation des stocks de marchandises' },
+    { numero: '409', intitule: 'Fournisseurs débiteurs — acomptes versés' },
+    { numero: '41', intitule: 'Clients et comptes rattachés' },
+    { numero: '411', intitule: 'Clients' },
+    { numero: '42', intitule: 'Personnel' },
+    { numero: '421', intitule: 'Personnel — rémunérations dues' },
+    { numero: '44', intitule: 'État et collectivités publiques' },
+    { numero: '4452', intitule: 'TVA récupérable' },
+    { numero: '4457', intitule: 'TVA collectée' },
+    { numero: '447', intitule: 'État — retenues à la source' },
+    { numero: '5', intitule: 'Comptes de trésorerie' },
+    { numero: '52', intitule: 'Banques' },
+    { numero: '521', intitule: 'Banques locales' },
+    { numero: '57', intitule: 'Caisse' },
+    { numero: '571', intitule: 'Caisse siège' },
+    { numero: '572', intitule: 'Régies d’avances — mobile money' },
+    { numero: '6', intitule: 'Comptes de charges' },
+    { numero: '60', intitule: 'Achats et variation de stocks' },
+    { numero: '601', intitule: 'Achats de marchandises' },
+    { numero: '603', intitule: 'Variation des stocks de marchandises' },
+    { numero: '605', intitule: 'Autres achats' },
+    { numero: '61', intitule: 'Transports' },
+    { numero: '613', intitule: 'Locations et charges locatives' },
+    { numero: '616', intitule: 'Primes d’assurance' },
+    { numero: '62', intitule: 'Services extérieurs A' },
+    { numero: '622', intitule: 'Honoraires et prestations de services' },
+    { numero: '624', intitule: 'Transports de biens' },
+    { numero: '626', intitule: 'Frais postaux et de télécommunications' },
+    { numero: '628', intitule: 'Charges diverses' },
+    { numero: '65', intitule: 'Autres charges' },
+    { numero: '658', intitule: 'Charges diverses ordinaires' },
+    { numero: '67', intitule: 'Frais financiers et charges assimilées' },
+    { numero: '676', intitule: 'Pertes de change' },
+    { numero: '68', intitule: 'Dotations aux amortissements et provisions' },
+    { numero: '6813', intitule: 'Dotations aux amortissements des immobilisations corporelles' },
+    { numero: '7', intitule: 'Comptes de produits' },
+    { numero: '70', intitule: 'Ventes' },
+    { numero: '701', intitule: 'Ventes de marchandises' },
+    { numero: '707', intitule: 'Ventes de services' },
+    { numero: '75', intitule: 'Autres produits' },
+    { numero: '758', intitule: 'Produits divers' },
+    { numero: '77', intitule: 'Revenus financiers et produits assimilés' },
+    { numero: '776', intitule: 'Gains de change' },
+  ];
+  const comptesParNumero = new Map<string, string>();
+  for (const compte of comptes) {
+    const row = await prisma.compteComptable.upsert({
+      where: {
+        societeId_numero: { societeId, numero: compte.numero },
+      },
+      update: { intitule: compte.intitule, actif: true },
+      create: {
+        societeId,
+        numero: compte.numero,
+        intitule: compte.intitule,
+        actif: true,
+      },
+    });
+    comptesParNumero.set(compte.numero, row.id);
+  }
+  for (const [numero, id] of comptesParNumero) {
+    let parentId: string | null = null;
+    for (let i = numero.length - 1; i >= 1; i -= 1) {
+      const parent = comptesParNumero.get(numero.slice(0, i));
+      if (parent) {
+        parentId = parent;
+        break;
+      }
+    }
+    await prisma.compteComptable.update({
+      where: { id },
+      data: { parentId },
+    });
+  }
+
+  const exercice = await prisma.exerciceComptable.upsert({
+    where: {
+      societeId_code: { societeId, code: String(annee) },
+    },
+    update: {
+      dateDebut: debutAnnee,
+      dateFin: finAnnee,
+    },
+    create: {
+      societeId,
+      code: String(annee),
+      dateDebut: debutAnnee,
+      dateFin: finAnnee,
+      cloture: false,
+    },
+  });
+
+  const journaux: Array<{
+    code: string;
+    libelle: string;
+    type: TypeJournalComptable;
+  }> = [
+    { code: 'ACHATS', libelle: 'Journal des achats', type: TypeJournalComptable.ACHATS },
+    { code: 'BANQUE', libelle: 'Journal de banque', type: TypeJournalComptable.BANQUE },
+    { code: 'CAISSE', libelle: 'Journal de caisse', type: TypeJournalComptable.CAISSE },
+    {
+      code: 'OD',
+      libelle: 'Opérations diverses',
+      type: TypeJournalComptable.OPERATIONS_DIVERSES,
+    },
+    {
+      code: 'VENTES',
+      libelle: 'Journal des ventes',
+      type: TypeJournalComptable.VENTES,
+    },
+  ];
+  for (const journal of journaux) {
+    await prisma.journalComptable.upsert({
+      where: {
+        exerciceId_code: { exerciceId: exercice.id, code: journal.code },
+      },
+      update: {
+        libelle: journal.libelle,
+        type: journal.type,
+        actif: true,
+      },
+      create: {
+        societeId,
+        exerciceId: exercice.id,
+        code: journal.code,
+        libelle: journal.libelle,
+        type: journal.type,
+        actif: true,
+      },
+    });
+  }
+
+  const centreReseau = await prisma.centreCout.upsert({
+    where: { societeId_code: { societeId, code: 'RESEAU' } },
+    update: { libelle: 'Centre de coût réseau', actif: true, boutiqueId: null },
+    create: {
+      societeId,
+      code: 'RESEAU',
+      libelle: 'Centre de coût réseau',
+      actif: true,
+    },
+  });
+
+  // Enveloppe démo explicite (50 M XOF / année) — obligatoire pour créer une demande.
+  const budgetExistant = await prisma.budgetAchat.findFirst({
+    where: {
+      centreCoutId: centreReseau.id,
+      libelle: 'Budget Achats réseau (démo)',
+      devise: 'XOF',
+    },
+  });
+  if (budgetExistant) {
+    await prisma.budgetAchat.update({
+      where: { id: budgetExistant.id },
+      data: {
+        montantAlloue: '50000000',
+        dateDebut: debutAnnee,
+        dateFin: finAnnee,
+        actif: true,
+      },
+    });
+  } else {
+    await prisma.budgetAchat.create({
+      data: {
+        centreCoutId: centreReseau.id,
+        libelle: 'Budget Achats réseau (démo)',
+        devise: 'XOF',
+        montantAlloue: '50000000',
+        dateDebut: debutAnnee,
+        dateFin: finAnnee,
+        actif: true,
+      },
+    });
+  }
+
+  if (!exercice.cloture) {
+    for (const periode of periodesMensuellesExercice(annee)) {
+      await prisma.periodeComptable.upsert({
+        where: {
+          exerciceId_code: { exerciceId: exercice.id, code: periode.code },
+        },
+        update: {
+          dateDebut: periode.dateDebut,
+          dateFin: periode.dateFin,
+        },
+        create: {
+          societeId,
+          exerciceId: exercice.id,
+          code: periode.code,
+          dateDebut: periode.dateDebut,
+          dateFin: periode.dateFin,
+          cloture: false,
+        },
+      });
+    }
+  }
+
+  const journalAchats = await prisma.journalComptable.findUniqueOrThrow({
+    where: { exerciceId_code: { exerciceId: exercice.id, code: 'ACHATS' } },
+  });
+  const journalBanque = await prisma.journalComptable.findUniqueOrThrow({
+    where: { exerciceId_code: { exerciceId: exercice.id, code: 'BANQUE' } },
+  });
+  const journalCaisse = await prisma.journalComptable.findUniqueOrThrow({
+    where: { exerciceId_code: { exerciceId: exercice.id, code: 'CAISSE' } },
+  });
+  const journalVentes = await prisma.journalComptable.findUniqueOrThrow({
+    where: { exerciceId_code: { exerciceId: exercice.id, code: 'VENTES' } },
+  });
+  const journalOd = await prisma.journalComptable.findUniqueOrThrow({
+    where: { exerciceId_code: { exerciceId: exercice.id, code: 'OD' } },
+  });
+
+  // Compte retenue optionnel pour modèles facture.
+  const compteRetenue = await prisma.compteComptable.upsert({
+    where: { societeId_numero: { societeId, numero: '447' } },
+    update: { intitule: 'État — retenues à la source', actif: true },
+    create: {
+      societeId,
+      numero: '447',
+      intitule: 'État — retenues à la source',
+      actif: true,
+    },
+  });
+  comptesParNumero.set('447', compteRetenue.id);
+
+  async function ensureModele(params: {
+    code: string;
+    version?: number;
+    sourceType:
+      | 'FACTURE_FOURNISSEUR'
+      | 'AVOIR_FOURNISSEUR'
+      | 'PAIEMENT_FOURNISSEUR'
+      | 'VENTE_POS'
+      | 'AVOIR_CLIENT'
+      | 'COMMANDE_WEB'
+      | 'ENCAISSEMENT_CLIENT'
+      | 'FACTURE_CHARGE'
+      | 'OD_MANUELLE'
+      | 'CLOTURE_EXERCICE'
+      | 'A_NOUVEAUX'
+      | 'MISE_EN_STOCK'
+      | 'RETOUR_STOCK_FOURNISSEUR'
+      | 'CMV_VENTE'
+      | 'CMV_AVOIR'
+      | 'VARIATION_STOCK'
+      | 'FACTURE_CLIENT'
+      | 'AMORTISSEMENT_IMMO';
+    journalId: string;
+    lignes: Array<{ role: string; compteId: string }>;
+  }) {
+    const version = params.version ?? 1;
+    const existant = await prisma.modeleComptabilisation.findUnique({
+      where: {
+        societeId_code_version: {
+          societeId,
+          code: params.code,
+          version,
+        },
+      },
+    });
+    if (existant) {
+      // Modele + lignes = append-only (ledger-guard) : idempotent sans mutation.
+      return existant;
+    }
+    return prisma.modeleComptabilisation.create({
+      data: {
+        societeId,
+        journalId: params.journalId,
+        code: params.code,
+        version,
+        sourceType: params.sourceType,
+        valideDu: debutAnnee,
+        actif: true,
+        lignes: {
+          create: params.lignes.map((ligne, index) => ({
+            role: ligne.role as
+              | 'ACHAT'
+              | 'STOCK'
+              | 'TAXE'
+              | 'RETENUE'
+              | 'FOURNISSEUR'
+              | 'TRESORERIE'
+              | 'GAIN_CHANGE'
+              | 'PERTE_CHANGE'
+              | 'CLIENT'
+              | 'VENTE'
+              | 'TVA_COLLECTEE'
+              | 'CHARGE',
+            compteId: ligne.compteId,
+            ordre: index + 1,
+          })),
+        },
+      },
+    });
+  }
+
+  const lignesFactureMarchandise = [
+    { role: 'ACHAT', compteId: comptesParNumero.get('408')! },
+    { role: 'TAXE', compteId: comptesParNumero.get('4452')! },
+    { role: 'RETENUE', compteId: comptesParNumero.get('447')! },
+    { role: 'FOURNISSEUR', compteId: comptesParNumero.get('401')! },
+  ];
+  const invoiceV1 = await prisma.modeleComptabilisation.findUnique({
+    where: {
+      societeId_code_version: {
+        societeId,
+        code: 'SUPPLIER_INVOICE',
+        version: 1,
+      },
+    },
+    include: { lignes: { include: { compte: true } } },
+  });
+  const invoiceAchat = invoiceV1?.lignes.find((ligne) => ligne.role === 'ACHAT');
+  if (!invoiceV1) {
+    await ensureModele({
+      code: 'SUPPLIER_INVOICE',
+      sourceType: 'FACTURE_FOURNISSEUR',
+      journalId: journalAchats.id,
+      lignes: lignesFactureMarchandise,
+    });
+    await ensureModele({
+      code: 'SUPPLIER_CREDIT_NOTE',
+      sourceType: 'AVOIR_FOURNISSEUR',
+      journalId: journalAchats.id,
+      lignes: lignesFactureMarchandise,
+    });
+  } else if (invoiceAchat?.compte.numero !== '408') {
+    await ensureModele({
+      code: 'SUPPLIER_INVOICE',
+      version: 2,
+      sourceType: 'FACTURE_FOURNISSEUR',
+      journalId: journalAchats.id,
+      lignes: lignesFactureMarchandise,
+    });
+    await ensureModele({
+      code: 'SUPPLIER_CREDIT_NOTE',
+      version: 2,
+      sourceType: 'AVOIR_FOURNISSEUR',
+      journalId: journalAchats.id,
+      lignes: lignesFactureMarchandise,
+    });
+  }
+
+  const lignesPaiementFx = (tresorerieCompteId: string) => [
+    { role: 'FOURNISSEUR', compteId: comptesParNumero.get('401')! },
+    { role: 'TRESORERIE', compteId: tresorerieCompteId },
+    { role: 'GAIN_CHANGE', compteId: comptesParNumero.get('776')! },
+    { role: 'PERTE_CHANGE', compteId: comptesParNumero.get('676')! },
+  ];
+
+  async function ensurePaymentTemplate(code: string, journalId: string, tresorerieCompteId: string) {
+    const v1 = await ensureModele({
+      code,
+      sourceType: 'PAIEMENT_FOURNISSEUR',
+      journalId,
+      lignes: lignesPaiementFx(tresorerieCompteId),
+    });
+    const lignes = await prisma.ligneModeleComptabilisation.findMany({
+      where: { modeleId: v1.id },
+    });
+    if (!lignes.some((ligne) => ligne.role === 'GAIN_CHANGE')) {
+      await ensureModele({
+        code,
+        version: 2,
+        sourceType: 'PAIEMENT_FOURNISSEUR',
+        journalId,
+        lignes: lignesPaiementFx(tresorerieCompteId),
+      });
+    }
+  }
+
+  await ensurePaymentTemplate(
+    'SUPPLIER_PAYMENT_BANK',
+    journalBanque.id,
+    comptesParNumero.get('521')!,
+  );
+  await ensurePaymentTemplate(
+    'SUPPLIER_PAYMENT_CASH',
+    journalCaisse.id,
+    comptesParNumero.get('571')!,
+  );
+  await ensurePaymentTemplate(
+    'SUPPLIER_PAYMENT_MOBILE',
+    journalBanque.id,
+    comptesParNumero.get('572')!,
+  );
+
+  const lignesVente = [
+    { role: 'CLIENT', compteId: comptesParNumero.get('411')! },
+    { role: 'VENTE', compteId: comptesParNumero.get('701')! },
+    { role: 'TVA_COLLECTEE', compteId: comptesParNumero.get('4457')! },
+  ];
+  await ensureModele({
+    code: 'POS_SALE',
+    sourceType: 'VENTE_POS',
+    journalId: journalVentes.id,
+    lignes: lignesVente,
+  });
+  await ensureModele({
+    code: 'CUSTOMER_INVOICE',
+    sourceType: 'FACTURE_CLIENT',
+    journalId: journalVentes.id,
+    lignes: lignesVente,
+  });
+  await ensureModele({
+    code: 'CUSTOMER_CREDIT_NOTE',
+    sourceType: 'AVOIR_CLIENT',
+    journalId: journalVentes.id,
+    lignes: lignesVente,
+  });
+  await ensureModele({
+    code: 'WEB_SALE',
+    sourceType: 'COMMANDE_WEB',
+    journalId: journalVentes.id,
+    lignes: lignesVente,
+  });
+  const lignesEncaissement = (tresorerieCompteId: string) => [
+    { role: 'TRESORERIE', compteId: tresorerieCompteId },
+    { role: 'CLIENT', compteId: comptesParNumero.get('411')! },
+  ];
+  await ensureModele({
+    code: 'CUSTOMER_RECEIPT_CASH',
+    sourceType: 'ENCAISSEMENT_CLIENT',
+    journalId: journalCaisse.id,
+    lignes: lignesEncaissement(comptesParNumero.get('571')!),
+  });
+  await ensureModele({
+    code: 'CUSTOMER_RECEIPT_BANK',
+    sourceType: 'ENCAISSEMENT_CLIENT',
+    journalId: journalBanque.id,
+    lignes: lignesEncaissement(comptesParNumero.get('521')!),
+  });
+  await ensureModele({
+    code: 'CUSTOMER_RECEIPT_MOBILE',
+    sourceType: 'ENCAISSEMENT_CLIENT',
+    journalId: journalBanque.id,
+    lignes: lignesEncaissement(comptesParNumero.get('572')!),
+  });
+  await ensureModele({
+    code: 'EXPENSE_INVOICE',
+    sourceType: 'FACTURE_CHARGE',
+    journalId: journalAchats.id,
+    lignes: [
+      { role: 'CHARGE', compteId: comptesParNumero.get('628')! },
+      { role: 'TAXE', compteId: comptesParNumero.get('4452')! },
+      { role: 'RETENUE', compteId: comptesParNumero.get('447')! },
+      { role: 'FOURNISSEUR', compteId: comptesParNumero.get('401')! },
+    ],
+  });
+  const lignesOd = [
+    { role: 'CHARGE', compteId: comptesParNumero.get('628')! },
+    { role: 'VENTE', compteId: comptesParNumero.get('701')! },
+  ];
+  await ensureModele({
+    code: 'MANUAL_OD',
+    sourceType: 'OD_MANUELLE',
+    journalId: journalOd.id,
+    lignes: lignesOd,
+  });
+  await ensureModele({
+    code: 'YEAR_CLOSE',
+    sourceType: 'CLOTURE_EXERCICE',
+    journalId: journalOd.id,
+    lignes: lignesOd,
+  });
+  await ensureModele({
+    code: 'OPENING_BALANCE',
+    sourceType: 'A_NOUVEAUX',
+    journalId: journalOd.id,
+    lignes: lignesOd,
+  });
+  await ensureModele({
+    code: 'DEPRECIATION',
+    sourceType: 'AMORTISSEMENT_IMMO',
+    journalId: journalOd.id,
+    lignes: [
+      { role: 'CHARGE', compteId: comptesParNumero.get('6813')! },
+      { role: 'AMORTISSEMENT', compteId: comptesParNumero.get('28')! },
+    ],
+  });
+
+  const lignesStockFnp = [
+    { role: 'STOCK', compteId: comptesParNumero.get('31')! },
+    { role: 'FOURNISSEUR', compteId: comptesParNumero.get('408')! },
+  ];
+  await ensureModele({
+    code: 'STOCK_PUTAWAY',
+    sourceType: 'MISE_EN_STOCK',
+    journalId: journalAchats.id,
+    lignes: lignesStockFnp,
+  });
+  await ensureModele({
+    code: 'STOCK_SUPPLIER_RETURN',
+    sourceType: 'RETOUR_STOCK_FOURNISSEUR',
+    journalId: journalAchats.id,
+    lignes: lignesStockFnp,
+  });
+  const lignesCmv = [
+    { role: 'CHARGE', compteId: comptesParNumero.get('603')! },
+    { role: 'STOCK', compteId: comptesParNumero.get('31')! },
+  ];
+  await ensureModele({
+    code: 'COGS_SALE',
+    sourceType: 'CMV_VENTE',
+    journalId: journalOd.id,
+    lignes: lignesCmv,
+  });
+  await ensureModele({
+    code: 'COGS_CREDIT_NOTE',
+    sourceType: 'CMV_AVOIR',
+    journalId: journalOd.id,
+    lignes: lignesCmv,
+  });
+  await ensureModele({
+    code: 'STOCK_VARIANCE',
+    sourceType: 'VARIATION_STOCK',
+    journalId: journalOd.id,
+    lignes: lignesCmv,
+  });
+
+  const natures: Array<{ code: string; libelle: string; compte: string }> = [
+    { code: 'LOYER', libelle: 'Loyers et charges locatives', compte: '613' },
+    { code: 'ASSURANCE', libelle: 'Primes d’assurance', compte: '616' },
+    { code: 'HONORAIRES', libelle: 'Honoraires et prestations', compte: '622' },
+    { code: 'TELECOM', libelle: 'Télécommunications', compte: '626' },
+    { code: 'TRANSPORT', libelle: 'Transport', compte: '624' },
+    { code: 'FOURNITURES', libelle: 'Fournitures diverses', compte: '605' },
+    { code: 'DIVERS', libelle: 'Charges diverses', compte: '628' },
+  ];
+  for (const nature of natures) {
+    await prisma.natureDepense.upsert({
+      where: { societeId_code: { societeId, code: nature.code } },
+      update: {
+        libelle: nature.libelle,
+        compteId: comptesParNumero.get(nature.compte)!,
+        actif: true,
+      },
+      create: {
+        societeId,
+        code: nature.code,
+        libelle: nature.libelle,
+        compteId: comptesParNumero.get(nature.compte)!,
+        actif: true,
+      },
+    });
+  }
+
+  // Remplace les anciennes bandes (ex. ACHATS niveau 1) pour coller à DAF/DG.
+  await prisma.regleApprobationAchat.updateMany({
+    where: { societeId, devise: 'XOF', actif: true },
+    data: { actif: false, valideAu: new Date() },
+  });
+  for (const [niveau, bande] of [
+    [1, DEMO_APPROBATION_ACHATS.niveau1],
+    [2, DEMO_APPROBATION_ACHATS.niveau2],
+  ] as const) {
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { libelle: bande.role },
+    });
+    const existante = await prisma.regleApprobationAchat.findFirst({
+      where: {
+        societeId,
+        niveau,
+        roleId: role.id,
+        devise: 'XOF',
+      },
+    });
+    const data = {
+      montantMin: bande.montantMin,
+      montantMax: bande.montantMax,
+      devise: 'XOF',
+      actif: true,
+      valideDu: debutAnnee,
+      valideAu: null as Date | null,
+    };
+    if (existante) {
+      await prisma.regleApprobationAchat.update({
+        where: { id: existante.id },
+        data,
+      });
+    } else {
+      await prisma.regleApprobationAchat.create({
+        data: {
+          societeId,
+          niveau,
+          roleId: role.id,
+          ...data,
+        },
+      });
+    }
+  }
+
+  const idBanque = comptesParNumero.get('521');
+  const idCaisse = comptesParNumero.get('571');
+  const idMobile = comptesParNumero.get('572');
+  if (idBanque) {
+    await prisma.compteTresorerie.upsert({
+      where: { societeId_code: { societeId, code: 'BANQUE' } },
+      update: {
+        libelle: 'Compte bancaire principal',
+        type: 'BANK',
+        devise: 'XOF',
+        compteComptableId: idBanque,
+        actif: true,
+      },
+      create: {
+        societeId,
+        code: 'BANQUE',
+        libelle: 'Compte bancaire principal',
+        type: 'BANK',
+        devise: 'XOF',
+        compteComptableId: idBanque,
+        actif: true,
+      },
+    });
+  }
+  if (idCaisse) {
+    await prisma.compteTresorerie.upsert({
+      where: { societeId_code: { societeId, code: 'CAISSE_CENTRALE' } },
+      update: {
+        libelle: 'Caisse centrale',
+        type: 'CENTRAL_CASH',
+        devise: 'XOF',
+        compteComptableId: idCaisse,
+        actif: true,
+      },
+      create: {
+        societeId,
+        code: 'CAISSE_CENTRALE',
+        libelle: 'Caisse centrale',
+        type: 'CENTRAL_CASH',
+        devise: 'XOF',
+        compteComptableId: idCaisse,
+        actif: true,
+      },
+    });
+  }
+  if (idMobile) {
+    await prisma.compteTresorerie.upsert({
+      where: { societeId_code: { societeId, code: 'OM_WAVE' } },
+      update: {
+        libelle: 'Orange Money / Wave',
+        type: 'MOBILE_MONEY',
+        devise: 'XOF',
+        compteComptableId: idMobile,
+        actif: true,
+      },
+      create: {
+        societeId,
+        code: 'OM_WAVE',
+        libelle: 'Orange Money / Wave',
+        type: 'MOBILE_MONEY',
+        devise: 'XOF',
+        compteComptableId: idMobile,
+        actif: true,
+      },
+    });
+  }
+}
+
 const ROLES = [
   { libelle: 'DIRECTION_GENERALE', niveauHabilitation: 0 },
   { libelle: 'DAF', niveauHabilitation: 1 },
+  { libelle: 'ACHATS', niveauHabilitation: 2 },
+  { libelle: 'LOGISTIQUE_TRANSIT_DOUANE', niveauHabilitation: 2 },
+  { libelle: 'QUALITE_STOCKS', niveauHabilitation: 2 },
+  { libelle: 'RAF_COMPTABLE', niveauHabilitation: 2 },
   { libelle: 'CAISSIER_CENTRAL', niveauHabilitation: 1 },
   { libelle: 'CONTROLEUR_INTERNE', niveauHabilitation: 1 },
   { libelle: 'SUPERVISEUR_ZONE', niveauHabilitation: 2 },
@@ -164,22 +952,22 @@ async function main() {
   }
 
   const existingSociete = await prisma.societe.findFirst();
-  if (!existingSociete) {
-    await prisma.societe.create({
-      data: {
-        raisonSociale: 'Marché des Accessoires',
-        adresse: 'Abidjan — Plateau',
-        telephone: '+225 27 00 00 00 00',
-        email: 'contact@marche-accessoires.local',
-        devise: 'XOF',
-      },
-    });
-  } else {
-    await prisma.societe.update({
-      where: { id: existingSociete.id },
-      data: { raisonSociale: 'Marché des Accessoires' },
-    });
-  }
+  const societeSeed = existingSociete
+    ? await prisma.societe.update({
+        where: { id: existingSociete.id },
+        data: { raisonSociale: 'MAJOR AUTO PARTS' },
+      })
+    : await prisma.societe.create({
+        data: {
+          raisonSociale: 'MAJOR AUTO PARTS',
+          adresse: 'Abidjan — Plateau',
+          telephone: '+225 27 00 00 00 00',
+          email: 'contact@majorautoparts.local',
+          devise: 'XOF',
+        },
+      });
+
+  await seedP2pFoundations(societeSeed.id);
 
   let zone =
     (await prisma.zone.findFirst({
@@ -322,11 +1110,25 @@ async function main() {
     code: string;
     nom: string;
     type: 'PRINCIPAL' | 'SECONDAIRE';
-    usage: 'STOCK' | 'ENTREE' | 'SORTIE' | 'PERTE' | 'FOURNISSEUR' | 'CLIENT';
+    usage:
+      | 'STOCK'
+      | 'ENTREE'
+      | 'SORTIE'
+      | 'PERTE'
+      | 'FOURNISSEUR'
+      | 'CLIENT'
+      | 'QUARANTAINE';
     virtuel: boolean;
   }> = [
     { code: 'PRINCIPAL', nom: 'Stock central', type: 'PRINCIPAL', usage: 'STOCK', virtuel: false },
     { code: 'ENTREE', nom: 'Quai de réception', type: 'SECONDAIRE', usage: 'ENTREE', virtuel: false },
+    {
+      code: 'QUARANTAINE',
+      nom: 'Quarantaine qualité',
+      type: 'SECONDAIRE',
+      usage: 'QUARANTAINE',
+      virtuel: false,
+    },
     { code: 'SORTIE', nom: 'Quai de sortie', type: 'SECONDAIRE', usage: 'SORTIE', virtuel: false },
     { code: 'PERTE', nom: 'Pertes / rebuts', type: 'SECONDAIRE', usage: 'PERTE', virtuel: false },
     { code: 'FOURNISSEUR', nom: 'Fournisseurs (virtuel)', type: 'SECONDAIRE', usage: 'FOURNISSEUR', virtuel: true },
@@ -428,6 +1230,34 @@ async function main() {
     boutiqueId: null,
     nom: 'Traoré',
     prenom: 'Mariam',
+  });
+  await ensureUser({
+    login: 'demo-achats',
+    roleLibelle: 'ACHATS',
+    boutiqueId: null,
+    nom: 'Koné',
+    prenom: 'Adama',
+  });
+  await ensureUser({
+    login: 'demo-logistique',
+    roleLibelle: 'LOGISTIQUE_TRANSIT_DOUANE',
+    boutiqueId: null,
+    nom: 'Yao',
+    prenom: 'Serge',
+  });
+  await ensureUser({
+    login: 'demo-qualite',
+    roleLibelle: 'QUALITE_STOCKS',
+    boutiqueId: null,
+    nom: 'Kouassi',
+    prenom: 'Aïcha',
+  });
+  await ensureUser({
+    login: 'demo-raf',
+    roleLibelle: 'RAF_COMPTABLE',
+    boutiqueId: null,
+    nom: 'Diallo',
+    prenom: 'Ibrahim',
   });
   await ensureUser({
     login: 'demo-controle',
@@ -867,6 +1697,81 @@ async function main() {
     }
   }
 
+  // E-commerce — ParametreShop, zone livraison, produits web (PLAN-E-COMMERCE Lot 1)
+  const societe = await prisma.societe.findFirstOrThrow();
+  await prisma.parametreShop.upsert({
+    where: { societeId: societe.id },
+    update: {
+      shopActif: true,
+      entrepotWebDefautId: hubStock.id,
+      retraitActif: true,
+      livraisonActive: true,
+    },
+    create: {
+      societeId: societe.id,
+      shopActif: true,
+      entrepotWebDefautId: hubStock.id,
+      dureeReservationPanierMin: 15,
+      retraitActif: true,
+      livraisonActive: true,
+      modeAffichagePrix: 'HT',
+      tauxTvaDefaut: 18,
+      fallbackPrixMagasin: true,
+      paiementRetraitActif: true,
+      paiementLivraisonActif: true,
+    },
+  });
+
+  await prisma.boutique.update({
+    where: { id: boutiqueExt.boutique.id },
+    data: {
+      retraitWebActif: true,
+      entrepotWebId: entrepot.id,
+      delaiRetraitHeures: 4,
+    },
+  });
+
+  await prisma.zoneLivraison.upsert({
+    where: { id: '00000000-0000-4000-8000-000000000001' },
+    update: {
+      libelle: 'Abidjan intra-muros',
+      actif: true,
+      tarifForfait: 1500,
+      villesJson: ['Abidjan', 'Plateau', 'Cocody'],
+    },
+    create: {
+      id: '00000000-0000-4000-8000-000000000001',
+      libelle: 'Abidjan intra-muros',
+      actif: true,
+      tarifForfait: 1500,
+      delaiJoursMin: 1,
+      delaiJoursMax: 3,
+      villesJson: ['Abidjan', 'Plateau', 'Cocody'],
+    },
+  });
+
+  const refsWeb = [
+    { ref: 'COQ-IP15', slug: 'coque-silicone-iphone', prixWeb: 4500 },
+    { ref: 'CHG-20W', slug: 'chargeur-usbc-20w', prixWeb: 8500 },
+    { ref: 'ECO-BT', slug: 'ecouteurs-bluetooth', prixWeb: 12000 },
+    { ref: 'VRG-UNIV', slug: 'verre-trempe-universel', prixWeb: 2500 },
+    { ref: 'CBL-USBC', slug: 'cable-usbc-1m', prixWeb: 3500 },
+  ];
+  for (const item of refsWeb) {
+    const p = await prisma.produit.findFirst({ where: { reference: item.ref } });
+    if (p) {
+      await prisma.produit.update({
+        where: { id: p.id },
+        data: {
+          visibleWeb: true,
+          prixWeb: item.prixWeb,
+          slug: item.slug,
+          tauxTva: 18,
+        },
+      });
+    }
+  }
+
   console.log(
     [
       'Seed Marché des Accessoires terminé.',
@@ -879,6 +1784,7 @@ async function main() {
       '  Zone: demo-superviseur',
       '  Boutique: demo-pos-caissier / demo-pos-temoin / demo-convoyeur',
       '  Support: demo-respsi / demo-crm',
+      '  Achats P2P: demo-achats / demo-logistique / demo-qualite / demo-raf',
       '  (aussi) GSM: demo-caissier-gsm / demo-resp-gsm · Café: demo-caissier-cafe / demo-resp-cafe',
     ].join('\n'),
   );

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bell,
   ChevronDown,
+  Download,
   KeyRound,
   LogOut,
   Radio,
@@ -26,6 +27,11 @@ import {
   libelleProfilUtilisateur,
 } from '../lib/user-display';
 import { useTresorerieRealtimeStatus } from '../lib/tresorerie-realtime';
+import {
+  isStandaloneDisplay,
+  promptPwaInstall,
+  subscribeCanInstall,
+} from '../lib/pwa';
 
 function useAlertes() {
   return useQuery({
@@ -62,6 +68,35 @@ export function TopbarRealtimeIndicator() {
     >
       <Radio size={14} aria-hidden />
     </span>
+  );
+}
+
+/** Bouton d’installation PWA — visible tant que Chrome n’a pas encore installé. */
+export function TopbarPwaInstall() {
+  const [canInstall, setCanInstall] = useState(false);
+  const standalone = isStandaloneDisplay({
+    displayModeStandalone:
+      typeof window !== 'undefined' &&
+      window.matchMedia('(display-mode: standalone)').matches,
+    iosStandalone:
+      typeof navigator !== 'undefined' &&
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone),
+  });
+
+  useEffect(() => subscribeCanInstall(setCanInstall), []);
+
+  if (!canInstall || standalone) return null;
+
+  return (
+    <button
+      type="button"
+      className="odoo-systray-btn"
+      title="Installer CaissePOS"
+      aria-label="Installer CaissePOS sur cet appareil"
+      onClick={() => void promptPwaInstall()}
+    >
+      <Download size={17} />
+    </button>
   );
 }
 

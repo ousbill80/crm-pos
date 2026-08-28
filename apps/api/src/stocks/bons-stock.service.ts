@@ -22,7 +22,13 @@ import {
   CreateRegleReapproDto,
 } from './dto/create-bon-stock.dto';
 import type { RepartirReceptionDto } from './dto/repartir-reception.dto';
+import {
+  calculerBesoinReappro,
+  chargerDonneesRecommandationAchat,
+  repartirBesoinReappro,
+} from '../fournisseurs/recommandation-achat.context';
 
+const FENETRE_REAPPRO_JOURS = 30;
 const INCLUDE_BON = {
   entrepotSource: {
     select: {
@@ -512,7 +518,11 @@ export class BonsStockService {
 
   async lancerReappro(user: AuthenticatedUser) {
     const central = await this.stocks.trouverEntrepotCentralStock();
-    const regles = await this.prisma.regleReappro.findMany();
+    const regles = await this.prisma.regleReappro.findMany({
+      include: {
+        entrepot: { select: { id: true, boutiqueId: true } },
+      },
+    });
     const bonsIds: string[] = [];
     const commandesIds: string[] = [];
     const propositions: Array<{
@@ -522,31 +532,62 @@ export class BonsStockService {
       route: 'TRANSFERER' | 'ACHETER' | 'MIXTE';
       quantiteTransfert: number;
       quantiteAchat: number;
+      formule: string;
+      declencheur: string;
+      delaiFournisseurJours: number | null;
       bonId?: string;
       commandeId?: string;
     }> = [];
 
     for (const r of regles) {
-      const q = await this.stocks.getQuantite(r.produitId, r.entrepotId);
-      if (q >= r.min) continue;
-      const besoin = r.max - q;
+      const donnees = await chargerDonneesRecommandationAchat(this.prisma, {
+        produitId: r.produitId,
+        entrepotId: r.entrepotId,
+        boutiqueId: r.entrepot.boutiqueId,
+        fenetreJours: FENETRE_REAPPRO_JOURS,
+      });
+      const { besoin, formule, declencheur, recommandation } =
+        calculerBesoinReappro({
+          ventesQuantite: donnees.ventesQuantite,
+          fenetreJours: FENETRE_REAPPRO_JOURS,
+          stockCourant: donnees.stockCourant,
+          stockReserve: donnees.stockReserve,
+          stockEnTransit: donnees.stockEnTransit,
+          stockMin: r.min,
+          stockMax: r.max,
+          delaiFournisseurJours: donnees.delaiMoyenJours,
+        });
+      if (besoin <= 0) continue;
+
       const dispoCentral = await this.stocks.getQuantite(
         r.produitId,
         central.id,
       );
-      const qtyTransfert = Math.min(besoin, Math.max(0, dispoCentral));
-      const qtyAchat = besoin - qtyTransfert;
+      const { quantiteTransfert, quantiteAchat, route } = repartirBesoinReappro(
+        besoin,
+        dispoCentral,
+      );
       let bonId: string | undefined;
       let commandeId: string | undefined;
 
-      if (qtyTransfert > 0) {
+      const notesExplain = [
+        `Réappro intelligent`,
+        `declencheur=${declencheur}`,
+        `formule=${formule}`,
+        recommandation
+          ? `qReco=${recommandation.quantiteRecommandee};projete=${recommandation.stockProjeteALivraison};demandeDelai=${recommandation.demandePendantDelai}`
+          : `delai=absent`,
+        `min=${r.min};max=${r.max};stock=${donnees.stockCourant};reserve=${donnees.stockReserve};transit=${donnees.stockEnTransit}`,
+      ].join(' | ');
+
+      if (quantiteTransfert > 0) {
         const bon = await this.creer(
           {
             type: TypeOperationStock.TRANSFERT_INTERNE,
             entrepotSourceId: central.id,
             entrepotDestId: r.entrepotId,
-            notes: `Réappro Transférer min=${r.min} max=${r.max}`,
-            lignes: [{ produitId: r.produitId, quantite: qtyTransfert }],
+            notes: `${notesExplain} | transfert=${quantiteTransfert}`,
+            lignes: [{ produitId: r.produitId, quantite: quantiteTransfert }],
           },
           user,
         );
@@ -554,11 +595,29 @@ export class BonsStockService {
         bonsIds.push(bon.id);
       }
 
-      if (qtyAchat > 0) {
+      if (quantiteAchat > 0) {
         const commande = await this.creerCommandeReappro(
           r.produitId,
-          qtyAchat,
+          quantiteAchat,
           user,
+          {
+            notes: `${notesExplain} | achat=${quantiteAchat}`,
+            fournisseurIdPrefere: donnees.fournisseurIdPrefere,
+            auditDetails: {
+              formule,
+              declencheur,
+              delaiFournisseurJours: donnees.delaiMoyenJours,
+              ventesQuantite: donnees.ventesQuantite,
+              fenetreJours: FENETRE_REAPPRO_JOURS,
+              stockCourant: donnees.stockCourant,
+              stockReserve: donnees.stockReserve,
+              stockEnTransit: donnees.stockEnTransit,
+              stockMin: r.min,
+              stockMax: r.max,
+              quantiteRecommandee:
+                recommandation?.quantiteRecommandee ?? besoin,
+            },
+          },
         );
         if (commande) {
           commandeId = commande.id;
@@ -570,14 +629,12 @@ export class BonsStockService {
         produitId: r.produitId,
         entrepotId: r.entrepotId,
         besoin,
-        route:
-          qtyTransfert > 0 && qtyAchat > 0
-            ? 'MIXTE'
-            : qtyAchat > 0
-              ? 'ACHETER'
-              : 'TRANSFERER',
-        quantiteTransfert: qtyTransfert,
-        quantiteAchat: qtyAchat,
+        route,
+        quantiteTransfert,
+        quantiteAchat,
+        formule,
+        declencheur,
+        delaiFournisseurJours: donnees.delaiMoyenJours,
         bonId,
         commandeId,
       });
@@ -591,6 +648,15 @@ export class BonsStockService {
       details: JSON.stringify({
         bons: bonsIds.length,
         commandes: commandesIds.length,
+        propositions: propositions.map((p) => ({
+          produitId: p.produitId,
+          entrepotId: p.entrepotId,
+          besoin: p.besoin,
+          route: p.route,
+          formule: p.formule,
+          declencheur: p.declencheur,
+          delaiFournisseurJours: p.delaiFournisseurJours,
+        })),
       }),
     });
     return {
@@ -606,12 +672,18 @@ export class BonsStockService {
     produitId: string,
     quantite: number,
     user: AuthenticatedUser,
+    opts: {
+      notes: string;
+      fournisseurIdPrefere: string | null;
+      auditDetails: Record<string, unknown>;
+    },
   ) {
     const derniere = await this.prisma.receptionStock.findFirst({
       where: { produitId },
       orderBy: { dateReception: 'desc' },
     });
-    let fournisseurId = derniere?.fournisseurId ?? null;
+    let fournisseurId =
+      opts.fournisseurIdPrefere ?? derniere?.fournisseurId ?? null;
     if (!fournisseurId) {
       const f = await this.prisma.fournisseur.findFirst({
         where: { actif: true },
@@ -622,16 +694,17 @@ export class BonsStockService {
     const produit = await this.prisma.produit.findUniqueOrThrow({
       where: { id: produitId },
     });
+    // Prix : dernière réception ou CMP — jamais inventé au-delà.
     const prix =
       derniere?.prixAchat ??
       (produit.coutMoyenPondere.greaterThan(0)
         ? produit.coutMoyenPondere
         : produit.prixUnitaire);
-    return this.prisma.commandeAchat.create({
+    const commande = await this.prisma.commandeAchat.create({
       data: {
         numero: `BC-RA-${Date.now().toString(36).toUpperCase()}`,
         fournisseurId,
-        notes: `Réappro Acheter — central insuffisant (${quantite} u.)`,
+        notes: opts.notes,
         initiateurId: user.userId,
         lignes: {
           create: {
@@ -642,8 +715,24 @@ export class BonsStockService {
         },
       },
     });
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'COMMANDE_ACHAT_REAPPRO',
+      entite: 'CommandeAchat',
+      entiteId: commande.id,
+      details: JSON.stringify({
+        ...opts.auditDetails,
+        quantite,
+        fournisseurId,
+        prixSource: derniere?.prixAchat
+          ? 'DERNIERE_RECEPTION'
+          : produit.coutMoyenPondere.greaterThan(0)
+            ? 'CMP'
+            : 'PRIX_UNITAIRE',
+      }),
+    });
+    return commande;
   }
-
   async creerLot(dto: CreateLotDto, user: AuthenticatedUser) {
     return this.prisma.lot.create({
       data: {

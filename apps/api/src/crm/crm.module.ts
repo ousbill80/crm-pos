@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
+import { FideliteModule } from './fidelite/fidelite.module';
 import { ClientsService } from './crm.service';
 import { ClientsController } from './crm.controller';
 import { CrmReseauController } from './crm-reseau.controller';
-import { FideliteService } from './fidelite/fidelite.service';
 import { FideliteController } from './fidelite/fidelite.controller';
 import { InteractionsService } from './interactions/interactions.service';
 import { InteractionsController } from './interactions/interactions.controller';
@@ -16,6 +16,7 @@ import { CampagnesController } from './campagnes/campagnes.controller';
 // AuditModule sont globaux (@Global()) et n'ont donc pas besoin d'être
 // réimportés ici.
 @Module({
+  imports: [FideliteModule],
   controllers: [
     CrmReseauController,
     ClientsController,
@@ -24,15 +25,10 @@ import { CampagnesController } from './campagnes/campagnes.controller';
     InteractionsController,
     CampagnesController,
   ],
-  providers: [
-    ClientsService,
-    FideliteService,
-    InteractionsService,
-    CampagnesService,
-  ],
+  providers: [ClientsService, InteractionsService, CampagnesService],
   exports: [
+    FideliteModule,
     ClientsService,
-    FideliteService,
     InteractionsService,
     CampagnesService,
   ],

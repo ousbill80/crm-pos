@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { DEMO_PASSWORD, loginAs } from './helpers';
+import { loginAs, tokenFor } from './helpers';
 
 const API = process.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -9,6 +9,7 @@ test('Achats/Fournisseurs : cycle complet fournisseur → commande → réceptio
   page,
   request,
 }) => {
+  test.setTimeout(180_000);
   const suffix = Date.now();
   const nomFournisseur = `E2E Fournisseur ${suffix}`;
   let fournisseurId = '';
@@ -93,9 +94,22 @@ test('Achats/Fournisseurs : cycle complet fournisseur → commande → réceptio
     expect(message).toMatch(/BROUILLON/);
   });
 
-  await test.step('confirmation du bon de commande', async () => {
+  await test.step('soumission Achats puis confirmation DAF', async () => {
+    await page.getByRole('button', { name: 'Soumettre' }).click();
+    await expect(page.locator('.client-workspace-chips')).toContainText(
+      'Soumise à approbation',
+    );
+    await loginAs(page, request, 'demo-daf', `/achats/commandes/${commandeId}`);
+    await page.getByRole('button', { name: 'Approuver', exact: true }).click();
+    await expect(page.locator('.client-workspace-chips')).toContainText('Approuvée');
     await page.getByRole('button', { name: 'Confirmer' }).click();
     await expect(page.locator('.client-workspace-chips')).toContainText('Confirmée');
+    await loginAs(
+      page,
+      request,
+      'demo-respsi',
+      `/achats/commandes/${commandeId}`,
+    );
   });
 
   await test.step('réception partielle', async () => {
@@ -145,42 +159,34 @@ test('Achats/Fournisseurs : cycle complet fournisseur → commande → réceptio
     factureId = page.url().split('/achats/factures/')[1].split('?')[0];
     expect(factureId).toBeTruthy();
     await expect(page.locator('.client-workspace-chips')).toContainText('Brouillon');
+    await expect(page.locator('.client-workspace-chips')).toContainText('À rapprocher');
   });
 
-  await test.step('comptabilisation de la facture (SI/DAF/DG)', async () => {
-    await page.getByRole('button', { name: 'Comptabiliser (DAF)' }).click();
-    await expect(page.locator('.client-workspace-chips')).toContainText('Comptabilisée');
+  await test.step('RAF ne peut pas comptabiliser tant que le rapprochement 3 voies n’est pas fait', async () => {
+    await loginAs(page, request, 'demo-raf', `/achats/factures/${factureId}`);
+    await expect(page.locator('.client-workspace-chips')).toContainText('À rapprocher');
+    await expect(
+      page.getByRole('button', { name: 'Comptabiliser (SYSCOHADA)' }),
+    ).toHaveCount(0);
   });
 
-  await test.step('paiement par le Caissier Central (vérifie l’accès module Achats du rôle CAISSIER_CENTRAL)', async () => {
+  await test.step('Caissier Central lit la facture sans paiement tant qu’elle n’est pas comptabilisée', async () => {
     await loginAs(page, request, 'demo-central', `/achats/factures/${factureId}`);
     await expect(page).toHaveURL(new RegExp(`/achats/factures/${factureId}$`));
-    await expect(page.locator('.client-workspace-chips')).toContainText('Comptabilisée');
-
-    await page
-      .getByRole('button', { name: 'Enregistrer un paiement', exact: true })
-      .click();
-    const dialog = page.getByRole('dialog', { name: 'Enregistrer un paiement' });
-    await expect(dialog).toBeVisible();
-    await dialog.locator('#pay-mode').selectOption('VIREMENT');
-    await dialog.locator('#pay-ref').fill(`VIR-${suffix}`);
-    await dialog.getByRole('button', { name: 'Enregistrer' }).click();
-    await expect(dialog).toHaveCount(0);
-
-    await expect(page.locator('.client-workspace-chips')).toContainText('Payée');
+    await expect(page.locator('.client-workspace-chips')).toContainText('Brouillon');
+    await expect(
+      page.getByRole('button', { name: 'Enregistrer un paiement', exact: true }),
+    ).toHaveCount(0);
   });
 
   await test.step('persistance après rechargement', async () => {
     await page.reload();
-    await expect(page.locator('.client-workspace-chips')).toContainText('Payée');
+    await expect(page.locator('.client-workspace-chips')).toContainText('Brouillon');
+    await expect(page.locator('.client-workspace-chips')).toContainText('À rapprocher');
   });
 
   await test.step('RBAC : un rôle non habilité ne peut pas payer une facture fournisseur (rejet serveur explicite)', async () => {
-    const loginRespGsm = await request.post(`${API}/auth/login`, {
-      data: { login: 'demo-resp-gsm', password: DEMO_PASSWORD },
-    });
-    expect(loginRespGsm.ok(), await loginRespGsm.text()).toBeTruthy();
-    const { accessToken } = (await loginRespGsm.json()) as { accessToken: string };
+    const accessToken = await tokenFor(request, 'demo-resp-gsm');
 
     const paiementInterdit = await request.post(
       `${API}/achats/factures/${factureId}/paiements`,

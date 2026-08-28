@@ -17,6 +17,7 @@ import { BoutiquesModule } from './boutiques/boutiques.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { CrmModule } from './crm/crm.module';
 import { DevisModule } from './devis/devis.module';
+import { FacturesClientModule } from './factures-client/factures-client.module';
 import { ProduitsModule } from './produits/produits.module';
 import { VentesModule } from './ventes/ventes.module';
 import { FournisseursModule } from './fournisseurs/fournisseurs.module';
@@ -27,6 +28,10 @@ import { InventairesModule } from './inventaires/inventaires.module';
 import { EntrepotsModule } from './entrepots/entrepots.module';
 import { EntrepriseModule } from './entreprise/entreprise.module';
 import { UsersModule } from './users/users.module';
+import { ShopModule } from './shop/shop.module';
+import { CommandesWebModule } from './commandes-web/commandes-web.module';
+import { AccountingAiModule } from './accounting-ai/accounting-ai.module';
+import { ImmobilisationsModule } from './immobilisations/immobilisations.module';
 
 const apiRateLimitConfigure = Number(
   process.env.API_RATE_LIMIT_PER_MINUTE ?? 600,
@@ -60,6 +65,7 @@ const API_RATE_LIMIT_PER_MINUTE =
     TransactionsModule,
     CrmModule,
     DevisModule,
+    FacturesClientModule,
     ProduitsModule,
     VentesModule,
     FournisseursModule,
@@ -70,6 +76,10 @@ const API_RATE_LIMIT_PER_MINUTE =
     EntrepotsModule,
     EntrepriseModule,
     UsersModule,
+    ShopModule,
+    CommandesWebModule,
+    AccountingAiModule,
+    ImmobilisationsModule,
   ],
   controllers: [AppController],
   providers: [

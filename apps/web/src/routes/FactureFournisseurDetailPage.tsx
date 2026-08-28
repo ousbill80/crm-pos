@@ -8,43 +8,25 @@ import {
   LayoutDashboard,
   Warehouse,
 } from 'lucide-react';
-import { ModePaiementFournisseur, RoleLibelle } from '@caisse-crm/shared';
+import { ModePaiementFournisseur } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
+import { SensitiveActionModal } from '../components/SensitiveActionModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
   badgeFacture,
+  badgeRapprochement,
   fmtDate,
   fmtDateHeure,
   fmtFcfa,
   MODE_PAIEMENT_FOURN,
   STATUT_FACTURE,
+  STATUT_RAPPROCHEMENT,
 } from '../lib/achats-ui';
 import type { FactureFournisseurDto } from '../lib/types';
-
-const ROLES_LECTURE: RoleLibelle[] = [
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-  RoleLibelle.CONTROLEUR_INTERNE,
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-];
-
-const ROLES_FACTURE: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-];
-
-const ROLES_PAIEMENT: RoleLibelle[] = [
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-];
+import { hasP2pRole, operationId } from '../lib/p2p';
 
 type Onglet = 'apercu' | 'lignes' | 'receptions' | 'reglements' | 'historique';
 
@@ -60,12 +42,16 @@ export function FactureFournisseurDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutFacturer = user !== null && ROLES_FACTURE.includes(user.role);
-  const peutPayer = user !== null && ROLES_PAIEMENT.includes(user.role);
+  const peutLire = hasP2pRole(user?.role, 'lectureAchats');
+  const peutFacturer = hasP2pRole(user?.role, 'comptabiliteEcriture');
+  const peutPayer =
+    hasP2pRole(user?.role, 'comptabiliteEcriture') ||
+    hasP2pRole(user?.role, 'paiementApprobation') ||
+    hasP2pRole(user?.role, 'paiementExecution');
 
   const onglet = parseOnglet(searchParams.get('onglet'));
   const [modalPaiement, setModalPaiement] = useState(false);
+  const [modalComptabilisation, setModalComptabilisation] = useState(false);
   const [montantPaye, setMontantPaye] = useState('');
   const [mode, setMode] = useState<ModePaiementFournisseur>('VIREMENT');
   const [refPaiement, setRefPaiement] = useState('');
@@ -92,26 +78,30 @@ export function FactureFournisseurDetailPage() {
   }
 
   function ouvrirPaiement() {
-    if (!detail.data) return;
-    setMontantPaye(detail.data.resteAPayer);
-    setMode('VIREMENT');
-    setRefPaiement('');
-    setFormErr(null);
-    setModalPaiement(true);
+    navigate('/finance/comptabilite');
   }
 
   const comptabiliser = useMutation({
-    mutationFn: () =>
+    mutationFn: (challengeId: string) =>
       apiFetch<FactureFournisseurDto>(`/achats/factures/${factureId}/comptabiliser`, {
         method: 'POST',
+        body: JSON.stringify({ clientOperationId: operationId(), challengeId }),
       }),
-    onSuccess: invalider,
+    onSuccess: () => {
+      setModalComptabilisation(false);
+      invalider();
+    },
     onError: (e) => setFormErr(messageDepuisApi(e, 'Comptabilisation refusée.')),
   });
   const annuler = useMutation({
     mutationFn: () =>
       apiFetch<FactureFournisseurDto>(`/achats/factures/${factureId}/annuler`, {
         method: 'POST',
+        body: JSON.stringify({
+          clientOperationId: operationId(),
+          motif: 'Compensation demandée depuis la fiche facture',
+          referenceFournisseur: `AV-${detail.data?.referenceFournisseur ?? detail.data?.numero ?? factureId}`,
+        }),
       }),
     onSuccess: invalider,
     onError: (e) => setFormErr(messageDepuisApi(e, 'Annulation refusée.')),
@@ -150,9 +140,15 @@ export function FactureFournisseurDetailPage() {
   }
 
   const f = detail.data;
+  const estP2p = Boolean(f.clientOperationId);
+  const rapprochementOk =
+    f.statutRapprochement === 'RAPPROCHEE' || f.statutRapprochement === 'EXCEPTEE';
+  const peutComptabiliser =
+    peutFacturer && f.statut === 'BROUILLON' && rapprochementOk;
   const encours =
     f.statut === 'COMPTABILISEE' || f.statut === 'PARTIELLEMENT_PAYEE';
-  const montantNum = Number(f.montant);
+  const montantAffiche = f.netAPayer ?? f.totalTtc ?? f.montant;
+  const montantNum = Number(montantAffiche);
   const payeNum = Number(f.montantPaye);
   const pctPaye =
     montantNum > 0 ? Math.min(100, Math.round((payeNum / montantNum) * 100)) : 0;
@@ -207,19 +203,34 @@ export function FactureFournisseurDetailPage() {
           <Link to={`/fournisseurs/${f.fournisseurId}`} className="stock-row-link">
             Fiche fournisseur
           </Link>
-          {peutFacturer && f.statut === 'BROUILLON' && (
+          {peutComptabiliser && (
             <>
-              <button type="button" className="btn-primary" onClick={() => comptabiliser.mutate()}>
-                Comptabiliser (DAF)
+              <button type="button" className="btn-primary" onClick={() => setModalComptabilisation(true)}>
+                Comptabiliser (SYSCOHADA)
               </button>
-              <button type="button" onClick={() => annuler.mutate()}>
-                Annuler le brouillon
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Créer un avoir compensatoire intégral pour cette facture ?')) {
+                    annuler.mutate();
+                  }
+                }}
+              >
+                Créer un avoir compensatoire
               </button>
             </>
           )}
+          {peutFacturer &&
+            estP2p &&
+            f.statut === 'BROUILLON' &&
+            f.statutRapprochement === 'LITIGE' && (
+              <Link className="btn-secondary" to="/finance/comptabilite">
+                Litige — ouvrir la compta
+              </Link>
+            )}
           {peutPayer && encours && (
             <button type="button" className="btn-primary" onClick={ouvrirPaiement}>
-              Enregistrer un paiement
+              Préparer / suivre le paiement
             </button>
           )}
         </div>
@@ -247,6 +258,12 @@ export function FactureFournisseurDetailPage() {
           </p>
           <div className="client-workspace-chips">
             <span className={badgeFacture(f.statut)}>{STATUT_FACTURE[f.statut]}</span>
+            {f.statutRapprochement ? (
+              <span className={badgeRapprochement(f.statutRapprochement)}>
+                {STATUT_RAPPROCHEMENT[f.statutRapprochement] ?? f.statutRapprochement}
+              </span>
+            ) : null}
+            {estP2p ? <span className="badge">P2P</span> : null}
             <span className="badge">{pctPaye} % payé</span>
           </div>
           <div className="inventaire-progress" aria-label={`Paiement ${pctPaye} %`} style={{ maxWidth: 280, marginTop: 8 }}>
@@ -289,9 +306,12 @@ export function FactureFournisseurDetailPage() {
                   Montant <InfoTooltip insight={{ title: 'TTC facture', interpretation: 'Somme des réceptions rattachées.', severity: 'info' }} />
                 </div>
                 <div className="client-kpi-value client-kpi-value-sm money">
-                  {fmtFcfa(f.montant)}
+                  {fmtFcfa(montantAffiche)}
                 </div>
-                <div className="client-kpi-hint">{f.lignes.length} ligne(s)</div>
+                <div className="client-kpi-hint">
+                  {f.lignes.length} ligne(s)
+                  {f.netAPayer ? ' · net à payer' : ''}
+                </div>
               </button>
               <button
                 type="button"
@@ -317,7 +337,7 @@ export function FactureFournisseurDetailPage() {
                   {fmtFcfa(f.resteAPayer)}
                 </div>
                 <div className="client-kpi-hint">
-                  {peutPayer && encours ? 'Cliquer pour enregistrer un paiement' : 'Grand livre Achats'}
+                  {peutPayer && encours ? 'Ouvrir le circuit de paiement contrôlé' : 'Grand livre Achats'}
                 </div>
               </button>
             </div>
@@ -356,14 +376,20 @@ export function FactureFournisseurDetailPage() {
                   {f.lignes.map((l) => (
                     <tr key={l.id}>
                       <td>
-                        <Link className="link-button" to={`/produits/${l.produit.id}`}>
-                          {l.produit.designation}
-                        </Link>
-                        {l.produit.reference ? (
-                          <div className="kpi-hint" style={{ margin: 0 }}>
-                            {l.produit.reference}
-                          </div>
-                        ) : null}
+                        {l.produit ? (
+                          <>
+                            <Link className="link-button" to={`/produits/${l.produit.id}`}>
+                              {l.produit.designation}
+                            </Link>
+                            {l.produit.reference ? (
+                              <div className="kpi-hint" style={{ margin: 0 }}>
+                                {l.produit.reference}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td>{l.quantite}</td>
                       <td className="money">{fmtFcfa(l.prixUnitaire)}</td>
@@ -400,12 +426,16 @@ export function FactureFournisseurDetailPage() {
                 </thead>
                 <tbody>
                   {f.lignes.map((l) => (
-                    <tr key={l.receptionId}>
+                    <tr key={l.id}>
                       <td>{fmtDateHeure(l.dateReception)}</td>
                       <td>
-                        <Link className="link-button" to={`/produits/${l.produit.id}`}>
-                          {l.produit.designation}
-                        </Link>
+                        {l.produit ? (
+                          <Link className="link-button" to={`/produits/${l.produit.id}`}>
+                            {l.produit.designation}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td>{l.quantite}</td>
                       <td>{l.reference ?? '—'}</td>
@@ -491,6 +521,16 @@ export function FactureFournisseurDetailPage() {
           </div>
         )}
       </section>
+
+      <SensitiveActionModal
+        open={modalComptabilisation}
+        title="Confirmer la comptabilisation"
+        description={`La facture ${f.numero} sera inscrite au grand livre SYSCOHADA (écritures équilibrées append-only).`}
+        purpose="P2P_INVOICE_POST"
+        confirmLabel="Ré-authentifier et comptabiliser"
+        onClose={() => setModalComptabilisation(false)}
+        onConfirm={(challengeId) => comptabiliser.mutateAsync(challengeId)}
+      />
 
       {peutPayer && (
         <Modal

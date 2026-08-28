@@ -43,6 +43,7 @@ import {
 } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { MajorBrandMark } from '../components/MajorBrandMark';
 import { LoadingState } from '../components/LoadingState';
 import { insightStockQuantite } from '../lib/insights/stocks';
 import {
@@ -845,9 +846,7 @@ function TicketVente({
   return (
     <div className="pos-receipt" data-testid="pos-receipt">
       <div className="pos-receipt-card ticket">
-        <div className="pos-receipt-brand">
-          {societe?.raisonSociale ?? 'CaissePOS'}
-        </div>
+        <MajorBrandMark />
         {boutiqueNom && <p className="pos-receipt-shop">{boutiqueNom}</p>}
         {societe?.adresse && <p className="pos-receipt-addr">{societe.adresse}</p>}
         {societe?.telephone && (

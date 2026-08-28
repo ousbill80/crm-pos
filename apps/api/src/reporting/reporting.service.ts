@@ -756,16 +756,16 @@ export class ReportingService {
     );
   }
 
-  // Export comptable du grand livre (§6.3.4, §6.7) — uniquement les écritures
-  // VALIDEE (append-only, aucune ligne rétroactive) : date, référence,
-  // journal, libellé, débit, crédit, solde courant cumulé chronologiquement.
+  // Journal de caisse (§6.3.4, §6.7) — TRANSACTION_CAISSE VALIDEE uniquement
+  // (append-only). Distinct du grand livre SYSCOHADA (écritures 411/701/571).
+  // Colonnes : date, référence, journal, libellé, débit, crédit, solde cumulé.
   async getExportComptableCsv(
     user: AuthenticatedUser,
     query: ExportComptableQueryDto,
   ): Promise<string> {
     if (!ROLES_RESEAU_TRESORERIE.includes(user.role)) {
       throw new ForbiddenException(
-        `Rôle "${user.role}" non habilité à l'export comptable du grand livre.`,
+        `Rôle "${user.role}" non habilité à l'export du journal de caisse (transactions validées).`,
       );
     }
 

@@ -31,7 +31,8 @@ export interface AppliquerMouvementInput {
     | 'AJUSTEMENT'
     | 'TRANSFERT_OUT'
     | 'TRANSFERT_IN'
-    | 'SCRAP';
+    | 'SCRAP'
+    | 'RETOUR_FOURNISSEUR';
   /** Delta signé : +entrée / −sortie (sauf AJUSTEMENT qui pose la quantité cible via ajuster()). */
   delta: number;
   utilisateurId: string;
@@ -73,6 +74,27 @@ export class StockService {
     return aggs._sum.quantite ?? 0;
   }
 
+  /** Réservations e-commerce actives (non expirées). */
+  async getQuantiteReserveeWeb(
+    produitId: string,
+    entrepotId: string,
+    exceptHoldId?: string,
+    tx?: Tx,
+  ): Promise<number> {
+    const client = tx ?? this.prisma;
+    const now = new Date();
+    const aggs = await client.reservationWeb.aggregate({
+      where: {
+        produitId,
+        entrepotId,
+        expireAt: { gt: now },
+        ...(exceptHoldId ? { holdId: { not: exceptHoldId } } : {}),
+      },
+      _sum: { quantite: true },
+    });
+    return aggs._sum.quantite ?? 0;
+  }
+
   async getDisponible(
     produitId: string,
     entrepotId: string,
@@ -84,13 +106,19 @@ export class StockService {
       where: { produitId_entrepotId: { produitId, entrepotId } },
     });
     const physique = quant?.quantite ?? 0;
-    const reserve = await this.getQuantiteReservee(
+    const reservePos = await this.getQuantiteReservee(
       produitId,
       entrepotId,
       exceptHoldId,
       tx,
     );
-    return physique - reserve;
+    const reserveWeb = await this.getQuantiteReserveeWeb(
+      produitId,
+      entrepotId,
+      exceptHoldId,
+      tx,
+    );
+    return physique - reservePos - reserveWeb;
   }
 
   async trouverEntrepotPrincipalBoutique(boutiqueId: string): Promise<string> {
@@ -830,7 +858,11 @@ export class StockService {
             statut: { in: ['CONFIRMEE', 'PARTIELLEMENT_RECEPTIONNEE'] },
           },
         },
-        include: { receptions: { select: { quantite: true } } },
+        include: {
+          receptions: { select: { quantite: true } },
+          lignesReceptionAchat: { select: { quantiteRecue: true } },
+          cloturesCourtes: { select: { quantiteAnnulee: true } },
+        },
       }),
     ]);
     for (const id of produitIds) {
@@ -844,7 +876,15 @@ export class StockService {
       const row = map.get(l.produitId);
       if (!row) continue;
       const recu = l.receptions.reduce((s, x) => s + x.quantite, 0);
-      row.aRecevoir += Math.max(0, l.quantite - recu);
+      const recuP2p = l.lignesReceptionAchat.reduce(
+        (s, x) => s + x.quantiteRecue,
+        0,
+      );
+      const cloture = l.cloturesCourtes.reduce(
+        (s, x) => s + x.quantiteAnnulee,
+        0,
+      );
+      row.aRecevoir += Math.max(0, l.quantite - recu - recuP2p - cloture);
     }
     return map;
   }

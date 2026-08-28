@@ -27,6 +27,7 @@ import {
   MODE_PAIEMENT_LABEL,
 } from '../lib/etat-caisse';
 import { quantiteRetournee } from '../pos-retours';
+import { ENSEIGNE } from '@caisse-crm/shared';
 import { colors, ui } from '../ui';
 import type { PosStackParamList } from '../navigation/types';
 
@@ -223,9 +224,12 @@ export function EtatSessionScreen({ navigation, route }: Props) {
       </View>
 
       <View style={ui.card}>
+        <View style={styles.logo} accessibilityLabel={ENSEIGNE.nom} accessible>
+          <Text style={styles.logoMajor}>{ENSEIGNE.ligne1}</Text>
+          <Text style={styles.logoAuto}>{ENSEIGNE.ligne2}</Text>
+        </View>
         <Text style={styles.societe}>
-          {etat.societe?.raisonSociale ?? 'CaissePOS'}
-          {etat.boutiqueNom ? ` · ${etat.boutiqueNom}` : ''}
+          {etat.boutiqueNom ?? etat.societe?.raisonSociale ?? ENSEIGNE.nom}
         </Text>
         <Text style={ui.muted}>
           Poste · {etat.caisseLibelle || '—'}
@@ -429,6 +433,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     marginBottom: 4,
+  },
+  logo: {
+    marginBottom: 8,
+  },
+  logoMajor: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 2.4,
+    color: '#C9A227',
+  },
+  logoAuto: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 3.2,
+    color: colors.text,
+    marginTop: 2,
   },
   kpis: {
     flexDirection: 'row',

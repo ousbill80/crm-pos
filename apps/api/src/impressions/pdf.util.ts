@@ -1,7 +1,15 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 
-/** Charte des exports PDF — alignée sur le cockpit web (teal / navy). */
+const ENSEIGNE = {
+  nom: 'MAJOR AUTO PARTS',
+  ligne1: 'MAJOR',
+  ligne2: 'AUTO PARTS',
+  gold: '#C9A227',
+  ink: '#1A1C22',
+} as const;
+
+/** Charte des exports PDF — or / noir MAJOR AUTO PARTS. */
 export const PDF = {
   margin: 48,
   contentWidth: 499,
@@ -9,8 +17,8 @@ export const PDF = {
   muted: '#64748b',
   line: '#e2e8f0',
   fill: '#f8fafc',
-  brand: '#017E84',
-  navy: '#1B4F72',
+  brand: '#C9A227',
+  navy: '#1A1C22',
   danger: '#c0392b',
   warn: '#b9770e',
   ok: '#1e8449',
@@ -103,7 +111,7 @@ export function pipePdf(
     bufferPages: true,
     info: {
       Title: filename.replace(/\.pdf$/i, ''),
-      Author: 'Caisse CRM',
+      Author: ENSEIGNE.nom,
     },
   });
   doc.pipe(res);
@@ -120,7 +128,7 @@ export function pipePdf(
       .lineWidth(0.6)
       .stroke();
     doc.font('Helvetica').fontSize(7).fillColor(PDF.muted);
-    doc.text(mention ?? 'Caisse CRM', PDF.margin, bottom - 6, {
+    doc.text(mention ?? ENSEIGNE.nom, PDF.margin, bottom - 6, {
       width: PDF.contentWidth - 72,
       align: 'left',
       lineBreak: false,
@@ -135,6 +143,38 @@ export function pipePdf(
   doc.end();
 }
 
+export function dessinerLogoEnseigne(
+  doc: PDFKit.PDFDocument,
+  options?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    align?: 'left' | 'center';
+  },
+): number {
+  const x = options?.x ?? PDF.margin;
+  const y = options?.y ?? doc.y;
+  const width = options?.width ?? 280;
+  const align = options?.align ?? 'left';
+  doc.save();
+  doc.fillColor(ENSEIGNE.gold).font('Helvetica-Bold').fontSize(20);
+  doc.text(ENSEIGNE.ligne1, x, y, {
+    width,
+    align,
+    characterSpacing: 2.4,
+    lineBreak: false,
+  });
+  doc.fillColor(ENSEIGNE.ink).font('Helvetica-Bold').fontSize(9);
+  doc.text(ENSEIGNE.ligne2, x, y + 22, {
+    width,
+    align,
+    characterSpacing: 3.2,
+    lineBreak: false,
+  });
+  doc.restore();
+  return 38;
+}
+
 export function enTeteSociete(
   doc: PDFKit.PDFDocument,
   societe: {
@@ -147,12 +187,9 @@ export function enTeteSociete(
   doc.save();
   doc.rect(0, 0, doc.page.width, 6).fill(PDF.brand);
   doc.restore();
-  doc.y = 16;
+  const logoH = dessinerLogoEnseigne(doc, { x: PDF.margin, y: 18 });
+  doc.y = 18 + logoH + 4;
   doc.x = PDF.margin;
-  doc.fontSize(11).fillColor(PDF.navy).font('Helvetica-Bold');
-  doc.text(societe?.raisonSociale ?? 'Caisse CRM', PDF.margin, doc.y, {
-    width: 320,
-  });
   doc.font('Helvetica').fontSize(8).fillColor(PDF.muted);
   if (societe?.adresse) {
     doc.text(societe.adresse, PDF.margin, doc.y, { width: 320 });

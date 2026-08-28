@@ -84,4 +84,24 @@ export class UpdateProduitDto {
   @IsOptional()
   @IsIn(['FIFO', 'FEFO'])
   strategieSortie?: 'FIFO' | 'FEFO';
+
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  prixWeb?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  visibleWeb?: boolean;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(120)
+  slug?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tauxTva?: number | null;
 }

@@ -18,8 +18,7 @@ import { createSqliteStore } from './src/offline/sqlite-store';
 import { demarrerAutoSyncMobile } from './src/offline/auto-sync';
 import { SessionProvider, useSession } from './src/session-context';
 import {
-  accesInventaireMobile,
-  accesTresorerieMobile,
+  accesAppMobile,
 } from './src/circuit/actions';
 import { ui } from './src/ui';
 import type { RootStackParamList } from './src/navigation/types';
@@ -46,8 +45,7 @@ function Root() {
 
   const horsPerimetre =
     user != null &&
-    !accesTresorerieMobile(user.role) &&
-    !accesInventaireMobile(user.role);
+    !accesAppMobile(user.role);
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>

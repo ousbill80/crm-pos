@@ -10,6 +10,7 @@ import { CircuitStack } from './CircuitStack';
 import { GlassTabBackground, glassTabStyles } from './GlassTabBar';
 import { InventaireStack } from './InventaireStack';
 import { PosStack } from './PosStack';
+import { P2pStack } from './P2pStack';
 import type { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -42,6 +43,11 @@ const TAB_META: Record<
     icon: 'cube-outline',
     iconOn: 'cube',
   },
+  P2p: {
+    label: 'Achats',
+    icon: 'cart-outline',
+    iconOn: 'cart',
+  },
 };
 
 function TabIcon({
@@ -73,12 +79,7 @@ export function MainTabs() {
   const initial = role ? accueilOnglet(role) : 'Circuit';
   const showPos = role ? peutEncaisserPos(role) : false;
 
-  const start =
-    initial === 'Caisse' && showPos && tabs.includes('Caisse')
-      ? 'Caisse'
-      : tabs.includes('Circuit')
-        ? 'Circuit'
-        : tabs[0];
+  const start = tabs.includes(initial) ? initial : tabs[0];
 
   return (
     <Tab.Navigator
@@ -139,6 +140,9 @@ export function MainTabs() {
       ) : null}
       {tabs.includes('Inventaire') ? (
         <Tab.Screen name="Inventaire" component={InventaireStack} />
+      ) : null}
+      {tabs.includes('P2p') ? (
+        <Tab.Screen name="P2p" component={P2pStack} />
       ) : null}
     </Tab.Navigator>
   );

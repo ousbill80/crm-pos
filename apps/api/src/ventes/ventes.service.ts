@@ -29,6 +29,7 @@ import {
 } from '../boutiques/boutique-scope.util';
 import { TransactionsService } from '../transactions/transactions.service';
 import { FideliteService } from '../crm/fidelite/fidelite.service';
+import { SalesGlService } from '../accounting-gl/sales-gl.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
@@ -64,6 +65,7 @@ export class VentesService {
     private readonly transactionsService: TransactionsService,
     private readonly stockService: StockService,
     private readonly fideliteService: FideliteService,
+    private readonly salesGl: SalesGlService,
   ) {}
 
   async ouvrirSession(
@@ -433,6 +435,8 @@ export class VentesService {
       utilisateurId: utilisateur.userId,
     });
 
+    await this.salesGl.tryPostVente(vente.id, utilisateur.userId);
+
     return vente;
   }
 
@@ -562,6 +566,8 @@ export class VentesService {
         montantRembourse: montantRembourse.toString(),
       }),
     });
+
+    await this.salesGl.tryPostRetour(retour.id, utilisateur.userId);
 
     return retour;
   }

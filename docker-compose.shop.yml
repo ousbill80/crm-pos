@@ -1,0 +1,83 @@
+# Stack shop (DMZ) — api-shop + gateway boutique. Option A PLAN-E-COMMERCE.
+#
+#   docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-caisse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-caisse_crm}
+    volumes:
+      - caisse_crm_pgdata_shop:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-caisse} -d ${POSTGRES_DB:-caisse_crm}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shop-backend
+
+  api-shop:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.shop
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-caisse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-caisse_crm}?schema=public
+      JWT_SECRET_SHOP: ${JWT_SECRET_SHOP:?JWT_SECRET_SHOP requis}
+      SHOP_PANIER_SECRET: ${SHOP_PANIER_SECRET:-}
+      CORS_ORIGINS: ${SHOP_CORS_ORIGINS:-}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-}
+      ORANGE_MONEY_ENABLED: ${ORANGE_MONEY_ENABLED:-0}
+      WAVE_ENABLED: ${WAVE_ENABLED:-0}
+      SEED_ON_START: "false"
+      PORT: 3001
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+    networks:
+      - shop-backend
+
+  gateway-shop:
+    build:
+      context: .
+      dockerfile: apps/shop/Dockerfile.prod
+      args:
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      api-shop:
+        condition: service_healthy
+    environment:
+      TLS_ENABLED: ${TLS_ENABLED:-0}
+    ports:
+      - "${SHOP_HTTP_PORT:-8080}:80"
+      - "${SHOP_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ${TLS_CERTS_DIR:-./deploy/certs-shop}:/etc/nginx/certs:ro
+    networks:
+      - shop-backend
+      - shop-frontend
+
+networks:
+  shop-backend:
+    internal: true
+  shop-frontend:
+
+volumes:
+  caisse_crm_pgdata_shop:

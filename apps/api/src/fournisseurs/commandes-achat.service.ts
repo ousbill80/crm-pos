@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -22,6 +23,8 @@ const INCLUDE_COMMANDE = {
     include: {
       produit: { select: { id: true, designation: true, reference: true } },
       receptions: { select: { quantite: true } },
+      lignesReceptionAchat: { select: { quantiteRecue: true } },
+      cloturesCourtes: { select: { quantiteAnnulee: true } },
     },
   },
 } as const;
@@ -64,6 +67,20 @@ export class CommandesAchatService {
   ) {}
 
   async creer(dto: CreateCommandeAchatDto, user: AuthenticatedUser) {
+    if (dto.clientOperationId) {
+      const replay = await this.prisma.commandeAchat.findUnique({
+        where: { clientOperationId: dto.clientOperationId },
+        include: INCLUDE_COMMANDE,
+      });
+      if (replay) {
+        if (replay.initiateurId !== user.userId) {
+          throw new ConflictException(
+            'clientOperationId déjà utilisé par une autre opération.',
+          );
+        }
+        return this.serialiser(replay);
+      }
+    }
     const fournisseur = await this.prisma.fournisseur.findUnique({
       where: { id: dto.fournisseurId },
     });
@@ -82,39 +99,125 @@ export class CommandesAchatService {
     const produits = await this.chargerProduitsActifs(
       dto.lignes.map((l) => l.produitId),
     );
+    if (dto.societeId) {
+      const societe = await this.prisma.societe.findUnique({
+        where: { id: dto.societeId },
+      });
+      if (!societe) {
+        throw new NotFoundException(`Société ${dto.societeId} introuvable.`);
+      }
+    }
+    let societeId = dto.societeId;
+    if (!societeId) {
+      const societes = await this.prisma.societe.findMany({
+        select: { id: true },
+        take: 2,
+      });
+      if (societes.length === 1) {
+        societeId = societes[0].id;
+      }
+    }
+    const devise = (dto.devise ?? fournisseur.devise ?? 'XOF').toUpperCase();
+    const tauxChange = dto.tauxChangeSnapshot ?? (devise === 'XOF' ? 1 : null);
+    if (devise !== 'XOF' && !tauxChange) {
+      throw new BadRequestException(
+        'Un taux de change snapshot est obligatoire pour une devise étrangère.',
+      );
+    }
+    this.assertEcheances(dto);
 
-    const commande = await this.prisma.commandeAchat.create({
-      data: {
-        numero: this.numero('BC'),
-        fournisseurId: dto.fournisseurId,
-        notes: dto.notes?.trim() || null,
-        initiateurId: user.userId,
-        boutiqueId,
-        lignes: {
-          create: dto.lignes.map((l) => ({
-            produitId: l.produitId,
-            quantite: l.quantite,
-            prixUnitaire: l.prixUnitaire,
-          })),
-        },
-      },
-      include: INCLUDE_COMMANDE,
-    });
+    try {
+      const commande = await this.prisma.$transaction(async (tx) => {
+        const numero = societeId
+          ? await this.prochainNumero(tx, societeId, new Date())
+          : this.numero('BC');
+        const snapshot = this.snapshotDto(dto, devise, tauxChange);
+        const created = await tx.commandeAchat.create({
+          data: {
+            numero,
+            clientOperationId: dto.clientOperationId,
+            societeId,
+            fournisseurId: dto.fournisseurId,
+            devise,
+            tauxChangeSnapshot: tauxChange,
+            incoterm: dto.incoterm,
+            lieuOrigine: dto.lieuOrigine?.trim() || null,
+            lieuDestination: dto.lieuDestination?.trim() || null,
+            proformaReference: dto.proformaReference?.trim() || null,
+            conditionsPaiement: dto.conditionsPaiement?.trim() || null,
+            notes: dto.notes?.trim() || null,
+            initiateurId: user.userId,
+            boutiqueId,
+            lignes: {
+              create: dto.lignes.map((l) => ({
+                produitId: l.produitId,
+                quantite: l.quantite,
+                prixUnitaire: l.prixUnitaire,
+              })),
+            },
+            echeancesPaiement: dto.echeancesPaiement
+              ? {
+                  create: dto.echeancesPaiement.map((item) => ({
+                    type: item.type,
+                    ordre: item.ordre,
+                    pourcentage: item.pourcentage,
+                    montant: item.montant,
+                    datePrevue: item.datePrevue
+                      ? new Date(item.datePrevue)
+                      : null,
+                    conditions: item.conditions?.trim() || null,
+                  })),
+                }
+              : undefined,
+            versions: {
+              create: {
+                version: 1,
+                snapshot,
+                creeParId: user.userId,
+                clientOperationId: dto.clientOperationId
+                  ? `${dto.clientOperationId}:v1`
+                  : undefined,
+              },
+            },
+          },
+          include: INCLUDE_COMMANDE,
+        });
+        await tx.journalAudit.create({
+          data: {
+            utilisateurId: user.userId,
+            action: 'COMMANDE_ACHAT_CREATED',
+            entite: 'CommandeAchat',
+            entiteId: created.id,
+            details: JSON.stringify({
+              numero: created.numero,
+              fournisseurId: dto.fournisseurId,
+              lignes: dto.lignes.length,
+              devise,
+              tauxChangeSnapshot: tauxChange,
+            }),
+          },
+        });
+        return created;
+      });
 
-    await this.audit.record({
-      utilisateurId: user.userId,
-      action: 'COMMANDE_ACHAT_CREATED',
-      entite: 'CommandeAchat',
-      entiteId: commande.id,
-      details: JSON.stringify({
-        numero: commande.numero,
-        fournisseurId: dto.fournisseurId,
-        lignes: dto.lignes.length,
-      }),
-    });
-
-    void produits;
-    return this.serialiser(commande);
+      void produits;
+      return this.serialiser(commande);
+    } catch (error) {
+      if (
+        dto.clientOperationId &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const concurrent = await this.prisma.commandeAchat.findUnique({
+          where: { clientOperationId: dto.clientOperationId },
+          include: INCLUDE_COMMANDE,
+        });
+        if (concurrent?.initiateurId === user.userId) {
+          return this.serialiser(concurrent);
+        }
+      }
+      throw error;
+    }
   }
 
   async lister(user: AuthenticatedUser) {
@@ -132,9 +235,112 @@ export class CommandesAchatService {
     return this.serialiserDetail(commande);
   }
 
+  async getBonCommandePdfData(id: string, user: AuthenticatedUser) {
+    const commande = await this.prisma.commandeAchat.findUnique({
+      where: { id },
+      include: {
+        fournisseur: {
+          select: {
+            nom: true,
+            contact: true,
+            telephone: true,
+            email: true,
+            adresse: true,
+            identifiantFiscal: true,
+          },
+        },
+        boutique: { select: { id: true, nom: true } },
+        lignes: {
+          include: {
+            produit: {
+              select: { designation: true, reference: true },
+            },
+            receptions: { select: { quantite: true } },
+            lignesReceptionAchat: { select: { quantiteRecue: true } },
+            cloturesCourtes: { select: { quantiteAnnulee: true } },
+          },
+        },
+      },
+    });
+    if (!commande) {
+      throw new NotFoundException(`Commande ${id} introuvable.`);
+    }
+    this.assertLecture(commande, user);
+
+    const lignes = commande.lignes.map((l) => {
+      const montant = new Prisma.Decimal(l.prixUnitaire).mul(l.quantite);
+      return {
+        designation: l.produit.designation,
+        reference: l.produit.reference,
+        quantite: l.quantite,
+        prixUnitaire: l.prixUnitaire.toFixed(2),
+        montant: montant.toFixed(2),
+      };
+    });
+    const montantTotal = lignes
+      .reduce((s, l) => s.plus(l.montant), new Prisma.Decimal(0))
+      .toFixed(2);
+
+    const societe = commande.societeId
+      ? await this.prisma.societe.findUnique({
+          where: { id: commande.societeId },
+          select: {
+            raisonSociale: true,
+            adresse: true,
+            telephone: true,
+            email: true,
+          },
+        })
+      : await this.prisma.societe.findFirst({
+          select: {
+            raisonSociale: true,
+            adresse: true,
+            telephone: true,
+            email: true,
+          },
+        });
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'COMMANDE_ACHAT_PDF',
+      entite: 'CommandeAchat',
+      entiteId: id,
+      details: JSON.stringify({
+        numero: commande.numero,
+        proforma: Boolean(commande.proformaReference),
+      }),
+    });
+
+    return {
+      numero: commande.numero,
+      statut: commande.statut,
+      devise: commande.devise,
+      proformaReference: commande.proformaReference,
+      dateCommande: commande.dateCommande,
+      dateConfirmation: commande.dateConfirmation,
+      dateSoumission: commande.dateSoumission,
+      dateApprobation: commande.dateApprobation,
+      notes: commande.notes,
+      conditionsPaiement: commande.conditionsPaiement,
+      montantTotal,
+      fournisseur: commande.fournisseur,
+      lignes,
+      societe,
+      imprimeAt: new Date(),
+    };
+  }
+
   async confirmer(id: string, user: AuthenticatedUser) {
     const commande = await this.charger(id);
     this.assertEcriture(commande, user);
+    if (
+      (commande.societeId || commande.clientOperationId) &&
+      commande.statut !== StatutCommandeAchat.APPROUVEE
+    ) {
+      throw new BadRequestException(
+        'Une commande P2P versionnée doit être approuvée avant confirmation.',
+      );
+    }
     this.machine.assertCommande(commande.statut, StatutCommandeAchat.CONFIRMEE);
     if (commande.lignes.length === 0) {
       throw new BadRequestException(
@@ -352,9 +558,80 @@ export class CommandesAchatService {
       .toUpperCase()}`;
   }
 
+  private async prochainNumero(
+    tx: Prisma.TransactionClient,
+    societeId: string,
+    date: Date,
+  ) {
+    const exercice = date.getUTCFullYear();
+    const rows = await tx.$queryRaw<Array<{ valeur: number }>>(Prisma.sql`
+      INSERT INTO "sequence_document_achat"
+        ("id", "societeId", "exercice", "typeDocument", "prochaineValeur")
+      VALUES
+        (gen_random_uuid()::text, ${societeId}, ${exercice}, 'BC', 2)
+      ON CONFLICT ("societeId", "exercice", "typeDocument")
+      DO UPDATE SET "prochaineValeur" = "sequence_document_achat"."prochaineValeur" + 1
+      RETURNING "prochaineValeur" - 1 AS "valeur"
+    `);
+    const valeur = Number(rows[0]?.valeur);
+    return `BC-${exercice}-${societeId.slice(0, 6).toUpperCase()}-${String(valeur).padStart(6, '0')}`;
+  }
+
+  private assertEcheances(dto: CreateCommandeAchatDto) {
+    const echeances = dto.echeancesPaiement ?? [];
+    if (!echeances.length) return;
+    const ordres = new Set(echeances.map((item) => item.ordre));
+    if (ordres.size !== echeances.length) {
+      throw new BadRequestException(
+        'Les ordres des échéances de paiement doivent être uniques.',
+      );
+    }
+    const totalPourcentage = echeances.reduce(
+      (sum, item) => sum + (item.pourcentage ?? 0),
+      0,
+    );
+    if (
+      echeances.every((item) => item.pourcentage !== undefined) &&
+      Math.abs(totalPourcentage - 100) > 0.0001
+    ) {
+      throw new BadRequestException(
+        'Les pourcentages des échéances doivent totaliser 100.',
+      );
+    }
+  }
+
+  private snapshotDto(
+    dto: CreateCommandeAchatDto,
+    devise: string,
+    tauxChange: number | null,
+  ): Prisma.InputJsonValue {
+    return JSON.parse(
+      JSON.stringify({
+        fournisseurId: dto.fournisseurId,
+        societeId: dto.societeId ?? null,
+        devise,
+        tauxChangeSnapshot: tauxChange,
+        incoterm: dto.incoterm ?? null,
+        lieuOrigine: dto.lieuOrigine ?? null,
+        lieuDestination: dto.lieuDestination ?? null,
+        proformaReference: dto.proformaReference ?? null,
+        conditionsPaiement: dto.conditionsPaiement ?? null,
+        notes: dto.notes ?? null,
+        lignes: dto.lignes,
+        echeancesPaiement: dto.echeancesPaiement ?? [],
+      }),
+    ) as Prisma.InputJsonValue;
+  }
+
   private serialiser(c: CommandeChargee) {
     const lignes = c.lignes.map((l) => {
-      const quantiteRecue = l.receptions.reduce((s, r) => s + r.quantite, 0);
+      const quantiteRecue =
+        l.receptions.reduce((s, r) => s + r.quantite, 0) +
+        l.lignesReceptionAchat.reduce((s, r) => s + r.quantiteRecue, 0);
+      const quantiteCloturee = l.cloturesCourtes.reduce(
+        (s, item) => s + item.quantiteAnnulee,
+        0,
+      );
       const montant = new Prisma.Decimal(l.prixUnitaire).mul(l.quantite);
       return {
         id: l.id,
@@ -363,7 +640,11 @@ export class CommandesAchatService {
         reference: l.produit.reference,
         quantite: l.quantite,
         quantiteRecue,
-        quantiteRestante: Math.max(0, l.quantite - quantiteRecue),
+        quantiteCloturee,
+        quantiteRestante: Math.max(
+          0,
+          l.quantite - quantiteRecue - quantiteCloturee,
+        ),
         prixUnitaire: l.prixUnitaire.toFixed(2),
         montant: montant.toFixed(2),
       };
@@ -377,6 +658,14 @@ export class CommandesAchatService {
       fournisseurId: c.fournisseurId,
       fournisseur: c.fournisseur,
       statut: c.statut,
+      devise: c.devise,
+      tauxChangeSnapshot: c.tauxChangeSnapshot?.toFixed(6) ?? null,
+      incoterm: c.incoterm,
+      lieuOrigine: c.lieuOrigine,
+      lieuDestination: c.lieuDestination,
+      proformaReference: c.proformaReference,
+      conditionsPaiement: c.conditionsPaiement,
+      versionCourante: c.versionCourante,
       notes: c.notes,
       dateCommande: c.dateCommande.toISOString(),
       dateConfirmation: c.dateConfirmation?.toISOString() ?? null,

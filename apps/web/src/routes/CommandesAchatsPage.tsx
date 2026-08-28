@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, FileText, Package, ShoppingBag } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
@@ -27,31 +26,9 @@ import type {
   FournisseurDetailDto,
   FournisseurDto,
   ProduitDto,
+  SocieteDto,
 } from '../lib/types';
-
-const ROLES_LECTURE: RoleLibelle[] = [
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-  RoleLibelle.CONTROLEUR_INTERNE,
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-];
-
-const ROLES_COMMANDE: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-];
-
-const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-];
+import { hasP2pRole, operationId } from '../lib/p2p';
 
 type FiltreKpi = 'all' | 'brouillon' | 'ouvertes' | 'partielles' | 'receptionnees';
 
@@ -61,10 +38,9 @@ export function CommandesAchatsPage() {
   const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
-  const peutCreerArticle =
-    user !== null && ROLES_CATALOGUE_ECRITURE.includes(user.role);
+  const peutLire = hasP2pRole(user?.role, 'lectureAchats');
+  const peutCommander = hasP2pRole(user?.role, 'commandeSaisie');
+  const peutCreerArticle = hasP2pRole(user?.role, 'catalogueEcriture');
 
   const fournisseurQuery = searchParams.get('fournisseurId') ?? '';
   const ouvrirQuery = searchParams.get('ouvrir') === '1';
@@ -91,6 +67,11 @@ export function CommandesAchatsPage() {
   const produits = useQuery({
     queryKey: ['produits'],
     queryFn: () => apiFetch<ProduitDto[]>('/produits'),
+    enabled: peutCommander,
+  });
+  const societe = useQuery({
+    queryKey: ['entreprise'],
+    queryFn: () => apiFetch<SocieteDto>('/entreprise'),
     enabled: peutCommander,
   });
   const ficheFournisseur = useQuery({
@@ -179,6 +160,8 @@ export function CommandesAchatsPage() {
       apiFetch<CommandeAchatDto>('/achats/commandes', {
         method: 'POST',
         body: JSON.stringify({
+          clientOperationId: operationId(),
+          societeId: societe.data?.id,
           fournisseurId,
           notes: notes.trim() || undefined,
           lignes: lignes

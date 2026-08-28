@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Download,
   FileText,
   History,
   LayoutDashboard,
   Package,
   Warehouse,
 } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
-import { apiFetch, messageDepuisApi } from '../lib/api';
+import { apiDownload, apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
@@ -26,34 +26,11 @@ import {
   peutRepartir,
   RepartitionHubModal,
 } from '../components/RepartitionHubModal';
+import { hasP2pRole, p2pApi } from '../lib/p2p';
 
-const ROLES_LECTURE: RoleLibelle[] = [
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-  RoleLibelle.CONTROLEUR_INTERNE,
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-];
+type Onglet = 'apercu' | 'lignes' | 'import' | 'receptions' | 'factures' | 'historique';
 
-const ROLES_COMMANDE: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-];
-
-const ROLES_RECEPTION: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-];
-
-type Onglet = 'apercu' | 'lignes' | 'receptions' | 'factures' | 'historique';
-
-const ONGLET_IDS: Onglet[] = ['apercu', 'lignes', 'receptions', 'factures', 'historique'];
+const ONGLET_IDS: Onglet[] = ['apercu', 'lignes', 'import', 'receptions', 'factures', 'historique'];
 
 function parseOnglet(value: string | null): Onglet {
   return ONGLET_IDS.includes(value as Onglet) ? (value as Onglet) : 'apercu';
@@ -65,9 +42,10 @@ export function CommandeAchatDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutCommander = user !== null && ROLES_COMMANDE.includes(user.role);
-  const peutRecevoir = user !== null && ROLES_RECEPTION.includes(user.role);
+  const peutLire = hasP2pRole(user?.role, 'lectureAchats');
+  const peutCommander = hasP2pRole(user?.role, 'commandeSaisie');
+  const peutApprouver = hasP2pRole(user?.role, 'commandeApprobation');
+  const peutRecevoir = hasP2pRole(user?.role, 'receptionStock');
 
   const onglet = parseOnglet(searchParams.get('onglet'));
   const [ligneReception, setLigneReception] = useState<string | null>(null);
@@ -89,6 +67,11 @@ export function CommandeAchatDetailPage() {
     queryFn: () => apiFetch<EntrepotDto[]>('/entrepots'),
     enabled: peutRecevoir,
   });
+  const importDetail = useQuery({
+    queryKey: ['achats-commandes-import', commandeId],
+    queryFn: () => p2pApi.importCommande(commandeId!),
+    enabled: peutLire && Boolean(commandeId),
+  });
 
   function invalider() {
     void queryClient.invalidateQueries({ queryKey: ['achats-commandes'] });
@@ -105,6 +88,23 @@ export function CommandeAchatDetailPage() {
     setSearchParams(next, { replace: true });
   }
 
+  const soumettre = useMutation({
+    mutationFn: () =>
+      apiFetch<CommandeAchatDto>(`/achats/commandes/${commandeId}/soumettre`, {
+        method: 'POST',
+      }),
+    onSuccess: invalider,
+    onError: (e) => setFormErr(messageDepuisApi(e, 'Soumission refusée.')),
+  });
+  const approuver = useMutation({
+    mutationFn: () =>
+      apiFetch<CommandeAchatDto>(`/achats/commandes/${commandeId}/approuver`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: invalider,
+    onError: (e) => setFormErr(messageDepuisApi(e, 'Approbation refusée.')),
+  });
   const confirmer = useMutation({
     mutationFn: () =>
       apiFetch<CommandeAchatDto>(`/achats/commandes/${commandeId}/confirmer`, {
@@ -183,6 +183,7 @@ export function CommandeAchatDetailPage() {
   const tabs: Array<{ id: Onglet; label: string; icon: typeof LayoutDashboard; count?: number }> = [
     { id: 'apercu', label: 'Vue d’ensemble', icon: LayoutDashboard },
     { id: 'lignes', label: 'Lignes', icon: Package, count: c.lignes.length },
+    { id: 'import', label: 'Import & douane', icon: Warehouse, count: importDetail.data?.expeditions.length },
     { id: 'receptions', label: 'Réceptions', icon: Warehouse, count: receptions.length },
     { id: 'factures', label: 'Factures', icon: FileText, count: factures.length },
     { id: 'historique', label: 'Historique', icon: History },
@@ -219,6 +220,18 @@ export function CommandeAchatDetailPage() {
           ← Commandes
         </button>
         <div className="client-workspace-toolbar-actions">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() =>
+              void apiDownload(
+                `/achats/commandes/${c.id}/pdf`,
+                `${c.proformaReference ? 'proforma' : 'bon-commande'}-${c.numero}.pdf`,
+              )
+            }
+          >
+            <Download size={14} /> Télécharger PDF
+          </button>
           <Link to={`/fournisseurs/${c.fournisseurId}`} className="stock-row-link">
             Fiche fournisseur
           </Link>
@@ -230,13 +243,23 @@ export function CommandeAchatDetailPage() {
           </Link>
           {peutCommander && c.statut === 'BROUILLON' && (
             <>
-              <button type="button" className="btn-primary" onClick={() => confirmer.mutate()}>
-                Confirmer
+              <button type="button" className="btn-primary" onClick={() => soumettre.mutate()}>
+                Soumettre
               </button>
               <button type="button" onClick={() => annuler.mutate()}>
                 Annuler
               </button>
             </>
+          )}
+          {peutApprouver && c.statut === 'SOUMISE_APPROBATION' && (
+            <button type="button" className="btn-primary" onClick={() => approuver.mutate()}>
+              Approuver
+            </button>
+          )}
+          {peutApprouver && c.statut === 'APPROUVEE' && (
+            <button type="button" className="btn-primary" onClick={() => confirmer.mutate()}>
+              Confirmer
+            </button>
           )}
           {peutCommander && c.statut === 'CONFIRMEE' && c.quantiteRecue === 0 && (
             <button type="button" onClick={() => annuler.mutate()}>
@@ -500,6 +523,45 @@ export function CommandeAchatDetailPage() {
                     </tbody>
                   </table>
                 </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {onglet === 'import' && (
+          <div className="client-workspace-section">
+            <h2>Production, transport, douane & coût rendu</h2>
+            {importDetail.isLoading && <LoadingState label="Chargement du dossier import…" />}
+            {importDetail.isError && <p role="alert">Impossible de charger le dossier import.</p>}
+            {importDetail.data && (
+              <>
+                <dl className="clients-dl">
+                  <div><dt>Version</dt><dd>v{importDetail.data.versionCourante}</dd></div>
+                  <div><dt>Devise</dt><dd>{importDetail.data.devise} · taux snapshot {importDetail.data.tauxChangeSnapshot ?? 'absent'}</dd></div>
+                  <div><dt>Incoterm</dt><dd>{importDetail.data.incoterm ?? '—'}</dd></div>
+                  <div><dt>Trajet</dt><dd>{importDetail.data.lieuOrigine ?? '—'} → {importDetail.data.lieuDestination ?? '—'}</dd></div>
+                </dl>
+                {importDetail.data.jalons.length > 0 && (
+                  <ol className="fiche-timeline">
+                    {importDetail.data.jalons.map((jalon) => (
+                      <li key={jalon.id}>
+                        <time dateTime={jalon.dateReelle ?? jalon.datePrevue ?? undefined}>{fmtDateHeure(jalon.dateReelle ?? jalon.datePrevue)}</time>
+                        <strong>{jalon.type.replaceAll('_', ' ')}</strong>
+                        {jalon.notes && <span>{jalon.notes}</span>}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {importDetail.data.expeditions.length === 0 ? (
+                  <p className="lead">Aucune expédition enregistrée. Le rôle Logistique / Transit / Douane pilote cette étape.</p>
+                ) : importDetail.data.expeditions.map((expedition) => (
+                  <article className="panel p2p-card" key={expedition.id}>
+                    <h3>{expedition.mode} · {expedition.referenceTransport}</h3>
+                    <p>{expedition.portAeroportDepart ?? '—'} → {expedition.portAeroportArrivee ?? '—'} · ETA {fmtDateHeure(expedition.eta)}</p>
+                    <p>{expedition.conteneurs.length} conteneur(s) · {expedition.dossier?.documents.length ?? 0} document(s) · {expedition.dossier?.couts.length ?? 0} coût(s)</p>
+                    {expedition.dossier?.numeroDeclaration && <span className="badge badge-ok">Déclaration {expedition.dossier.numeroDeclaration}</span>}
+                  </article>
+                ))}
               </>
             )}
           </div>

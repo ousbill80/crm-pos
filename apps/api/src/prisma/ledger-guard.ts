@@ -12,6 +12,9 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 
 type JournalAuditDelegate = PrismaClient['journalAudit'];
 type TransactionCaisseDelegate = PrismaClient['transactionCaisse'];
+type MouvementBudgetAchatDelegate = PrismaClient['mouvementBudgetAchat'];
+type CommandeAchatVersionDelegate = PrismaClient['commandeAchatVersion'];
+type MouvementStockDelegate = PrismaClient['mouvementStock'];
 
 const ACTIONS_INTERDITES_JOURNAL_AUDIT: ReadonlySet<string> = new Set([
   'update',
@@ -20,6 +23,28 @@ const ACTIONS_INTERDITES_JOURNAL_AUDIT: ReadonlySet<string> = new Set([
   'delete',
   'deleteMany',
 ]);
+
+export function guardAppendOnlyDelegate<T extends object>(
+  delegate: T,
+  label: string,
+): T {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        ACTIONS_INTERDITES_JOURNAL_AUDIT.has(prop)
+      ) {
+        return () =>
+          Promise.reject(
+            new Error(
+              `${label} append-only : modification ou suppression interdite.`,
+            ),
+          );
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
 
 export function guardJournalAuditDelegate(
   delegate: JournalAuditDelegate,
@@ -34,6 +59,69 @@ export function guardJournalAuditDelegate(
           Promise.reject(
             new Error(
               "Journal d'audit append-only : modification ou suppression interdite.",
+            ),
+          );
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
+export function guardMouvementBudgetAchatDelegate(
+  delegate: MouvementBudgetAchatDelegate,
+): MouvementBudgetAchatDelegate {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        ACTIONS_INTERDITES_JOURNAL_AUDIT.has(prop)
+      ) {
+        return () =>
+          Promise.reject(
+            new Error(
+              'Grand livre budgétaire append-only : modification ou suppression interdite.',
+            ),
+          );
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
+export function guardCommandeAchatVersionDelegate(
+  delegate: CommandeAchatVersionDelegate,
+): CommandeAchatVersionDelegate {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        ACTIONS_INTERDITES_JOURNAL_AUDIT.has(prop)
+      ) {
+        return () =>
+          Promise.reject(
+            new Error(
+              'Avenant de commande append-only : modification ou suppression interdite.',
+            ),
+          );
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
+export function guardMouvementStockDelegate(
+  delegate: MouvementStockDelegate,
+): MouvementStockDelegate {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        ACTIONS_INTERDITES_JOURNAL_AUDIT.has(prop)
+      ) {
+        return () =>
+          Promise.reject(
+            new Error(
+              'Grand livre stock append-only : modification ou suppression interdite.',
             ),
           );
       }
@@ -131,6 +219,44 @@ export function guardCaisseDelegate(delegate: CaisseDelegate): CaisseDelegate {
   });
 }
 
+export function guardLettrageDelegate<T extends object>(
+  delegate: T,
+  label: string,
+  allowedUpdateKeys: ReadonlySet<string>,
+): T {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        (prop === 'delete' || prop === 'deleteMany' || prop === 'upsert')
+      ) {
+        return () =>
+          Promise.reject(
+            new Error(`${label} append-only : suppression ou upsert interdit.`),
+          );
+      }
+      if (prop === 'update' || prop === 'updateMany') {
+        return (args: { data?: Record<string, unknown> }) => {
+          const keys = Object.keys(args.data ?? {});
+          if (
+            keys.length === 0 ||
+            keys.some((key) => !allowedUpdateKeys.has(key))
+          ) {
+            throw new Error(
+              `${label} append-only : seuls ${[...allowedUpdateKeys].join(', ')} peuvent être mis à jour.`,
+            );
+          }
+          const fn = Reflect.get(target, prop, receiver) as (
+            a: unknown,
+          ) => Promise<unknown>;
+          return fn.call(target, args) as Promise<unknown>;
+        };
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
 export function guardLedgerTransactionClient<T extends object>(tx: T): T {
   return new Proxy(tx, {
     get(target, prop, receiver) {
@@ -142,6 +268,51 @@ export function guardLedgerTransactionClient<T extends object>(tx: T): T {
       if (prop === 'transactionCaisse') {
         return guardTransactionCaisseDelegate(
           Reflect.get(target, prop, receiver) as TransactionCaisseDelegate,
+        );
+      }
+      if (prop === 'mouvementBudgetAchat') {
+        return guardMouvementBudgetAchatDelegate(
+          Reflect.get(target, prop, receiver) as MouvementBudgetAchatDelegate,
+        );
+      }
+      if (prop === 'commandeAchatVersion') {
+        return guardCommandeAchatVersionDelegate(
+          Reflect.get(target, prop, receiver) as CommandeAchatVersionDelegate,
+        );
+      }
+      if (prop === 'mouvementStock') {
+        return guardMouvementStockDelegate(
+          Reflect.get(target, prop, receiver) as MouvementStockDelegate,
+        );
+      }
+      if (
+        prop === 'ecritureComptable' ||
+        prop === 'mouvementTresorerie' ||
+        prop === 'paiementFournisseur' ||
+        prop === 'importReleveBancaire' ||
+        prop === 'ligneReleveBancaire' ||
+        prop === 'rapprochementBancaire' ||
+        prop === 'accountingAiDecisionEvent' ||
+        prop === 'accountingAiEvidence' ||
+        prop === 'dotationImmobilisation'
+      ) {
+        return guardAppendOnlyDelegate(
+          Reflect.get(target, prop, receiver) as object,
+          'Fait comptable append-only',
+        );
+      }
+      if (prop === 'ligneEcritureComptable') {
+        return guardLettrageDelegate(
+          Reflect.get(target, prop, receiver) as object,
+          'Ligne d’écriture',
+          new Set(['lettrage', 'dateLettrage']),
+        );
+      }
+      if (prop === 'allocationPaiementFournisseur') {
+        return guardLettrageDelegate(
+          Reflect.get(target, prop, receiver) as object,
+          'Allocation de paiement',
+          new Set(['paiementId', 'lettrage']),
         );
       }
       if (prop === 'caisse') {

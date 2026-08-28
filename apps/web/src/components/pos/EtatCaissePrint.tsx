@@ -7,6 +7,7 @@ import { libellePaiements } from '../../lib/paiement-vente';
 import { LoadingState } from '../LoadingState';
 import type { EtatSessionDto, EtatVenteLigneDto } from '../../lib/types';
 import { libellesEtatCaisse } from '../../lib/etat-caisse';
+import { MajorBrandMark } from '../MajorBrandMark';
 
 const MODE: Record<string, string> = {
   ESPECES: 'Espèces',
@@ -112,15 +113,15 @@ export function EtatCaissePrint({
       <article className="pos-etat-doc">
         <header className="pos-etat-head">
           <div className="pos-etat-head-main">
+            <MajorBrandMark variant="doc" />
             <span className={`pos-etat-badge pos-etat-badge-${d.typeEtat.toLowerCase()}`}>
               {lib.badge}
             </span>
             <h1>{lib.titre}</h1>
             <p className="pos-etat-explicatif">{lib.sousTitre}</p>
-            <p className="pos-etat-societe">
-              {d.societe?.raisonSociale ?? 'CaissePOS'}
-              {d.boutiqueNom ? ` · ${d.boutiqueNom}` : ''}
-            </p>
+            {d.boutiqueNom ? (
+              <p className="pos-etat-societe">{d.boutiqueNom}</p>
+            ) : null}
             {d.societe?.adresse ? (
               <p className="pos-etat-addr">{d.societe.adresse}</p>
             ) : null}

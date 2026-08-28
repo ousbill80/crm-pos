@@ -11,7 +11,6 @@ import {
   FileText,
   Search,
 } from 'lucide-react';
-import { RoleLibelle } from '@caisse-crm/shared';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
@@ -32,23 +31,7 @@ import {
 } from '../lib/insights/fournisseurs';
 import type { Insight } from '../lib/insights/types';
 import type { FactureFournisseurDto, FournisseurDto, ReceptionAFacturerDto } from '../lib/types';
-
-const ROLES_LECTURE: RoleLibelle[] = [
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-  RoleLibelle.CAISSIER_CENTRAL,
-  RoleLibelle.CONTROLEUR_INTERNE,
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.SUPERVISEUR_ZONE,
-  RoleLibelle.RESPONSABLE_BOUTIQUE,
-  RoleLibelle.CAISSIER_BOUTIQUE,
-];
-
-const ROLES_FACTURE: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
-];
+import { hasP2pRole } from '../lib/p2p';
 
 type FiltreKpi = 'all' | 'a_payer' | 'retard' | 'payees' | 'brouillon';
 
@@ -77,8 +60,8 @@ export function FacturesFournisseurPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const peutLire = user !== null && ROLES_LECTURE.includes(user.role);
-  const peutFacturer = user !== null && ROLES_FACTURE.includes(user.role);
+  const peutLire = hasP2pRole(user?.role, 'lectureAchats');
+  const peutFacturer = hasP2pRole(user?.role, 'factureSaisie');
 
   const fournisseurQuery = searchParams.get('fournisseurId') ?? '';
   const ouvrirQuery = searchParams.get('ouvrir') === '1';
@@ -300,6 +283,9 @@ export function FacturesFournisseurPage() {
           <div className="page-header-actions-row">
             <Link className="btn btn-secondary" to="/achats/commandes">
               Commandes
+            </Link>
+            <Link className="btn btn-secondary" to="/finance/comptabilite">
+              Comptabilité
             </Link>
             <Link className="btn btn-secondary" to="/fournisseurs">
               Fournisseurs

@@ -20,6 +20,7 @@ import {
 } from '../boutiques/boutique-scope.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
+import { StockGlService } from '../accounting-gl/stock-gl.service';
 
 const includeSession = {
   entrepot: {
@@ -54,6 +55,7 @@ export class InventairesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stocks: StockService,
+    private readonly stockGl: StockGlService,
   ) {}
 
   async lister(user: AuthenticatedUser) {
@@ -237,6 +239,7 @@ export class InventairesService {
           tx,
         );
       }
+      await this.stockGl.postInventaire(tx, session, user.userId);
       await tx.sessionInventaire.update({
         where: { id },
         data: {

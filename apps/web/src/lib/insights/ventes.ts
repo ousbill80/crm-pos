@@ -237,3 +237,45 @@ export function insightDevisMontantDetail(
     severity: 'neutral',
   };
 }
+
+export function insightFacturesEmises(nombre: number, montantTtc: number): Insight {
+  return {
+    title: 'Factures émises',
+    interpretation:
+      nombre > 0
+        ? `${nombre} facture(s) client émise(s), ${montantTtc.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA TTC au grand livre 411.`
+        : 'Aucune facture client émise. Un ticket POS n’est pas une facture.',
+    recommendation:
+      'Émettre uniquement les pièces B2B. Ne jamais re-facturer un ticket déjà comptabilisé en VENTE_POS.',
+    severity: nombre > 0 ? 'ok' : 'info',
+  };
+}
+
+export function insightFacturesBrouillons(nombre: number): Insight {
+  return {
+    title: 'Brouillons facture',
+    interpretation:
+      nombre > 0
+        ? `${nombre} brouillon(s) non émis — pas encore d’écriture 411/701/4457.`
+        : 'Aucun brouillon en attente d’émission.',
+    severity: nombre > 0 ? 'warning' : 'ok',
+  };
+}
+
+export function insightFactureSolde(solde: string, montantTtc: string): Insight {
+  const restant = Number(solde);
+  const ttc = Number(montantTtc);
+  if (restant <= 0) {
+    return {
+      title: 'Solde client',
+      interpretation: `Facture soldée (${ttc.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA TTC). Le lettrage 411 se fait en comptabilité.`,
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Solde client',
+    interpretation: `Reste ${restant.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA sur ${ttc.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} FCFA TTC (compte 411).`,
+    recommendation: 'Enregistrer l’encaissement (virement / espèces / mobile) pour créditer le 411.',
+    severity: restant === ttc ? 'warning' : 'info',
+  };
+}

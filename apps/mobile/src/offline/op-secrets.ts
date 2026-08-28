@@ -60,6 +60,17 @@ export async function rehydraterSecretOp(
   const secrets = await lire();
   const champs = secrets[opId];
   if (!champs) return body;
+  const fullBody = champs.$body;
+  if (fullBody) {
+    try {
+      const parsed = JSON.parse(fullBody) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      throw new Error('Charge terrain chiffrée illisible.');
+    }
+  }
   return Object.entries(champs).reduce(
     (courant, [chemin, valeur]) =>
       injecterSecret(courant, chemin, valeur),

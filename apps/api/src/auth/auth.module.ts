@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
+import { SensitiveActionChallengeService } from './sensitive-action-challenge.service';
 
 @Module({
   imports: [
@@ -25,8 +26,13 @@ import { RolesGuard } from './guards/roles.guard';
       },
     }),
   ],
-  providers: [AuthService, JwtStrategy, RolesGuard],
+  providers: [
+    AuthService,
+    SensitiveActionChallengeService,
+    JwtStrategy,
+    RolesGuard,
+  ],
   controllers: [AuthController],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, SensitiveActionChallengeService, JwtModule],
 })
 export class AuthModule {}

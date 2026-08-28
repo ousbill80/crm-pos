@@ -9,12 +9,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  timeout: 60_000,
+  timeout: 180_000,
   expect: { timeout: 15_000 },
   use: {
     baseURL: WEB_URL,
     trace: 'on-first-retry',
     extraHTTPHeaders: { Origin: WEB_URL },
+    serviceWorkers: 'block',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

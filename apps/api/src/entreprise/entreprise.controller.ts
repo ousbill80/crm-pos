@@ -1,3 +1,4 @@
+import { RoleLibelle } from '@caisse-crm/shared';
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -14,7 +15,7 @@ export class EntrepriseController {
   constructor(private readonly entrepriseService: EntrepriseService) {}
 
   @Get()
-  @Roles(...ROLES_LECTURE_STRUCTURE)
+  @Roles(...ROLES_LECTURE_STRUCTURE, RoleLibelle.RAF_COMPTABLE)
   get() {
     return this.entrepriseService.getOrCreate();
   }

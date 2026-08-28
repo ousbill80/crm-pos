@@ -20,38 +20,58 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Societe {
-  id                              String   @id @default(uuid())
+  id                              String                           @id @default(uuid())
   raisonSociale                   String
   adresse                         String
   telephone                       String?
   email                           String?
-  devise                          String   @default("XOF")
+  devise                          String                           @default("XOF")
   logoUrl                         String?
   // Montant (FCFA) au-delà duquel seul la Direction Générale peut valider
   // un rapprochement sans écart (§4 « validation seuils exceptionnels »).
-  seuilValidationDg               Decimal  @default(5000000) @db.Decimal(14, 2)
+  seuilValidationDg               Decimal                          @default(5000000) @db.Decimal(14, 2)
   // Délai (heures) au-delà duquel un versement non transmis déclenche une
   // alerte et est compté en retard dans le reporting DAF (§6.3.5 « gestion
   // des seuils : montants de versement, délais »).
-  delaiVersementHeures            Int      @default(24)
+  delaiVersementHeures            Int                              @default(24)
   // Seuils CRM paramétrables (§6.6) — défauts = première itération documentée.
-  seuilFideliteArgent             Int      @default(500)
-  seuilFideliteOr                 Int      @default(2000)
-  seuilSegmentRegulier            Int      @default(5)
-  seuilSegmentVip                 Int      @default(15)
+  seuilFideliteArgent             Int                              @default(500)
+  seuilFideliteOr                 Int                              @default(2000)
+  seuilSegmentRegulier            Int                              @default(5)
+  seuilSegmentVip                 Int                              @default(15)
   // Avantages fidélité (§6.6 « avantages associés ») : remise % appliquée
   // automatiquement à l'encaissement pour un client aux paliers Argent/Or.
   // Défaut 0 = désactivé — le cahier ne chiffre pas ces avantages, c'est à
   // l'admin de les activer et de les chiffrer (comme les autres seuils).
-  avantageFideliteArgentPct       Int      @default(0)
-  avantageFideliteOrPct           Int      @default(0)
+  avantageFideliteArgentPct       Int                              @default(0)
+  avantageFideliteOrPct           Int                              @default(0)
   // Seuil de caisse (§5.1 « par exemple 500 000 FCFA ») au-delà duquel une
   // alerte de versement anticipé est déclenchée en cours de journée. Null =
   // désactivé (le cahier ne donne qu'un exemple, pas une valeur imposée).
-  seuilVersementAnticipe          Decimal? @db.Decimal(14, 2)
+  seuilVersementAnticipe          Decimal?                         @db.Decimal(14, 2)
   // Délai (heures) de régularisation d'un litige avant alerte de retard
   // (§5.1 « sous 24 à 48 heures » — 48h = borne haute retenue par défaut).
-  delaiRegularisationLitigeHeures Int      @default(48)
+  delaiRegularisationLitigeHeures Int                              @default(48)
+  centresCout                     CentreCout[]
+  reglesApprobationAchat          RegleApprobationAchat[]
+  referentielsFiscaux             ReferentielFiscal[]
+  exercicesComptables             ExerciceComptable[]
+  comptesComptables               CompteComptable[]
+  journauxComptables              JournalComptable[]
+  periodesComptables              PeriodeComptable[]
+  modelesComptables               ModeleComptabilisation[]
+  ecrituresComptables             EcritureComptable[]
+  comptesTresorerie               CompteTresorerie[]
+  propositionsPaiement            PropositionPaiementFournisseur[]
+  importsReleveBancaire           ImportReleveBancaire[]
+  commandesAchat                  CommandeAchat[]
+  sequencesDocumentsAchat         SequenceDocumentAchat[]
+  evidencesP2p                    EvidenceP2p[]
+  parametreShop                   ParametreShop?
+  naturesDepense                  NatureDepense[]
+  filesEcritureComptable          FileEcritureComptable[]
+  facturesFournisseur             FactureFournisseur[]
+  immobilisations                 Immobilisation[]
 
   @@map("societe")
 }
@@ -65,19 +85,29 @@ model Zone {
 }
 
 model Boutique {
-  id             String          @id @default(uuid())
-  nom            String
-  adresse        String
-  code           String?
-  actif          Boolean         @default(true)
-  zone           Zone            @relation(fields: [zoneId], references: [id])
-  zoneId         String
-  caisses        Caisse[]
-  utilisateurs   Utilisateur[]
-  entrepots      Entrepot[]
-  commandesAchat CommandeAchat[]
-  clientsOrigine Client[]
-  devisClients   DevisClient[]
+  id                  String          @id @default(uuid())
+  nom                 String
+  adresse             String
+  code                String?
+  actif               Boolean         @default(true)
+  zone                Zone            @relation(fields: [zoneId], references: [id])
+  zoneId              String
+  caisses             Caisse[]
+  utilisateurs        Utilisateur[]
+  entrepots           Entrepot[]
+  commandesAchat      CommandeAchat[]
+  demandesAchat       DemandeAchat[]
+  centresCout         CentreCout[]
+  evidencesP2p        EvidenceP2p[]
+  clientsOrigine      Client[]
+  devisClients        DevisClient[]
+  facturesClient      FactureClient[]
+  // E-commerce — click & collect (PLAN-E-COMMERCE §3)
+  retraitWebActif     Boolean         @default(false)
+  entrepotWeb         Entrepot?       @relation("BoutiqueEntrepotWeb", fields: [entrepotWebId], references: [id], onDelete: SetNull)
+  entrepotWebId       String?
+  delaiRetraitHeures  Int?
+  commandesWebRetrait CommandeWeb[]   @relation("CommandeRetraitBoutique")
 
   @@map("boutique")
 }
@@ -90,6 +120,7 @@ enum TypeEntrepot {
 enum UsageEmplacement {
   STOCK
   ENTREE
+  QUARANTAINE
   SORTIE
   PERTE
   FOURNISSEUR
@@ -99,25 +130,32 @@ enum UsageEmplacement {
 // Emplacement de stock rattaché à une boutique. Chaque boutique a au moins
 // un entrepôt PRINCIPAL (consommé par le POS de la boutique).
 model Entrepot {
-  id                 String              @id @default(uuid())
-  nom                String
-  code               String
-  type               TypeEntrepot        @default(PRINCIPAL)
-  usage              UsageEmplacement    @default(STOCK)
-  reseau             Boolean             @default(false)
-  virtuel            Boolean             @default(false)
-  actif              Boolean             @default(true)
-  boutique           Boutique            @relation(fields: [boutiqueId], references: [id])
-  boutiqueId         String
-  quants             StockQuant[]
-  mouvements         MouvementStock[]
-  sessionsInventaire SessionInventaire[]
-  receptions         ReceptionStock[]
-  reservations       ReservationStock[]
-  stockLots          StockLot[]
-  bonsSource         BonStock[]          @relation("BonStockSource")
-  bonsDest           BonStock[]          @relation("BonStockDest")
-  reglesReappro      RegleReappro[]
+  id                      String                   @id @default(uuid())
+  nom                     String
+  code                    String
+  type                    TypeEntrepot             @default(PRINCIPAL)
+  usage                   UsageEmplacement         @default(STOCK)
+  reseau                  Boolean                  @default(false)
+  virtuel                 Boolean                  @default(false)
+  actif                   Boolean                  @default(true)
+  boutique                Boutique                 @relation(fields: [boutiqueId], references: [id])
+  boutiqueId              String
+  quants                  StockQuant[]
+  mouvements              MouvementStock[]
+  sessionsInventaire      SessionInventaire[]
+  receptions              ReceptionStock[]
+  reservations            ReservationStock[]
+  reservationsWeb         ReservationWeb[]
+  boutiquesWeb            Boutique[]               @relation("BoutiqueEntrepotWeb")
+  parametresShopDefaut    ParametreShop[]          @relation("ParametreShopEntrepotDefaut")
+  commandesWeb            CommandeWeb[]
+  stockLots               StockLot[]
+  bonsSource              BonStock[]               @relation("BonStockSource")
+  bonsDest                BonStock[]               @relation("BonStockDest")
+  reglesReappro           RegleReappro[]
+  receptionsQuarantaine   ReceptionAchat[]         @relation("ReceptionQuarantaine")
+  lignesMiseEnStock       LigneMiseEnStockAchat[]  @relation("PutawayDestination")
+  lignesRetourFournisseur LigneRetourFournisseur[] @relation("RetourSource")
 
   @@unique([boutiqueId, code])
   @@index([reseau, usage])
@@ -129,10 +167,11 @@ model Entrepot {
 // ---------------------------------------------------------------------------
 
 model Role {
-  id                 String        @id @default(uuid())
-  libelle            String        @unique
+  id                 String                  @id @default(uuid())
+  libelle            String                  @unique
   niveauHabilitation Int
   utilisateurs       Utilisateur[]
+  reglesApprobation  RegleApprobationAchat[]
 
   @@map("role")
 }
@@ -168,24 +207,76 @@ model Utilisateur {
   regularisationsValidees RegularisationLitige[] @relation("ValidateurRegularisation")
   entreesAudit            JournalAudit[]
 
-  sessionsOuvertes           SessionCaisse[]       @relation("OuvertureSession")
-  sessionsTemoinOuverture    SessionCaisse[]       @relation("OuvertureTemoin")
-  sessionsFermees            SessionCaisse[]       @relation("ClotureSession")
-  sessionsTemoinCloture      SessionCaisse[]       @relation("ClotureTemoin")
+  sessionsOuvertes           SessionCaisse[]                  @relation("OuvertureSession")
+  sessionsTemoinOuverture    SessionCaisse[]                  @relation("OuvertureTemoin")
+  sessionsFermees            SessionCaisse[]                  @relation("ClotureSession")
+  sessionsTemoinCloture      SessionCaisse[]                  @relation("ClotureTemoin")
   receptionsStock            ReceptionStock[]
   mouvementsStock            MouvementStock[]
   retoursVente               RetourVente[]
   campagnesCreees            CampagneCrm[]
   devisClientsCrees          DevisClient[]
-  sessionsInventaireInitiees SessionInventaire[]   @relation("InventaireInitiateur")
-  sessionsInventaireValidees SessionInventaire[]   @relation("InventaireValidateur")
-  commandesAchatInitiees     CommandeAchat[]       @relation("CommandeAchatInitiateur")
+  facturesClientCrees        FactureClient[]              @relation("FactureClientCreateur")
+  facturesClientEmises       FactureClient[]              @relation("FactureClientEmission")
+  paiementsFactureClient     PaiementFactureClient[]
+  sessionsInventaireInitiees SessionInventaire[]              @relation("InventaireInitiateur")
+  sessionsInventaireValidees SessionInventaire[]              @relation("InventaireValidateur")
+  commandesAchatInitiees     CommandeAchat[]                  @relation("CommandeAchatInitiateur")
+  commandesAchatApprouvees   CommandeAchat[]                  @relation("CommandeAchatApprobateur")
+  demandesAchatInitiees      DemandeAchat[]                   @relation("DemandeAchatInitiateur")
+  demandesAchatApprouvees    DemandeAchat[]                   @relation("DemandeAchatApprobateur")
+  consultationsAchatCreees   ConsultationFournisseur[]        @relation("ConsultationAchatCreateur")
+  offresFournisseurSaisies   OffreFournisseur[]               @relation("OffreFournisseurSaisie")
+  mouvementsBudgetAchat      MouvementBudgetAchat[]
+  delegationsAccordees       DelegationApprobationAchat[]     @relation("DelegationApprobationDelegant")
+  delegationsRecues          DelegationApprobationAchat[]     @relation("DelegationApprobationDelegataire")
   facturesFournisseur        FactureFournisseur[]
   paiementsFournisseur       PaiementFournisseur[]
-  bonsStockInitiees          BonStock[]            @relation("BonStockInitiateur")
+  bonsStockInitiees          BonStock[]                       @relation("BonStockInitiateur")
   lotsCrees                  Lot[]
+  receptionsAchats           ReceptionAchat[]                 @relation("ReceptionnaireAchat")
+  decisionsQualiteAchats     DecisionQualiteAchat[]           @relation("ControleurQualiteAchat")
+  misesEnStockAchats         MiseEnStockAchat[]               @relation("PutawayAchat")
+  retoursFournisseurAchats   RetourFournisseur[]              @relation("RetourFournisseurCreateur")
+  cloturesCourtesAchats      ClotureCourteAchat[]             @relation("ClotureCourteApprobateur")
+  exceptionsFactureAchats    ExceptionRapprochementFacture[]  @relation("ExceptionFactureDecideur")
+  revuesExtractionFactures   RevueExtractionFacture[]         @relation("RevueExtractionFactureAuteur")
+  ecrituresComptables        EcritureComptable[]              @relation("EcritureComptableAuteur")
+  propositionsPaiement       PropositionPaiementFournisseur[] @relation("PropositionPaiementPreparateur")
+  paiementsApprouves         PropositionPaiementFournisseur[] @relation("PropositionPaiementApprobateur")
+  paiementsExceptionnels     PropositionPaiementFournisseur[] @relation("PropositionPaiementException")
+  paiementsExecutes          PropositionPaiementFournisseur[] @relation("PropositionPaiementExecuteur")
+  rapprochementsBancaires    RapprochementBancaire[]          @relation("RapprochementBancaireAuteur")
+  evidencesP2pDeposees        EvidenceP2p[]                    @relation("EvidenceP2pUploader")
+  challengesActionSensible   ChallengeActionSensible[]
+  filesEcritureComptable     FileEcritureComptable[]   @relation("FileEcritureAuteur")
+  immobilisationsCreees      Immobilisation[]          @relation("ImmobilisationAuteur")
 
   @@map("utilisateur")
+}
+
+enum PurposeActionSensible {
+  P2P_INVOICE_POST
+  P2P_PAYMENT_APPROVE
+  P2P_PAYMENT_EXCEPTION_APPROVE
+  P2P_PAYMENT_EXECUTE
+  ACCOUNTING_AI_POLICY_CREATE
+  ACCOUNTING_AI_POLICY_APPROVE
+}
+
+// Jeton opaque, très court et à usage unique. Le mot de passe n'est jamais
+// conservé ; seule la preuve de ré-authentification et sa consommation le sont.
+model ChallengeActionSensible {
+  id            String                 @id @default(uuid())
+  utilisateur   Utilisateur            @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
+  purpose       PurposeActionSensible
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime               @default(now())
+
+  @@index([utilisateurId, purpose, expiresAt, consumedAt])
+  @@map("challenge_action_sensible")
 }
 
 // ---------------------------------------------------------------------------
@@ -321,67 +412,83 @@ model RegularisationLitige {
 // ---------------------------------------------------------------------------
 
 model Produit {
-  id                  String               @id @default(uuid())
-  designation         String
+  id                       String                      @id @default(uuid())
+  designation              String
   // Référence interne / SKU — unique si renseignée (NULL autorisé plusieurs
   // fois). Sert au POS et à la recherche catalogue (§6.3.2).
-  reference           String?              @unique
+  reference                String?                     @unique
   // Classification libre (Protection, Charge, Audio…) — pas d'enum figé :
   // le cahier des charges ne prescrit pas de nomenclature.
-  categorie           String?
-  description         String?
+  categorie                String?
+  description              String?
   // Photo catalogue (data URL compressée ou URL). Optionnelle — le POS et
   // la fiche affichent les initiales si absente.
-  imageUrl            String?
+  imageUrl                 String?
   // Désactivation sans suppression : l'historique des ventes reste intact
   // (cohérent avec le grand livre append-only). Un produit inactif ne peut
   // plus être encaissé et n'alimente plus l'alerte STOCK_BAS.
-  actif               Boolean              @default(true)
+  actif                    Boolean                     @default(true)
   // Article physique (stock décrémenté à la vente) ou prestation de service
   // (§6.3.1 « produits ou prestations... gestion de stock simplifiée si
   // nécessaire ») : une PRESTATION n'a pas de décrément/contrôle de stock.
-  typeProduit         TypeProduit          @default(ARTICLE)
-  prixUnitaire        Decimal              @db.Decimal(14, 2)
+  typeProduit              TypeProduit                 @default(ARTICLE)
+  prixUnitaire             Decimal                     @db.Decimal(14, 2)
+  // Canal e-commerce (PLAN-E-COMMERCE §3) — grille web distincte du POS.
+  prixWeb                  Decimal?                    @db.Decimal(14, 2)
+  visibleWeb               Boolean                     @default(false)
+  tauxTva                  Decimal?                    @db.Decimal(5, 2)
+  slug                     String?                     @unique
   // Cache réseau = somme(StockQuant.quantite). Ne jamais écrire à la
   // main — passer par StockService.
-  stock               Int                  @default(0)
+  stock                    Int                         @default(0)
   // Coût moyen pondéré (CMP) — recalculé à chaque réception fournisseur
   // (apps/api/src/fournisseurs/fournisseurs.service.ts). Sert de base à la
   // valorisation du stock (§ extension audit modules Odoo/QuickBooks).
-  coutMoyenPondere    Decimal              @default(0) @db.Decimal(14, 2)
+  coutMoyenPondere         Decimal                     @default(0) @db.Decimal(14, 2)
   // Seuil de réapprovisionnement optionnel : déclenche l'alerte STOCK_BAS
   // (apps/api/src/alertes/alertes.service.ts) quand stock <= seuilReappro.
-  seuilReappro        Int?
-  codeBarres          String?              @unique
+  seuilReappro             Int?
+  codeBarres               String?                     @unique
   // true si codeBarres a été généré automatiquement (impression d'étiquettes
   // sans EAN fournisseur saisi) plutôt que saisi manuellement — distingue un
   // code interne d'un EAN réel (apps/api/src/produits/produits.service.ts).
-  codeBarresGenere    Boolean              @default(false)
-  uniteMesure         String               @default("UN")
-  facteurUnite        Decimal              @default(1) @db.Decimal(12, 4)
-  parentId            String?
-  parent              Produit?             @relation("VarianteProduit", fields: [parentId], references: [id])
-  variantes           Produit[]            @relation("VarianteProduit")
-  attributs           String?
-  methodeCout         MethodeCout          @default(CMP)
-  coutStandard        Decimal              @default(0) @db.Decimal(14, 2)
-  strategieSortie     StrategieSortie      @default(FIFO)
-  lignesVente         LigneVente[]
-  lignesDevis         LigneDevisClient[]
-  receptions          ReceptionStock[]
-  mouvements          MouvementStock[]
-  quants              StockQuant[]
-  lignesInventaire    LigneInventaire[]
-  lignesCommandeAchat LigneCommandeAchat[]
-  reservations        ReservationStock[]
-  lots                Lot[]
-  stockLots           StockLot[]
-  lignesBonStock      LigneBonStock[]
-  reglesReappro       RegleReappro[]
-  coutsLogistiques    CoutLogistique[]
+  codeBarresGenere         Boolean                     @default(false)
+  uniteMesure              String                      @default("UN")
+  facteurUnite             Decimal                     @default(1) @db.Decimal(12, 4)
+  parentId                 String?
+  parent                   Produit?                    @relation("VarianteProduit", fields: [parentId], references: [id])
+  variantes                Produit[]                   @relation("VarianteProduit")
+  attributs                String?
+  methodeCout              MethodeCout                 @default(CMP)
+  coutStandard             Decimal                     @default(0) @db.Decimal(14, 2)
+  strategieSortie          StrategieSortie             @default(FIFO)
+  lignesVente              LigneVente[]
+  lignesDevis              LigneDevisClient[]
+  lignesFactureClient      LigneFactureClient[]
+  receptions               ReceptionStock[]
+  mouvements               MouvementStock[]
+  quants                   StockQuant[]
+  lignesInventaire         LigneInventaire[]
+  lignesCommandeAchat      LigneCommandeAchat[]
+  lignesDemandeAchat       LigneDemandeAchat[]
+  lignesOffreAchat         LigneOffreFournisseur[]
+  reservations             ReservationStock[]
+  lots                     Lot[]
+  stockLots                StockLot[]
+  lignesBonStock           LigneBonStock[]
+  reglesReappro            RegleReappro[]
+  coutsLogistiques         CoutLogistique[]
+  lignesReceptionAchat     LigneReceptionAchat[]
+  lignesQualiteAchat       LigneDecisionQualiteAchat[]
+  lignesMiseEnStockAchat   LigneMiseEnStockAchat[]
+  lignesRetourFournisseur  LigneRetourFournisseur[]
+  allocationsCoutReception AllocationCoutReception[]
+  lignesCommandeWeb        LigneCommandeWeb[]
+  reservationsWeb          ReservationWeb[]
 
   @@index([categorie])
   @@index([actif])
+  @@index([visibleWeb])
   @@map("produit")
 }
 
@@ -412,26 +519,29 @@ enum TypeMouvementStock {
   TRANSFERT_OUT
   TRANSFERT_IN
   SCRAP
+  RETOUR_FOURNISSEUR
 }
 
 model MouvementStock {
-  id            String             @id @default(uuid())
-  produit       Produit            @relation(fields: [produitId], references: [id])
-  produitId     String
-  entrepot      Entrepot?          @relation(fields: [entrepotId], references: [id])
+  id                     String                  @id @default(uuid())
+  produit                Produit                 @relation(fields: [produitId], references: [id])
+  produitId              String
+  entrepot               Entrepot?               @relation(fields: [entrepotId], references: [id])
   // Nullable pour rétrocompatibilité des mouvements historiques (pré multi-emplacement).
-  entrepotId    String?
-  type          TypeMouvementStock
+  entrepotId             String?
+  type                   TypeMouvementStock
   // Signé : positif = entrée, négatif = sortie (sur l'entrepôt ciblé)
-  quantite      Int
+  quantite               Int
   // Quantité du StockQuant après mouvement (pas le cache réseau Produit.stock)
-  stockApres    Int
-  reference     String?
-  lot           Lot?               @relation(fields: [lotId], references: [id])
-  lotId         String?
-  dateHeure     DateTime           @default(now())
-  utilisateur   Utilisateur        @relation(fields: [utilisateurId], references: [id])
-  utilisateurId String
+  stockApres             Int
+  reference              String?
+  lot                    Lot?                    @relation(fields: [lotId], references: [id])
+  lotId                  String?
+  dateHeure              DateTime                @default(now())
+  utilisateur            Utilisateur             @relation(fields: [utilisateurId], references: [id])
+  utilisateurId          String
+  ligneMiseEnStockAchat  LigneMiseEnStockAchat?
+  ligneRetourFournisseur LigneRetourFournisseur?
 
   @@index([entrepotId, produitId])
   @@map("mouvement_stock")
@@ -453,17 +563,20 @@ model StockQuant {
 }
 
 model Lot {
-  id             String           @id @default(uuid())
-  produit        Produit          @relation(fields: [produitId], references: [id])
-  produitId      String
-  numero         String
-  dateExpiration DateTime?
-  createur       Utilisateur      @relation(fields: [createurId], references: [id])
-  createurId     String
-  createdAt      DateTime         @default(now())
-  stockLots      StockLot[]
-  mouvements     MouvementStock[]
-  lignesBon      LigneBonStock[]
+  id                      String                   @id @default(uuid())
+  produit                 Produit                  @relation(fields: [produitId], references: [id])
+  produitId               String
+  numero                  String
+  dateExpiration          DateTime?
+  createur                Utilisateur              @relation(fields: [createurId], references: [id])
+  createurId              String
+  createdAt               DateTime                 @default(now())
+  stockLots               StockLot[]
+  mouvements              MouvementStock[]
+  lignesBon               LigneBonStock[]
+  lignesReceptionAchat    LigneReceptionAchat[]
+  lignesMiseEnStockAchat  LigneMiseEnStockAchat[]
+  lignesRetourFournisseur LigneRetourFournisseur[]
 
   @@unique([produitId, numero])
   @@map("lot")
@@ -614,13 +727,67 @@ model LigneInventaire {
 // (§6.4, circuit versements boutique / caisse centrale).
 // ---------------------------------------------------------------------------
 
+enum StatutDemandeAchat {
+  BROUILLON
+  SOUMISE
+  APPROUVEE
+  REJETEE
+  CONVERTIE
+  ANNULEE
+}
+
 enum StatutCommandeAchat {
   BROUILLON
+  SOUMISE_APPROBATION
+  APPROUVEE
+  REJETEE
+  EN_PRODUCTION
+  EXPEDIEE
+  EN_TRANSIT
+  EN_DOUANE
+  DEDOUANEE
   CONFIRMEE
   PARTIELLEMENT_RECEPTIONNEE
   RECEPTIONNEE
   CLOTUREE
   ANNULEE
+}
+
+enum TypeEcheancePaiementAchat {
+  ACOMPTE
+  SOLDE
+  LETTRE_CREDIT
+  AUTRE
+}
+
+enum TypeJalonCommandeAchat {
+  PRODUCTION_DEBUT
+  PRODUCTION_FIN
+  CHARGEMENT
+  ETA
+  ARRIVEE
+}
+
+enum ModeTransportInternational {
+  MARITIME
+  AERIEN
+}
+
+enum TypeCoutImport {
+  DROIT_DOUANE
+  TAXE
+  FRET
+  ASSURANCE
+  SURESTARIE
+  AUTRE
+}
+
+enum TypeDocumentImport {
+  CONNAISSEMENT
+  CERTIFICAT_ORIGINE
+  DECLARATION_DOUANE
+  PROFORMA
+  AUTRE
 }
 
 enum StatutFactureFournisseur {
@@ -631,63 +798,825 @@ enum StatutFactureFournisseur {
   ANNULEE
 }
 
+enum TypeDocumentFournisseur {
+  FACTURE
+  AVOIR
+  STORNO
+}
+
+enum StatutRapprochementFacture {
+  A_RAPPROCHER
+  RAPPROCHEE
+  LITIGE
+  EXCEPTEE
+}
+
+enum StatutExtractionFacture {
+  NON_REQUISE
+  A_EXTRAIRE
+  A_REVOIR
+  REVUE
+  REJETEE
+}
+
+enum DimensionLitigeFacture {
+  QUANTITE
+  PRIX_UNITAIRE
+  TAXE
+  DEVISE
+  FOURNISSEUR
+}
+
 enum ModePaiementFournisseur {
   VIREMENT
-  ESPECES
+  CHEQUE
   MOBILE_MONEY
+  CAISSE_CENTRALE
+  DEPOT
+  COMPENSATION
+  LETTRE_CREDIT
 }
 
 model Fournisseur {
-  id         String               @id @default(uuid())
-  nom        String
-  contact    String?
-  telephone  String?
-  email      String?
-  adresse    String?
-  notes      String?
-  actif      Boolean              @default(true)
-  createdAt  DateTime             @default(now())
-  receptions ReceptionStock[]
-  commandes  CommandeAchat[]
-  factures   FactureFournisseur[]
+  id                      String                              @id @default(uuid())
+  nom                     String
+  contact                 String?
+  telephone               String?
+  email                   String?
+  adresse                 String?
+  notes                   String?
+  identifiantFiscal       String?
+  pays                    String?
+  devise                  String?
+  conditionsPaiementJours Int?
+  actif                   Boolean                             @default(true)
+  createdAt               DateTime                            @default(now())
+  receptions              ReceptionStock[]
+  commandes               CommandeAchat[]
+  factures                FactureFournisseur[]
+  invitationsConsultation InvitationConsultationFournisseur[]
+  offresAchat             OffreFournisseur[]
+  receptionsAchats        ReceptionAchat[]
+  retoursAchats           RetourFournisseur[]
 
   @@index([actif])
   @@map("fournisseur")
 }
 
+model CentreCout {
+  id             String          @id @default(uuid())
+  societe        Societe         @relation(fields: [societeId], references: [id])
+  societeId      String
+  code           String
+  libelle        String
+  actif          Boolean         @default(true)
+  boutique       Boutique?       @relation(fields: [boutiqueId], references: [id])
+  boutiqueId     String?
+  demandesAchat  DemandeAchat[]
+  commandesAchat CommandeAchat[]
+  budgetsAchat   BudgetAchat[]
+
+  @@unique([societeId, code])
+  @@index([boutiqueId, actif])
+  @@map("centre_cout")
+}
+
+model RegleApprobationAchat {
+  id         String    @id @default(uuid())
+  societe    Societe   @relation(fields: [societeId], references: [id])
+  societeId  String
+  niveau     Int
+  montantMin Decimal   @db.Decimal(14, 2)
+  montantMax Decimal?  @db.Decimal(14, 2)
+  devise     String    @default("XOF")
+  role       Role      @relation(fields: [roleId], references: [id])
+  roleId     String
+  actif      Boolean   @default(true)
+  valideDu   DateTime  @default(now())
+  valideAu   DateTime?
+
+  @@index([societeId, actif, devise])
+  @@map("regle_approbation_achat")
+}
+
+model DelegationApprobationAchat {
+  id            String      @id @default(uuid())
+  delegant      Utilisateur @relation("DelegationApprobationDelegant", fields: [delegantId], references: [id])
+  delegantId    String
+  delegataire   Utilisateur @relation("DelegationApprobationDelegataire", fields: [delegataireId], references: [id])
+  delegataireId String
+  roleLibelle   String
+  valideDu      DateTime
+  valideAu      DateTime
+  actif         Boolean     @default(true)
+  motif         String?
+
+  @@index([delegantId, actif, valideDu, valideAu])
+  @@index([delegataireId, actif, valideDu, valideAu])
+  @@map("delegation_approbation_achat")
+}
+
+model DemandeAchat {
+  id                String                    @id @default(uuid())
+  numero            String                    @unique
+  statut            StatutDemandeAchat        @default(BROUILLON)
+  objet             String
+  justification     String?
+  montantEstime     Decimal?                  @db.Decimal(14, 2)
+  devise            String                    @default("XOF")
+  dateCreation      DateTime                  @default(now())
+  dateSoumission    DateTime?
+  dateDecision      DateTime?
+  motifDecision     String?
+  initiateur        Utilisateur               @relation("DemandeAchatInitiateur", fields: [initiateurId], references: [id])
+  initiateurId      String
+  approbateur       Utilisateur?              @relation("DemandeAchatApprobateur", fields: [approbateurId], references: [id])
+  approbateurId     String?
+  boutique          Boutique?                 @relation(fields: [boutiqueId], references: [id])
+  boutiqueId        String?
+  centreCout        CentreCout?               @relation(fields: [centreCoutId], references: [id])
+  centreCoutId      String?
+  clientOperationId String?                   @unique
+  budget            BudgetAchat?              @relation(fields: [budgetId], references: [id])
+  budgetId          String?
+  lignes            LigneDemandeAchat[]
+  commandes         CommandeAchat[]
+  consultations     ConsultationFournisseur[]
+  mouvementsBudget  MouvementBudgetAchat[]
+
+  @@index([statut, dateCreation])
+  @@index([boutiqueId, statut])
+  @@index([budgetId, statut])
+  @@map("demande_achat")
+}
+
+model LigneDemandeAchat {
+  id          String                  @id @default(uuid())
+  demande     DemandeAchat            @relation(fields: [demandeId], references: [id])
+  demandeId   String
+  produit     Produit?                @relation(fields: [produitId], references: [id])
+  produitId   String?
+  designation String
+  quantite    Int
+  prixEstime  Decimal?                @db.Decimal(14, 2)
+  dateBesoin  DateTime?
+  lignesOffre LigneOffreFournisseur[]
+
+  @@index([demandeId])
+  @@map("ligne_demande_achat")
+}
+
+enum TypeMouvementBudgetAchat {
+  ENGAGEMENT
+  LIBERATION
+}
+
+// Enveloppe configurée explicitement : aucun montant monétaire par défaut.
+model BudgetAchat {
+  id            String                 @id @default(uuid())
+  centreCout    CentreCout             @relation(fields: [centreCoutId], references: [id])
+  centreCoutId  String
+  libelle       String
+  devise        String
+  montantAlloue Decimal                @db.Decimal(14, 2)
+  dateDebut     DateTime
+  dateFin       DateTime
+  actif         Boolean                @default(true)
+  demandes      DemandeAchat[]
+  mouvements    MouvementBudgetAchat[]
+
+  @@index([centreCoutId, actif, devise, dateDebut, dateFin])
+  @@map("budget_achat")
+}
+
+// Grand livre append-only des engagements/libérations budgétaires.
+model MouvementBudgetAchat {
+  id            String                   @id @default(uuid())
+  budget        BudgetAchat              @relation(fields: [budgetId], references: [id])
+  budgetId      String
+  demande       DemandeAchat             @relation(fields: [demandeId], references: [id])
+  demandeId     String
+  type          TypeMouvementBudgetAchat
+  montant       Decimal                  @db.Decimal(14, 2)
+  utilisateur   Utilisateur              @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
+  dateHeure     DateTime                 @default(now())
+  motif         String?
+
+  @@index([budgetId, dateHeure])
+  @@index([demandeId, dateHeure])
+  @@map("mouvement_budget_achat")
+}
+
+enum StatutConsultationFournisseur {
+  OUVERTE
+  CLOTUREE
+  ANNULEE
+}
+
+model ConsultationFournisseur {
+  id                String                              @id @default(uuid())
+  numero            String                              @unique
+  demande           DemandeAchat                        @relation(fields: [demandeId], references: [id])
+  demandeId         String
+  statut            StatutConsultationFournisseur       @default(OUVERTE)
+  dateLimite        DateTime?
+  notes             String?
+  clientOperationId String?                             @unique
+  createur          Utilisateur                         @relation("ConsultationAchatCreateur", fields: [createurId], references: [id])
+  createurId        String
+  dateCreation      DateTime                            @default(now())
+  invitations       InvitationConsultationFournisseur[]
+  offres            OffreFournisseur[]
+
+  @@index([demandeId, statut])
+  @@map("consultation_fournisseur")
+}
+
+model InvitationConsultationFournisseur {
+  id             String                  @id @default(uuid())
+  consultation   ConsultationFournisseur @relation(fields: [consultationId], references: [id])
+  consultationId String
+  fournisseur    Fournisseur             @relation(fields: [fournisseurId], references: [id])
+  fournisseurId  String
+
+  @@unique([consultationId, fournisseurId])
+  @@map("invitation_consultation_fournisseur")
+}
+
+model OffreFournisseur {
+  id                  String                  @id @default(uuid())
+  consultation        ConsultationFournisseur @relation(fields: [consultationId], references: [id])
+  consultationId      String
+  fournisseur         Fournisseur             @relation(fields: [fournisseurId], references: [id])
+  fournisseurId       String
+  devise              String
+  transport           Decimal                 @db.Decimal(14, 2)
+  assurance           Decimal                 @db.Decimal(14, 2)
+  douane              Decimal                 @db.Decimal(14, 2)
+  taxes               Decimal                 @db.Decimal(14, 2)
+  autresCouts         Decimal                 @db.Decimal(14, 2)
+  delaiLivraisonJours Int
+  conditionsPaiement  String?
+  validiteJusquAu     DateTime?
+  clientOperationId   String?                 @unique
+  saisiePar           Utilisateur             @relation("OffreFournisseurSaisie", fields: [saisieParId], references: [id])
+  saisieParId         String
+  dateSoumission      DateTime                @default(now())
+  lignes              LigneOffreFournisseur[]
+
+  @@unique([consultationId, fournisseurId])
+  @@index([consultationId, dateSoumission])
+  @@map("offre_fournisseur")
+}
+
+model LigneOffreFournisseur {
+  id             String            @id @default(uuid())
+  offre          OffreFournisseur  @relation(fields: [offreId], references: [id])
+  offreId        String
+  ligneDemande   LigneDemandeAchat @relation(fields: [ligneDemandeId], references: [id])
+  ligneDemandeId String
+  produit        Produit?          @relation(fields: [produitId], references: [id])
+  produitId      String?
+  quantite       Int
+  prixUnitaire   Decimal           @db.Decimal(14, 2)
+
+  @@unique([offreId, ligneDemandeId])
+  @@map("ligne_offre_fournisseur")
+}
+
 model CommandeAchat {
-  id               String               @id @default(uuid())
-  numero           String               @unique
-  fournisseur      Fournisseur          @relation(fields: [fournisseurId], references: [id])
-  fournisseurId    String
-  statut           StatutCommandeAchat  @default(BROUILLON)
-  notes            String?
-  dateCommande     DateTime             @default(now())
-  dateConfirmation DateTime?
-  dateCloture      DateTime?
-  initiateur       Utilisateur          @relation("CommandeAchatInitiateur", fields: [initiateurId], references: [id])
-  initiateurId     String
-  boutique         Boutique?            @relation(fields: [boutiqueId], references: [id])
-  boutiqueId       String?
-  lignes           LigneCommandeAchat[]
-  receptions       ReceptionStock[]
+  id                   String                        @id @default(uuid())
+  numero               String                        @unique
+  fournisseur          Fournisseur                   @relation(fields: [fournisseurId], references: [id])
+  fournisseurId        String
+  statut               StatutCommandeAchat           @default(BROUILLON)
+  devise               String                        @default("XOF")
+  notes                String?
+  dateCommande         DateTime                      @default(now())
+  dateSoumission       DateTime?
+  dateApprobation      DateTime?
+  dateConfirmation     DateTime?
+  dateCloture          DateTime?
+  initiateur           Utilisateur                   @relation("CommandeAchatInitiateur", fields: [initiateurId], references: [id])
+  initiateurId         String
+  approbateur          Utilisateur?                  @relation("CommandeAchatApprobateur", fields: [approbateurId], references: [id])
+  approbateurId        String?
+  boutique             Boutique?                     @relation(fields: [boutiqueId], references: [id])
+  boutiqueId           String?
+  centreCout           CentreCout?                   @relation(fields: [centreCoutId], references: [id])
+  centreCoutId         String?
+  demande              DemandeAchat?                 @relation(fields: [demandeId], references: [id])
+  demandeId            String?
+  societe              Societe?                      @relation(fields: [societeId], references: [id])
+  societeId            String?
+  clientOperationId    String?                       @unique
+  tauxChangeSnapshot   Decimal?                      @db.Decimal(18, 6)
+  incoterm             String?
+  lieuOrigine          String?
+  lieuDestination      String?
+  proformaReference    String?
+  conditionsPaiement   String?
+  versionCourante      Int                           @default(1)
+  lignes               LigneCommandeAchat[]
+  receptions           ReceptionStock[]
+  versions             CommandeAchatVersion[]
+  decisionsApprobation DecisionApprobationCommande[]
+  echeancesPaiement    EcheancePaiementCommande[]
+  jalons               JalonCommandeAchat[]
+  expeditions          ExpeditionInternationale[]
+  receptionsAchats     ReceptionAchat[]
+  cloturesCourtes      ClotureCourteAchat[]
 
   @@index([fournisseurId, statut])
+  @@index([demandeId])
+  @@index([centreCoutId])
+  @@index([societeId, dateCommande])
   @@map("commande_achat")
 }
 
 model LigneCommandeAchat {
-  id           String           @id @default(uuid())
-  commande     CommandeAchat    @relation(fields: [commandeId], references: [id])
-  commandeId   String
-  produit      Produit          @relation(fields: [produitId], references: [id])
-  produitId    String
-  quantite     Int
-  prixUnitaire Decimal          @db.Decimal(14, 2)
-  receptions   ReceptionStock[]
+  id                   String                    @id @default(uuid())
+  commande             CommandeAchat             @relation(fields: [commandeId], references: [id])
+  commandeId           String
+  produit              Produit                   @relation(fields: [produitId], references: [id])
+  produitId            String
+  quantite             Int
+  prixUnitaire         Decimal                   @db.Decimal(14, 2)
+  receptions           ReceptionStock[]
+  lignesReceptionAchat LigneReceptionAchat[]
+  cloturesCourtes      LigneClotureCourteAchat[]
+  tauxFiscalAchat      TauxFiscalAchat?          @relation(fields: [tauxFiscalAchatId], references: [id])
+  tauxFiscalAchatId    String?
+  codeTaxeSnapshot     String?
+  tauxTaxeSnapshot     Decimal?                  @db.Decimal(7, 4)
+  lignesFactureP2p     LigneFactureFournisseur[] @relation("LigneCommandeFactureP2P")
 
   @@unique([commandeId, produitId])
   @@map("ligne_commande_achat")
+}
+
+// Compteur transactionnel : l'UPDATE ... RETURNING de la migration attribue
+// un numéro sans collision, même sous créations concurrentes.
+model SequenceDocumentAchat {
+  id              String  @id @default(uuid())
+  societe         Societe @relation(fields: [societeId], references: [id])
+  societeId       String
+  exercice        Int
+  typeDocument    String
+  prochaineValeur Int     @default(1)
+
+  @@unique([societeId, exercice, typeDocument])
+  @@map("sequence_document_achat")
+}
+
+// Snapshots append-only. Une modification crée une nouvelle version ; aucune
+// version publiée n'est mise à jour ou supprimée.
+model CommandeAchatVersion {
+  id                String        @id @default(uuid())
+  commande          CommandeAchat @relation(fields: [commandeId], references: [id])
+  commandeId        String
+  version           Int
+  motif             String?
+  snapshot          Json
+  creeParId         String
+  dateCreation      DateTime      @default(now())
+  clientOperationId String?       @unique
+
+  @@unique([commandeId, version])
+  @@map("commande_achat_version")
+}
+
+model DecisionApprobationCommande {
+  id                String        @id @default(uuid())
+  commande          CommandeAchat @relation(fields: [commandeId], references: [id])
+  commandeId        String
+  decision          String
+  motif             String?
+  approbateurId     String
+  roleSnapshot      String
+  dateDecision      DateTime      @default(now())
+  clientOperationId String?       @unique
+
+  @@index([commandeId, dateDecision])
+  @@map("decision_approbation_commande")
+}
+
+model EcheancePaiementCommande {
+  id          String                    @id @default(uuid())
+  commande    CommandeAchat             @relation(fields: [commandeId], references: [id])
+  commandeId  String
+  type        TypeEcheancePaiementAchat
+  ordre       Int
+  pourcentage Decimal?                  @db.Decimal(7, 4)
+  montant     Decimal?                  @db.Decimal(14, 2)
+  datePrevue  DateTime?
+  conditions  String?
+
+  @@unique([commandeId, ordre])
+  @@map("echeance_paiement_commande")
+}
+
+model JalonCommandeAchat {
+  id                String                 @id @default(uuid())
+  commande          CommandeAchat          @relation(fields: [commandeId], references: [id])
+  commandeId        String
+  type              TypeJalonCommandeAchat
+  datePrevue        DateTime?
+  dateReelle        DateTime?
+  notes             String?
+  creeParId         String
+  dateCreation      DateTime               @default(now())
+  clientOperationId String?                @unique
+
+  @@index([commandeId, type])
+  @@map("jalon_commande_achat")
+}
+
+model ExpeditionInternationale {
+  id                  String                     @id @default(uuid())
+  commande            CommandeAchat              @relation(fields: [commandeId], references: [id])
+  commandeId          String
+  mode                ModeTransportInternational
+  referenceTransport  String
+  transporteur        String?
+  portAeroportDepart  String?
+  portAeroportArrivee String?
+  dateChargement      DateTime?
+  eta                 DateTime?
+  dateArrivee         DateTime?
+  clientOperationId   String?                    @unique
+  dateCreation        DateTime                   @default(now())
+  conteneurs          ConteneurImport[]
+  dossier             DossierDouane?
+  receptionsAchats    ReceptionAchat[]
+
+  @@index([commandeId, dateCreation])
+  @@map("expedition_internationale")
+}
+
+model ConteneurImport {
+  id           String                   @id @default(uuid())
+  expedition   ExpeditionInternationale @relation(fields: [expeditionId], references: [id])
+  expeditionId String
+  numero       String
+  type         String?
+  plomb        String?
+
+  @@unique([expeditionId, numero])
+  @@map("conteneur_import")
+}
+
+model DossierDouane {
+  id                String                   @id @default(uuid())
+  expedition        ExpeditionInternationale @relation(fields: [expeditionId], references: [id])
+  expeditionId      String                   @unique
+  numeroDeclaration String?
+  regimeDouanier    String?
+  bureauDouane      String?
+  dateDeclaration   DateTime?
+  declarant         String?
+  documents         DocumentImport[]
+  couts             LigneCoutImport[]
+
+  @@map("dossier_douane")
+}
+
+// Métadonnées seulement : aucun faux fichier ni contenu documentaire n'est
+// créé. uri reste nullable tant qu'un document réel n'est pas déposé.
+model DocumentImport {
+  id                String             @id @default(uuid())
+  dossier           DossierDouane      @relation(fields: [dossierId], references: [id])
+  dossierId         String
+  type              TypeDocumentImport
+  reference         String
+  dateDocument      DateTime?
+  emetteur          String?
+  nomFichier        String?
+  mimeType          String?
+  tailleOctets      Int?
+  empreinteSha256   String?
+  uri               String?
+  clientOperationId String?            @unique
+  dateCreation      DateTime           @default(now())
+
+  @@index([dossierId, type])
+  @@map("document_import")
+}
+
+enum TypeEvidenceP2p {
+  RECEIPT
+  QUALITY
+  CUSTOMS
+  INVOICE
+}
+
+// Le contenu binaire reste hors de toute racine statique. storageKey est
+// généré par le serveur et ne contient jamais de nom ou chemin fourni par le
+// client. Cette table porte les métadonnées d'intégrité et d'autorisation.
+model EvidenceP2p {
+  id              String          @id @default(uuid())
+  type            TypeEvidenceP2p
+  sourceId        String
+  societe         Societe         @relation(fields: [societeId], references: [id])
+  societeId       String
+  boutique        Boutique?       @relation(fields: [boutiqueId], references: [id])
+  boutiqueId      String?
+  storageKey      String          @unique
+  mimeType        String
+  tailleOctets    Int
+  empreinteSha256 String
+  uploader        Utilisateur     @relation("EvidenceP2pUploader", fields: [uploaderId], references: [id])
+  uploaderId      String
+  dateCreation    DateTime        @default(now())
+
+  @@index([type, sourceId])
+  @@index([societeId, boutiqueId, dateCreation])
+  @@map("evidence_p2p")
+}
+
+model LigneCoutImport {
+  id                 String         @id @default(uuid())
+  dossier            DossierDouane  @relation(fields: [dossierId], references: [id])
+  dossierId          String
+  type               TypeCoutImport
+  libelle            String
+  montant            Decimal        @db.Decimal(14, 2)
+  devise             String
+  tauxChangeSnapshot Decimal        @db.Decimal(18, 6)
+  clientOperationId  String?        @unique
+  dateCreation       DateTime       @default(now())
+
+  @@index([dossierId, type])
+  @@map("ligne_cout_import")
+}
+
+enum StatutReceptionAchat {
+  QUANTITATIVE
+  QUALITE_VALIDEE
+  MISE_EN_STOCK
+}
+
+enum TypePreuveReception {
+  DOCUMENT
+  PHOTO
+}
+
+enum MethodeAllocationCout {
+  VALEUR
+  QUANTITE
+  MANUELLE
+}
+
+enum StatutRetourFournisseur {
+  PREPARE
+  EXPEDIE
+}
+
+// Réception P2P multi-lignes. Le fait quantitatif est distinct de la décision
+// qualité et n'écrit jamais dans le grand livre de stock.
+model ReceptionAchat {
+  id                       String                    @id @default(uuid())
+  numero                   String                    @unique
+  commande                 CommandeAchat             @relation(fields: [commandeId], references: [id])
+  commandeId               String
+  expedition               ExpeditionInternationale? @relation(fields: [expeditionId], references: [id])
+  expeditionId             String?
+  fournisseur              Fournisseur               @relation(fields: [fournisseurId], references: [id])
+  fournisseurId            String
+  statut                   StatutReceptionAchat      @default(QUANTITATIVE)
+  referenceLivraison       String?
+  emplacementQuarantaine   Entrepot                  @relation("ReceptionQuarantaine", fields: [emplacementQuarantaineId], references: [id])
+  emplacementQuarantaineId String
+  receptionnaire           Utilisateur               @relation("ReceptionnaireAchat", fields: [receptionnaireId], references: [id])
+  receptionnaireId         String
+  dateReception            DateTime                  @default(now())
+  clientOperationId        String                    @unique
+  lignes                   LigneReceptionAchat[]
+  preuves                  PreuveReceptionAchat[]
+  decisionQualite          DecisionQualiteAchat?
+  miseEnStock              MiseEnStockAchat?
+  charges                  ChargeCoutReception[]
+  retours                  RetourFournisseur[]
+
+  @@index([commandeId, dateReception])
+  @@index([statut, dateReception])
+  @@map("reception_achat")
+}
+
+model LigneReceptionAchat {
+  id                   String                     @id @default(uuid())
+  reception            ReceptionAchat             @relation(fields: [receptionId], references: [id])
+  receptionId          String
+  ligneCommande        LigneCommandeAchat         @relation(fields: [ligneCommandeId], references: [id])
+  ligneCommandeId      String
+  produit              Produit                    @relation(fields: [produitId], references: [id])
+  produitId            String
+  quantiteCommandee    Int
+  quantiteRecue        Int
+  prixUnitaireSnapshot Decimal                    @db.Decimal(14, 2)
+  codeBarres           String?
+  numeroLot            String?
+  dateExpiration       DateTime?
+  numerosSerie         Json?
+  motifEcart           String?
+  lot                  Lot?                       @relation(fields: [lotId], references: [id])
+  lotId                String?
+  decisionQualite      LigneDecisionQualiteAchat?
+  lignesFactureP2p     LigneFactureFournisseur[]  @relation("LigneReceptionFactureP2P")
+
+  @@unique([receptionId, ligneCommandeId])
+  @@index([ligneCommandeId])
+  @@map("ligne_reception_achat")
+}
+
+model PreuveReceptionAchat {
+  id              String              @id @default(uuid())
+  reception       ReceptionAchat      @relation(fields: [receptionId], references: [id])
+  receptionId     String
+  type            TypePreuveReception
+  nomFichier      String
+  mimeType        String
+  tailleOctets    Int?
+  empreinteSha256 String?
+  uri             String
+  dateCreation    DateTime            @default(now())
+
+  @@index([receptionId, type])
+  @@map("preuve_reception_achat")
+}
+
+// Décision indépendante, append-only : les rejets restent en quarantaine et
+// seule la quantité acceptée pourra être mise en stock.
+model DecisionQualiteAchat {
+  id                String                      @id @default(uuid())
+  reception         ReceptionAchat              @relation(fields: [receptionId], references: [id])
+  receptionId       String                      @unique
+  controleur        Utilisateur                 @relation("ControleurQualiteAchat", fields: [controleurId], references: [id])
+  controleurId      String
+  commentaire       String?
+  dateDecision      DateTime                    @default(now())
+  clientOperationId String                      @unique
+  lignes            LigneDecisionQualiteAchat[]
+
+  @@map("decision_qualite_achat")
+}
+
+model LigneDecisionQualiteAchat {
+  id               String                    @id @default(uuid())
+  decision         DecisionQualiteAchat      @relation(fields: [decisionId], references: [id])
+  decisionId       String
+  ligneReception   LigneReceptionAchat       @relation(fields: [ligneReceptionId], references: [id])
+  ligneReceptionId String                    @unique
+  produit          Produit                   @relation(fields: [produitId], references: [id])
+  produitId        String
+  quantiteAcceptee Int
+  quantiteRejetee  Int
+  motifRejet       String?
+  misesEnStock     LigneMiseEnStockAchat[]
+  allocations      AllocationCoutReception[]
+  retours          LigneRetourFournisseur[]
+  lignesFactureP2p LigneFactureFournisseur[] @relation("LigneQualiteFactureP2P")
+
+  @@map("ligne_decision_qualite_achat")
+}
+
+model MiseEnStockAchat {
+  id                String                  @id @default(uuid())
+  reception         ReceptionAchat          @relation(fields: [receptionId], references: [id])
+  receptionId       String                  @unique
+  operateur         Utilisateur             @relation("PutawayAchat", fields: [operateurId], references: [id])
+  operateurId       String
+  dateMiseEnStock   DateTime                @default(now())
+  clientOperationId String                  @unique
+  lignes            LigneMiseEnStockAchat[]
+
+  @@map("mise_en_stock_achat")
+}
+
+model LigneMiseEnStockAchat {
+  id                String                    @id @default(uuid())
+  miseEnStock       MiseEnStockAchat          @relation(fields: [miseEnStockId], references: [id])
+  miseEnStockId     String
+  ligneQualite      LigneDecisionQualiteAchat @relation(fields: [ligneQualiteId], references: [id])
+  ligneQualiteId    String
+  produit           Produit                   @relation(fields: [produitId], references: [id])
+  produitId         String
+  quantite          Int
+  destination       Entrepot                  @relation("PutawayDestination", fields: [destinationId], references: [id])
+  destinationId     String
+  lot               Lot?                      @relation(fields: [lotId], references: [id])
+  lotId             String?
+  mouvement         MouvementStock            @relation(fields: [mouvementId], references: [id])
+  mouvementId       String                    @unique
+  coutUnitaireRendu Decimal                   @db.Decimal(14, 4)
+
+  @@unique([miseEnStockId, ligneQualiteId])
+  @@map("ligne_mise_en_stock_achat")
+}
+
+model ChargeCoutReception {
+  id                String                    @id @default(uuid())
+  reception         ReceptionAchat            @relation(fields: [receptionId], references: [id])
+  receptionId       String
+  libelle           String
+  montant           Decimal                   @db.Decimal(14, 2)
+  methode           MethodeAllocationCout
+  clientOperationId String                    @unique
+  dateAllocation    DateTime                  @default(now())
+  allocations       AllocationCoutReception[]
+
+  @@index([receptionId])
+  @@map("charge_cout_reception")
+}
+
+model AllocationCoutReception {
+  id             String                    @id @default(uuid())
+  charge         ChargeCoutReception       @relation(fields: [chargeId], references: [id])
+  chargeId       String
+  ligneQualite   LigneDecisionQualiteAchat @relation(fields: [ligneQualiteId], references: [id])
+  ligneQualiteId String
+  produit        Produit                   @relation(fields: [produitId], references: [id])
+  produitId      String
+  montant        Decimal                   @db.Decimal(14, 2)
+
+  @@unique([chargeId, ligneQualiteId])
+  @@map("allocation_cout_reception")
+}
+
+model RetourFournisseur {
+  id                    String                   @id @default(uuid())
+  numero                String                   @unique
+  reception             ReceptionAchat           @relation(fields: [receptionId], references: [id])
+  receptionId           String
+  fournisseur           Fournisseur              @relation(fields: [fournisseurId], references: [id])
+  fournisseurId         String
+  statut                StatutRetourFournisseur  @default(PREPARE)
+  referenceRma          String?
+  motif                 String
+  reclamationQualite    String?
+  avoirAttendu          Boolean                  @default(false)
+  montantAvoirAttendu   Decimal?                 @db.Decimal(14, 2)
+  createur              Utilisateur              @relation("RetourFournisseurCreateur", fields: [createurId], references: [id])
+  createurId            String
+  dateCreation          DateTime                 @default(now())
+  dateExpedition        DateTime?
+  clientOperationId     String                   @unique
+  expeditionOperationId String?                  @unique
+  lignes                LigneRetourFournisseur[]
+
+  @@index([receptionId, statut])
+  @@map("retour_fournisseur")
+}
+
+model LigneRetourFournisseur {
+  id             String                    @id @default(uuid())
+  retour         RetourFournisseur         @relation(fields: [retourId], references: [id])
+  retourId       String
+  ligneQualite   LigneDecisionQualiteAchat @relation(fields: [ligneQualiteId], references: [id])
+  ligneQualiteId String
+  produit        Produit                   @relation(fields: [produitId], references: [id])
+  produitId      String
+  quantite       Int
+  depuisStock    Boolean                   @default(true)
+  source         Entrepot                  @relation("RetourSource", fields: [sourceId], references: [id])
+  sourceId       String
+  lot            Lot?                      @relation(fields: [lotId], references: [id])
+  lotId          String?
+  mouvement      MouvementStock?           @relation(fields: [mouvementId], references: [id])
+  mouvementId    String?                   @unique
+
+  @@unique([retourId, ligneQualiteId])
+  @@map("ligne_retour_fournisseur")
+}
+
+model ClotureCourteAchat {
+  id                String                    @id @default(uuid())
+  commande          CommandeAchat             @relation(fields: [commandeId], references: [id])
+  commandeId        String
+  motif             String
+  approbateur       Utilisateur               @relation("ClotureCourteApprobateur", fields: [approbateurId], references: [id])
+  approbateurId     String
+  roleSnapshot      String
+  dateApprobation   DateTime                  @default(now())
+  clientOperationId String                    @unique
+  lignes            LigneClotureCourteAchat[]
+
+  @@index([commandeId, dateApprobation])
+  @@map("cloture_courte_achat")
+}
+
+model LigneClotureCourteAchat {
+  id              String             @id @default(uuid())
+  cloture         ClotureCourteAchat @relation(fields: [clotureId], references: [id])
+  clotureId       String
+  ligneCommande   LigneCommandeAchat @relation(fields: [ligneCommandeId], references: [id])
+  ligneCommandeId String
+  quantiteAnnulee Int
+  motif           String
+
+  @@unique([clotureId, ligneCommandeId])
+  @@map("ligne_cloture_courte_achat")
 }
 
 // Réception de stock : incrémente Produit.stock de façon atomique (même
@@ -724,53 +1653,735 @@ model ReceptionStock {
   @@map("reception_stock")
 }
 
-model FactureFournisseur {
-  id                   String                    @id @default(uuid())
-  numero               String                    @unique
-  referenceFournisseur String?
-  fournisseur          Fournisseur               @relation(fields: [fournisseurId], references: [id])
-  fournisseurId        String
-  statut               StatutFactureFournisseur  @default(BROUILLON)
-  dateFacture          DateTime                  @default(now())
-  dateEcheance         DateTime?
-  notes                String?
-  montant              Decimal                   @db.Decimal(14, 2)
-  createur             Utilisateur               @relation(fields: [createurId], references: [id])
-  createurId           String
-  lignes               LigneFactureFournisseur[]
-  paiements            PaiementFournisseur[]
+enum NatureFactureFournisseur {
+  MARCHANDISE
+  CHARGE
+}
 
+model FactureFournisseur {
+  id                          String                          @id @default(uuid())
+  numero                      String                          @unique
+  referenceFournisseur        String?
+  referenceNormalisee         String?
+  societe                     Societe                         @relation(fields: [societeId], references: [id])
+  societeId                   String
+  nature                      NatureFactureFournisseur        @default(MARCHANDISE)
+  fournisseur                 Fournisseur                     @relation(fields: [fournisseurId], references: [id])
+  fournisseurId               String
+  statut                      StatutFactureFournisseur        @default(BROUILLON)
+  statutRapprochement         StatutRapprochementFacture      @default(A_RAPPROCHER)
+  statutExtraction            StatutExtractionFacture         @default(NON_REQUISE)
+  typeDocument                TypeDocumentFournisseur         @default(FACTURE)
+  dateFacture                 DateTime                        @default(now())
+  dateDocument                DateTime?
+  dateEcheance                DateTime?
+  notes                       String?
+  devise                      String                          @default("XOF")
+  tauxChangeSnapshot          Decimal?                        @db.Decimal(18, 6)
+  montant                     Decimal                         @db.Decimal(14, 2)
+  montantBrutHt               Decimal?                        @db.Decimal(14, 2)
+  remiseLignes                Decimal?                        @db.Decimal(14, 2)
+  remiseGlobale               Decimal?                        @db.Decimal(14, 2)
+  totalHt                     Decimal?                        @db.Decimal(14, 2)
+  totalTaxes                  Decimal?                        @db.Decimal(14, 2)
+  totalRetenues               Decimal?                        @db.Decimal(14, 2)
+  totalTtc                    Decimal?                        @db.Decimal(14, 2)
+  netAPayer                   Decimal?                        @db.Decimal(14, 2)
+  documentHash                String?                         @unique
+  documentNomFichier          String?
+  documentMimeType            String?
+  documentTailleOctets        Int?
+  documentUri                 String?
+  documentMetadata            Json?
+  extractionPayload           Json?
+  clientOperationId           String?                         @unique
+  operationComptabilisationId String?                         @unique
+  createur                    Utilisateur                     @relation(fields: [createurId], references: [id])
+  createurId                  String
+  factureOrigine              FactureFournisseur?             @relation("CompensationFacture", fields: [factureOrigineId], references: [id])
+  factureOrigineId            String?
+  compensations               FactureFournisseur[]            @relation("CompensationFacture")
+  motifCompensation           String?
+  lignes                      LigneFactureFournisseur[]
+  taxes                       TaxeFactureFournisseur[]
+  litiges                     LitigeRapprochementFacture[]
+  exceptions                  ExceptionRapprochementFacture[]
+  revuesExtraction            RevueExtractionFacture[]
+  paiements                   PaiementFournisseur[]
+  echeancesPaiement           EcheancePaiementFournisseur[]
+  allocationsPaiement         AllocationPaiementFournisseur[]
+  ecrituresComptables         EcritureComptable[]
+
+  @@unique([fournisseurId, referenceNormalisee])
+  @@index([fournisseurId, dateDocument, montant])
   @@index([fournisseurId, statut])
+  @@index([statutRapprochement, statut])
+  @@index([societeId, nature, statut])
   @@map("facture_fournisseur")
 }
 
 model LigneFactureFournisseur {
-  id           String             @id @default(uuid())
-  facture      FactureFournisseur @relation(fields: [factureId], references: [id])
-  factureId    String
-  reception    ReceptionStock     @relation(fields: [receptionId], references: [id])
-  receptionId  String             @unique
-  quantite     Int
-  prixUnitaire Decimal            @db.Decimal(14, 2)
+  id                         String                     @id @default(uuid())
+  facture                    FactureFournisseur         @relation(fields: [factureId], references: [id])
+  factureId                  String
+  reception                  ReceptionStock?            @relation(fields: [receptionId], references: [id])
+  receptionId                String?                    @unique
+  ligneCommande              LigneCommandeAchat?        @relation("LigneCommandeFactureP2P", fields: [ligneCommandeId], references: [id])
+  ligneCommandeId            String?
+  ligneReception             LigneReceptionAchat?       @relation("LigneReceptionFactureP2P", fields: [ligneReceptionId], references: [id])
+  ligneReceptionId           String?
+  ligneQualite               LigneDecisionQualiteAchat? @relation("LigneQualiteFactureP2P", fields: [ligneQualiteId], references: [id])
+  ligneQualiteId             String?
+  natureDepense              NatureDepense?             @relation(fields: [natureDepenseId], references: [id])
+  natureDepenseId            String?
+  libelle                    String?
+  produitId                  String?
+  quantite                   Int
+  prixUnitaire               Decimal                    @db.Decimal(14, 2)
+  montantBrut                Decimal?                   @db.Decimal(14, 2)
+  remise                     Decimal?                   @db.Decimal(14, 2)
+  montantHt                  Decimal?                   @db.Decimal(14, 2)
+  tauxFiscalAchat            TauxFiscalAchat?           @relation(fields: [tauxFiscalAchatId], references: [id])
+  tauxFiscalAchatId          String?
+  referentielCodeSnapshot    String?
+  referentielVersionSnapshot Int?
+  codeTaxeSnapshot           String?
+  typeTaxeSnapshot           TypeTaxeAchat?
+  tauxTaxeSnapshot           Decimal?                   @db.Decimal(7, 4)
+  montantTaxe                Decimal?                   @db.Decimal(14, 2)
+  taxes                      TaxeFactureFournisseur[]
 
+  @@unique([factureId, ligneCommandeId, ligneQualiteId])
+  @@index([ligneCommandeId])
+  @@index([ligneQualiteId])
+  @@index([natureDepenseId])
   @@map("ligne_facture_fournisseur")
+}
+
+model TaxeFactureFournisseur {
+  id                         String                   @id @default(uuid())
+  facture                    FactureFournisseur       @relation(fields: [factureId], references: [id])
+  factureId                  String
+  ligne                      LigneFactureFournisseur? @relation(fields: [ligneId], references: [id])
+  ligneId                    String?
+  tauxFiscalAchat            TauxFiscalAchat?         @relation(fields: [tauxFiscalAchatId], references: [id])
+  tauxFiscalAchatId          String?
+  referentielCodeSnapshot    String
+  referentielVersionSnapshot Int
+  codeSnapshot               String
+  libelleSnapshot            String
+  typeSnapshot               TypeTaxeAchat
+  tauxSnapshot               Decimal                  @db.Decimal(7, 4)
+  base                       Decimal                  @db.Decimal(14, 2)
+  montant                    Decimal                  @db.Decimal(14, 2)
+
+  @@index([factureId, typeSnapshot])
+  @@map("taxe_facture_fournisseur")
+}
+
+model LitigeRapprochementFacture {
+  id           String                 @id @default(uuid())
+  facture      FactureFournisseur     @relation(fields: [factureId], references: [id])
+  factureId    String
+  ligneId      String?
+  dimension    DimensionLitigeFacture
+  attendu      String
+  constate     String
+  bloquant     Boolean                @default(true)
+  dateCreation DateTime               @default(now())
+
+  @@index([factureId, dimension])
+  @@map("litige_rapprochement_facture")
+}
+
+model ExceptionRapprochementFacture {
+  id                String             @id @default(uuid())
+  facture           FactureFournisseur @relation(fields: [factureId], references: [id])
+  factureId         String
+  decideur          Utilisateur        @relation("ExceptionFactureDecideur", fields: [decideurId], references: [id])
+  decideurId        String
+  roleSnapshot      String
+  motif             String
+  dateDecision      DateTime           @default(now())
+  clientOperationId String             @unique
+
+  @@index([factureId, dateDecision])
+  @@map("exception_rapprochement_facture")
+}
+
+model RevueExtractionFacture {
+  id                String             @id @default(uuid())
+  facture           FactureFournisseur @relation(fields: [factureId], references: [id])
+  factureId         String
+  auteur            Utilisateur        @relation("RevueExtractionFactureAuteur", fields: [auteurId], references: [id])
+  auteurId          String
+  decision          String
+  commentaire       String?
+  payloadRevise     Json?
+  dateRevue         DateTime           @default(now())
+  clientOperationId String             @unique
+
+  @@index([factureId, dateRevue])
+  @@map("revue_extraction_facture")
 }
 
 // Grand livre append-only des règlements fournisseur — aucune modification
 // ni suppression d'une ligne déjà enregistrée (même esprit que JournalAudit).
 model PaiementFournisseur {
-  id            String                  @id @default(uuid())
-  facture       FactureFournisseur      @relation(fields: [factureId], references: [id])
-  factureId     String
-  montant       Decimal                 @db.Decimal(14, 2)
-  mode          ModePaiementFournisseur
-  reference     String?
-  datePaiement  DateTime                @default(now())
-  utilisateur   Utilisateur             @relation(fields: [utilisateurId], references: [id])
-  utilisateurId String
+  id                   String                          @id @default(uuid())
+  facture              FactureFournisseur              @relation(fields: [factureId], references: [id])
+  factureId            String
+  proposition          PropositionPaiementFournisseur? @relation(fields: [propositionId], references: [id])
+  propositionId        String?                         @unique
+  compteTresorerie     CompteTresorerie?               @relation(fields: [compteTresorerieId], references: [id])
+  compteTresorerieId   String?
+  ecritureComptable    EcritureComptable?              @relation(fields: [ecritureComptableId], references: [id])
+  ecritureComptableId  String?                         @unique
+  montant              Decimal                         @db.Decimal(14, 2)
+  montantDevise        Decimal?                        @db.Decimal(14, 2)
+  devise               String                          @default("XOF")
+  tauxChangeSnapshot   Decimal?                        @db.Decimal(18, 6)
+  mode                 ModePaiementFournisseur
+  reference            String?
+  clientOperationId    String?                         @unique
+  datePaiement         DateTime                        @default(now())
+  utilisateur          Utilisateur                     @relation(fields: [utilisateurId], references: [id])
+  utilisateurId        String
+  allocations          AllocationPaiementFournisseur[]
+  mouvementsTresorerie MouvementTresorerie[]
+  rapprochements       RapprochementBancaire[]
 
   @@index([factureId, datePaiement])
   @@map("paiement_fournisseur")
+}
+
+enum TypeTaxeAchat {
+  TVA
+  RETENUE
+  DROIT_DOUANE
+  AUTRE
+}
+
+model ReferentielFiscal {
+  id        String            @id @default(uuid())
+  societe   Societe           @relation(fields: [societeId], references: [id])
+  societeId String
+  code      String
+  version   Int
+  pays      String
+  libelle   String
+  valideDu  DateTime
+  valideAu  DateTime?
+  actif     Boolean           @default(true)
+  taux      TauxFiscalAchat[]
+
+  @@unique([societeId, code, version])
+  @@index([societeId, pays, actif])
+  @@map("referentiel_fiscal")
+}
+
+model TauxFiscalAchat {
+  id                  String                    @id @default(uuid())
+  referentiel         ReferentielFiscal         @relation(fields: [referentielId], references: [id])
+  referentielId       String
+  code                String
+  libelle             String
+  type                TypeTaxeAchat
+  taux                Decimal                   @db.Decimal(7, 4)
+  compteComptableCode String?
+  actif               Boolean                   @default(true)
+  lignesCommande      LigneCommandeAchat[]
+  lignesFacture       LigneFactureFournisseur[]
+  taxesFacture        TaxeFactureFournisseur[]
+
+  @@unique([referentielId, code])
+  @@map("taux_fiscal_achat")
+}
+
+enum TypeJournalComptable {
+  ACHATS
+  BANQUE
+  CAISSE
+  VENTES
+  OPERATIONS_DIVERSES
+}
+
+model ExerciceComptable {
+  id        String              @id @default(uuid())
+  societe   Societe             @relation(fields: [societeId], references: [id])
+  societeId String
+  code      String
+  dateDebut DateTime
+  dateFin   DateTime
+  cloture   Boolean             @default(false)
+  journaux  JournalComptable[]
+  periodes  PeriodeComptable[]
+  ecritures EcritureComptable[]
+
+  @@unique([societeId, code])
+  @@map("exercice_comptable")
+}
+
+model CompteComptable {
+  id                String                        @id @default(uuid())
+  societe           Societe                       @relation(fields: [societeId], references: [id])
+  societeId         String
+  numero            String
+  intitule          String
+  actif             Boolean                       @default(true)
+  parent            CompteComptable?              @relation("HierarchieCompteComptable", fields: [parentId], references: [id])
+  parentId          String?
+  enfants           CompteComptable[]             @relation("HierarchieCompteComptable")
+  lignesEcriture    LigneEcritureComptable[]
+  lignesModele      LigneModeleComptabilisation[]
+  comptesTresorerie CompteTresorerie[]
+  naturesDepense    NatureDepense[]
+  immobilisations   Immobilisation[]
+
+  @@unique([societeId, numero])
+  @@index([parentId])
+  @@map("compte_comptable")
+}
+
+model JournalComptable {
+  id         String                   @id @default(uuid())
+  societe    Societe                  @relation(fields: [societeId], references: [id])
+  societeId  String
+  exercice   ExerciceComptable        @relation(fields: [exerciceId], references: [id])
+  exerciceId String
+  code       String
+  libelle    String
+  type       TypeJournalComptable
+  actif      Boolean                  @default(true)
+  ecritures  EcritureComptable[]
+  modeles    ModeleComptabilisation[]
+
+  @@unique([exerciceId, code])
+  @@index([societeId, type, actif])
+  @@map("journal_comptable")
+}
+
+enum TypeSourceComptable {
+  FACTURE_FOURNISSEUR
+  AVOIR_FOURNISSEUR
+  PAIEMENT_FOURNISSEUR
+  RETENUE_FISCALE
+  COUT_LOGISTIQUE
+  AVANCE_FOURNISSEUR
+  ECART_CHANGE
+  VENTE_POS
+  AVOIR_CLIENT
+  COMMANDE_WEB
+  ENCAISSEMENT_CLIENT
+  FACTURE_CHARGE
+  OD_MANUELLE
+  CLOTURE_EXERCICE
+  A_NOUVEAUX
+  MISE_EN_STOCK
+  RETOUR_STOCK_FOURNISSEUR
+  CMV_VENTE
+  CMV_AVOIR
+  VARIATION_STOCK
+  FACTURE_CLIENT
+  AMORTISSEMENT_IMMO
+}
+
+enum RoleLigneComptable {
+  ACHAT
+  STOCK
+  COUT_LOGISTIQUE
+  TAXE
+  RETENUE
+  FOURNISSEUR
+  TRESORERIE
+  AVANCE
+  GAIN_CHANGE
+  PERTE_CHANGE
+  CLIENT
+  VENTE
+  TVA_COLLECTEE
+  CHARGE
+  AMORTISSEMENT
+}
+
+enum StatutFileEcritureComptable {
+  EN_ATTENTE
+  POSTEE
+  ERREUR
+}
+
+enum TypeCompteTresorerie {
+  BANK
+  CENTRAL_CASH
+  MOBILE_MONEY
+}
+
+enum StatutPropositionPaiement {
+  PREPAREE
+  APPROUVEE
+  APPROUVEE_EXCEPTION
+  EXECUTEE
+  REJETEE
+}
+
+enum SensMouvementTresorerie {
+  ENTREE
+  SORTIE
+}
+
+model NatureDepense {
+  id        String           @id @default(uuid())
+  societe   Societe          @relation(fields: [societeId], references: [id])
+  societeId String
+  code      String
+  libelle   String
+  compte    CompteComptable  @relation(fields: [compteId], references: [id])
+  compteId  String
+  actif     Boolean          @default(true)
+  lignes    LigneFactureFournisseur[]
+
+  @@unique([societeId, code])
+  @@index([compteId])
+  @@map("nature_depense")
+}
+
+model FileEcritureComptable {
+  id             String                       @id @default(uuid())
+  societe        Societe                      @relation(fields: [societeId], references: [id])
+  societeId      String
+  sourceType     TypeSourceComptable
+  sourceId       String
+  auteur         Utilisateur                  @relation("FileEcritureAuteur", fields: [auteurId], references: [id])
+  auteurId       String
+  dateComptable  DateTime
+  statut         StatutFileEcritureComptable  @default(EN_ATTENTE)
+  motif          String?
+  dateCreation   DateTime                     @default(now())
+  dateTraitement DateTime?
+  ecriture       EcritureComptable?           @relation(fields: [ecritureId], references: [id])
+  ecritureId     String?                      @unique
+
+  @@unique([sourceType, sourceId])
+  @@index([societeId, statut, dateCreation])
+  @@map("file_ecriture_comptable")
+}
+
+model PeriodeComptable {
+  id         String              @id @default(uuid())
+  societe    Societe             @relation(fields: [societeId], references: [id])
+  societeId  String
+  exercice   ExerciceComptable   @relation(fields: [exerciceId], references: [id])
+  exerciceId String
+  code       String
+  dateDebut  DateTime
+  dateFin    DateTime
+  cloture    Boolean             @default(false)
+  ecritures  EcritureComptable[]
+  dotationsImmobilisation DotationImmobilisation[]
+
+  @@unique([exerciceId, code])
+  @@index([societeId, dateDebut, dateFin, cloture])
+  @@map("periode_comptable")
+}
+
+model ModeleComptabilisation {
+  id         String                        @id @default(uuid())
+  societe    Societe                       @relation(fields: [societeId], references: [id])
+  societeId  String
+  journal    JournalComptable              @relation(fields: [journalId], references: [id])
+  journalId  String
+  code       String
+  version    Int
+  sourceType TypeSourceComptable
+  valideDu   DateTime
+  valideAu   DateTime?
+  actif      Boolean                       @default(true)
+  lignes     LigneModeleComptabilisation[]
+  ecritures  EcritureComptable[]
+
+  @@unique([societeId, code, version])
+  @@index([societeId, sourceType, actif, valideDu])
+  @@map("modele_comptabilisation")
+}
+
+model LigneModeleComptabilisation {
+  id       String                 @id @default(uuid())
+  modele   ModeleComptabilisation @relation(fields: [modeleId], references: [id])
+  modeleId String
+  role     RoleLigneComptable
+  compte   CompteComptable        @relation(fields: [compteId], references: [id])
+  compteId String
+  ordre    Int
+  libelle  String?
+
+  @@unique([modeleId, role])
+  @@index([compteId])
+  @@map("ligne_modele_comptabilisation")
+}
+
+model EcritureComptable {
+  id                    String                   @id @default(uuid())
+  numero                String                   @unique
+  societe               Societe                  @relation(fields: [societeId], references: [id])
+  societeId             String
+  exercice              ExerciceComptable        @relation(fields: [exerciceId], references: [id])
+  exerciceId            String
+  periode               PeriodeComptable         @relation(fields: [periodeId], references: [id])
+  periodeId             String
+  journal               JournalComptable         @relation(fields: [journalId], references: [id])
+  journalId             String
+  modele                ModeleComptabilisation   @relation(fields: [modeleId], references: [id])
+  modeleId              String
+  modeleCodeSnapshot    String
+  modeleVersionSnapshot Int
+  sourceType            TypeSourceComptable
+  sourceId              String
+  facture               FactureFournisseur?      @relation(fields: [factureId], references: [id])
+  factureId             String?
+  libelle               String
+  dateComptable         DateTime
+  devise                String                   @default("XOF")
+  tauxChangeSnapshot    Decimal?                 @db.Decimal(18, 6)
+  clientOperationId     String                   @unique
+  auteur                Utilisateur              @relation("EcritureComptableAuteur", fields: [auteurId], references: [id])
+  auteurId              String
+  dateCreation          DateTime                 @default(now())
+  lignes                LigneEcritureComptable[]
+  paiement              PaiementFournisseur?
+  fileEcriture          FileEcritureComptable?
+  dotationImmobilisation DotationImmobilisation?
+
+  @@unique([sourceType, sourceId])
+  @@index([journalId, dateComptable])
+  @@index([factureId])
+  @@map("ecriture_comptable")
+}
+
+model LigneEcritureComptable {
+  id            String             @id @default(uuid())
+  ecriture      EcritureComptable  @relation(fields: [ecritureId], references: [id])
+  ecritureId    String
+  numeroLigne   Int
+  compte        CompteComptable    @relation(fields: [compteId], references: [id])
+  compteId      String
+  roleSnapshot  RoleLigneComptable
+  libelle       String
+  debit         Decimal            @default(0) @db.Decimal(18, 2)
+  credit        Decimal            @default(0) @db.Decimal(18, 2)
+  fournisseurId String?
+  client        Client?            @relation(fields: [clientId], references: [id])
+  clientId      String?
+  lettrage      String?
+  dateLettrage  DateTime?
+
+  @@unique([ecritureId, numeroLigne])
+  @@index([compteId, ecritureId])
+  @@index([fournisseurId, lettrage])
+  @@index([clientId, lettrage])
+  @@map("ligne_ecriture_comptable")
+}
+
+enum StatutImmobilisation {
+  EN_SERVICE
+  SORTI
+}
+
+model Immobilisation {
+  id                 String                 @id @default(uuid())
+  societe            Societe                @relation(fields: [societeId], references: [id])
+  societeId          String
+  compte             CompteComptable        @relation(fields: [compteId], references: [id])
+  compteId           String
+  libelle            String
+  dateMiseEnService  DateTime
+  valeurBrute        Decimal                @db.Decimal(18, 2)
+  dureeMois          Int
+  valeurResiduelle   Decimal                @default(0) @db.Decimal(18, 2)
+  statut             StatutImmobilisation   @default(EN_SERVICE)
+  dateCreation       DateTime               @default(now())
+  auteur             Utilisateur            @relation("ImmobilisationAuteur", fields: [auteurId], references: [id])
+  auteurId           String
+  dateSortie         DateTime?
+  motifSortie        String?
+  dotations          DotationImmobilisation[]
+
+  @@index([societeId, statut])
+  @@map("immobilisation")
+}
+
+model DotationImmobilisation {
+  id               String          @id @default(uuid())
+  immobilisation   Immobilisation  @relation(fields: [immobilisationId], references: [id])
+  immobilisationId String
+  periode          PeriodeComptable @relation(fields: [periodeId], references: [id])
+  periodeId        String
+  montant          Decimal         @db.Decimal(18, 2)
+  ecriture         EcritureComptable @relation(fields: [ecritureId], references: [id])
+  ecritureId       String          @unique
+  dateCreation     DateTime        @default(now())
+
+  @@unique([immobilisationId, periodeId])
+  @@index([periodeId])
+  @@map("dotation_immobilisation")
+}
+
+model CompteTresorerie {
+  id                String                           @id @default(uuid())
+  societe           Societe                          @relation(fields: [societeId], references: [id])
+  societeId         String
+  code              String
+  libelle           String
+  type              TypeCompteTresorerie
+  devise            String                           @default("XOF")
+  compteComptable   CompteComptable                  @relation(fields: [compteComptableId], references: [id])
+  compteComptableId String
+  actif             Boolean                          @default(true)
+  paiements         PaiementFournisseur[]
+  propositions      PropositionPaiementFournisseur[]
+  mouvements        MouvementTresorerie[]
+  importsReleve     ImportReleveBancaire[]
+
+  @@unique([societeId, code])
+  @@index([societeId, type, actif])
+  @@map("compte_tresorerie")
+}
+
+model EcheancePaiementFournisseur {
+  id           String             @id @default(uuid())
+  facture      FactureFournisseur @relation(fields: [factureId], references: [id])
+  factureId    String
+  dateEcheance DateTime
+  montant      Decimal            @db.Decimal(14, 2)
+  devise       String
+  sequence     Int
+
+  @@unique([factureId, sequence])
+  @@index([dateEcheance])
+  @@map("echeance_paiement_fournisseur")
+}
+
+model PropositionPaiementFournisseur {
+  id                       String                          @id @default(uuid())
+  numero                   String                          @unique
+  societe                  Societe                         @relation(fields: [societeId], references: [id])
+  societeId                String
+  statut                   StatutPropositionPaiement       @default(PREPAREE)
+  montant                  Decimal                         @db.Decimal(14, 2)
+  devise                   String
+  mode                     ModePaiementFournisseur
+  compteTresorerie         CompteTresorerie                @relation(fields: [compteTresorerieId], references: [id])
+  compteTresorerieId       String
+  dateExecutionPrevue      DateTime
+  referenceInstruction     String?
+  clientOperationId        String                          @unique
+  preparateur              Utilisateur                     @relation("PropositionPaiementPreparateur", fields: [preparateurId], references: [id])
+  preparateurId            String
+  approbateur              Utilisateur?                    @relation("PropositionPaiementApprobateur", fields: [approbateurId], references: [id])
+  approbateurId            String?
+  dateApprobation          DateTime?
+  approbateurException     Utilisateur?                    @relation("PropositionPaiementException", fields: [approbateurExceptionId], references: [id])
+  approbateurExceptionId   String?
+  dateApprobationException DateTime?
+  executeur                Utilisateur?                    @relation("PropositionPaiementExecuteur", fields: [executeurId], references: [id])
+  executeurId              String?
+  dateExecution            DateTime?
+  allocations              AllocationPaiementFournisseur[]
+  paiement                 PaiementFournisseur?
+
+  @@index([societeId, statut, dateExecutionPrevue])
+  @@map("proposition_paiement_fournisseur")
+}
+
+model AllocationPaiementFournisseur {
+  id            String                         @id @default(uuid())
+  proposition   PropositionPaiementFournisseur @relation(fields: [propositionId], references: [id])
+  propositionId String
+  paiement      PaiementFournisseur?           @relation(fields: [paiementId], references: [id])
+  paiementId    String?
+  facture       FactureFournisseur             @relation(fields: [factureId], references: [id])
+  factureId     String
+  montant       Decimal                        @db.Decimal(14, 2)
+  montantDevise Decimal?                       @db.Decimal(14, 2)
+  lettrage      String?
+
+  @@unique([propositionId, factureId])
+  @@index([factureId])
+  @@map("allocation_paiement_fournisseur")
+}
+
+model MouvementTresorerie {
+  id                String                  @id @default(uuid())
+  compte            CompteTresorerie        @relation(fields: [compteId], references: [id])
+  compteId          String
+  paiement          PaiementFournisseur?    @relation(fields: [paiementId], references: [id])
+  paiementId        String?
+  sens              SensMouvementTresorerie
+  montant           Decimal                 @db.Decimal(14, 2)
+  devise            String
+  dateValeur        DateTime
+  reference         String?
+  clientOperationId String                  @unique
+  dateCreation      DateTime                @default(now())
+  rapprochements    RapprochementBancaire[]
+
+  @@index([compteId, dateValeur])
+  @@map("mouvement_tresorerie")
+}
+
+model ImportReleveBancaire {
+  id                String                @id @default(uuid())
+  societe           Societe               @relation(fields: [societeId], references: [id])
+  societeId         String
+  compte            CompteTresorerie      @relation(fields: [compteId], references: [id])
+  compteId          String
+  nomFichier        String
+  hashSha256        String                @unique
+  format            String
+  periodeDebut      DateTime?
+  periodeFin        DateTime?
+  metadata          Json?
+  clientOperationId String                @unique
+  dateImport        DateTime              @default(now())
+  lignes            LigneReleveBancaire[]
+
+  @@index([compteId, dateImport])
+  @@map("import_releve_bancaire")
+}
+
+model LigneReleveBancaire {
+  id             String                 @id @default(uuid())
+  importReleve   ImportReleveBancaire   @relation(fields: [importReleveId], references: [id])
+  importReleveId String
+  numeroLigne    Int
+  dateOperation  DateTime
+  dateValeur     DateTime?
+  libelle        String
+  reference      String?
+  montant        Decimal                @db.Decimal(14, 2)
+  devise         String
+  metadata       Json?
+  rapprochement  RapprochementBancaire?
+
+  @@unique([importReleveId, numeroLigne])
+  @@index([dateOperation, montant])
+  @@map("ligne_releve_bancaire")
+}
+
+model RapprochementBancaire {
+  id                String               @id @default(uuid())
+  ligneReleve       LigneReleveBancaire  @relation(fields: [ligneReleveId], references: [id])
+  ligneReleveId     String               @unique
+  mouvement         MouvementTresorerie  @relation(fields: [mouvementId], references: [id])
+  mouvementId       String
+  paiement          PaiementFournisseur? @relation(fields: [paiementId], references: [id])
+  paiementId        String?
+  auteur            Utilisateur          @relation("RapprochementBancaireAuteur", fields: [auteurId], references: [id])
+  auteurId          String
+  clientOperationId String               @unique
+  dateRapprochement DateTime             @default(now())
+
+  @@unique([mouvementId])
+  @@map("rapprochement_bancaire")
 }
 
 enum ModePaiement {
@@ -822,26 +2433,27 @@ model SessionCaisse {
 }
 
 model Vente {
-  id                String          @id @default(uuid())
-  dateVente         DateTime        @default(now())
-  montantTotal      Decimal         @db.Decimal(14, 2)
+  id                 String                   @id @default(uuid())
+  dateVente          DateTime                 @default(now())
+  montantTotal       Decimal                  @db.Decimal(14, 2)
   // Avantage fidélité (§6.6) appliqué à l'encaissement, tracé séparément du
   // montant total (montantTotal est déjà net de cette remise).
-  remiseFidelite    Decimal         @default(0) @db.Decimal(14, 2)
-  modePaiement      ModePaiement
-  caisse            Caisse          @relation(fields: [caisseId], references: [id])
-  caisseId          String
-  sessionCaisse     SessionCaisse   @relation(fields: [sessionCaisseId], references: [id])
-  sessionCaisseId   String
+  remiseFidelite     Decimal                  @default(0) @db.Decimal(14, 2)
+  modePaiement       ModePaiement
+  caisse             Caisse                   @relation(fields: [caisseId], references: [id])
+  caisseId           String
+  sessionCaisse      SessionCaisse            @relation(fields: [sessionCaisseId], references: [id])
+  sessionCaisseId    String
   // Rattachement client optionnel — la vente anonyme doit rester possible (§6.6)
-  client            Client?         @relation(fields: [clientId], references: [id])
-  clientId          String?
+  client             Client?                  @relation(fields: [clientId], references: [id])
+  clientId           String?
   // Idempotence hors-ligne (§6.7) : UUID généré côté caisse, unique si renseigné.
-  clientOperationId String?         @unique
-  lignes            LigneVente[]
-  retours           RetourVente[]
-  paiements         PaiementVente[]
-  devisOrigine      DevisClient?
+  clientOperationId  String?                  @unique
+  lignes             LigneVente[]
+  retours            RetourVente[]
+  paiements          PaiementVente[]
+  devisOrigine       DevisClient?
+  conversionCommande ConversionCommandeVente?
 
   @@map("vente")
 }
@@ -988,6 +2600,11 @@ model Client {
   fidelite     Fidelite?
   interactions InteractionCrm[]
   devis        DevisClient[]
+  factures     FactureClient[]
+  compteClient CompteClient?
+  adresses     AdresseClient[]
+  commandesWeb CommandeWeb[]
+  lignesEcriture LigneEcritureComptable[]
 
   @@index([boutiqueOrigineId])
   @@map("client")
@@ -1075,13 +2692,14 @@ model DevisClient {
   boutiqueId   String?
   montantTotal Decimal            @db.Decimal(14, 2)
   notes        String?
-  vente        Vente?             @relation(fields: [venteId], references: [id])
-  venteId      String?            @unique
-  createdBy    Utilisateur        @relation(fields: [createdById], references: [id])
-  createdById  String
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  lignes       LigneDevisClient[]
+  vente          Vente?             @relation(fields: [venteId], references: [id])
+  venteId        String?            @unique
+  factureClient  FactureClient?
+  createdBy      Utilisateur        @relation(fields: [createdById], references: [id])
+  createdById    String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  lignes         LigneDevisClient[]
 
   @@index([clientId])
   @@index([statut])
@@ -1103,6 +2721,362 @@ model LigneDevisClient {
 }
 
 // ---------------------------------------------------------------------------
+// Facture client B2B (hors CDC — pièce distincte du ticket POS / commande web)
+// Prix HT comme le devis ; TVA au taux produit sinon taux shop. GL FACTURE_CLIENT.
+// ---------------------------------------------------------------------------
+
+enum StatutFactureClient {
+  BROUILLON
+  EMISE
+  ANNULEE
+}
+
+enum ModeEncaissementFactureClient {
+  ESPECES
+  VIREMENT
+  MOBILE_MONEY
+  CARTE
+}
+
+model FactureClient {
+  id           String                 @id @default(uuid())
+  numero       String                 @unique
+  statut       StatutFactureClient    @default(BROUILLON)
+  client       Client                 @relation(fields: [clientId], references: [id])
+  clientId     String
+  boutique     Boutique?              @relation(fields: [boutiqueId], references: [id])
+  boutiqueId   String?
+  devis        DevisClient?           @relation(fields: [devisId], references: [id])
+  devisId      String?                @unique
+  dateFacture  DateTime               @default(now())
+  dateEcheance DateTime?
+  montantHt    Decimal                @db.Decimal(14, 2)
+  montantTva   Decimal                @db.Decimal(14, 2)
+  montantTtc   Decimal                @db.Decimal(14, 2)
+  notes        String?
+  createdBy    Utilisateur            @relation("FactureClientCreateur", fields: [createdById], references: [id])
+  createdById  String
+  emisePar     Utilisateur?           @relation("FactureClientEmission", fields: [emiseParId], references: [id])
+  emiseParId   String?
+  emiseAt      DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  lignes       LigneFactureClient[]
+  paiements    PaiementFactureClient[]
+
+  @@index([clientId])
+  @@index([statut])
+  @@map("facture_client")
+}
+
+model LigneFactureClient {
+  id           String        @id @default(uuid())
+  facture      FactureClient @relation(fields: [factureId], references: [id], onDelete: Cascade)
+  factureId    String
+  produit      Produit?      @relation(fields: [produitId], references: [id])
+  produitId    String?
+  designation  String
+  quantite     Int
+  prixUnitaire Decimal       @db.Decimal(14, 2)
+  remise       Decimal       @default(0) @db.Decimal(14, 2)
+  tauxTva      Decimal       @db.Decimal(5, 2)
+  montantHt    Decimal       @db.Decimal(14, 2)
+  montantTva   Decimal       @db.Decimal(14, 2)
+  montantTtc   Decimal       @db.Decimal(14, 2)
+  coutUnitaire Decimal?      @db.Decimal(14, 2)
+
+  @@map("ligne_facture_client")
+}
+
+model PaiementFactureClient {
+  id           String                       @id @default(uuid())
+  facture      FactureClient                @relation(fields: [factureId], references: [id])
+  factureId    String
+  montant      Decimal                      @db.Decimal(14, 2)
+  mode         ModeEncaissementFactureClient
+  datePaiement DateTime                     @default(now())
+  reference    String?
+  createdBy    Utilisateur                  @relation(fields: [createdById], references: [id])
+  createdById  String
+  createdAt    DateTime                     @default(now())
+
+  @@index([factureId])
+  @@map("paiement_facture_client")
+}
+
+// ---------------------------------------------------------------------------
+// E-commerce B2C (PLAN-E-COMMERCE — extension hors MCD §6.5, §6.6 checkout invité)
+// ---------------------------------------------------------------------------
+
+enum ModeAffichagePrixShop {
+  HT
+  TTC
+}
+
+enum ModeReglementCommandeWeb {
+  PREPAYE_PSP
+  PAIEMENT_RETRAIT
+  PAIEMENT_LIVRAISON
+}
+
+enum ProviderPspShop {
+  PAYSTACK
+  ORANGE_MONEY
+  WAVE
+}
+
+enum ModeFulfillmentCommandeWeb {
+  RETRAIT_BOUTIQUE
+  LIVRAISON
+}
+
+enum StatutCommandeWeb {
+  PANIER
+  EN_ATTENTE_PAIEMENT
+  PAYEE
+  PREPARATION
+  PRETE
+  EXPEDIEE
+  LIVREE
+  REMISE
+  ANNULEE
+  REMBOURSEE
+  LITIGE
+}
+
+enum TypePaiementCommandeWeb {
+  INITIE
+  CAPTURE
+  REMBOURSEMENT
+  ECHEC
+}
+
+enum StatutPaiementCommandeWeb {
+  EN_COURS
+  REUSSI
+  ECHEC
+  REMBOURSE
+}
+
+model ParametreShop {
+  id                        String                @id @default(uuid())
+  societe                   Societe               @relation(fields: [societeId], references: [id])
+  societeId                 String                @unique
+  shopActif                 Boolean               @default(false)
+  entrepotWebDefaut         Entrepot?             @relation("ParametreShopEntrepotDefaut", fields: [entrepotWebDefautId], references: [id], onDelete: SetNull)
+  entrepotWebDefautId       String?
+  dureeReservationPanierMin Int                   @default(15)
+  retraitActif              Boolean               @default(true)
+  livraisonActive           Boolean               @default(true)
+  deviseAffichage           String                @default("XOF")
+  modeAffichagePrix         ModeAffichagePrixShop @default(HT)
+  tauxTvaDefaut             Decimal               @default(18) @db.Decimal(5, 2)
+  afficherDetailTvaPanier   Boolean               @default(true)
+  fallbackPrixMagasin       Boolean               @default(true)
+  paiementRetraitActif      Boolean               @default(true)
+  paiementLivraisonActif    Boolean               @default(true)
+  modesPaiementRetrait      ModePaiement[]        @default([ESPECES])
+  modesPaiementLivraison    ModePaiement[]        @default([ESPECES])
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+
+  @@map("parametre_shop")
+}
+
+model CompteClient {
+  id               String          @id @default(uuid())
+  email            String          @unique
+  passwordHash     String
+  client           Client          @relation(fields: [clientId], references: [id])
+  clientId         String          @unique
+  emailVerifie     Boolean         @default(false)
+  actif            Boolean         @default(true)
+  refreshTokenHash String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  adresses         AdresseClient[]
+  commandesWeb     CommandeWeb[]
+
+  @@map("compte_client")
+}
+
+model AdresseClient {
+  id             String        @id @default(uuid())
+  compteClient   CompteClient? @relation(fields: [compteClientId], references: [id], onDelete: Cascade)
+  compteClientId String?
+  client         Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId       String?
+  libelle        String
+  ligne1         String
+  ligne2         String?
+  ville          String
+  region         String?
+  codePostal     String?
+  pays           String        @default("SN")
+  telephone      String?
+  lat            Decimal?      @db.Decimal(10, 7)
+  lng            Decimal?      @db.Decimal(10, 7)
+  createdAt      DateTime      @default(now())
+
+  @@map("adresse_client")
+}
+
+model ZoneLivraison {
+  id               String        @id @default(uuid())
+  libelle          String
+  actif            Boolean       @default(true)
+  tarifForfait     Decimal       @db.Decimal(14, 2)
+  delaiJoursMin    Int           @default(1)
+  delaiJoursMax    Int           @default(3)
+  villesJson       Json?
+  codesPostauxJson Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  commandesWeb     CommandeWeb[]
+
+  @@map("zone_livraison")
+}
+
+model CommandeWeb {
+  id                   String                     @id @default(uuid())
+  clientOperationId    String                     @unique
+  statut               StatutCommandeWeb          @default(PANIER)
+  modeFulfillment      ModeFulfillmentCommandeWeb
+  modeReglement        ModeReglementCommandeWeb
+  providerPsp          ProviderPspShop?
+  canal                String                     @default("WEB")
+  client               Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId             String?
+  compteClient         CompteClient?              @relation(fields: [compteClientId], references: [id], onDelete: SetNull)
+  compteClientId       String?
+  emailInvite          String?
+  telephoneInvite      String?
+  boutiqueRetrait      Boutique?                  @relation("CommandeRetraitBoutique", fields: [boutiqueRetraitId], references: [id], onDelete: SetNull)
+  boutiqueRetraitId    String?
+  entrepot             Entrepot                   @relation(fields: [entrepotId], references: [id])
+  entrepotId           String
+  zoneLivraison        ZoneLivraison?             @relation(fields: [zoneLivraisonId], references: [id], onDelete: SetNull)
+  zoneLivraisonId      String?
+  adresseLivraisonJson Json?
+  montantArticlesHt    Decimal                    @default(0) @db.Decimal(14, 2)
+  montantTva           Decimal                    @default(0) @db.Decimal(14, 2)
+  montantArticlesTtc   Decimal                    @default(0) @db.Decimal(14, 2)
+  remiseFidelite       Decimal                    @default(0) @db.Decimal(14, 2)
+  fraisLivraison       Decimal                    @default(0) @db.Decimal(14, 2)
+  montantTotal         Decimal                    @default(0) @db.Decimal(14, 2)
+  numeroSuivi          String?
+  noteClient           String?
+  suiviToken           String?                    @unique
+  payeeAt              DateTime?
+  expireAt             DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  lignes               LigneCommandeWeb[]
+  reservations         ReservationWeb[]
+  paiements            PaiementCommandeWeb[]
+  conversionVente      ConversionCommandeVente?
+  avis                 AvisCommandeWeb?
+
+  @@index([statut])
+  @@index([compteClientId])
+  @@index([clientId])
+  @@map("commande_web")
+}
+
+model LigneCommandeWeb {
+  id                  String      @id @default(uuid())
+  commande            CommandeWeb @relation(fields: [commandeWebId], references: [id], onDelete: Cascade)
+  commandeWebId       String
+  produit             Produit     @relation(fields: [produitId], references: [id])
+  produitId           String
+  quantite            Int
+  prixUnitaireHt      Decimal     @db.Decimal(14, 2)
+  tauxTva             Decimal     @db.Decimal(5, 2)
+  montantTvaLigne     Decimal     @db.Decimal(14, 2)
+  prixUnitaireTtc     Decimal     @db.Decimal(14, 2)
+  designationSnapshot String
+  referenceSnapshot   String?
+
+  @@map("ligne_commande_web")
+}
+
+model ReservationWeb {
+  id            String      @id @default(uuid())
+  holdId        String      @unique
+  commande      CommandeWeb @relation(fields: [commandeWebId], references: [id], onDelete: Cascade)
+  commandeWebId String
+  produit       Produit     @relation(fields: [produitId], references: [id])
+  produitId     String
+  entrepot      Entrepot    @relation(fields: [entrepotId], references: [id])
+  entrepotId    String
+  quantite      Int
+  expireAt      DateTime
+  createdAt     DateTime    @default(now())
+
+  @@index([produitId, entrepotId])
+  @@index([expireAt])
+  @@map("reservation_web")
+}
+
+model PaiementCommandeWeb {
+  id                 String                    @id @default(uuid())
+  commande           CommandeWeb               @relation(fields: [commandeWebId], references: [id])
+  commandeWebId      String
+  provider           ProviderPspShop
+  type               TypePaiementCommandeWeb
+  referenceExterne   String?
+  referenceProvider  String?
+  montant            Decimal                   @db.Decimal(14, 2)
+  devise             String                    @default("XOF")
+  statut             StatutPaiementCommandeWeb
+  payloadWebhookJson Json?
+  webhookEventId     String?
+  createdAt          DateTime                  @default(now())
+
+  @@unique([provider, webhookEventId])
+  @@index([commandeWebId])
+  @@map("paiement_commande_web")
+}
+
+model ConversionCommandeVente {
+  id            String      @id @default(uuid())
+  commande      CommandeWeb @relation(fields: [commandeWebId], references: [id])
+  commandeWebId String      @unique
+  vente         Vente       @relation(fields: [venteId], references: [id])
+  venteId       String      @unique
+  createdAt     DateTime    @default(now())
+
+  @@map("conversion_commande_vente")
+}
+
+/** Avis service post-livraison / post-retrait (token public). */
+model AvisCommandeWeb {
+  id            String      @id @default(uuid())
+  commande      CommandeWeb @relation(fields: [commandeWebId], references: [id], onDelete: Cascade)
+  commandeWebId String      @unique
+  token         String      @unique
+  note          Int?
+  commentaire   String?
+  soumisAt      DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@map("avis_commande_web")
+}
+
+model WebhookJournal {
+  id        String   @id @default(uuid())
+  provider  String
+  eventType String
+  eventId   String
+  payload   Json
+  traite    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@map("webhook_journal")
+}
+
+// ---------------------------------------------------------------------------
 // Traçabilité (§6.7) — journal d'audit horodaté et non modifiable.
 // Aucun UPDATE/DELETE applicatif ne doit cibler cette table.
 // ---------------------------------------------------------------------------
@@ -1118,6 +3092,183 @@ model JournalAudit {
   details       String?
 
   @@map("journal_audit")
+}
+
+// ---------------------------------------------------------------------------
+// Accounting intelligence — advisory layer only. Deterministic controls and
+// the existing append-only ledger remain authoritative.
+// ---------------------------------------------------------------------------
+
+enum AccountingAiSourceType {
+  SUPPLIER_INVOICE
+  SUPPLIER_CREDIT
+  SUPPLIER_PAYMENT
+  CUSTOMER_INVOICE
+  POS_SALE
+  POS_RETURN
+  POS_DISCOUNT
+  CASH_REMITTANCE
+  BANK_MOVEMENT
+  STOCK_MOVEMENT
+  LANDED_COST
+  CUSTOMS
+  TAX
+}
+
+enum AccountingAiWorkStatus {
+  QUEUED
+  ANALYZED
+  RAF_REVIEW
+  AUTO_POST_ELIGIBLE
+  DECIDED
+}
+
+enum AccountingAiSuggestionKind {
+  DOCUMENT_CLASSIFICATION
+  JOURNAL_CODING
+  ACCOUNT_CODING
+  TAX_CODING
+  ANALYTIC_CODING
+  MATCHING
+  ANOMALY
+}
+
+enum AccountingAiDecision {
+  PENDING
+  ACCEPTED
+  REJECTED
+  AUTO_APPROVED
+}
+
+enum AccountingAiRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AccountingAuditSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AccountingAuditFindingStatus {
+  OPEN
+  ASSIGNED
+  RESOLVED
+  STORNO_REQUIRED
+}
+
+model AccountingAiWorkItem {
+  id                    String                 @id @default(uuid())
+  societeId             String
+  sourceType            AccountingAiSourceType
+  sourceId              String
+  sourceSnapshot        Json
+  sourceHash            String
+  status                AccountingAiWorkStatus @default(QUEUED)
+  deterministicChecks   Json
+  deterministicBlockers Json
+  providerMode          String
+  providerErrorCode     String?
+  createdById           String
+  createdAt             DateTime               @default(now())
+  suggestions           AccountingAiSuggestion[]
+  findings              AccountingAuditFinding[]
+  evidence              AccountingAiEvidence[]
+
+  @@unique([societeId, sourceType, sourceId])
+  @@index([societeId, status, createdAt])
+  @@map("accounting_ai_work_item")
+}
+
+model AccountingAiSuggestion {
+  id             String                       @id @default(uuid())
+  workItem       AccountingAiWorkItem         @relation(fields: [workItemId], references: [id])
+  workItemId     String
+  kind           AccountingAiSuggestionKind
+  value          Json
+  confidence     Decimal                      @db.Decimal(5, 4)
+  evidence       Json
+  ruleCitations  Json
+  risk           AccountingAiRisk
+  modelVersion   String
+  modelHash      String
+  promptHash     String
+  createdAt      DateTime                     @default(now())
+  decisions      AccountingAiDecisionEvent[]
+
+  @@index([workItemId, kind])
+  @@map("accounting_ai_suggestion")
+}
+
+model AccountingAiDecisionEvent {
+  id           String                   @id @default(uuid())
+  suggestion   AccountingAiSuggestion   @relation(fields: [suggestionId], references: [id])
+  suggestionId String
+  decision     AccountingAiDecision
+  actorId      String
+  reason       String?
+  evidenceHash String
+  createdAt    DateTime                 @default(now())
+
+  @@index([suggestionId, createdAt])
+  @@map("accounting_ai_decision_event")
+}
+
+model AccountingAiPolicy {
+  id                  String                 @id @default(uuid())
+  societeId           String
+  sourceType          AccountingAiSourceType
+  suggestionKind      AccountingAiSuggestionKind
+  minimumConfidence   Decimal                @db.Decimal(5, 4)
+  maximumRisk         AccountingAiRisk       @default(LOW)
+  active              Boolean                @default(false)
+  approvedByDafId     String?
+  approvedAt          DateTime?
+  version             Int
+  createdById         String
+  createdAt           DateTime               @default(now())
+
+  @@unique([societeId, sourceType, suggestionKind, version])
+  @@index([societeId, active])
+  @@map("accounting_ai_policy")
+}
+
+model AccountingAuditFinding {
+  id                String                        @id @default(uuid())
+  workItem          AccountingAiWorkItem          @relation(fields: [workItemId], references: [id])
+  workItemId        String
+  severity          AccountingAuditSeverity
+  ruleCode          String
+  title             String
+  details           Json
+  status            AccountingAuditFindingStatus  @default(OPEN)
+  assignedToId      String?
+  resolution        String?
+  stornoEntryId     String?
+  resolvedById      String?
+  resolvedAt        DateTime?
+  createdAt         DateTime                      @default(now())
+
+  @@index([status, severity, assignedToId])
+  @@map("accounting_audit_finding")
+}
+
+model AccountingAiEvidence {
+  id          String               @id @default(uuid())
+  workItem    AccountingAiWorkItem @relation(fields: [workItemId], references: [id])
+  workItemId  String
+  eventType   String
+  actorId     String?
+  evidence    Json
+  evidenceHash String
+  createdAt   DateTime             @default(now())
+
+  @@index([workItemId, createdAt])
+  @@map("accounting_ai_evidence")
 }
 
 // Trace append-only des notifications proactives déjà envoyées (§6.7

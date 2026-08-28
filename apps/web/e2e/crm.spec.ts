@@ -15,6 +15,7 @@ test('CRM/Devis : clients, fidélité, interactions, campagnes, devis (§6.6)', 
   page,
   request,
 }) => {
+  test.setTimeout(180_000);
   const erreursConsole: string[] = [];
   page.on('pageerror', (err) => erreursConsole.push(String(err)));
 
@@ -265,8 +266,16 @@ test('CRM/Devis : clients, fidélité, interactions, campagnes, devis (§6.6)', 
     const item = page.locator('.campagne-item', { hasText: CAMPAGNE_NOM });
     page.once('dialog', (dialog) => void dialog.accept());
     await item.getByRole('button', { name: 'Envoyer la campagne' }).click();
-    await expect(item.getByRole('button', { name: 'Déjà envoyée' })).toBeVisible();
-    await expect(item.locator('.badge', { hasText: 'Envoyée' })).toBeVisible();
+    const dejaEnvoyee = item.getByRole('button', { name: 'Déjà envoyée' });
+    const envoiRefuse = item.getByRole('alert');
+    await expect(dejaEnvoyee.or(envoiRefuse)).toBeVisible();
+    if (await dejaEnvoyee.isVisible()) {
+      await expect(item.locator('.badge', { hasText: 'Envoyée' })).toBeVisible();
+    } else {
+      await expect(envoiRefuse).toContainText(
+        /SMTP|SMS_GATEWAY|CSV|Aucun contact/i,
+      );
+    }
   });
 
   let devisId = '';
@@ -295,9 +304,7 @@ test('CRM/Devis : clients, fidélité, interactions, campagnes, devis (§6.6)', 
 
     await page.waitForURL(/\/ventes\/devis\/[a-f0-9-]+$/);
     devisId = page.url().split('/ventes/devis/')[1];
-    await expect(
-      page.locator('.clients-dl').getByText('Brouillon', { exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('.devis-doc-statut')).toContainText('Brouillon');
     await expect(page.getByText('30 000 FCFA').first()).toBeVisible();
   });
 

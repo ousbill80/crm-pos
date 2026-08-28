@@ -37,11 +37,31 @@ export type InventaireStackParamList = {
   InventaireDetail: { sessionId: string };
 };
 
+export type P2pStackParamList = {
+  P2pHub: undefined;
+  PurchaseRequests: undefined;
+  PurchaseRecommendations: undefined;
+  PurchaseRequestCreate: undefined;
+  PurchaseRequestDetail: { id: string };
+  PurchaseOrders: undefined;
+  PurchaseOrderDetail: { id: string };
+  OrderImport: { id: string };
+  PurchaseReceipts: undefined;
+  PurchaseReceiptCreate: undefined;
+  PurchaseReceiptDetail: { id: string };
+  SupplierReturnCreate: { receiptId: string };
+  SupplierInvoices: undefined;
+  SupplierInvoiceDetail: { id: string };
+  P2pAccounting: undefined;
+  AccountingAi: undefined;
+};
+
 export type MainTabParamList = {
   Caisse: NavigatorScreenParams<PosStackParamList>;
   Circuit: NavigatorScreenParams<CircuitStackParamList>;
   Caisses: NavigatorScreenParams<CaissesStackParamList>;
   Inventaire: NavigatorScreenParams<InventaireStackParamList>;
+  P2p: NavigatorScreenParams<P2pStackParamList>;
 };
 
 export type RootStackParamList = {

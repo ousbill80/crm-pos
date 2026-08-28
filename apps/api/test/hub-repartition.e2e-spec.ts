@@ -189,7 +189,7 @@ describe('Hub stock — réception groupe + répartition (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(`/achats/commandes/${commandeId}/confirmer`)
-      .set(auth(tokens.si))
+      .set(auth(tokens.daf))
       .expect(201);
 
     await request(app.getHttpServer())
@@ -224,7 +224,7 @@ describe('Hub stock — réception groupe + répartition (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(`/achats/commandes/${commande.id}/confirmer`)
-      .set(auth(tokens.si))
+      .set(auth(tokens.daf))
       .expect(201);
 
     const rec = await request(app.getHttpServer())

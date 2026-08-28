@@ -151,7 +151,7 @@ export class ReportingController {
     res.send(csv);
   }
 
-  /** Export comptable du grand livre (§6.3.4, §6.7). */
+  /** Journal de caisse CDC §6.3.4 (TRANSACTION_CAISSE), pas le grand livre SYSCOHADA. */
   @Get('export-comptable.csv')
   @Roles(...ROLES_RESEAU_TRESORERIE)
   async exportComptableCsv(

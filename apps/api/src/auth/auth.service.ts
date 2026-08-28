@@ -146,6 +146,52 @@ export class AuthService {
     });
   }
 
+  async verifyCurrentPassword(userId: string, password: string): Promise<void> {
+    const utilisateur = await this.prisma.utilisateur.findUnique({
+      where: { id: userId },
+    });
+    if (!utilisateur || !utilisateur.actif) {
+      throw new UnauthorizedException('Ré-authentification refusée.');
+    }
+    if (utilisateur.lockedUntil && utilisateur.lockedUntil > new Date()) {
+      await this.audit.record({
+        utilisateurId: userId,
+        action: 'REAUTH_ECHEC',
+        entite: 'Utilisateur',
+        entiteId: userId,
+        details: JSON.stringify({ raison: 'COMPTE_VERROUILLE' }),
+      });
+      throw new UnauthorizedException(
+        'Compte verrouillé suite à plusieurs échecs de connexion. Réessayez plus tard.',
+      );
+    }
+    if (!(await bcrypt.compare(password, utilisateur.passwordHash))) {
+      const tentatives = utilisateur.failedLoginAttempts + 1;
+      const verrouille = tentatives >= MAX_TENTATIVES_ECHOUEES;
+      await this.prisma.utilisateur.update({
+        where: { id: userId },
+        data: {
+          failedLoginAttempts: tentatives,
+          lockedUntil: verrouille
+            ? new Date(Date.now() + DUREE_VERROUILLAGE_MS)
+            : null,
+        },
+      });
+      await this.audit.record({
+        utilisateurId: userId,
+        action: 'REAUTH_ECHEC',
+        entite: 'Utilisateur',
+        entiteId: userId,
+        details: JSON.stringify({ tentatives }),
+      });
+      throw new UnauthorizedException('Ré-authentification refusée.');
+    }
+    await this.prisma.utilisateur.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
   // JWT stateless — aucune révocation serveur au logout (décision de scope
   // assumée), seule la déconnexion est journalisée (§6.7).
   async logout(userId: string): Promise<void> {

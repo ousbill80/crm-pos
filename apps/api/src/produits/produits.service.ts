@@ -593,6 +593,10 @@ export class ProduitsService {
           methodeCout: dto.methodeCout,
           strategieSortie: dto.strategieSortie,
           imageUrl: dto.imageUrl,
+          prixWeb: dto.prixWeb,
+          visibleWeb: dto.visibleWeb,
+          slug: dto.slug,
+          tauxTva: dto.tauxTva,
         },
       });
     } catch (error) {

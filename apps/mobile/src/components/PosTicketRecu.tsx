@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { ModePaiement } from '@caisse-crm/shared';
+import { ENSEIGNE, ModePaiement } from '@caisse-crm/shared';
 import { apiFetch } from '../api';
 import { formatFcfa } from '../circuit/actions';
 import {
@@ -131,15 +131,20 @@ export function PosTicketRecu({
     }
   }
 
-  const raison = societe?.raisonSociale?.trim() || 'CaissePOS';
-
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={styles.wrap}
     >
       <View style={styles.ticket} collapsable={false}>
-        <Text style={styles.brand}>{raison}</Text>
+        <View
+          style={styles.logo}
+          accessibilityLabel={ENSEIGNE.nom}
+          accessible
+        >
+          <Text style={styles.logoMajor}>{ENSEIGNE.ligne1}</Text>
+          <Text style={styles.logoAuto}>{ENSEIGNE.ligne2}</Text>
+        </View>
         {boutiqueNom ? <Text style={styles.shop}>{boutiqueNom}</Text> : null}
         {societe?.adresse ? (
           <Text style={styles.addr}>{societe.adresse}</Text>
@@ -258,18 +263,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 2,
   },
-  brand: {
-    fontSize: 15,
+  logo: {
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  logoMajor: {
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: '#000',
+    letterSpacing: 3,
+    color: '#C9A227',
     textAlign: 'center',
-    fontFamily: Platform.select({
-      ios: 'Courier',
-      android: 'monospace',
-      default: 'Courier New, monospace',
-    }),
+  },
+  logoAuto: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 4,
+    color: '#1A1C22',
+    textAlign: 'center',
+    marginTop: 2,
   },
   shop: {
     textAlign: 'center',

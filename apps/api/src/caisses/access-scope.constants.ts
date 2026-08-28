@@ -112,21 +112,60 @@ export const ROLES_FICHE_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
   RoleLibelle.DAF,
+  RoleLibelle.ACHATS,
 ];
 
-/** Réception fournisseur → entrée en stock : SI / DG / DAF (entrepôt). La boutique réceptionne les transferts. */
+/**
+ * Réception quantitative fournisseur. Le rôle Logistique enregistre le fait
+ * physique ; l'acceptation qualité appartient au groupe distinct ci-dessous.
+ */
 export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
   RoleLibelle.DAF,
+  RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
 ];
 
-/** Bons de commande : SI / DG / DAF / responsable boutique (création + confirmation). */
-export const ROLES_COMMANDE_ACHAT: RoleLibelle[] = [
+/** Préparation d'une demande/commande : Achats, sans pouvoir l'approuver. */
+export const ROLES_SAISIE_COMMANDE_ACHAT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
-  RoleLibelle.DAF,
+  RoleLibelle.ACHATS,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Approbation achat : DAF / DG, séparée de la saisie opérationnelle. */
+export const ROLES_APPROBATION_COMMANDE_ACHAT: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Suivi production, transport et douane : fonction logistique dédiée. */
+export const ROLES_LOGISTIQUE_IMPORT: RoleLibelle[] = [
+  RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+];
+
+/** Planning : le besoin est préparé par Achats ou initié dans sa boutique. */
+export const ROLES_DEMANDE_ACHAT_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.ACHATS,
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+];
+
+/** Décision selon les règles monétaires configurées, jamais par le demandeur. */
+export const ROLES_APPROBATION_DEMANDE_ACHAT: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Consultation et saisie comparative des offres : fonction Achats dédiée. */
+export const ROLES_SOURCING_ACHAT: RoleLibelle[] = [RoleLibelle.ACHATS];
+
+/**
+ * Groupe de gestion conservé pour compatibilité des imports existants.
+ * Les endpoints sensibles doivent préférer les groupes saisie/approbation.
+ */
+export const ROLES_COMMANDE_ACHAT: RoleLibelle[] = [
+  ...ROLES_SAISIE_COMMANDE_ACHAT,
+  ...ROLES_APPROBATION_COMMANDE_ACHAT,
 ];
 
 /** Lecture achats (fournisseurs, commandes, factures) : pas le caissier / convoyeur. */
@@ -134,13 +173,65 @@ export const ROLES_LECTURE_ACHATS: RoleLibelle[] = [
   ...ROLES_RESEAU_STRUCTURE,
   ROLE_SUPERVISEUR_ZONE,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.ACHATS,
+  RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+  RoleLibelle.QUALITE_STOCKS,
+  RoleLibelle.RAF_COMPTABLE,
 ];
 
-/** Factures fournisseur (saisie / comptabilisation) : SI, DG, DAF. */
-export const ROLES_FACTURE_FOURNISSEUR: RoleLibelle[] = [
-  RoleLibelle.RESPONSABLE_SI,
-  RoleLibelle.DIRECTION_GENERALE,
+/** Contrôle qualité indépendant de la réception quantitative. */
+export const ROLES_CONTROLE_QUALITE_RECEPTION: RoleLibelle[] = [
+  RoleLibelle.QUALITE_STOCKS,
   RoleLibelle.DAF,
+];
+
+/** P2P strict : fait quantitatif uniquement par Logistique/Transit/Douane. */
+export const ROLES_RECEPTION_P2P_QUANTITATIVE: RoleLibelle[] = [
+  RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+];
+
+/** P2P strict : décision qualité, putaway et retours par Qualité/Stocks. */
+export const ROLES_QUALITE_P2P_STOCK: RoleLibelle[] = [
+  RoleLibelle.QUALITE_STOCKS,
+];
+
+/** Coûts réels transport/douane à allouer avant mise en stock. */
+export const ROLES_ALLOCATION_COUT_RECEPTION: RoleLibelle[] = [
+  RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+];
+
+/** Reliquat annulé seulement avec approbation financière auditée. */
+export const ROLES_CLOTURE_COURTE_ACHAT: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Saisie des factures fournisseur par la fonction comptable. */
+export const ROLES_SAISIE_FACTURE_FOURNISSEUR: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.RAF_COMPTABLE,
+];
+
+/** Comptabilisation après contrôle : RAF/Comptable sous supervision DAF. */
+export const ROLES_COMPTABILISATION_FOURNISSEUR: RoleLibelle[] = [
+  RoleLibelle.RAF_COMPTABLE,
+];
+
+/** Rapprochement et comptabilisation P2P conforme : RAF uniquement. */
+export const ROLES_RAPPROCHEMENT_FACTURE_P2P: RoleLibelle[] = [
+  RoleLibelle.RAF_COMPTABLE,
+];
+
+/** Dérogation explicite à un litige P2P : séparation RAF vs DAF/DG. */
+export const ROLES_EXCEPTION_FACTURE_P2P: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Compatibilité des imports existants ; préférer les groupes spécialisés. */
+export const ROLES_FACTURE_FOURNISSEUR: RoleLibelle[] = [
+  ...ROLES_SAISIE_FACTURE_FOURNISSEUR,
+  ...ROLES_COMPTABILISATION_FOURNISSEUR,
 ];
 
 /**
@@ -150,6 +241,39 @@ export const ROLES_FACTURE_FOURNISSEUR: RoleLibelle[] = [
 export const ROLES_PAIEMENT_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.DAF,
   RoleLibelle.CAISSIER_CENTRAL,
+];
+
+/** Préparation et comptabilisation : RAF uniquement. */
+export const ROLES_P2P_COMPTABILITE_ECRITURE: RoleLibelle[] = [
+  RoleLibelle.RAF_COMPTABLE,
+];
+
+/** Approbation niveau 2 des propositions de paiement : DAF uniquement. */
+export const ROLES_P2P_PAIEMENT_APPROBATION: RoleLibelle[] = [RoleLibelle.DAF];
+
+/** Approbation au-dessus du seuil exceptionnel : Direction générale uniquement. */
+export const ROLES_P2P_PAIEMENT_EXCEPTION: RoleLibelle[] = [
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Exécution bancaire/mobile DAF ; caisse centrale limitée en service au central cash. */
+export const ROLES_P2P_PAIEMENT_EXECUTION: RoleLibelle[] = [
+  RoleLibelle.DAF,
+  RoleLibelle.CAISSIER_CENTRAL,
+];
+
+/** Lecture comptable et audit sans droit de mutation. */
+export const ROLES_P2P_COMPTABILITE_LECTURE: RoleLibelle[] = [
+  RoleLibelle.RAF_COMPTABLE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.CONTROLEUR_INTERNE,
+];
+
+/** Génération des dotations d’amortissement : RAF (écriture) ou DAF. */
+export const ROLES_P2P_IMMO_DOTATION: RoleLibelle[] = [
+  RoleLibelle.RAF_COMPTABLE,
+  RoleLibelle.DAF,
 ];
 
 /** Création / mise en prêt des bons de stock (réseau). */

@@ -15,6 +15,31 @@ export async function loginPos(page: Page): Promise<void> {
 
 const API = process.env.VITE_API_URL ?? 'http://localhost:3000';
 
+/** Cache par login : le throttle anti-brute-force (§6.7, 5/60s) est partagé par IP. */
+const tokenCache = new Map<string, string>();
+
+export async function tokenFor(
+  request: import('@playwright/test').APIRequestContext,
+  login: string,
+): Promise<string> {
+  const cached = tokenCache.get(login);
+  if (cached) return cached;
+  let res: import('@playwright/test').APIResponse | undefined;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    res = await request.post(`${API}/auth/login`, {
+      data: { login, password: DEMO_PASSWORD },
+    });
+    if (res.status() !== 429) break;
+    await new Promise((r) => setTimeout(r, 3_000));
+  }
+  if (!res?.ok()) {
+    throw new Error(`Login démo échoué pour ${login}: ${await res?.text()}`);
+  }
+  const { accessToken } = (await res.json()) as { accessToken: string };
+  tokenCache.set(login, accessToken);
+  return accessToken;
+}
+
 /**
  * Connexion rapide par injection de token (comme loginPos) mais pour
  * n'importe quel compte démo — évite de repasser par le formulaire de
@@ -26,13 +51,7 @@ export async function loginAs(
   login: string,
   gotoPath = '/',
 ): Promise<void> {
-  const res = await request.post(`${API}/auth/login`, {
-    data: { login, password: DEMO_PASSWORD },
-  });
-  if (!res.ok()) {
-    throw new Error(`Login démo échoué pour ${login}: ${await res.text()}`);
-  }
-  const { accessToken } = (await res.json()) as { accessToken: string };
+  const accessToken = await tokenFor(request, login);
   await page.addInitScript((token: string) => {
     localStorage.setItem('caisse-crm.accessToken', token);
   }, accessToken);

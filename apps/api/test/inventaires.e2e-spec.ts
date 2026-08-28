@@ -62,6 +62,66 @@ describe('Inventaire physique (e2e)', () => {
   beforeAll(async () => {
     await env.start();
 
+    const societe = await env.prisma.societe.create({
+      data: { raisonSociale: 'Société Inventaire e2e', adresse: 'Abidjan' },
+    });
+    const exercice = await env.prisma.exerciceComptable.create({
+      data: {
+        societeId: societe.id,
+        code: '2026',
+        dateDebut: new Date('2026-01-01'),
+        dateFin: new Date('2026-12-31'),
+      },
+    });
+    await env.prisma.periodeComptable.create({
+      data: {
+        societeId: societe.id,
+        exerciceId: exercice.id,
+        code: '2026-08',
+        dateDebut: new Date('2026-08-01'),
+        dateFin: new Date('2026-08-31T23:59:59.999Z'),
+      },
+    });
+    const journalOd = await env.prisma.journalComptable.create({
+      data: {
+        societeId: societe.id,
+        exerciceId: exercice.id,
+        code: 'OD',
+        libelle: 'Opérations diverses',
+        type: 'OPERATIONS_DIVERSES',
+      },
+    });
+    const compte31 = await env.prisma.compteComptable.create({
+      data: {
+        societeId: societe.id,
+        numero: '31',
+        intitule: 'Stocks',
+      },
+    });
+    const compte603 = await env.prisma.compteComptable.create({
+      data: {
+        societeId: societe.id,
+        numero: '603',
+        intitule: 'Variation des stocks de marchandises',
+      },
+    });
+    await env.prisma.modeleComptabilisation.create({
+      data: {
+        societeId: societe.id,
+        journalId: journalOd.id,
+        code: 'STOCK_VARIANCE',
+        version: 1,
+        sourceType: 'VARIATION_STOCK',
+        valideDu: new Date('2026-01-01'),
+        lignes: {
+          create: [
+            { role: 'CHARGE', compteId: compte603.id, ordre: 1 },
+            { role: 'STOCK', compteId: compte31.id, ordre: 2 },
+          ],
+        },
+      },
+    });
+
     const zone = await env.prisma.zone.create({
       data: { nomZone: 'Zone Inventaire' },
     });

@@ -3,8 +3,13 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import type { UnwrapTuple } from '@prisma/client/runtime/library';
 import {
   guardCaisseDelegate,
+  guardAppendOnlyDelegate,
+  guardCommandeAchatVersionDelegate,
   guardJournalAuditDelegate,
   guardLedgerTransactionClient,
+  guardLettrageDelegate,
+  guardMouvementStockDelegate,
+  guardMouvementBudgetAchatDelegate,
   guardTransactionCaisseDelegate,
 } from './ledger-guard';
 import { dechiffrerClientsAuReposSiNecessaire } from './dechiffrer-clients-au-repos';
@@ -31,6 +36,58 @@ export class PrismaService
     });
     Object.defineProperty(this, 'caisse', {
       value: guardCaisseDelegate(this.caisse),
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(this, 'mouvementBudgetAchat', {
+      value: guardMouvementBudgetAchatDelegate(this.mouvementBudgetAchat),
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(this, 'commandeAchatVersion', {
+      value: guardCommandeAchatVersionDelegate(this.commandeAchatVersion),
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(this, 'mouvementStock', {
+      value: guardMouvementStockDelegate(this.mouvementStock),
+      configurable: true,
+      enumerable: true,
+    });
+    for (const model of [
+      'ecritureComptable',
+      'mouvementTresorerie',
+      'paiementFournisseur',
+      'importReleveBancaire',
+      'ligneReleveBancaire',
+      'rapprochementBancaire',
+      'accountingAiDecisionEvent',
+      'accountingAiEvidence',
+    ] as const) {
+      Object.defineProperty(this, model, {
+        value: guardAppendOnlyDelegate(
+          this[model],
+          'Fait comptable append-only',
+        ),
+        configurable: true,
+        enumerable: true,
+      });
+    }
+    Object.defineProperty(this, 'ligneEcritureComptable', {
+      value: guardLettrageDelegate(
+        this.ligneEcritureComptable,
+        'Ligne d’écriture',
+        new Set(['lettrage', 'dateLettrage']),
+      ),
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(this, 'allocationPaiementFournisseur', {
+      value: guardLettrageDelegate(
+        this.allocationPaiementFournisseur,
+        'Allocation de paiement',
+        new Set(['paiementId', 'lettrage']),
+      ),
       configurable: true,
       enumerable: true,
     });

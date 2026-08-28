@@ -17,7 +17,7 @@ export class EntrepriseService {
     if (existing) return existing;
     return this.prisma.societe.create({
       data: {
-        raisonSociale: 'CaissePOS',
+        raisonSociale: 'MAJOR AUTO PARTS',
         adresse: 'Siège',
         devise: 'XOF',
       },

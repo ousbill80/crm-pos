@@ -103,12 +103,66 @@ export class DevisService {
         client: true,
         boutique: { select: { id: true, nom: true } },
         lignes: { include: { produit: true } },
+        factureClient: { select: { id: true, numero: true, statut: true } },
       },
     });
     if (!devis) throw new NotFoundException('Devis introuvable.');
     return {
       ...devis,
       transitions: transitionsDevisAutorisees(devis.statut),
+    };
+  }
+
+  async getDevisPdfData(id: string, user: AuthenticatedUser) {
+    this.assertLecture(user);
+    const devis = await this.prisma.devisClient.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        boutique: { select: { nom: true } },
+        lignes: { orderBy: { designation: 'asc' } },
+      },
+    });
+    if (!devis) throw new NotFoundException('Devis introuvable.');
+
+    const societe = await this.prisma.societe.findFirst({
+      select: {
+        raisonSociale: true,
+        adresse: true,
+        telephone: true,
+        email: true,
+      },
+    });
+
+    return {
+      numero: devis.numero,
+      statut: devis.statut,
+      montantTotal: devis.montantTotal.toString(),
+      notes: devis.notes,
+      createdAt: devis.createdAt,
+      updatedAt: devis.updatedAt,
+      client: {
+        nom: devis.client.nom,
+        prenom: devis.client.prenom,
+        contact: devis.client.contact,
+        email: null,
+        adresse: devis.client.adresse,
+      },
+      boutique: devis.boutique,
+      lignes: devis.lignes.map((l) => {
+        const montant = new Prisma.Decimal(l.prixUnitaire)
+          .times(l.quantite)
+          .minus(l.remise);
+        return {
+          designation: l.designation,
+          quantite: l.quantite,
+          prixUnitaire: l.prixUnitaire.toString(),
+          remise: l.remise.toString(),
+          montant: montant.toString(),
+        };
+      }),
+      societe,
+      imprimeAt: new Date(),
     };
   }
 
@@ -196,7 +250,7 @@ export class DevisService {
           notes: dto.notes ?? existant.notes,
           montantTotal,
         },
-        include: { lignes: true, client: true },
+        include: { lignes: true, client: true, factureClient: true },
       });
     });
 
@@ -235,6 +289,14 @@ export class DevisService {
         where: { id: dto.venteId },
       });
       if (!vente) throw new NotFoundException('Vente introuvable.');
+      const facture = await this.prisma.factureClient.findFirst({
+        where: { devisId: id, statut: { not: 'ANNULEE' } },
+      });
+      if (facture) {
+        throw new BadRequestException(
+          'Ce devis a déjà une facture client — liaison ticket POS interdite (double 411).',
+        );
+      }
     }
 
     const devis = await this.prisma.devisClient.update({

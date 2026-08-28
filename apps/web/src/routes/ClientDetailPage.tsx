@@ -17,6 +17,7 @@ const ONGLET_VALIDES = new Set<OngletFicheClient>([
   'identite',
   'achats',
   'devis',
+  'factures',
   'fidelite',
   'interactions',
 ]);

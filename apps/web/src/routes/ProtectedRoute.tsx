@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  BookOpen,
   Grid2x2,
   LayoutDashboard,
   Package,
@@ -26,10 +27,15 @@ import {
   type AppProfilId,
 } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
-import { TopbarRealtimeIndicator, TopbarSystray, TopbarUserMenu } from '../components/Topbar';
+import { OdooNavbarMenus } from '../components/OdooNavbarMenus';
+import {
+  TopbarPwaInstall,
+  TopbarRealtimeIndicator,
+  TopbarSystray,
+  TopbarUserMenu,
+} from '../components/Topbar';
+import { filterVisibleMenus, leafMenus, type AppMenu } from '../lib/odoo-menus';
 import { useTresorerieRealtime } from '../lib/tresorerie-realtime';
-
-type AppMenu = { to: string; label: string; roles?: RoleLibelle[] };
 
 type AppDef = {
   id: AppProfilId;
@@ -66,18 +72,56 @@ const APPS: AppDef[] = [
     match: ['/ventes'],
     roles: rolesPourApp('ventes'),
     menus: [
-      { to: '/ventes', label: 'Vue d’ensemble' },
-      { to: '/ventes/tickets', label: 'Journal des tickets' },
-      { to: '/ventes/reporting', label: 'Reporting' },
       {
-        to: '/ventes/devis',
-        label: 'Devis clients',
-        roles: rolesPourMenu('ventes', '/ventes/devis'),
+        to: '/ventes',
+        label: 'Caisse',
+        children: [
+          { to: '/ventes', label: 'Vue d’ensemble' },
+          { to: '/ventes/tickets', label: 'Journal des tickets' },
+          {
+            to: '/pos',
+            label: 'Point de vente',
+            roles: rolesPourMenu('pos', '/pos'),
+          },
+        ],
       },
       {
-        to: '/pos',
-        label: 'Point de vente',
-        roles: rolesPourMenu('pos', '/pos'),
+        to: '/ventes/devis',
+        label: 'Commandes',
+        children: [
+          {
+            to: '/ventes/devis',
+            label: 'Devis clients',
+            roles: rolesPourMenu('ventes', '/ventes/devis'),
+          },
+          {
+            to: '/ventes/factures',
+            label: 'Factures clients',
+            roles: rolesPourMenu('ventes', '/ventes/factures'),
+          },
+          {
+            to: '/ventes/commandes-web',
+            label: 'Commandes web',
+            roles: rolesPourMenu('ventes', '/ventes/commandes-web'),
+          },
+        ],
+      },
+      { to: '/ventes/reporting', label: 'Reporting' },
+      {
+        to: '/ventes/parametres-shop',
+        label: 'Paramètres',
+        children: [
+          {
+            to: '/ventes/parametres-shop',
+            label: 'Paramètres shop',
+            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
+          },
+          {
+            to: '/ventes/zones-livraison',
+            label: 'Zones livraison',
+            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
+          },
+        ],
       },
     ],
   },
@@ -100,26 +144,32 @@ const APPS: AppDef[] = [
     match: ['/stocks', '/inventaires'],
     roles: rolesPourApp('inventory'),
     menus: [
-      { to: '/stocks', label: 'Stocks', roles: rolesPourMenu('inventory', '/stocks') },
       {
-        to: '/stocks/operations',
+        to: '/stocks',
         label: 'Opérations',
-        roles: rolesPourMenu('inventory', '/stocks/operations'),
+        children: [
+          { to: '/stocks', label: 'Stocks', roles: rolesPourMenu('inventory', '/stocks') },
+          {
+            to: '/stocks/operations',
+            label: 'Mouvements',
+            roles: rolesPourMenu('inventory', '/stocks/operations'),
+          },
+          {
+            to: '/stocks/reappro',
+            label: 'Réappro',
+            roles: rolesPourMenu('inventory', '/stocks/reappro'),
+          },
+          {
+            to: '/inventaires',
+            label: 'Inventaires physiques',
+            roles: rolesPourMenu('inventory', '/inventaires'),
+          },
+        ],
       },
       {
         to: '/stocks/emplacements',
         label: 'Emplacements',
         roles: rolesPourMenu('inventory', '/stocks/emplacements'),
-      },
-      {
-        to: '/stocks/reappro',
-        label: 'Réappro',
-        roles: rolesPourMenu('inventory', '/stocks/reappro'),
-      },
-      {
-        to: '/inventaires',
-        label: 'Inventaires physiques',
-        roles: rolesPourMenu('inventory', '/inventaires'),
       },
     ],
   },
@@ -129,12 +179,36 @@ const APPS: AppDef[] = [
     color: '#C45100',
     icon: Truck,
     home: '/fournisseurs',
-    match: ['/fournisseurs', '/achats/commandes', '/achats/factures'],
+    match: ['/fournisseurs', '/achats'],
     roles: rolesPourApp('purchase'),
     menus: [
       { to: '/fournisseurs', label: 'Fournisseurs' },
-      { to: '/achats/commandes', label: 'Commandes' },
-      { to: '/achats/factures', label: 'Factures' },
+      {
+        to: '/achats/planning',
+        label: 'Cycle',
+        children: [
+          {
+            to: '/achats/planning',
+            label: 'Planning & sourcing',
+            roles: rolesPourMenu('purchase', '/achats/planning'),
+          },
+          {
+            to: '/achats/commandes',
+            label: 'Commandes & import',
+            roles: rolesPourMenu('purchase', '/achats/commandes'),
+          },
+          {
+            to: '/achats/receptions',
+            label: 'Réceptions & qualité',
+            roles: rolesPourMenu('purchase', '/achats/receptions'),
+          },
+          {
+            to: '/achats/factures',
+            label: 'Factures & matching',
+            roles: rolesPourMenu('purchase', '/achats/factures'),
+          },
+        ],
+      },
     ],
   },
   {
@@ -148,34 +222,160 @@ const APPS: AppDef[] = [
     menus: [
       { to: '/clients', label: 'Clients', roles: rolesPourMenu('contacts', '/clients') },
       {
+        to: '/clients/fidelite',
+        label: 'Animation',
+        children: [
+          {
+            to: '/clients/fidelite',
+            label: 'Fidélité',
+            roles: rolesPourMenu('contacts', '/clients/fidelite'),
+          },
+          {
+            to: '/clients/segmentation',
+            label: 'Segmentation',
+            roles: rolesPourMenu('contacts', '/clients/segmentation'),
+          },
+          {
+            to: '/clients/interactions',
+            label: 'Interactions',
+            roles: rolesPourMenu('contacts', '/clients/interactions'),
+          },
+          {
+            to: '/campagnes',
+            label: 'Campagnes',
+            roles: rolesPourMenu('contacts', '/campagnes'),
+          },
+        ],
+      },
+      {
         to: '/clients/pilotage',
         label: 'Pilotage',
         roles: rolesPourMenu('contacts', '/clients/pilotage'),
       },
       {
-        to: '/clients/fidelite',
-        label: 'Fidélité',
-        roles: rolesPourMenu('contacts', '/clients/fidelite'),
-      },
-      {
-        to: '/clients/segmentation',
-        label: 'Segmentation',
-        roles: rolesPourMenu('contacts', '/clients/segmentation'),
-      },
-      {
-        to: '/clients/interactions',
-        label: 'Interactions',
-        roles: rolesPourMenu('contacts', '/clients/interactions'),
-      },
-      {
-        to: '/campagnes',
-        label: 'Campagnes',
-        roles: rolesPourMenu('contacts', '/campagnes'),
-      },
-      {
         to: '/clients/parametres',
         label: 'Paramètres',
         roles: rolesPourMenu('contacts', '/clients/parametres'),
+      },
+    ],
+  },
+  {
+    id: 'accounting',
+    name: 'Comptabilité',
+    color: '#2E7D4F',
+    icon: BookOpen,
+    home: '/finance/comptabilite',
+    match: ['/finance/comptabilite', '/finance/accounting-ai'],
+    roles: rolesPourApp('accounting'),
+    menus: [
+      {
+        to: '/finance/comptabilite?rapport=journaux',
+        label: 'Saisie',
+        children: [
+          {
+            to: '/finance/comptabilite?rapport=journaux',
+            label: 'Journaux',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=od',
+            label: 'Opérations diverses',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=charges',
+            label: 'Charges 6xx',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=file',
+            label: 'File d’écritures',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=banque',
+            label: 'Banque',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+        ],
+      },
+      {
+        to: '/finance/comptabilite?rapport=paiements',
+        label: 'Tiers',
+        children: [
+          {
+            to: '/finance/comptabilite?rapport=balance-agee-fournisseurs',
+            label: 'Balance âgée fournisseurs',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=balance-agee-clients',
+            label: 'Balance âgée clients',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=paiements',
+            label: 'Paiements',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+        ],
+      },
+      {
+        to: '/finance/comptabilite?rapport=balance',
+        label: 'Rapports',
+        children: [
+          {
+            to: '/finance/comptabilite?rapport=balance',
+            label: 'Balance',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=grand-livre',
+            label: 'Grand livre',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=bilan',
+            label: 'Bilan / CR',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=tva',
+            label: 'État TVA',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=liasse',
+            label: 'Liasse SYSCOHADA',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+        ],
+      },
+      {
+        to: '/finance/comptabilite?rapport=plan-comptes',
+        label: 'Paramètres',
+        children: [
+          {
+            to: '/finance/comptabilite?rapport=plan-comptes',
+            label: 'Plan de comptes',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=periodes',
+            label: 'Périodes',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/comptabilite?rapport=immos',
+            label: 'Immobilisations',
+            roles: rolesPourMenu('accounting', '/finance/comptabilite'),
+          },
+          {
+            to: '/finance/accounting-ai',
+            label: 'Comptabilité intelligente',
+            roles: rolesPourMenu('accounting', '/finance/accounting-ai'),
+          },
+        ],
       },
     ],
   },
@@ -189,9 +389,15 @@ const APPS: AppDef[] = [
     roles: rolesPourApp('finance'),
     menus: [
       { to: '/finance', label: 'Vue DAF' },
-      { to: '/finance?tab=resultat', label: 'Résultat ventes' },
-      { to: '/finance?tab=stocks', label: 'Stocks & valorisation' },
-      { to: '/finance?tab=tresorerie', label: 'Trésorerie' },
+      {
+        to: '/finance?tab=resultat',
+        label: 'États',
+        children: [
+          { to: '/finance?tab=resultat', label: 'Résultat ventes' },
+          { to: '/finance?tab=stocks', label: 'Stocks & valorisation' },
+          { to: '/finance?tab=tresorerie', label: 'Trésorerie' },
+        ],
+      },
     ],
   },
   {
@@ -205,26 +411,38 @@ const APPS: AppDef[] = [
     menus: [
       {
         to: '/tresorerie',
-        label: 'Vue d’ensemble',
-        roles: rolesPourMenu('treasury', '/tresorerie'),
-      },
-      {
-        to: '/tresorerie/bordereaux',
-        label: 'Bordereaux',
-        roles: rolesPourMenu('treasury', '/tresorerie'),
-      },
-      {
-        to: '/tresorerie/reception',
-        label: 'Réception centrale',
-        roles: ROLES_VALIDATION_CAISSE_CENTRALE,
+        label: 'Circuit',
+        children: [
+          {
+            to: '/tresorerie',
+            label: 'Vue d’ensemble',
+            roles: rolesPourMenu('treasury', '/tresorerie'),
+          },
+          {
+            to: '/tresorerie/bordereaux',
+            label: 'Bordereaux',
+            roles: rolesPourMenu('treasury', '/tresorerie'),
+          },
+          {
+            to: '/tresorerie/reception',
+            label: 'Réception centrale',
+            roles: ROLES_VALIDATION_CAISSE_CENTRALE,
+          },
+          { to: '/litiges', label: 'Litiges', roles: rolesPourMenu('treasury', '/litiges') },
+        ],
       },
       {
         to: '/transactions',
-        label: 'Transactions',
-        roles: rolesPourMenu('treasury', '/transactions'),
+        label: 'Registres',
+        children: [
+          {
+            to: '/transactions',
+            label: 'Transactions',
+            roles: rolesPourMenu('treasury', '/transactions'),
+          },
+          { to: '/caisses', label: 'Caisses', roles: rolesPourMenu('treasury', '/caisses') },
+        ],
       },
-      { to: '/caisses', label: 'Caisses', roles: rolesPourMenu('treasury', '/caisses') },
-      { to: '/litiges', label: 'Litiges', roles: rolesPourMenu('treasury', '/litiges') },
     ],
   },
   {
@@ -251,43 +469,61 @@ const APPS: AppDef[] = [
     menus: [
       {
         to: '/utilisateurs',
-        label: 'Utilisateurs',
-        roles: rolesPourMenu('settings', '/utilisateurs'),
-      },
-      {
-        to: '/profils',
-        label: 'Profils',
-        roles: rolesPourMenu('settings', '/profils'),
+        label: 'Accès',
+        children: [
+          {
+            to: '/utilisateurs',
+            label: 'Utilisateurs',
+            roles: rolesPourMenu('settings', '/utilisateurs'),
+          },
+          {
+            to: '/profils',
+            label: 'Profils',
+            roles: rolesPourMenu('settings', '/profils'),
+          },
+        ],
       },
       {
         to: '/entreprise',
-        label: 'Entreprise',
-        roles: rolesPourMenu('settings', '/entreprise'),
-      },
-      {
-        to: '/entreprise?tab=zones',
-        label: 'Zones',
-        roles: rolesPourMenu('settings', '/entreprise'),
-      },
-      {
-        to: '/entreprise?tab=magasins',
-        label: 'Magasins',
-        roles: rolesPourMenu('settings', '/entreprise'),
-      },
-      {
-        to: '/entreprise?tab=caisses',
-        label: 'Caisses (structure)',
-        roles: rolesPourMenu('settings', '/entreprise'),
+        label: 'Organisation',
+        children: [
+          {
+            to: '/entreprise',
+            label: 'Entreprise',
+            roles: rolesPourMenu('settings', '/entreprise'),
+          },
+          {
+            to: '/entreprise?tab=zones',
+            label: 'Zones',
+            roles: rolesPourMenu('settings', '/entreprise'),
+          },
+          {
+            to: '/entreprise?tab=magasins',
+            label: 'Magasins',
+            roles: rolesPourMenu('settings', '/entreprise'),
+          },
+          {
+            to: '/entreprise?tab=caisses',
+            label: 'Caisses (structure)',
+            roles: rolesPourMenu('settings', '/entreprise'),
+          },
+        ],
       },
       {
         to: '/audit',
-        label: "Journal d'audit",
-        roles: rolesPourMenu('settings', '/audit'),
-      },
-      {
-        to: '/audit/controle-coherence',
-        label: 'Rapprochement 3 voies',
-        roles: ROLES_CONTROLE_COHERENCE,
+        label: 'Audit',
+        children: [
+          {
+            to: '/audit',
+            label: "Journal d'audit",
+            roles: rolesPourMenu('settings', '/audit'),
+          },
+          {
+            to: '/audit/controle-coherence',
+            label: 'Rapprochement 3 voies',
+            roles: ROLES_CONTROLE_COHERENCE,
+          },
+        ],
       },
     ],
   },
@@ -310,7 +546,7 @@ function pathAllowed(pathname: string, role: RoleLibelle): boolean {
   const app = resolveApp(pathname);
   if (!app.roles.includes(role)) return false;
   if (!menuAutorise(role, app.id, pathname)) return false;
-  const matches = app.menus
+  const matches = leafMenus(app.menus)
     .map((menu) => ({ menu, base: menu.to.split('?')[0] }))
     .filter(
       ({ base }) => pathname === base || pathname.startsWith(`${base}/`),
@@ -341,8 +577,8 @@ export function ProtectedRoute() {
     );
   }, [role]);
   const visibleMenus = useMemo(() => {
-    return currentApp.menus.filter((menu) => {
-      if (role === undefined) return false;
+    if (role === undefined) return [];
+    return filterVisibleMenus(currentApp.menus, (menu) => {
       if (menu.roles && !menu.roles.includes(role)) return false;
       return menuAutorise(role, currentApp.id, menu.to);
     });
@@ -461,27 +697,16 @@ export function ProtectedRoute() {
           </button>
 
           {visibleMenus.length > 0 && (
-            <nav className="odoo-menus" aria-label={`Menus ${currentApp.name}`}>
-              {visibleMenus.map((menu) => (
-                <NavLink
-                  key={menu.to}
-                  to={menu.to}
-                  end={
-                    menu.to === currentApp.home &&
-                    !['/produits', '/clients', '/stocks', '/fournisseurs'].includes(
-                      menu.to,
-                    )
-                  }
-                >
-                  {menu.label}
-                </NavLink>
-              ))}
-            </nav>
+            <OdooNavbarMenus
+              menus={visibleMenus}
+              ariaLabel={`Menus ${currentApp.name}`}
+            />
           )}
         </div>
 
         <div className="odoo-navbar-right">
           <TopbarRealtimeIndicator />
+          <TopbarPwaInstall />
           <TopbarSystray />
           {user && (
             <TopbarUserMenu

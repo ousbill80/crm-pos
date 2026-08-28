@@ -142,6 +142,14 @@ function IdentiteForm({
   const [categorie, setCategorie] = useState(produit.categorie ?? '');
   const [description, setDescription] = useState(produit.description ?? '');
   const [prixUnitaire, setPrixUnitaire] = useState(String(Number(produit.prixUnitaire)));
+  const [prixWeb, setPrixWeb] = useState(
+    produit.prixWeb != null ? String(Number(produit.prixWeb)) : '',
+  );
+  const [visibleWeb, setVisibleWeb] = useState(produit.visibleWeb ?? false);
+  const [slug, setSlug] = useState(produit.slug ?? '');
+  const [tauxTva, setTauxTva] = useState(
+    produit.tauxTva != null ? String(Number(produit.tauxTva)) : '',
+  );
   const [seuilReappro, setSeuilReappro] = useState(
     produit.seuilReappro !== null ? String(produit.seuilReappro) : '',
   );
@@ -166,6 +174,10 @@ function IdentiteForm({
           categorie: categorie.trim() === '' ? null : categorie.trim(),
           description: description.trim() === '' ? null : description.trim(),
           prixUnitaire: Number(prixUnitaire),
+          prixWeb: prixWeb === '' ? null : Number(prixWeb),
+          visibleWeb,
+          slug: slug.trim() === '' ? null : slug.trim(),
+          tauxTva: tauxTva === '' ? null : Number(tauxTva),
           seuilReappro: seuilReappro === '' ? null : Number(seuilReappro),
           codeBarres: codeBarres.trim() === '' ? null : codeBarres.trim(),
           methodeCout,
@@ -308,6 +320,53 @@ function IdentiteForm({
             value={seuilReappro}
             onChange={(e) => setSeuilReappro(e.target.value)}
           />
+        </div>
+      </div>
+      <h3>Boutique en ligne</h3>
+      <div className="form-grid-2">
+        <div className="form-field">
+          <label htmlFor="fiche-prix-web">Prix web (FCFA)</label>
+          <input
+            id="fiche-prix-web"
+            type="number"
+            min="0"
+            step="0.01"
+            value={prixWeb}
+            onChange={(e) => setPrixWeb(e.target.value)}
+          />
+        </div>
+        <div className="form-field">
+          <label htmlFor="fiche-tva">Taux TVA (%)</label>
+          <input
+            id="fiche-tva"
+            type="number"
+            min="0"
+            step="0.01"
+            value={tauxTva}
+            onChange={(e) => setTauxTva(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="form-grid-2">
+        <div className="form-field">
+          <label htmlFor="fiche-slug">Slug URL</label>
+          <input
+            id="fiche-slug"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="coque-iphone-15"
+          />
+        </div>
+        <div className="form-field">
+          <label htmlFor="fiche-visible-web">
+            <input
+              id="fiche-visible-web"
+              type="checkbox"
+              checked={visibleWeb}
+              onChange={(e) => setVisibleWeb(e.target.checked)}
+            />{' '}
+            Visible sur le site
+          </label>
         </div>
       </div>
       <p className="lead">

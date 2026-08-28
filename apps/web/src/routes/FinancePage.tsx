@@ -664,12 +664,15 @@ export function FinancePage() {
                 onClick={() =>
                   void apiDownload(
                     '/reporting/export-comptable.csv',
-                    'export-comptable.csv',
+                    'journal-caisse.csv',
                   )
                 }
               >
-                <Download size={14} /> Export comptable
+                <Download size={14} /> Journal de caisse
               </button>
+              <Link className="btn btn-secondary" to="/finance/comptabilite?rapport=grand-livre">
+                Grand livre SYSCOHADA
+              </Link>
             </div>
           </div>
         }

@@ -8,6 +8,7 @@ export const APP_PROFIL_IDS = [
   'inventory',
   'purchase',
   'contacts',
+  'accounting',
   'finance',
   'treasury',
   'dashboard',
@@ -22,6 +23,7 @@ export const APP_PROFIL_LIBELLES: Record<AppProfilId, string> = {
   inventory: 'Stocks',
   purchase: 'Achats',
   contacts: 'CRM',
+  accounting: 'Comptabilité',
   finance: 'Finance',
   treasury: 'Trésorerie',
   dashboard: 'Tableau de bord',
@@ -31,6 +33,8 @@ export const APP_PROFIL_LIBELLES: Record<AppProfilId, string> = {
 export const FAMILLE_PROFIL = {
   DIRECTION: 'DIRECTION',
   TRESORERIE: 'TRESORERIE',
+  APPROVISIONNEMENT: 'APPROVISIONNEMENT',
+  COMPTABILITE: 'COMPTABILITE',
   ZONE: 'ZONE',
   BOUTIQUE: 'BOUTIQUE',
   SUPPORT: 'SUPPORT',
@@ -40,6 +44,8 @@ export type FamilleProfil = (typeof FAMILLE_PROFIL)[keyof typeof FAMILLE_PROFIL]
 export const FAMILLE_PROFIL_LIBELLES: Record<FamilleProfil, string> = {
   DIRECTION: 'Direction & contrôle',
   TRESORERIE: 'Trésorerie réseau',
+  APPROVISIONNEMENT: 'Achats, logistique & stocks',
+  COMPTABILITE: 'Comptabilité',
   ZONE: 'Pilotage de zone',
   BOUTIQUE: 'Boutique',
   SUPPORT: 'Support (SI / CRM)',
@@ -76,6 +82,20 @@ const CATALOGUE: AccesApp = true;
 const STOCKS_COMPLET: AccesApp = true;
 const STOCKS_CAISSIER: AccesApp = ['/stocks', '/inventaires'];
 const ACHATS: AccesApp = true;
+const ACHATS_COMMANDES: AccesApp = [
+  '/fournisseurs',
+  '/achats/planning',
+  '/achats/consultations',
+  '/achats/commandes',
+];
+const ACHATS_LOGISTIQUE: AccesApp = ['/achats/commandes', '/achats/receptions'];
+const ACHATS_QUALITE: AccesApp = ['/achats/receptions'];
+const ACHATS_COMPTABILITE: AccesApp = [
+  '/fournisseurs',
+  '/achats/commandes',
+  '/achats/receptions',
+  '/achats/factures',
+];
 /**
  * Caissier central : lecture réseau des fiches/commandes/factures (§ ROLES_LECTURE_ACHATS
  * côté API) + paiement fournisseur (§ ROLES_PAIEMENT_FOURNISSEUR, grand livre Achats distinct
@@ -91,20 +111,16 @@ const CONTACTS_SANS_CAMPAGNES: AccesApp = [
   '/clients/interactions',
 ];
 const FINANCE: AccesApp = true;
+const COMPTABILITE: AccesApp = true;
 const TRESORERIE_COMPLET: AccesApp = true;
 const TRESORERIE_CAISSIER: AccesApp = ['/caisses', '/transactions'];
 const DASHBOARD: AccesApp = true;
 const CONFIG_COMPLET: AccesApp = true;
-const CONFIG_CONTROLE: AccesApp = [
-  '/entreprise',
-  '/utilisateurs',
-  '/audit',
-  '/profils',
-];
+const CONFIG_CONTROLE: AccesApp = ['/entreprise', '/utilisateurs', '/audit', '/profils'];
 
 /**
- * Catalogue fermé des profils §4 / §6.2.
- * On n’ajoute pas de rôle, on ne bascule pas « peut valider » : c’est le CDC.
+ * Profils §4 / §6.2 complétés par les fonctions P2P validées. Les rôles
+ * spécialisés restent tous hors du circuit de validation de caisse §6.4.
  */
 export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
   DIRECTION_GENERALE: {
@@ -122,6 +138,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       inventory: STOCKS_COMPLET,
       purchase: ACHATS,
       contacts: CONTACTS_SANS_CAMPAGNES,
+      accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
       dashboard: DASHBOARD,
@@ -146,6 +163,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       inventory: STOCKS_COMPLET,
       purchase: ACHATS,
       contacts: CONTACTS_SANS_CAMPAGNES,
+      accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
       dashboard: DASHBOARD,
@@ -154,6 +172,79 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     resume:
       'Pôle financier réseau : achats (fiches, commandes, réceptions, factures, paiements), résultat, stocks valorisés, trésorerie, validation niveau 2.',
     interdit: 'N’encaisse pas en boutique. Ne configure pas le SI (zones, magasins, catalogue).',
+  },
+  ACHATS: {
+    role: RoleLibelle.ACHATS,
+    libelle: 'Responsable achats',
+    famille: FAMILLE_PROFIL.APPROVISIONNEMENT,
+    perimetre: 'RESEAU',
+    boutiqueRequise: false,
+    validationCircuit: false,
+    accueil: '/achats/commandes',
+    apps: {
+      produits: CATALOGUE,
+      inventory: STOCKS_COMPLET,
+      purchase: ACHATS_COMMANDES,
+      dashboard: DASHBOARD,
+    },
+    resume: 'Référentiel fournisseurs, demandes et préparation des commandes réseau.',
+    interdit:
+      'N’approuve pas ses propres commandes, ne réceptionne pas, ne comptabilise pas et ne paie pas.',
+  },
+  LOGISTIQUE_TRANSIT_DOUANE: {
+    role: RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+    libelle: 'Logistique / Transit / Douane',
+    famille: FAMILLE_PROFIL.APPROVISIONNEMENT,
+    perimetre: 'RESEAU',
+    boutiqueRequise: false,
+    validationCircuit: false,
+    accueil: '/achats/receptions',
+    apps: {
+      produits: CATALOGUE,
+      inventory: STOCKS_COMPLET,
+      purchase: ACHATS_LOGISTIQUE,
+      dashboard: DASHBOARD,
+    },
+    resume: 'Suit production, expédition, transit, douane et réception quantitative.',
+    interdit:
+      'Ne gère pas le référentiel fournisseur, ne valide pas la qualité, ne comptabilise pas et ne paie pas.',
+  },
+  QUALITE_STOCKS: {
+    role: RoleLibelle.QUALITE_STOCKS,
+    libelle: 'Qualité / Stocks',
+    famille: FAMILLE_PROFIL.APPROVISIONNEMENT,
+    perimetre: 'RESEAU',
+    boutiqueRequise: false,
+    validationCircuit: false,
+    accueil: '/achats/receptions',
+    apps: {
+      produits: CATALOGUE,
+      inventory: STOCKS_COMPLET,
+      purchase: ACHATS_QUALITE,
+      dashboard: DASHBOARD,
+    },
+    resume: 'Contrôle la conformité qualité, la quarantaine et l’acceptation en stock.',
+    interdit: 'Ne commande pas, ne comptabilise pas, ne paie pas et ne valide aucune caisse.',
+  },
+  RAF_COMPTABLE: {
+    role: RoleLibelle.RAF_COMPTABLE,
+    libelle: 'RAF / Comptable',
+    famille: FAMILLE_PROFIL.COMPTABILITE,
+    perimetre: 'RESEAU',
+    boutiqueRequise: false,
+    validationCircuit: false,
+    accueil: '/finance/comptabilite',
+    apps: {
+      purchase: ACHATS_COMPTABILITE,
+      accounting: COMPTABILITE,
+      finance: FINANCE,
+      dashboard: DASHBOARD,
+      ventes: ['/ventes/factures'],
+    },
+    resume:
+      'Saisit et comptabilise les factures fournisseur dans les référentiels fiscaux et SYSCOHADA.',
+    interdit:
+      'Ne crée pas de fournisseur ou commande, ne réceptionne pas, ne paie pas et ne valide aucune caisse.',
   },
   CAISSIER_CENTRAL: {
     role: RoleLibelle.CAISSIER_CENTRAL,
@@ -170,12 +261,12 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       inventory: STOCKS_COMPLET,
       purchase: ACHATS_TRESORERIE,
       contacts: CONTACTS_SANS_CAMPAGNES,
+      accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
       dashboard: DASHBOARD,
     },
-    resume:
-      'Réceptionne et valide les SORTIE_FONDS magasin → centrale (machine à états §6.4).',
+    resume: 'Réceptionne et valide les SORTIE_FONDS magasin → centrale (machine à états §6.4).',
     interdit: 'N’initie pas une vente boutique. N’administre pas les utilisateurs.',
   },
   CONTROLEUR_INTERNE: {
@@ -192,6 +283,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
       contacts: CONTACTS_SANS_CAMPAGNES,
+      accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
       dashboard: DASHBOARD,
@@ -258,8 +350,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       treasury: TRESORERIE_CAISSIER,
       dashboard: DASHBOARD,
     },
-    resume:
-      'Poste de caisse : encaisser, session tiroir, clients, stock boutique, inventaire.',
+    resume: 'Poste de caisse : encaisser, session tiroir, clients, stock boutique, inventaire.',
     interdit:
       'Pas de catalogue, pas d’achats, pas de configuration, pas de validation / réception / litige.',
   },
@@ -305,7 +396,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     accueil: '/clients',
     apps: {
       contacts: CONTACTS_COMPLET,
-      ventes: ['/ventes/devis'],
+      ventes: ['/ventes/devis', '/ventes/factures'],
     },
     resume: 'Module CRM complet : fiches, segmentation, fidélité, campagnes (§6.6).',
     interdit: 'Pas d’accès caisse, stocks, finance, configuration SI.',
@@ -315,6 +406,10 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
 export const LISTE_PROFILS: ProfilMetier[] = [
   PROFILS.DIRECTION_GENERALE,
   PROFILS.DAF,
+  PROFILS.ACHATS,
+  PROFILS.LOGISTIQUE_TRANSIT_DOUANE,
+  PROFILS.QUALITE_STOCKS,
+  PROFILS.RAF_COMPTABLE,
   PROFILS.CONTROLEUR_INTERNE,
   PROFILS.CAISSIER_CENTRAL,
   PROFILS.SUPERVISEUR_ZONE,
@@ -342,16 +437,10 @@ export function homeForRole(role: RoleLibelle): string {
 }
 
 export function rolesPourApp(appId: AppProfilId): RoleLibelle[] {
-  return LISTE_PROFILS.filter((p) => p.apps[appId] !== undefined).map(
-    (p) => p.role,
-  );
+  return LISTE_PROFILS.filter((p) => p.apps[appId] !== undefined).map((p) => p.role);
 }
 
-export function menuAutorise(
-  role: RoleLibelle,
-  appId: AppProfilId,
-  menuPath: string,
-): boolean {
+export function menuAutorise(role: RoleLibelle, appId: AppProfilId, menuPath: string): boolean {
   const acces = PROFILS[role]?.apps[appId];
   if (acces === undefined) return false;
   if (acces === true) return true;
@@ -362,13 +451,8 @@ export function menuAutorise(
   });
 }
 
-export function rolesPourMenu(
-  appId: AppProfilId,
-  menuPath: string,
-): RoleLibelle[] {
-  return LISTE_PROFILS.filter((p) =>
-    menuAutorise(p.role, appId, menuPath),
-  ).map((p) => p.role);
+export function rolesPourMenu(appId: AppProfilId, menuPath: string): RoleLibelle[] {
+  return LISTE_PROFILS.filter((p) => menuAutorise(p.role, appId, menuPath)).map((p) => p.role);
 }
 
 export function accueilApp(role: RoleLibelle, appId: AppProfilId, fallback: string): string {

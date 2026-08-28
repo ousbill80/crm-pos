@@ -8,7 +8,9 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { DevisService } from './devis.service';
 import {
   CreateDevisDto,
@@ -23,6 +25,8 @@ import {
   ROLES_DEVIS_ECRITURE,
   ROLES_DEVIS_LECTURE,
 } from './devis-rules.constants';
+import { dessinerDevisClientPdf } from '../impressions/devis-client.pdf';
+import { pipePdf } from '../impressions/pdf.util';
 
 @Controller('devis')
 export class DevisController {
@@ -35,6 +39,22 @@ export class DevisController {
     @Query() query: ListDevisQueryDto,
   ) {
     return this.devisService.findAll(user, query);
+  }
+
+  @Get(':id/pdf')
+  @Roles(...ROLES_DEVIS_LECTURE)
+  async telechargerPdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const data = await this.devisService.getDevisPdfData(id, user);
+    pipePdf(
+      res,
+      `devis-${data.numero}.pdf`,
+      (doc) => dessinerDevisClientPdf(doc, data),
+      'Devis client · hors TVA',
+    );
   }
 
   @Get(':id')
