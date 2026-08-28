@@ -53,6 +53,7 @@ import PosCommandeWebScanPage from './routes/PosCommandeWebScanPage';
 import ParametresShopPage from './routes/ParametresShopPage';
 import ZonesLivraisonPage from './routes/ZonesLivraisonPage';
 import { CrmPilotagePage } from './routes/CrmPilotagePage';
+import { CrmCroissancePage } from './routes/CrmCroissancePage';
 import { CrmParametresPage } from './routes/CrmParametresPage';
 import { BordereauxPage, ReceptionCentralePage } from './routes/TresorerieFilesPage';
 import { P2pPlanningPage } from './routes/P2pPlanningPage';
@@ -102,6 +103,7 @@ function App() {
         <Route path="/litiges" element={<LitigesPage />} />
         <Route path="/clients" element={<CrmClientsPage />} />
         <Route path="/clients/pilotage" element={<CrmPilotagePage />} />
+        <Route path="/clients/croissance" element={<CrmCroissancePage />} />
         <Route path="/clients/parametres" element={<CrmParametresPage />} />
         <Route path="/clients/fidelite" element={<CrmFidelitePage />} />
         <Route path="/clients/segmentation" element={<CrmSegmentationPage />} />

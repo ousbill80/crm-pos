@@ -24,6 +24,7 @@ Internet / LAN
 - **gateway** : SPA React + proxy REST + WebSocket (`/socket.io`) vers l'API.
 - **api** et **db** : accessibles uniquement sur le réseau Docker interne.
 - **Ports gateway** : `127.0.0.1` par défaut (`GATEWAY_BIND`). HTTP clair n’est jamais public.
+- **Cloudflare** (recommandé) : proxy orange + WAF crawlers IA + UFW limité aux IPs Cloudflare (`DEPLOIEMENT-HOSTINGER.md` §1).
 - **Web** : `VITE_API_URL=""` → appels same-origin (`/auth`, `/ventes`, …).
 - **Seed démo** : désactivé (`SEED_ON_START=false`).
 

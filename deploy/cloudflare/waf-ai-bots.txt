@@ -1,0 +1,10 @@
+# Expression WAF Cloudflare (Security → WAF → Custom rules → Create rule)
+# Action : Block
+# Action parameters : default
+#
+# Colle le bloc ci-dessous dans « Expression Editor » (Edit expression).
+
+(http.user_agent contains "GPTBot") or (http.user_agent contains "ChatGPT-User") or (http.user_agent contains "OAI-SearchBot") or (http.user_agent contains "ClaudeBot") or (http.user_agent contains "Claude-Web") or (http.user_agent contains "Anthropic-AI") or (http.user_agent contains "Google-Extended") or (http.user_agent contains "Google-CloudVertexBot") or (http.user_agent contains "Bytespider") or (http.user_agent contains "CCBot") or (http.user_agent contains "Amazonbot") or (http.user_agent contains "Applebot-Extended") or (http.user_agent contains "meta-externalagent") or (http.user_agent contains "PerplexityBot") or (http.user_agent contains "YouBot") or (http.user_agent contains "Diffbot") or (http.user_agent contains "cohere-ai") or (http.user_agent contains "Perplexity") or (http.user_agent contains "Bytespider") or (http.user_agent contains "AI2Bot") or (http.user_agent contains "PetalBot")
+
+# Règle séparée pour CRM / POS / staging (hostname) — Block tout crawler :
+# (http.host in {"crm.majorautoparts.shop" "pos.majorautoparts.shop" "crm-staging.majorautoparts.shop" "pos-staging.majorautoparts.shop" "staging.majorautoparts.shop"}) and (http.user_agent contains "bot" or http.user_agent contains "Bot" or http.user_agent contains "spider" or http.user_agent contains "crawler" or http.user_agent contains "Crawl")

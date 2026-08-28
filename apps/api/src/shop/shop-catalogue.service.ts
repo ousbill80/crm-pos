@@ -9,6 +9,7 @@ import {
   tokenFieldOr,
   type CatalogueTri,
 } from './catalogue-search.intelligence';
+import { parseAttributsMap } from './parse-attributs';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 48;
@@ -180,18 +181,68 @@ export class ShopCatalogueService {
     if (!produit) {
       throw new NotFoundException(`Produit "${slug}" introuvable.`);
     }
-    let stockDisponible: number | undefined;
-    if (params.entrepotWebDefautId && produit.typeProduit === 'ARTICLE') {
-      stockDisponible = await this.stockService.getDisponible(
-        produit.id,
-        params.entrepotWebDefautId,
+
+    const rootId = produit.parentId ?? produit.id;
+    const family = await this.prisma.produit.findMany({
+      where: {
+        actif: true,
+        visibleWeb: true,
+        OR: [{ id: rootId }, { parentId: rootId }],
+      },
+      orderBy: [{ designation: 'asc' }],
+    });
+
+    const stockById = new Map<string, number | undefined>();
+    if (params.entrepotWebDefautId) {
+      await Promise.all(
+        family.map(async (p) => {
+          if (p.typeProduit !== 'ARTICLE') {
+            stockById.set(p.id, undefined);
+            return;
+          }
+          const qty = await this.stockService.getDisponible(
+            p.id,
+            params.entrepotWebDefautId!,
+          );
+          stockById.set(p.id, qty);
+        }),
       );
     }
-    const mapped = mapProduitCatalogue(produit, paramsPrix, stockDisponible);
-    if (!mapped) {
+
+    const mappedFamily = family
+      .map((p) => {
+        const m = mapProduitCatalogue(p, paramsPrix, stockById.get(p.id));
+        if (!m) return null;
+        const attributsMap = parseAttributsMap(p.attributs);
+        return {
+          ...m,
+          attributsMap,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null);
+
+    const current =
+      mappedFamily.find((p) => p.id === produit.id) ??
+      (() => {
+        const m = mapProduitCatalogue(
+          produit,
+          paramsPrix,
+          stockById.get(produit.id),
+        );
+        if (!m) return null;
+        return { ...m, attributsMap: parseAttributsMap(produit.attributs) };
+      })();
+
+    if (!current) {
       throw new NotFoundException(`Produit "${slug}" non disponible en ligne.`);
     }
-    return mapped;
+
+    const variantes = mappedFamily.filter((p) => p.id !== current.id);
+
+    return {
+      ...current,
+      variantes,
+    };
   }
 
   async listBoutiquesRetrait() {

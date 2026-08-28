@@ -66,3 +66,6 @@ export const TRUST = [
   { title: 'Toutes marques', text: 'Mercedes, Toyota, BMW, Audi…' },
   { title: 'Conseil atelier', text: 'Équipe technique showroom' },
 ] as const;
+
+/** Seuil panier (FCFA) pour message d’avantage livraison / priorité préparation. */
+export const PANIER_SEUIL_AVANTAGE = 75_000;

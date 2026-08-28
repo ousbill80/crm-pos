@@ -61,6 +61,9 @@ export function mapProduitCatalogue(
     prixUnitaire: { toString(): string };
     visibleWeb: boolean;
     tauxTva: { toString(): string } | null;
+    typeProduit?: string;
+    attributs?: string | null;
+    parentId?: string | null;
   },
   paramsPrix: ParametresPrixShop,
   stockDisponible?: number,
@@ -89,6 +92,9 @@ export function mapProduitCatalogue(
     prixUnitaireTtc: prix.prixUnitaireTtc,
     modeAffichage: prix.modeAffichage,
     stockDisponible: stockDisponible ?? null,
+    typeProduit: produit.typeProduit ?? 'ARTICLE',
+    attributs: produit.attributs ?? null,
+    parentId: produit.parentId ?? null,
   };
 }
 

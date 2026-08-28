@@ -178,6 +178,21 @@ describe('Commandes web staff (e2e)', () => {
         .set('Authorization', `Bearer ${tokens.si}`)
         .expect(200);
     });
+
+    it('autorise le funnel AARRR au SI et au contrôleur, refuse le caissier boutique', async () => {
+      await request(app.getHttpServer())
+        .get('/commandes-web/aarrr')
+        .set('Authorization', `Bearer ${tokens.si}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/commandes-web/aarrr')
+        .set('Authorization', `Bearer ${tokens.ctrl}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/commandes-web/aarrr')
+        .set('Authorization', `Bearer ${tokens.caissier}`)
+        .expect(403);
+    });
   });
 
   it('transition PREPARATION → PRETE → REMISE + conversion vente idempotente', async () => {

@@ -91,6 +91,22 @@ export class PrismaService
       configurable: true,
       enumerable: true,
     });
+    Object.defineProperty(this, 'shopFunnelEvent', {
+      value: guardAppendOnlyDelegate(
+        this.shopFunnelEvent,
+        'Funnel shop append-only',
+      ),
+      configurable: true,
+      enumerable: true,
+    });
+    Object.defineProperty(this, 'staffBriefingEnvoi', {
+      value: guardAppendOnlyDelegate(
+        this.staffBriefingEnvoi,
+        'Briefing staff append-only',
+      ),
+      configurable: true,
+      enumerable: true,
+    });
     // Fiches client : clair au repos (décision §6.7) — pas de Proxy crypto.
   }
 

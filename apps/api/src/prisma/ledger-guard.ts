@@ -301,6 +301,18 @@ export function guardLedgerTransactionClient<T extends object>(tx: T): T {
           'Fait comptable append-only',
         );
       }
+      if (prop === 'shopFunnelEvent') {
+        return guardAppendOnlyDelegate(
+          Reflect.get(target, prop, receiver) as object,
+          'Funnel shop append-only',
+        );
+      }
+      if (prop === 'staffBriefingEnvoi') {
+        return guardAppendOnlyDelegate(
+          Reflect.get(target, prop, receiver) as object,
+          'Briefing staff append-only',
+        );
+      }
       if (prop === 'ligneEcritureComptable') {
         return guardLettrageDelegate(
           Reflect.get(target, prop, receiver) as object,

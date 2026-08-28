@@ -247,11 +247,16 @@ const APPS: AppDef[] = [
           },
         ],
       },
-      {
-        to: '/clients/pilotage',
-        label: 'Pilotage',
-        roles: rolesPourMenu('contacts', '/clients/pilotage'),
-      },
+        {
+          to: '/clients/pilotage',
+          label: 'Pilotage',
+          roles: rolesPourMenu('contacts', '/clients/pilotage'),
+        },
+        {
+          to: '/clients/croissance',
+          label: 'Croissance boutique',
+          roles: rolesPourMenu('contacts', '/clients/croissance'),
+        },
       {
         to: '/clients/parametres',
         label: 'Paramètres',

@@ -14,9 +14,12 @@ VPS : **KVM 2 Ubuntu** (à partager avec d’autres apps plus tard)
 
 ```text
 Internet
-   │  :80 / :443
+   │  HTTPS
    ▼
-Caddy (hôte Ubuntu) — HTTPS automatique Let’s Encrypt
+Cloudflare (proxy orange) — WAF, TLS, blocage crawlers IA
+   │  uniquement plages CF → VPS :443
+   ▼
+Caddy (hôte Ubuntu) — 127.0.0.1
    ├── www / apex          → 127.0.0.1:8080   shop prod
    ├── crm / pos           → 127.0.0.1:8081   CRM prod
    ├── staging             → 127.0.0.1:8082   shop staging
@@ -30,8 +33,9 @@ Docker Compose
         1 Postgres + 1 API monolith + 2 gateways (~1,3 Go)
 ```
 
-Les containers **ne publient pas** 80/443 : seul Caddy écoute le public.  
-Ainsi tu peux ajouter d’autres apps sans conflit de ports.
+L’IP du VPS n’est **pas** dans le DNS public (proxy Cloudflare).  
+80/443 du VPS n’acceptent que les plages Cloudflare (`deploy/cloudflare/ufw-allow-cloudflare.sh`).  
+Les containers Docker n’écoutent pas 80/443 public.
 
 ---
 
@@ -47,34 +51,62 @@ Ainsi tu peux ajouter d’autres apps sans conflit de ports.
 
 ---
 
-## 1. DNS Hostinger
+## 1. DNS + Cloudflare (obligatoire)
 
-Dans **hPanel → Domaines → majorautoparts.shop → DNS** :
+L’origine (IP VPS) ne doit **jamais** être joignable directement : sinon les bots IA contournent Cloudflare.
 
-| Type | Nom | Valeur | TTL |
+### 1.1 Compte et nameservers
+
+1. Compte [Cloudflare](https://dash.cloudflare.com) → **Add a site** → `majorautoparts.shop` (plan **Free** suffit).
+2. Cloudflare affiche 2 nameservers (`xxx.ns.cloudflare.com`).
+3. Chez **Hostinger → Domaines → majorautoparts.shop → Nameservers** : coller ceux de Cloudflare (plus la zone DNS Hostinger).
+4. Attendre que le domaine soit **Active** dans Cloudflare (souvent 15 min–24 h).
+
+### 1.2 Enregistrements DNS (proxy **orange**)
+
+SSL/TLS → Overview : mode **Full (strict)**.
+
+| Type | Nom | Contenu | Proxy |
 |---|---|---|---|
-| A | `@` | `IP_DU_VPS` | 300 |
-| A | `www` | `IP_DU_VPS` | 300 |
-| A | `crm` | `IP_DU_VPS` | 300 |
-| A | `pos` | `IP_DU_VPS` | 300 |
-| A | `staging` | `IP_DU_VPS` | 300 |
-| A | `crm-staging` | `IP_DU_VPS` | 300 |
-| A | `pos-staging` | `IP_DU_VPS` | 300 |
+| A | `@` | `IP_DU_VPS` | **Proxied** (nuage orange) |
+| A | `www` | `IP_DU_VPS` | **Proxied** |
+| A | `crm` | `IP_DU_VPS` | **Proxied** |
+| A | `pos` | `IP_DU_VPS` | **Proxied** |
+| A | `staging` | `IP_DU_VPS` | **Proxied** |
+| A | `crm-staging` | `IP_DU_VPS` | **Proxied** |
+| A | `pos-staging` | `IP_DU_VPS` | **Proxied** |
 
-Supprime ou ignore les enregistrements A/AAAA Hostinger « parking » qui pointent ailleurs.  
-Attends la propagation (souvent quelques minutes, parfois 1 h).
+Vérifie : `dig +short www.majorautoparts.shop A` doit renvoyer une **IP Cloudflare**, pas l’IP du VPS.
 
-Vérifie depuis ton Mac :
+SSL/TLS → Edge Certificates : **Always Use HTTPS** = on.  
+Network : **WebSockets** = on (trésorerie temps réel).
+
+### 1.3 WAF — bloquer les crawlers IA
+
+1. **Security → Bots** : activer **Bot Fight Mode** (Free). Si tu vois **Block AI bots / AI scrapers**, l’activer.
+2. **Security → WAF → Custom rules** : coller `deploy/cloudflare/waf-ai-bots.txt` (action **Block**).
+3. 2ᵉ règle : hostname `crm` / `pos` / `*-staging` + User-Agent `bot|spider|crawler` → **Block** (même fichier, 2ᵉ expression).
+
+Ne pas activer « I’m Under Attack » sur `pos.` / `crm.` (ça casse la caisse).
+
+### 1.4 Fermer le VPS aux IPs hors Cloudflare
+
+**Après** que HTTPS fonctionne via Cloudflare :
 
 ```bash
-dig +short majorautoparts.shop A
-dig +short www.majorautoparts.shop A
-dig +short crm.majorautoparts.shop A
-dig +short pos.majorautoparts.shop A
-dig +short staging.majorautoparts.shop A
-dig +short crm-staging.majorautoparts.shop A
-dig +short pos-staging.majorautoparts.shop A
+sudo /opt/apps/caisse-crm/deploy/cloudflare/ufw-allow-cloudflare.sh
 ```
+
+Contrôle depuis un réseau externe (4G, pas le VPS) :
+
+```bash
+curl -I --connect-timeout 5 http://IP_DU_VPS/
+# doit échouer (timeout). Le site passe uniquement par https://www.majorautoparts.shop
+```
+
+Paystack webhooks : URL publique Cloudflare (`https://www.majorautoparts.shop/shop/webhooks/paystack`), pas l’IP.
+
+---
 
 ---
 
@@ -91,7 +123,8 @@ curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
 docker compose version
 
-# Pare-feu : SSH + HTTPS uniquement (les ports Docker 8080/8081 restent en localhost)
+# Pare-feu provisoire (SSH + HTTP/S le temps d’activer Cloudflare).
+# Ensuite : sudo ./deploy/cloudflare/ufw-allow-cloudflare.sh  (80/443 = CF seulement)
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow OpenSSH
@@ -135,7 +168,8 @@ apt update && apt install -y caddy
 
 Le Caddyfile (HSTS) se copie **après** le clone, étape 4.
 
-Caddy obtient les certificats **Let’s Encrypt** tout seul (ports 80/443 ouverts + DNS OK).
+Caddy obtient les certificats **Let’s Encrypt** (via le proxy Cloudflare, HTTP-01).  
+SSL Cloudflare = **Full (strict)**.
 
 ---
 
@@ -419,14 +453,22 @@ autre.majorautoparts.shop {
 ## 11. Sécurité (à vérifier après go-live)
 
 **Réseau**
-- [ ] `ufw status` : seulement 22, 80, 443
+- [ ] DNS `dig +short www.majorautoparts.shop` = IP **Cloudflare**, pas le VPS
+- [ ] Proxy orange sur tous les A (`www` `crm` `pos` `staging`…)
+- [ ] `ufw-allow-cloudflare.sh` : 80/443 seulement depuis Cloudflare
+- [ ] `curl -I http://IP_PUBLIQUE/` depuis l’extérieur → timeout
 - [ ] `ss -tlnp` : 8080–8083 en `127.0.0.1`, **pas** `0.0.0.0`
-- [ ] `curl -I http://IP_PUBLIQUE:8081` depuis l’extérieur → timeout / refusé
-- [ ] Postgres 5432 non publié (`docker compose ps` : pas de 0.0.0.0:5432)
+- [ ] Postgres 5432 non publié
+
+**Crawlers IA**
+- [ ] `curl -A GPTBot -I https://www.majorautoparts.shop` → **403**
+- [ ] `curl -A Googlebot -I https://www.majorautoparts.shop` → **200** (SEO boutique)
+- [ ] `curl -A Googlebot -I https://crm.majorautoparts.shop` → **403**
+- [ ] WAF Cloudflare + Bot Fight Mode
 
 **TLS**
-- [ ] `https://www` / `crm` / `pos` : certificat Let’s Encrypt valide
-- [ ] HSTS présent (`curl -sI https://crm.majorautoparts.shop | grep -i strict`)
+- [ ] Mode Cloudflare **Full (strict)**
+- [ ] HSTS (`curl -sI https://crm.majorautoparts.shop | grep -i strict`)
 
 **Accès**
 - [ ] SSH clé uniquement, root refusé, user `deploy`
@@ -446,13 +488,13 @@ Ne pas exposer l’API ni la DB. Le JWT CRM reste 24 h ; le login est limité à
 
 ## Ordre du jour J1 (résumé)
 
-1. DNS A → IP VPS (`www` `crm` `pos` + `staging` `crm-staging` `pos-staging`)  
+1. Cloudflare (NS Hostinger → CF, proxy orange, Full strict, WAF IA)  
 2. Ubuntu + Docker + UFW  
 3. Caddyfile (prod + staging)  
 4. `.env.prod` + `.env.shop` + `.env.staging`  
 5. `docker compose … up` prod, puis `./scripts/deploy-staging.sh`  
 6. Tester les 3 URLs **staging**, puis les 3 URLs **prod**  
-7. Activer CD GitHub (`STAGING_DEPLOY` + secrets SSH)  
-8. Configurer paiements live **uniquement** en prod  
+7. `ufw-allow-cloudflare.sh` + test 403 GPTBot  
+8. CD GitHub + paiements live **uniquement** en prod  
 
 Document lié : `DEPLOIEMENT-SHOP.md`, `BACKUP.md`, `.env.prod.example`, `.env.shop.example`, `.env.staging.example`.

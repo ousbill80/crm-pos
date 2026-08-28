@@ -18,12 +18,15 @@ import { ShopCheckoutService } from './shop-checkout.service';
 import { ShopCompteService } from './shop-compte.service';
 import { ShopAvisService } from './shop-avis.service';
 import { ShopPspService } from './psp/shop-psp.service';
+import { ShopAarrrService } from './shop-aarrr.service';
+import { ShopFunnelEventDto } from './dto/shop-funnel.dto';
 import { ModeReglementCommandeWeb } from '@caisse-crm/shared';
 import {
   CheckoutShopDto,
   UpdatePanierLignesDto,
 } from './dto/shop-checkout.dto';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { randomUUID } from 'node:crypto';
 
 class SoumettreAvisDto {
   @IsInt()
@@ -38,6 +41,13 @@ class SoumettreAvisDto {
 
 const PANIER_COOKIE = 'shop_panier';
 
+function sessionShop(req: Request): string {
+  const h = req.headers['x-shop-session'];
+  const raw = Array.isArray(h) ? h[0] : h;
+  if (raw && /^[A-Za-z0-9_-]{8,64}$/.test(raw)) return raw;
+  return `srv${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+}
+
 @Public()
 @Controller('shop')
 export class ShopController {
@@ -48,7 +58,29 @@ export class ShopController {
     private readonly compte: ShopCompteService,
     private readonly avis: ShopAvisService,
     private readonly psp: ShopPspService,
+    private readonly aarrr: ShopAarrrService,
   ) {}
+
+  @Get('decouverte')
+  listDecouverte(
+    @Req() req: Request,
+    @Query('sessionId') sessionId?: string,
+  ) {
+    let compteClientId: string | undefined;
+    const auth = req.headers.authorization;
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        compteClientId = this.compte.verifyToken(auth.slice(7)).sub;
+      } catch {
+        compteClientId = undefined;
+      }
+    }
+    const sid =
+      sessionId && /^[A-Za-z0-9_-]{8,64}$/.test(sessionId)
+        ? sessionId
+        : sessionShop(req);
+    return this.aarrr.decouverte({ sessionId: sid, compteClientId });
+  }
 
   @Get('catalogue')
   listCatalogue(
@@ -84,6 +116,21 @@ export class ShopController {
     return this.catalogue.listZonesLivraison();
   }
 
+  @Post('evenements')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async evenementFunnel(@Req() req: Request, @Body() dto: ShopFunnelEventDto) {
+    let compteClientId: string | undefined;
+    const auth = req.headers.authorization;
+    if (auth?.startsWith('Bearer ')) {
+      try {
+        compteClientId = this.compte.verifyToken(auth.slice(7)).sub;
+      } catch {
+        compteClientId = undefined;
+      }
+    }
+    return this.aarrr.ingestPublic(dto, compteClientId);
+  }
+
   @Post('panier')
   async creerPanier(@Res({ passthrough: true }) res: Response) {
     const { token } = await this.panier.creerPanier();
@@ -102,11 +149,24 @@ export class ShopController {
   }
 
   @Patch('panier/lignes')
-  updateLignes(@Req() req: Request, @Body() dto: UpdatePanierLignesDto) {
-    return this.panier.updateLignes(
+  async updateLignes(@Req() req: Request, @Body() dto: UpdatePanierLignesDto) {
+    const panier = await this.panier.updateLignes(
       req.cookies?.[PANIER_COOKIE] as string,
       dto.lignes,
     );
+    const premiere = dto.lignes.find((l) => l.quantite > 0);
+    if (premiere) {
+      try {
+        await this.aarrr.ingestServeur({
+          action: 'ADD_CART',
+          sessionId: sessionShop(req),
+          produitId: premiere.produitId,
+        });
+      } catch {
+        // Funnel non bloquant
+      }
+    }
+    return panier;
   }
 
   @Post('checkout')
@@ -130,6 +190,17 @@ export class ShopController {
       dto,
       compteClientId,
     );
+
+    try {
+      await this.aarrr.enregistrerCommande({
+        sessionId: sessionShop(req),
+        compteClientId,
+        commandeWebId: commande.id,
+        statut: commande.statut,
+      });
+    } catch {
+      // Funnel non bloquant
+    }
 
     try {
       const { token } = await this.panier.creerPanier();

@@ -1,4 +1,5 @@
 import { refreshShopSession } from './shopAuth';
+import { getShopSessionId } from './aarrr';
 
 const base = import.meta.env.VITE_API_URL ?? '';
 
@@ -33,6 +34,9 @@ export async function shopFetch<T>(
   if (typeof localStorage !== 'undefined' && !headers.has('Authorization')) {
     const token = localStorage.getItem('shop_token');
     if (token) headers.set('Authorization', `Bearer ${token}`);
+  }
+  if (typeof localStorage !== 'undefined' && !headers.has('X-Shop-Session')) {
+    headers.set('X-Shop-Session', getShopSessionId());
   }
 
   const res = await fetch(`${base}${path}`, {
@@ -93,6 +97,10 @@ export interface PanierLigne {
   reference?: string | null;
   prixUnitaireHt: number;
   prixUnitaireTtc: number;
+  montantLigne?: number;
+  imageUrl?: string | null;
+  slug?: string | null;
+  stockDisponible?: number | null;
 }
 
 export interface PanierDto {
@@ -104,4 +112,5 @@ export interface PanierDto {
   montantTotal: number;
   modeAffichage: string;
   ttlMinutes: number;
+  articleCount?: number;
 }

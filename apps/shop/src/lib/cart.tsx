@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -12,12 +13,16 @@ import {
   type PanierDto,
   type PanierLigne,
 } from './api';
+import { trackShopEvent } from './aarrr';
+import { rememberInterest } from './interests';
 
 type CartCtx = {
   panier: PanierDto | undefined;
   isLoading: boolean;
+  isMutating: boolean;
   count: number;
   drawerOpen: boolean;
+  lastAddedId: string | null;
   openDrawer: () => void;
   closeDrawer: () => void;
   ensurePanier: () => Promise<PanierDto>;
@@ -39,6 +44,7 @@ async function syncLignes(lignes: Array<{ produitId: string; quantite: number }>
 export function CartProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [lastAddedId, setLastAddedId] = useState<string | null>(null);
 
   const { data: panier, isLoading } = useQuery({
     queryKey: ['panier'],
@@ -49,6 +55,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const invalidate = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ['panier'] });
   }, [qc]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    if (!lastAddedId) return;
+    const t = window.setTimeout(() => setLastAddedId(null), 2800);
+    return () => window.clearTimeout(t);
+  }, [lastAddedId]);
 
   const ensurePanier = useCallback(async () => {
     try {
@@ -80,6 +101,34 @@ export function CartProvider({ children }: { children: ReactNode }) {
         produitId: id,
         quantite: q,
       }));
+
+      const prev = qc.getQueryData<PanierDto>(['panier']);
+      if (prev) {
+        const optimisticLignes =
+          quantite <= 0
+            ? prev.lignes.filter((l) => l.produitId !== produitId)
+            : prev.lignes.map((l) =>
+                l.produitId === produitId
+                  ? {
+                      ...l,
+                      quantite,
+                      montantLigne: l.prixUnitaireTtc * quantite,
+                    }
+                  : l,
+              );
+        const montantArticlesTtc = optimisticLignes.reduce(
+          (s, l) => s + l.prixUnitaireTtc * l.quantite,
+          0,
+        );
+        qc.setQueryData<PanierDto>(['panier'], {
+          ...prev,
+          lignes: optimisticLignes,
+          montantArticlesTtc,
+          montantTotal: montantArticlesTtc,
+          articleCount: optimisticLignes.reduce((s, l) => s + l.quantite, 0),
+        });
+      }
+
       await mutateLignes.mutateAsync(lignes);
     },
     [ensurePanier, mutateLignes, qc],
@@ -102,8 +151,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
         produitId: id,
         quantite: q,
       }));
-      await mutateLignes.mutateAsync(lignes);
+      setLastAddedId(produitId);
       setDrawerOpen(true);
+      trackShopEvent('ADD_CART', { produitId });
+      rememberInterest({ produitId, weight: 4 });
+      await mutateLignes.mutateAsync(lignes);
     },
     [ensurePanier, mutateLignes, qc],
   );
@@ -119,7 +171,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [ensurePanier, mutateLignes]);
 
   const count = useMemo(
-    () => panier?.lignes.reduce((s, l) => s + l.quantite, 0) ?? 0,
+    () =>
+      panier?.articleCount ??
+      panier?.lignes.reduce((s, l) => s + l.quantite, 0) ??
+      0,
     [panier],
   );
 
@@ -127,8 +182,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     () => ({
       panier,
       isLoading,
+      isMutating: mutateLignes.isPending,
       count,
       drawerOpen,
+      lastAddedId,
       openDrawer: () => setDrawerOpen(true),
       closeDrawer: () => setDrawerOpen(false),
       ensurePanier,
@@ -140,8 +197,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [
       panier,
       isLoading,
+      mutateLignes.isPending,
       count,
       drawerOpen,
+      lastAddedId,
       ensurePanier,
       setQuantite,
       addProduit,

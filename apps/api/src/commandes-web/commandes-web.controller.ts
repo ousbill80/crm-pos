@@ -12,10 +12,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types';
 import { CommandesWebService } from './commandes-web.service';
 import { ShopPspService } from '../shop/psp/shop-psp.service';
+import { ShopAarrrService } from '../shop/shop-aarrr.service';
 import {
   ROLES_COMMANDES_WEB_ECRITURE,
   ROLES_COMMANDES_WEB_LECTURE,
   ROLES_CONVERSION_VENTE,
+  ROLES_SHOP_AARRR_LECTURE,
 } from './commandes-web-roles.constants';
 import {
   IsEnum,
@@ -57,6 +59,7 @@ export class CommandesWebController {
   constructor(
     private readonly service: CommandesWebService,
     private readonly psp: ShopPspService,
+    private readonly aarrr: ShopAarrrService,
   ) {}
 
   @Get()
@@ -73,6 +76,12 @@ export class CommandesWebController {
       { statut, boutiqueRetraitId, modeFulfillment, q },
       user,
     );
+  }
+
+  @Get('aarrr')
+  @Roles(...ROLES_SHOP_AARRR_LECTURE)
+  tableauAarrr(@Query('jours') jours?: string) {
+    return this.aarrr.tableauDeBord(jours ? Number(jours) : 7);
   }
 
   @Get('par-token/:token')

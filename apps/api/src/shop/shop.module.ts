@@ -17,6 +17,7 @@ import { ShopCompteController } from './shop-compte.controller';
 import { ShopEmailService } from './shop-email.service';
 import { ShopOrderLifecycleService } from './shop-order-lifecycle.service';
 import { ShopAvisService } from './shop-avis.service';
+import { ShopAarrrService } from './shop-aarrr.service';
 import { ShopJwtGuard } from './guards/shop-jwt.guard';
 import { JwtModule } from '@nestjs/jwt';
 
@@ -41,6 +42,7 @@ import { JwtModule } from '@nestjs/jwt';
     ShopEmailService,
     ShopOrderLifecycleService,
     ShopAvisService,
+    ShopAarrrService,
     ShopJwtGuard,
   ],
   exports: [
@@ -52,6 +54,7 @@ import { JwtModule } from '@nestjs/jwt';
     ShopEmailService,
     ShopOrderLifecycleService,
     ShopAvisService,
+    ShopAarrrService,
   ],
 })
 export class ShopModule {}

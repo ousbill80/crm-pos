@@ -26,6 +26,11 @@ class InscriptionDto {
       'Téléphone invalide (indicatif pays requis, format international).',
   })
   telephone!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(4)
+  codeParrain?: string;
 }
 
 class LoginDto {

@@ -56,6 +56,11 @@ services:
       PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-}
       ORANGE_MONEY_ENABLED: ${ORANGE_MONEY_ENABLED:-0}
       WAVE_ENABLED: ${WAVE_ENABLED:-0}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mock}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SHOP_EMAIL_FROM: ${SHOP_EMAIL_FROM:-}
+      SHOP_ADMIN_EMAIL: ${SHOP_ADMIN_EMAIL:-}
+      SHOP_PUBLIC_URL: ${SHOP_PUBLIC_URL:-}
       SEED_ON_START: "false"
       PORT: 3001
     healthcheck:
@@ -74,6 +79,7 @@ services:
     logging: *default-log
     networks:
       - shop-backend
+      - shop-egress
 
   gateway-shop:
     build:
@@ -102,6 +108,7 @@ services:
 networks:
   shop-backend:
     internal: true
+  shop-egress:
   shop-frontend:
 
 volumes:

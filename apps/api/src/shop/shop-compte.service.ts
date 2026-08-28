@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShopEmailService } from './shop-email.service';
+import { ShopAarrrService } from './shop-aarrr.service';
 
 export class InscriptionCompteDto {
   email!: string;
@@ -17,6 +18,7 @@ export class InscriptionCompteDto {
   nom!: string;
   prenom!: string;
   telephone!: string;
+  codeParrain?: string;
 }
 
 export class LoginCompteDto {
@@ -31,6 +33,7 @@ export class ShopCompteService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly email: ShopEmailService,
+    private readonly aarrr: ShopAarrrService,
   ) {}
 
   private shopJwtSecret(): string {
@@ -55,14 +58,36 @@ export class ShopCompteService {
         contact: dto.telephone,
       },
     });
+    const parrain = await this.aarrr.resoudreParrain(dto.codeParrain);
+    const codeParrainage = await this.aarrr.nouvelCodeParrainage();
     const compte = await this.prisma.compteClient.create({
       data: {
         email,
         passwordHash: await bcrypt.hash(dto.password, 10),
         clientId: client.id,
+        codeParrainage,
+        parrainId: parrain?.id ?? null,
       },
     });
     await this.rattacherCommandesInvitees(compte.id, compte.email, client.id);
+    try {
+      await this.aarrr.ingestServeur({
+        action: 'INSCRIPTION',
+        sessionId: `insc${compte.id.replace(/-/g, '').slice(0, 16)}`,
+        compteClientId: compte.id,
+        codeParrain: parrain?.codeParrainage,
+      });
+      if (parrain) {
+        await this.aarrr.ingestServeur({
+          action: 'INSCRIPTION_PARRAINEE',
+          sessionId: `insc${compte.id.replace(/-/g, '').slice(0, 16)}`,
+          compteClientId: compte.id,
+          codeParrain: parrain.codeParrainage,
+        });
+      }
+    } catch {
+      // Funnel non bloquant
+    }
     return this.tokens(compte.id, compte.email);
   }
 
@@ -253,6 +278,9 @@ export class ShopCompteService {
     if (!compte || !compte.actif) {
       throw new UnauthorizedException('Compte introuvable.');
     }
+    const filleuls = await this.prisma.compteClient.count({
+      where: { parrainId: compte.id },
+    });
     return {
       compteClientId: compte.id,
       email: compte.email,
@@ -263,6 +291,8 @@ export class ShopCompteService {
         compte.client.nom ?? '',
       ),
       telephone: compte.client.contact,
+      codeParrainage: compte.codeParrainage,
+      filleuls,
       fidelite: compte.client.fidelite
         ? {
             niveau: compte.client.fidelite.niveau,

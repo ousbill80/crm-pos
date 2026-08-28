@@ -64,6 +64,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SHOP_EMAIL_FROM: ${SHOP_EMAIL_FROM:-}
       SHOP_ADMIN_EMAIL: ${SHOP_ADMIN_EMAIL:-}
+      STAFF_EMAIL_FROM: ${STAFF_EMAIL_FROM:-}
+      STAFF_BRIEFING_ENABLED: ${STAFF_BRIEFING_ENABLED:-false}
+      CRM_PUBLIC_URL: ${CRM_PUBLIC_URL:-https://crm-staging.majorautoparts.shop}
       SEED_ON_START: ${SEED_ON_START:-true}
       P2P_EVIDENCE_STORAGE_DIR: /tmp/p2p-evidence
       PORT: 3000

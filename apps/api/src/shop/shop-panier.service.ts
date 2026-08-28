@@ -72,6 +72,48 @@ export class ShopPanierService {
     return this.formatPanier(panier, params);
   }
 
+  /** Enrichit les lignes (image, slug, stock) pour le drawer marketplace. */
+  private async enrichLignesMeta(
+    lignes: Array<{ produitId: string }>,
+    entrepotId: string | null,
+  ): Promise<
+    Map<
+      string,
+      { imageUrl: string | null; slug: string | null; stockDisponible: number | null }
+    >
+  > {
+    const ids = [...new Set(lignes.map((l) => l.produitId))];
+    const map = new Map<
+      string,
+      { imageUrl: string | null; slug: string | null; stockDisponible: number | null }
+    >();
+    if (!ids.length) return map;
+
+    const produits = await this.prisma.produit.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, imageUrl: true, slug: true },
+    });
+    const stocks = entrepotId
+      ? await this.prisma.stockQuant.findMany({
+          where: { produitId: { in: ids }, entrepotId },
+          select: { produitId: true, quantite: true },
+        })
+      : [];
+    const stockByProduit = new Map(
+      stocks.map((s) => [s.produitId, Number(s.quantite)]),
+    );
+    for (const p of produits) {
+      map.set(p.id, {
+        imageUrl: p.imageUrl,
+        slug: p.slug,
+        stockDisponible: stockByProduit.has(p.id)
+          ? stockByProduit.get(p.id)!
+          : null,
+      });
+    }
+    return map;
+  }
+
   async updateLignes(token: string | undefined, lignes: PanierLigneDto[]) {
     const panier = await this.resolvePanier(token);
     const params = await this.shopBase.assertShopActif();
@@ -156,9 +198,10 @@ export class ShopPanierService {
     return this.getPanier(token);
   }
 
-  private formatPanier(
+  private async formatPanier(
     panier: {
       id: string;
+      entrepotId?: string | null;
       montantArticlesHt: Prisma.Decimal;
       montantTva: Prisma.Decimal;
       montantArticlesTtc: Prisma.Decimal;
@@ -172,24 +215,41 @@ export class ShopPanierService {
         referenceSnapshot: string | null;
       }>;
     },
-    params: { modeAffichagePrix: string; dureeReservationPanierMin: number },
+    params: {
+      modeAffichagePrix: string;
+      dureeReservationPanierMin: number;
+      entrepotWebDefautId?: string | null;
+    },
   ) {
+    const meta = await this.enrichLignesMeta(
+      panier.lignes,
+      panier.entrepotId ?? params.entrepotWebDefautId ?? null,
+    );
     return {
       id: panier.id,
-      lignes: panier.lignes.map((l) => ({
-        produitId: l.produitId,
-        quantite: l.quantite,
-        designation: l.designationSnapshot,
-        reference: l.referenceSnapshot,
-        prixUnitaireHt: Number(l.prixUnitaireHt),
-        prixUnitaireTtc: Number(l.prixUnitaireTtc),
-      })),
+      lignes: panier.lignes.map((l) => {
+        const m = meta.get(l.produitId);
+        const prixTtc = Number(l.prixUnitaireTtc);
+        return {
+          produitId: l.produitId,
+          quantite: l.quantite,
+          designation: l.designationSnapshot,
+          reference: l.referenceSnapshot,
+          prixUnitaireHt: Number(l.prixUnitaireHt),
+          prixUnitaireTtc: prixTtc,
+          montantLigne: prixTtc * l.quantite,
+          imageUrl: m?.imageUrl ?? null,
+          slug: m?.slug ?? null,
+          stockDisponible: m?.stockDisponible ?? null,
+        };
+      }),
       montantArticlesHt: Number(panier.montantArticlesHt),
       montantTva: Number(panier.montantTva),
       montantArticlesTtc: Number(panier.montantArticlesTtc),
       montantTotal: Number(panier.montantTotal),
       modeAffichage: params.modeAffichagePrix,
       ttlMinutes: params.dureeReservationPanierMin,
+      articleCount: panier.lignes.reduce((s, l) => s + l.quantite, 0),
     };
   }
 }

@@ -1,0 +1,30 @@
+# Crawlers d’entraînement IA — User-agent (insensible à la casse).
+# Googlebot / Bingbot / Facebook preview boutique : non listés (SEO + partage).
+GPTBot
+ChatGPT-User
+OAI-SearchBot
+ClaudeBot
+Claude-Web
+Anthropic-AI
+Google-Extended
+Google-CloudVertexBot
+Bytespider
+CCBot
+Amazonbot
+Applebot-Extended
+meta-externalagent
+PerplexityBot
+YouBot
+Diffbot
+cohere-ai
+iaskspider
+DuckAssistBot
+omgili
+TimpiBot
+ImagesiftBot
+PetalBot
+DataForSeoBot
+magpie-crawler
+AI2Bot
+Timpibot
+Webzio-extended

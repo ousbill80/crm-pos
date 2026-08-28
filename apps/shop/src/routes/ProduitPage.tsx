@@ -1,27 +1,34 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   formatFcfa,
   shopFetch,
-  type CatalogueItem,
   type CatalogueResponse,
 } from '../lib/api';
 import { useCart } from '../lib/cart';
+import { trackShopEvent, getShopSessionId } from '../lib/aarrr';
+import { rememberInterest } from '../lib/interests';
 import { TRUST } from '../lib/brand';
+import { ProductCard } from '../components/ProductCard';
+import {
+  buildVariantAxes,
+  colorSwatch,
+  findVariantForSelection,
+  typeSpecificHighlights,
+  type ProduitDetail,
+} from '../lib/productPresentation';
 
-type ProduitDetail = CatalogueItem & {
-  prixUnitaireHt?: number;
-  prixUnitaireTtc?: number;
-  modeAffichage?: string;
+type RecoItem = {
+  id: string;
+  slug: string | null;
+  designation: string;
+  prixAffiche: number;
+  categorie: string | null;
+  imageUrl?: string | null;
+  badge?: string;
+  raison?: string;
 };
-
-const GALLERY_TONES = [
-  'radial-gradient(circle at 30% 20%, rgba(201,162,39,.35), transparent 50%), linear-gradient(160deg,#2a3344,#0a0c10)',
-  'radial-gradient(circle at 70% 30%, rgba(224,193,90,.22), transparent 45%), linear-gradient(200deg,#1a2230,#07080b)',
-  'radial-gradient(circle at 40% 70%, rgba(61,186,139,.18), transparent 50%), linear-gradient(140deg,#222937,#0b0e14)',
-  'radial-gradient(circle at 50% 40%, rgba(244,241,234,.12), transparent 55%), linear-gradient(180deg,#171c26,#050608)',
-];
 
 export default function ProduitPage() {
   const { slug } = useParams();
@@ -29,7 +36,9 @@ export default function ProduitPage() {
   const { addProduit } = useCart();
   const [qty, setQty] = useState(1);
   const [galleryIdx, setGalleryIdx] = useState(0);
-  const [tab, setTab] = useState<'desc' | 'livraison' | 'compat'>('desc');
+  const [tab, setTab] = useState<'desc' | 'specs' | 'livraison' | 'garantie'>(
+    'desc',
+  );
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -40,31 +49,79 @@ export default function ProduitPage() {
     enabled: !!slug,
   });
 
+  useEffect(() => {
+    if (!data?.id) return;
+    trackShopEvent('VIEW_PDP', { produitId: data.id });
+    rememberInterest({
+      produitId: data.id,
+      categorie: data.categorie,
+      weight: 2,
+    });
+  }, [data?.id, data?.categorie]);
+
   const related = useQuery({
     queryKey: ['related', data?.categorie, data?.id],
     queryFn: () =>
       shopFetch<CatalogueResponse>(
-        `/shop/catalogue?categorie=${encodeURIComponent(data!.categorie!)}&tri=designation`,
+        `/shop/catalogue?categorie=${encodeURIComponent(data!.categorie!)}&limit=8&tri=designation`,
       ),
     enabled: !!data?.categorie,
   });
 
-  const relatedItems = useMemo(
-    () =>
-      (related.data?.items ?? [])
-        .filter((p) => p.id !== data?.id)
-        .slice(0, 4),
-    [related.data, data?.id],
+  const personalized = useQuery({
+    queryKey: ['shop-decouverte', 'pdp'],
+    queryFn: () =>
+      shopFetch<{ pourVous: RecoItem[] }>(
+        `/shop/decouverte?sessionId=${encodeURIComponent(getShopSessionId())}`,
+      ),
+    staleTime: 30_000,
+  });
+
+  const variantes = data?.variantes ?? [];
+  const axes = useMemo(
+    () => (data ? buildVariantAxes(data, variantes) : []),
+    [data, variantes],
+  );
+  const highlights = useMemo(
+    () => (data ? typeSpecificHighlights(data) : []),
+    [data],
   );
 
-  const stockOk =
-    data?.stockDisponible == null || data.stockDisponible > 0;
+  const relatedItems = useMemo(() => {
+    const perso = (personalized.data?.pourVous ?? []).filter(
+      (p) => p.id !== data?.id,
+    );
+    if (perso.length >= 3) return perso.slice(0, 8);
+    const cat = (related.data?.items ?? []).filter((p) => p.id !== data?.id);
+    const seen = new Set(perso.map((p) => p.id));
+    return [...perso, ...cat.filter((p) => !seen.has(p.id))].slice(0, 8);
+  }, [personalized.data, related.data, data?.id]);
+
+  const stockOk = data?.stockDisponible == null || data.stockDisponible > 0;
   const maxQty = Math.min(
     20,
     data?.stockDisponible != null && data.stockDisponible > 0
       ? data.stockDisponible
       : 20,
   );
+
+  const galleryImages = useMemo(() => {
+    if (!data) return [] as string[];
+    const imgs: string[] = [];
+    if (data.imageUrl && !data.imageUrl.startsWith('data:image/svg')) {
+      imgs.push(data.imageUrl);
+    }
+    for (const v of variantes) {
+      if (
+        v.imageUrl &&
+        !v.imageUrl.startsWith('data:image/svg') &&
+        !imgs.includes(v.imageUrl)
+      ) {
+        imgs.push(v.imageUrl);
+      }
+    }
+    return imgs;
+  }, [data, variantes]);
 
   async function handleAdd(goCheckout = false) {
     if (!data) return;
@@ -78,6 +135,17 @@ export default function ProduitPage() {
       setErr(e instanceof Error ? e.message : 'Ajout impossible');
     } finally {
       setAdding(false);
+    }
+  }
+
+  function selectVariant(axisKey: string, value: string) {
+    if (!data) return;
+    const next = findVariantForSelection(data, variantes, axisKey, value);
+    if (next?.slug && next.slug !== data.slug) {
+      nav(`/produit/${next.slug}`);
+      setQty(1);
+      setGalleryIdx(0);
+      setAdded(false);
     }
   }
 
@@ -112,12 +180,15 @@ export default function ProduitPage() {
   const letter = (data.designation?.[0] ?? 'M').toUpperCase();
   const description =
     data.description?.trim() ||
-    `${data.designation} — pièce / accessoire véhicule sélectionné par MAJOR AUTO PARTS. Compatible multi-marques selon montage. Qualité premium, stock showroom et livraison.`;
+    `${data.designation} — sélection MAJOR AUTO PARTS. Qualité showroom, stock réel et options de retrait ou livraison.`;
+
+  const hasRealImage = galleryImages.length > 0;
+  const activeImage = hasRealImage ? galleryImages[galleryIdx] : null;
 
   return (
     <>
-      <div className="section pdp flash">
-        <nav className="breadcrumb" aria-label="Fil d’Ariane">
+      <div className="pdp-temu">
+        <nav className="breadcrumb pdp-crumb" aria-label="Fil d’Ariane">
           <Link to="/">Accueil</Link>
           <span>/</span>
           <Link to="/catalogue">Catalogue</Link>
@@ -133,14 +204,11 @@ export default function ProduitPage() {
           <span className="current">{data.designation}</span>
         </nav>
 
-        <div className="product-detail pdp-grid">
-          <div className="pdp-gallery">
-            <div
-              className="pdp-stage"
-              style={{ background: GALLERY_TONES[galleryIdx] }}
-            >
-              {data.imageUrl && !data.imageUrl.startsWith('data:image/svg') ? (
-                <img src={data.imageUrl} alt={data.designation} />
+        <div className="pdp-temu-grid">
+          <div className="pdp-temu-gallery">
+            <div className="pdp-temu-stage">
+              {activeImage ? (
+                <img src={activeImage} alt={data.designation} />
               ) : (
                 <span className="pdp-letter" aria-hidden>
                   {letter}
@@ -151,24 +219,34 @@ export default function ProduitPage() {
               ) : (
                 <span className="pdp-badge out">Rupture</span>
               )}
+              {data.typeProduit === 'PRESTATION' && (
+                <span className="pdp-badge svc">Service</span>
+              )}
             </div>
-            <div className="pdp-thumbs" role="tablist" aria-label="Vues produit">
-              {GALLERY_TONES.map((tone, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={`pdp-thumb${galleryIdx === i ? ' active' : ''}`}
-                  style={{ background: tone }}
-                  onClick={() => setGalleryIdx(i)}
-                  aria-label={`Vue ${i + 1}`}
-                >
-                  <span>{letter}</span>
-                </button>
-              ))}
-            </div>
+            {(hasRealImage ? galleryImages : [null, null, null]).length > 1 && (
+              <div className="pdp-temu-thumbs" role="tablist" aria-label="Vues">
+                {(hasRealImage ? galleryImages : [null, null, null]).map(
+                  (src, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`pdp-temu-thumb${galleryIdx === i ? ' active' : ''}`}
+                      onClick={() => setGalleryIdx(i)}
+                      aria-label={`Vue ${i + 1}`}
+                    >
+                      {src ? (
+                        <img src={src} alt="" />
+                      ) : (
+                        <span>{letter}</span>
+                      )}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="pdp-info">
+          <div className="pdp-temu-buybox">
             {data.categorie && (
               <Link
                 className="pdp-cat"
@@ -177,32 +255,88 @@ export default function ProduitPage() {
                 {data.categorie}
               </Link>
             )}
-            <h1 className="page-title pdp-title">{data.designation}</h1>
+            <h1 className="pdp-temu-title">{data.designation}</h1>
             {data.reference && (
               <p className="pdp-sku">Réf. {data.reference}</p>
             )}
 
-            <div className="pdp-price-block">
-              <p className="pdp-price">{formatFcfa(data.prixAffiche)}</p>
-              <p className="muted pdp-tax">
-                Prix affiché{' '}
+            <div className="pdp-temu-price">
+              <strong>{formatFcfa(data.prixAffiche)}</strong>
+              <span>
                 {data.modeAffichage === 'TTC' ? 'TTC' : 'HT'}
                 {data.prixUnitaireHt != null &&
                   data.prixUnitaireTtc != null &&
                   data.modeAffichage !== 'TTC' &&
                   ` · TTC ${formatFcfa(data.prixUnitaireTtc)}`}
-              </p>
+              </span>
             </div>
 
-            <p className="pdp-stock">
+            <p className={`pdp-temu-stock${stockOk ? '' : ' is-out'}`}>
               {data.stockDisponible == null
-                ? 'Disponibilité sur demande — contactez le showroom'
+                ? data.typeProduit === 'PRESTATION'
+                  ? 'Prestation sur rendez-vous showroom'
+                  : 'Disponibilité sur demande'
                 : data.stockDisponible > 0
-                  ? `${data.stockDisponible} unités disponibles`
+                  ? `Plus que ${data.stockDisponible} en stock showroom`
                   : 'Temporairement indisponible'}
             </p>
 
-            <p className="pdp-lead">{description.slice(0, 180)}{description.length > 180 ? '…' : ''}</p>
+            {axes.length > 0 && (
+              <div className="pdp-variants" aria-label="Variantes">
+                {axes.map((axis) => (
+                  <div key={axis.key} className="pdp-variant-axis">
+                    <div className="pdp-variant-label">
+                      <span>{axis.label}</span>
+                      <strong>
+                        {axis.options.find((o) => o.selected)?.value ?? '—'}
+                      </strong>
+                    </div>
+                    <div
+                      className={`pdp-variant-options kind-${axis.kind}`}
+                      role="listbox"
+                      aria-label={axis.label}
+                    >
+                      {axis.options.map((opt) => {
+                        const swatch =
+                          axis.kind === 'swatch'
+                            ? colorSwatch(opt.value)
+                            : null;
+                        return (
+                          <button
+                            key={`${axis.key}-${opt.value}`}
+                            type="button"
+                            role="option"
+                            aria-selected={opt.selected}
+                            disabled={!opt.available && !opt.selected}
+                            className={`pdp-variant-opt${opt.selected ? ' selected' : ''}${!opt.available ? ' unavailable' : ''}`}
+                            title={opt.value}
+                            onClick={() => selectVariant(axis.key, opt.value)}
+                            style={
+                              swatch
+                                ? ({
+                                    '--swatch': swatch,
+                                  } as CSSProperties)
+                                : undefined
+                            }
+                          >
+                            {axis.kind === 'swatch' && swatch ? (
+                              <i className="pdp-swatch" aria-hidden />
+                            ) : (
+                              opt.value
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="pdp-lead">
+              {description.slice(0, 160)}
+              {description.length > 160 ? '…' : ''}
+            </p>
 
             <div className="pdp-buy">
               <div className="qty" aria-label="Quantité">
@@ -259,7 +393,7 @@ export default function ProduitPage() {
 
             {added && (
               <p className="pdp-toast">
-                Ajouté au panier — <Link to="/panier">voir le panier</Link>
+                Ajouté — <Link to="/panier">voir le panier</Link>
               </p>
             )}
             {err && <p className="pdp-error">{err}</p>}
@@ -272,71 +406,76 @@ export default function ProduitPage() {
           </div>
         </div>
 
-        <div className="pdp-tabs">
-          <div className="pdp-tablist" role="tablist">
-            {(
-              [
-                ['desc', 'Description'],
-                ['livraison', 'Livraison & retours'],
-                ['compat', 'Compatibilité'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                className={tab === id ? 'active' : ''}
-                onClick={() => setTab(id)}
-              >
-                {label}
-              </button>
-            ))}
+        <div className="pdp-temu-panels">
+          <div className="pdp-highlights panel">
+            <h2>Détails clés</h2>
+            <dl className="pdp-hl-grid">
+              {highlights.map((h) => (
+                <div key={h.label}>
+                  <dt>{h.label}</dt>
+                  <dd>{h.value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-          <div className="pdp-tabpanel panel" role="tabpanel">
-            {tab === 'desc' && (
-              <>
-                <p>{description}</p>
+
+          <div className="pdp-tabs">
+            <div className="pdp-tablist" role="tablist">
+              {(
+                [
+                  ['desc', 'Description'],
+                  ['specs', 'Spécifications'],
+                  ['livraison', 'Livraison'],
+                  ['garantie', 'Garantie'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  className={tab === id ? 'active' : ''}
+                  onClick={() => setTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="pdp-tabpanel panel" role="tabpanel">
+              {tab === 'desc' && <p>{description}</p>}
+              {tab === 'specs' && (
                 <ul className="pdp-specs">
-                  <li>
-                    <span>Catégorie</span>
-                    <strong>{data.categorie ?? '—'}</strong>
-                  </li>
-                  <li>
-                    <span>Référence</span>
-                    <strong>{data.reference ?? '—'}</strong>
-                  </li>
-                  <li>
-                    <span>Marque boutique</span>
-                    <strong>MAJOR AUTO PARTS</strong>
-                  </li>
+                  {highlights.map((h) => (
+                    <li key={`spec-${h.label}`}>
+                      <span>{h.label}</span>
+                      <strong>{h.value}</strong>
+                    </li>
+                  ))}
                 </ul>
-              </>
-            )}
-            {tab === 'livraison' && (
-              <>
+              )}
+              {tab === 'livraison' && (
+                <>
+                  <p>
+                    Livraison Abidjan / périphérie ou retrait showroom sous 24–48 h
+                    après confirmation. Paiement au retrait selon paramètres boutique.
+                  </p>
+                  <Link
+                    to="/retours"
+                    className="section-link"
+                    style={{ display: 'inline-block', marginTop: '1rem' }}
+                  >
+                    Politique de retours →
+                  </Link>
+                </>
+              )}
+              {tab === 'garantie' && (
                 <p>
-                  Livraison selon zone (Abidjan et périphérie) ou retrait en boutique
-                  sous 24–48 h après confirmation. Paiement au retrait possible
-                  selon paramètres boutique.
+                  {data.typeProduit === 'PRESTATION'
+                    ? 'Prestation réalisée par l’équipe showroom — reprise sous conditions si non conforme au devis.'
+                    : 'Garantie constructeur / boutique selon famille de produit. Conservez la facture. Montage atelier disponible.'}
                 </p>
-                <p className="muted" style={{ marginTop: '0.75rem' }}>
-                  Retours sous 7 jours si produit non monté, emballage d’origine.
-                  Voir les conditions de retour.
-                </p>
-                <Link to="/retours" className="section-link" style={{ display: 'inline-block', marginTop: '1rem' }}>
-                  Politique de retours →
-                </Link>
-              </>
-            )}
-            {tab === 'compat' && (
-              <p>
-                Compatible véhicules tous modèles / toutes marques selon référence
-                constructeur. Pour Mercedes, Toyota, BMW, Audi, Hyundai et autres —
-                vérifiez l’adaptation au showroom ou contactez notre atelier avant
-                montage.
-              </p>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -355,7 +494,11 @@ export default function ProduitPage() {
           <div className="section-head">
             <div>
               <h2>Vous aimerez aussi</h2>
-              <p>Même rayon — {data.categorie}</p>
+              <p>
+                {personalized.data?.pourVous?.length
+                  ? 'Selon vos centres d’intérêt'
+                  : `Même rayon — ${data.categorie}`}
+              </p>
             </div>
             {data.categorie && (
               <Link
@@ -366,22 +509,15 @@ export default function ProduitPage() {
               </Link>
             )}
           </div>
-          <div className="product-grid">
-            {relatedItems.map((p) => (
-              <Link
+          <div className="product-grid product-grid-dense">
+            {relatedItems.map((p, i) => (
+              <ProductCard
                 key={p.id}
-                to={p.slug ? `/produit/${p.slug}` : '/catalogue'}
-                className="product"
-              >
-                <div className="product-media">
-                  {(p.designation?.[0] ?? 'M').toUpperCase()}
-                </div>
-                <div className="product-body">
-                  {p.categorie && <span className="meta">{p.categorie}</span>}
-                  <h3>{p.designation}</h3>
-                  <span className="price">{formatFcfa(p.prixAffiche)}</span>
-                </div>
-              </Link>
+                p={p}
+                index={i}
+                dense
+                badge={'badge' in p ? p.badge : undefined}
+              />
             ))}
           </div>
         </section>

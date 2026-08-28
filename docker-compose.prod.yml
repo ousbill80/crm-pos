@@ -66,6 +66,13 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       ALERTES_INTERVALLE_MINUTES: ${ALERTES_INTERVALLE_MINUTES:-15}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mock}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SHOP_EMAIL_FROM: ${SHOP_EMAIL_FROM:-}
+      STAFF_EMAIL_FROM: ${STAFF_EMAIL_FROM:-}
+      STAFF_BRIEFING_ENABLED: ${STAFF_BRIEFING_ENABLED:-false}
+      CRM_PUBLIC_URL: ${CRM_PUBLIC_URL:-https://crm.majorautoparts.shop}
+      SHOP_PUBLIC_URL: ${SHOP_PUBLIC_URL:-https://www.majorautoparts.shop}
       P2P_EVIDENCE_STORAGE_DIR: /tmp/p2p-evidence
       PORT: 3000
     healthcheck:
@@ -77,6 +84,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      - /repo/var
     cap_drop:
       - ALL
     security_opt:
@@ -84,6 +92,7 @@ services:
     logging: *default-log
     networks:
       - backend
+      - egress
 
   gateway:
     build:
@@ -122,6 +131,7 @@ services:
 networks:
   backend:
     internal: true
+  egress:
   frontend:
 
 volumes:

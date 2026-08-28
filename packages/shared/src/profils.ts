@@ -110,6 +110,10 @@ const CONTACTS_SANS_CAMPAGNES: AccesApp = [
   '/clients/segmentation',
   '/clients/interactions',
 ];
+const CONTACTS_DIRECTION: AccesApp = [
+  ...CONTACTS_SANS_CAMPAGNES,
+  '/clients/croissance',
+];
 const FINANCE: AccesApp = true;
 const COMPTABILITE: AccesApp = true;
 const TRESORERIE_COMPLET: AccesApp = true;
@@ -137,7 +141,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
       purchase: ACHATS,
-      contacts: CONTACTS_SANS_CAMPAGNES,
+      contacts: CONTACTS_DIRECTION,
       accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
@@ -162,7 +166,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
       purchase: ACHATS,
-      contacts: CONTACTS_SANS_CAMPAGNES,
+      contacts: CONTACTS_DIRECTION,
       accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
@@ -282,7 +286,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       ventes: VENTES,
       produits: CATALOGUE,
       inventory: STOCKS_COMPLET,
-      contacts: CONTACTS_SANS_CAMPAGNES,
+      contacts: CONTACTS_DIRECTION,
       accounting: COMPTABILITE,
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,

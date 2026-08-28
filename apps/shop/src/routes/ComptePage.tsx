@@ -21,6 +21,7 @@ import {
   DeliveryAddressMap,
   type DeliveryGeo,
 } from '../components/DeliveryAddressMap';
+import { readShopAttribution, trackShopEvent } from '../lib/aarrr';
 import {
   formatDateFr,
   labelFulfillment,
@@ -29,7 +30,7 @@ import {
 } from '../lib/commandeLabels';
 
 type Mode = 'login' | 'inscription';
-type OngletCompte = 'encours' | 'historique' | 'adresses' | 'profil';
+type OngletCompte = 'encours' | 'historique' | 'adresses' | 'profil' | 'parrainage';
 
 const CLOTUREES = new Set(['LIVREE', 'REMISE', 'ANNULEE', 'REMBOURSEE']);
 
@@ -82,6 +83,8 @@ interface ProfilCompte {
   displayName?: string;
   telephone?: string | null;
   fidelite?: { niveau: string; pointsCumules: number } | null;
+  codeParrainage?: string;
+  filleuls?: number;
 }
 
 function formatDate(iso?: string) {
@@ -218,7 +221,8 @@ export default function ComptePage() {
         h === 'encours' ||
         h === 'historique' ||
         h === 'adresses' ||
-        h === 'profil'
+        h === 'profil' ||
+        h === 'parrainage'
       ) {
         autoOnglet.current = true;
         setOnglet(h);
@@ -264,7 +268,8 @@ export default function ComptePage() {
           hash === 'encours' ||
           hash === 'historique' ||
           hash === 'adresses' ||
-          hash === 'profil'
+          hash === 'profil' ||
+          hash === 'parrainage'
         ) {
           setOnglet(hash);
         } else {
@@ -397,6 +402,7 @@ export default function ComptePage() {
           nom: nom.trim(),
           prenom: prenom.trim(),
           telephone: telephoneE164,
+          codeParrain: readShopAttribution().codeParrain,
         }),
       });
       persistSession(res);
@@ -479,13 +485,23 @@ export default function ComptePage() {
 
   if (token) {
     return (
-      <div className="section compte-page flash">
+      <div className="section compte-page compte-temu-dash flash">
         <div className="compte-hero">
           <div>
-            <p className="pdp-cat">Espace client</p>
-            <h1 className="page-title">MON COMPTE</h1>
-            <p className="page-lead">
-              Connecté en tant que{' '}
+            <p className="compte-temu-secure compte-temu-secure--dash">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+                <path
+                  fill="currentColor"
+                  d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2H9Z"
+                />
+              </svg>
+              Compte sécurisé
+            </p>
+            <h1 className="compte-temu-title compte-temu-title--dash">
+              Mon compte
+            </h1>
+            <p className="compte-temu-lead">
+              Bonjour{' '}
               <strong>{displayName ?? compteEmail ?? 'client'}</strong>
               {compteEmail && displayName ? (
                 <span className="muted"> · {compteEmail}</span>
@@ -506,6 +522,7 @@ export default function ComptePage() {
                   ['historique', `Historique (${historique.length})`],
                   ['adresses', `Adresses (${adresses.length})`],
                   ['profil', 'Profil & fidélité'],
+                  ['parrainage', 'Parrainage'],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -725,6 +742,41 @@ export default function ComptePage() {
                 </dl>
               </div>
             )}
+
+            {!loadingCmd && onglet === 'parrainage' && (
+              <div className="panel">
+                <h2>Parrainez un proche</h2>
+                <p className="muted">
+                  Partagez votre lien. Les inscriptions via ce code sont
+                  tracées dans votre compte — sans remise inventée.
+                </p>
+                <dl className="compte-profil-dl">
+                  <div>
+                    <dt>Votre code</dt>
+                    <dd>{profil?.codeParrainage ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Filleuls inscrits</dt>
+                    <dd>{profil?.filleuls ?? 0}</dd>
+                  </div>
+                </dl>
+                {profil?.codeParrainage ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginTop: '1rem' }}
+                    onClick={() => {
+                      const url = `${window.location.origin}/?ref=${profil.codeParrainage}`;
+                      void navigator.clipboard?.writeText(url);
+                      trackShopEvent('SHARE');
+                      setSuccess('Lien copié — envoyez-le à un proche.');
+                    }}
+                  >
+                    Copier le lien
+                  </button>
+                ) : null}
+              </div>
+            )}
             {success && onglet === 'encours' && (
               <p className="pdp-toast">{success}</p>
             )}
@@ -735,20 +787,66 @@ export default function ComptePage() {
   }
 
   return (
-    <div className="section compte-page flash">
-      <div className="compte-auth">
-        <div className="compte-auth-visual" aria-hidden>
-          <div className="compte-auth-visual-inner">
+    <div className="section compte-page compte-temu flash">
+      <div className="compte-temu-shell">
+        <header className="compte-temu-head">
+          <p className="compte-temu-brand">
             <span className="brand-major">MAJOR</span>
             <span className="brand-auto">AUTO PARTS</span>
-            <p>
-              Créez votre compte pour suivre vos commandes, accélérer le checkout
-              et profiter du réseau showroom.
-            </p>
-          </div>
-        </div>
+          </p>
+          <p className="compte-temu-secure">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+              <path
+                fill="currentColor"
+                d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2H9Z"
+              />
+            </svg>
+            Toutes les données sont protégées
+          </p>
+        </header>
 
-        <div className="compte-auth-form panel">
+        <h1 className="compte-temu-title">Se connecter / S&apos;inscrire</h1>
+
+        <ul className="compte-temu-perks" aria-label="Avantages client">
+          <li>
+            <span className="compte-temu-perk-ico" aria-hidden>
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path
+                  fill="currentColor"
+                  d="M3 7h11v8H3V7Zm13 2h3.2L22 12.5V15h-6V9Zm-1-2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h12Zm-9 11.5a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Zm11 0a1.75 1.75 0 1 0 0-3.5 1.75 1.75 0 0 0 0 3.5Z"
+                />
+              </svg>
+            </span>
+            <strong>Livraison CIV</strong>
+            <em>Partout · showroom</em>
+          </li>
+          <li>
+            <span className="compte-temu-perk-ico" aria-hidden>
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path
+                  fill="currentColor"
+                  d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 2.2 6 2.25V11c0 3.9-2.5 7.3-6 8.7-3.5-1.4-6-4.8-6-8.7V6.45l6-2.25Zm-1 4.3v3.2H8v2h3v3h2v-3h3v-2h-3V8.5h-2Z"
+                />
+              </svg>
+            </span>
+            <strong>Paiement sûr</strong>
+            <em>Wave · OM · carte</em>
+          </li>
+          <li>
+            <span className="compte-temu-perk-ico" aria-hidden>
+              <svg viewBox="0 0 24 24" width="28" height="28">
+                <path
+                  fill="currentColor"
+                  d="M4 4h16v2H4V4Zm0 4h10v2H4V8Zm0 4h16v2H4v-2Zm0 4h10v2H4v-2Zm14.5-1.5 1.4 1.4L16 20.8l-3-3 1.4-1.4 1.6 1.6 2.5-2.5Z"
+                />
+              </svg>
+            </span>
+            <strong>Suivi live</strong>
+            <em>Commandes &amp; retrait</em>
+          </li>
+        </ul>
+
+        <div className="compte-temu-card">
           <div className="compte-tabs" role="tablist">
             <button
               type="button"
@@ -776,17 +874,14 @@ export default function ComptePage() {
             </button>
           </div>
 
-          <h1 className="page-title" style={{ fontSize: '2.2rem', marginTop: '1rem' }}>
-            {mode === 'login' ? 'CONNEXION' : 'INSCRIPTION'}
-          </h1>
-          <p className="page-lead">
+          <p className="compte-temu-lead">
             {mode === 'login'
-              ? 'Accédez à vos commandes et à votre profil client.'
-              : 'Nouveau chez MAJOR ? Créez votre espace en quelques secondes.'}
+              ? 'Accédez à vos commandes, adresses et avantages fidélité.'
+              : 'Nouveau client ? Compte en 30 secondes — checkout accéléré.'}
           </p>
 
           <form
-            className="form-stack"
+            className="form-stack compte-temu-form"
             onSubmit={(e) => {
               e.preventDefault();
               void (mode === 'login' ? login() : inscription());
@@ -846,7 +941,9 @@ export default function ComptePage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                autoComplete={
+                  mode === 'login' ? 'current-password' : 'new-password'
+                }
                 minLength={mode === 'inscription' ? 8 : undefined}
                 required
               />
@@ -866,17 +963,21 @@ export default function ComptePage() {
               </label>
             )}
 
-            <button type="submit" className="btn" disabled={pending}>
+            <button
+              type="submit"
+              className="btn compte-temu-cta"
+              disabled={pending}
+            >
               {pending
                 ? 'Patientez…'
                 : mode === 'login'
-                  ? 'Se connecter'
+                  ? 'Continuer'
                   : 'Créer mon compte'}
             </button>
 
             {error && <p className="pdp-error">{error}</p>}
 
-            <p className="muted compte-switch">
+            <p className="compte-switch">
               {mode === 'login' ? (
                 <>
                   Pas encore de compte ?{' '}
@@ -885,7 +986,7 @@ export default function ComptePage() {
                     className="linkish"
                     onClick={() => setMode('inscription')}
                   >
-                    Créer un compte
+                    S&apos;inscrire
                   </button>
                 </>
               ) : (
@@ -903,6 +1004,11 @@ export default function ComptePage() {
             </p>
           </form>
         </div>
+
+        <p className="compte-temu-foot">
+          Click &amp; collect showroom · Retours sous conditions · Fidélité
+          Bronze → Or
+        </p>
       </div>
     </div>
   );

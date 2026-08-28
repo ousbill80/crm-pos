@@ -62,6 +62,34 @@ describe('Shop compte client (e2e)', () => {
       .set('Authorization', `Bearer ${body.accessToken}`)
       .expect(200);
     expect((moi.body as { prenom: string }).prenom).toBe('Ousmane');
+    const code = (moi.body as { codeParrainage: string }).codeParrainage;
+    expect(code).toMatch(/^MA[A-Z0-9]{6}$/);
+
+    const filleul = await request(app.getHttpServer())
+      .post('/shop/compte/inscription')
+      .send({
+        email: 'client-b@test.local',
+        password: 'Secret!12345',
+        nom: 'Kone',
+        prenom: 'Awa',
+        telephone: '+2250700000001',
+        codeParrain: code,
+      })
+      .expect(201);
+    const tokenFilleul = (filleul.body as { accessToken: string }).accessToken;
+    const moiFilleul = await request(app.getHttpServer())
+      .get('/shop/compte/moi')
+      .set('Authorization', `Bearer ${tokenFilleul}`)
+      .expect(200);
+    expect((moiFilleul.body as { codeParrainage: string }).codeParrainage).not.toBe(
+      code,
+    );
+
+    const moiParrain = await request(app.getHttpServer())
+      .get('/shop/compte/moi')
+      .set('Authorization', `Bearer ${body.accessToken}`)
+      .expect(200);
+    expect((moiParrain.body as { filleuls: number }).filleuls).toBe(1);
 
     const cmd = await request(app.getHttpServer())
       .get('/shop/compte/commandes')

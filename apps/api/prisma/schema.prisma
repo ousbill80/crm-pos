@@ -485,6 +485,7 @@ model Produit {
   allocationsCoutReception AllocationCoutReception[]
   lignesCommandeWeb        LigneCommandeWeb[]
   reservationsWeb          ReservationWeb[]
+  funnelEvents             ShopFunnelEvent[]
 
   @@index([categorie])
   @@index([actif])
@@ -2844,6 +2845,14 @@ enum StatutCommandeWeb {
   LITIGE
 }
 
+enum ShopFunnelEtape {
+  ACQUISITION
+  ACTIVATION
+  REVENUE
+  RETENTION
+  REFERRAL
+}
+
 enum TypePaiementCommandeWeb {
   INITIE
   CAPTURE
@@ -2892,12 +2901,44 @@ model CompteClient {
   emailVerifie     Boolean         @default(false)
   actif            Boolean         @default(true)
   refreshTokenHash String?
+  codeParrainage   String          @unique
+  parrain          CompteClient?   @relation("ParrainageShop", fields: [parrainId], references: [id], onDelete: SetNull)
+  parrainId        String?
+  filleuls         CompteClient[]  @relation("ParrainageShop")
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   adresses         AdresseClient[]
   commandesWeb     CommandeWeb[]
+  funnelEvents     ShopFunnelEvent[]
 
+  @@index([parrainId])
   @@map("compte_client")
+}
+
+model ShopFunnelEvent {
+  id             String          @id @default(uuid())
+  etape          ShopFunnelEtape
+  action         String
+  sessionId      String
+  compteClient   CompteClient?   @relation(fields: [compteClientId], references: [id], onDelete: SetNull)
+  compteClientId String?
+  produit        Produit?        @relation(fields: [produitId], references: [id], onDelete: SetNull)
+  produitId      String?
+  commandeWeb    CommandeWeb?    @relation(fields: [commandeWebId], references: [id], onDelete: SetNull)
+  commandeWebId  String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  codeParrain    String?
+  requete        String?
+  createdAt      DateTime        @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([etape, createdAt])
+  @@index([action, createdAt])
+  @@index([compteClientId, createdAt])
+  @@index([produitId])
+  @@map("shop_funnel_event")
 }
 
 model AdresseClient {
@@ -2976,6 +3017,7 @@ model CommandeWeb {
   paiements            PaiementCommandeWeb[]
   conversionVente      ConversionCommandeVente?
   avis                 AvisCommandeWeb?
+  funnelEvents         ShopFunnelEvent[]
 
   @@index([statut])
   @@index([compteClientId])
@@ -3091,6 +3133,7 @@ model JournalAudit {
   entiteId      String
   details       String?
 
+  @@index([utilisateurId, action, dateHeure])
   @@map("journal_audit")
 }
 
@@ -3283,4 +3326,17 @@ model AlerteNotifiee {
   dateEnvoi DateTime @default(now())
 
   @@map("alerte_notifiee")
+}
+
+model StaffBriefingEnvoi {
+  id               String   @id @default(uuid())
+  type             String
+  cleUnique        String   @unique
+  utilisateurId    String?
+  destinataireHash String
+  resendId         String?
+  createdAt        DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@map("staff_briefing_envoi")
 }
