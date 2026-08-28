@@ -1,6 +1,17 @@
+name: caisse-shop
+
 # Stack shop (DMZ) — api-shop + gateway boutique. Option A PLAN-E-COMMERCE.
 #
 #   docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
+#
+# Ports bindés sur 127.0.0.1 par défaut (Caddy). Ne pas mettre SHOP_BIND=0.0.0.0
+# sans TLS en frontal.
+
+x-log: &default-log
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
@@ -21,6 +32,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-log
     networks:
       - shop-backend
 
@@ -36,7 +50,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-caisse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-caisse_crm}?schema=public
       JWT_SECRET_SHOP: ${JWT_SECRET_SHOP:?JWT_SECRET_SHOP requis}
-      SHOP_PANIER_SECRET: ${SHOP_PANIER_SECRET:-}
+      SHOP_PANIER_SECRET: ${SHOP_PANIER_SECRET:?SHOP_PANIER_SECRET requis}
       CORS_ORIGINS: ${SHOP_CORS_ORIGINS:-}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
       PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-}
@@ -50,6 +64,14 @@ services:
       timeout: 5s
       retries: 6
       start_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-log
     networks:
       - shop-backend
 
@@ -66,10 +88,13 @@ services:
     environment:
       TLS_ENABLED: ${TLS_ENABLED:-0}
     ports:
-      - "${SHOP_HTTP_PORT:-8080}:80"
-      - "${SHOP_HTTPS_PORT:-8443}:443"
+      - "${SHOP_BIND:-127.0.0.1}:${SHOP_HTTP_PORT:-8080}:80"
+      - "${SHOP_BIND:-127.0.0.1}:${SHOP_HTTPS_PORT:-8443}:443"
     volumes:
       - ${TLS_CERTS_DIR:-./deploy/certs-shop}:/etc/nginx/certs:ro
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-log
     networks:
       - shop-backend
       - shop-frontend

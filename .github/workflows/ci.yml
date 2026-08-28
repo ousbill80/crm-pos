@@ -60,6 +60,7 @@ jobs:
         run: |
           echo "POSTGRES_PASSWORD=ci-shop-pg" > .env.shop.ci
           echo "JWT_SECRET_SHOP=ci-shop-jwt-not-for-production" >> .env.shop.ci
+          echo "SHOP_PANIER_SECRET=ci-shop-panier-not-for-production" >> .env.shop.ci
           docker compose --env-file .env.shop.ci -f docker-compose.shop.yml build api-shop gateway-shop
 
   shop-isolation-e2e:
@@ -147,3 +148,45 @@ jobs:
 
       - name: Web E2E (POS, trésorerie, CRM, …)
         run: pnpm --filter web test:e2e
+
+  docker-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build staging stack images
+        run: |
+          {
+            echo "POSTGRES_PASSWORD=ci-staging-pg"
+            echo "JWT_SECRET=ci-staging-jwt-not-for-production"
+            echo "JWT_SECRET_SHOP=ci-staging-shop-jwt-not-for-production"
+            echo "SHOP_PANIER_SECRET=ci-staging-panier-not-for-production"
+          } > .env.staging.ci
+          docker compose --env-file .env.staging.ci -f docker-compose.staging.yml build
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_DEPLOY == 'true'
+    needs:
+      - build-and-test
+      - docker
+      - docker-shop
+      - docker-staging
+      - shop-isolation-e2e
+      - playwright-e2e
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Déployer staging sur le VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/apps/caisse-crm
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+            chmod +x scripts/deploy-staging.sh
+            ./scripts/deploy-staging.sh

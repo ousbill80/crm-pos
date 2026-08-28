@@ -3,26 +3,31 @@
 Domaine : **majorautoparts.shop**  
 VPS : **KVM 2 Ubuntu** (à partager avec d’autres apps plus tard)
 
-| Sous-domaine | Application |
-|---|---|
-| `www.majorautoparts.shop` (+ apex) | Boutique e-commerce PWA (`apps/shop`) |
-| `crm.majorautoparts.shop` | Caisse / CRM / Finance (`apps/web` + API) |
-| `pos.majorautoparts.shop` | POS web (même app CRM → `/pos`) |
+| Sous-domaine | Application | Env |
+|---|---|---|
+| `www.majorautoparts.shop` (+ apex) | Boutique e-commerce PWA | **prod** |
+| `crm.majorautoparts.shop` | Caisse / CRM / Finance | **prod** |
+| `pos.majorautoparts.shop` | POS web (`/pos`) | **prod** |
+| `staging.majorautoparts.shop` | Boutique (tests, sandbox) | **staging** |
+| `crm-staging.majorautoparts.shop` | CRM (seed démo) | **staging** |
+| `pos-staging.majorautoparts.shop` | POS tests | **staging** |
 
 ```text
 Internet
    │  :80 / :443
    ▼
 Caddy (hôte Ubuntu) — HTTPS automatique Let’s Encrypt
-   ├── www / apex     → 127.0.0.1:8080   (gateway-shop)
-   ├── crm            → 127.0.0.1:8081   (gateway CRM)
-   ├── pos            → 127.0.0.1:8081   (+ redir / → /pos)
-   └── autre-app…     → ports libres 8090+
+   ├── www / apex          → 127.0.0.1:8080   shop prod
+   ├── crm / pos           → 127.0.0.1:8081   CRM prod
+   ├── staging             → 127.0.0.1:8082   shop staging
+   ├── crm-staging / pos-staging → 127.0.0.1:8083   CRM staging
          │
          ▼
 Docker Compose
-   ├── stack CRM   (.env.prod  + docker-compose.prod.yml)
-   └── stack Shop  (.env.shop  + docker-compose.shop.yml)
+   ├── caisse-prod     (.env.prod  + docker-compose.prod.yml)
+   ├── caisse-shop     (.env.shop  + docker-compose.shop.yml)
+   └── caisse-staging  (.env.staging + docker-compose.staging.yml)
+        1 Postgres + 1 API monolith + 2 gateways (~1,3 Go)
 ```
 
 Les containers **ne publient pas** 80/443 : seul Caddy écoute le public.  
@@ -38,7 +43,7 @@ Ainsi tu peux ajouter d’autres apps sans conflit de ports.
 - Repo git de ce projet (ou archive) sur le serveur
 - ~15–30 min pour le premier go-live
 
-**RAM KVM 2 (8 Go)** : CRM + Shop ≈ 4–6 Go. Garde de la marge ; si tu ajoutes 2–3 apps lourdes → **KVM 4**.
+**RAM KVM 2 (8 Go)** : prod CRM + prod shop ≈ 4–6 Go, staging léger ≈ 1,3 Go. Si `docker stats` montre moins de 1 Go libre → **KVM 4**.
 
 ---
 
@@ -52,6 +57,9 @@ Dans **hPanel → Domaines → majorautoparts.shop → DNS** :
 | A | `www` | `IP_DU_VPS` | 300 |
 | A | `crm` | `IP_DU_VPS` | 300 |
 | A | `pos` | `IP_DU_VPS` | 300 |
+| A | `staging` | `IP_DU_VPS` | 300 |
+| A | `crm-staging` | `IP_DU_VPS` | 300 |
+| A | `pos-staging` | `IP_DU_VPS` | 300 |
 
 Supprime ou ignore les enregistrements A/AAAA Hostinger « parking » qui pointent ailleurs.  
 Attends la propagation (souvent quelques minutes, parfois 1 h).
@@ -63,6 +71,9 @@ dig +short majorautoparts.shop A
 dig +short www.majorautoparts.shop A
 dig +short crm.majorautoparts.shop A
 dig +short pos.majorautoparts.shop A
+dig +short staging.majorautoparts.shop A
+dig +short crm-staging.majorautoparts.shop A
+dig +short pos-staging.majorautoparts.shop A
 ```
 
 ---
@@ -80,19 +91,33 @@ curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
 docker compose version
 
-# Pare-feu
+# Pare-feu : SSH + HTTPS uniquement (les ports Docker 8080/8081 restent en localhost)
+ufw default deny incoming
+ufw default allow outgoing
 ufw allow OpenSSH
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
+
+# Mises à jour de sécurité automatiques
+apt install -y unattended-upgrades
+dpkg-reconfigure -plow unattended-upgrades
+
+systemctl enable --now fail2ban
 ```
 
-Crée un utilisateur deploy (recommandé) :
+Crée un utilisateur deploy (recommandé) **avant** de couper root SSH :
 
 ```bash
 adduser deploy
 usermod -aG docker,sudo deploy
-# puis : ssh deploy@IP_DU_VPS
+mkdir -p /home/deploy/.ssh
+# coller ta clé publique :
+# nano /home/deploy/.ssh/authorized_keys
+chmod 700 /home/deploy/.ssh
+chmod 600 /home/deploy/.ssh/authorized_keys
+chown -R deploy:deploy /home/deploy/.ssh
+# Tester `ssh deploy@IP` depuis un autre terminal, PUIS durcir sshd (étape 4).
 ```
 
 ---
@@ -108,35 +133,7 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
 apt update && apt install -y caddy
 ```
 
-Crée `/etc/caddy/Caddyfile` :
-
-```caddy
-# Boutique e-commerce (PWA)
-majorautoparts.shop, www.majorautoparts.shop {
-	encode gzip
-	reverse_proxy 127.0.0.1:8080
-}
-
-# Back-office Caisse / CRM
-crm.majorautoparts.shop {
-	encode gzip
-	reverse_proxy 127.0.0.1:8081
-}
-
-# POS boutique → même passerelle CRM, page /pos
-pos.majorautoparts.shop {
-	encode gzip
-	@root path /
-	redir @root /pos permanent
-	reverse_proxy 127.0.0.1:8081
-}
-```
-
-```bash
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-systemctl status caddy
-```
+Le Caddyfile (HSTS) se copie **après** le clone, étape 4.
 
 Caddy obtient les certificats **Let’s Encrypt** tout seul (ports 80/443 ouverts + DNS OK).
 
@@ -149,6 +146,19 @@ mkdir -p /opt/apps
 cd /opt/apps
 git clone <URL_DU_REPO> caisse-crm
 cd caisse-crm
+
+# Reverse-proxy + HSTS + jails SSH
+cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+# adapter l’e-mail ACME dans le Caddyfile si besoin
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+
+cp deploy/fail2ban/jail.local /etc/fail2ban/jail.local
+systemctl restart fail2ban
+
+# Seulement après un login SSH réussi en tant que deploy :
+cp deploy/sshd/hardening.conf /etc/ssh/sshd_config.d/hardening.conf
+sshd -t && systemctl reload ssh
 ```
 
 (Ou `scp` / `rsync` depuis ta machine.)
@@ -175,7 +185,8 @@ JWT_SECRET=<openssl rand -hex 32>
 # Mobile Expo / outils externes (sinon laisser vide si web only same-origin)
 CORS_ORIGINS=https://crm.majorautoparts.shop,https://pos.majorautoparts.shop
 
-# Ports internes — Caddy parle à 8081
+# Ports internes — Caddy parle à 8081 (jamais publiés sur 0.0.0.0)
+GATEWAY_BIND=127.0.0.1
 HTTP_PORT=8081
 HTTPS_PORT=8443
 TLS_ENABLED=0
@@ -206,6 +217,7 @@ POSTGRES_DB=caisse_crm
 JWT_SECRET_SHOP=<openssl rand -hex 32>
 SHOP_PANIER_SECRET=<openssl rand -hex 32>
 
+SHOP_BIND=127.0.0.1
 SHOP_HTTP_PORT=8080
 SHOP_HTTPS_PORT=8444
 SHOP_CORS_ORIGINS=https://www.majorautoparts.shop,https://majorautoparts.shop
@@ -261,7 +273,83 @@ curl -I https://pos.majorautoparts.shop
 
 ---
 
+## 7b. Staging (tests avant prod)
+
+**Ce n’est pas de la prod.** Base séparée, comptes démo, Paystack **sandbox**.  
+Une seule API Nest (monolithe) pour CRM + boutique — autorisé uniquement en staging.
+
+```bash
+cd /opt/apps/caisse-crm
+cp .env.staging.example .env.staging
+nano .env.staging   # secrets DISTINCTS de la prod ; PAYSTACK sk_test_ uniquement
+chmod +x scripts/deploy-staging.sh scripts/deploy-prod.sh
+./scripts/deploy-staging.sh
+```
+
+Santé locale :
+
+```bash
+curl -sS http://127.0.0.1:8083/health
+curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8082/health
+```
+
+URLs (après DNS + `cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy`) :
+
+| URL | App |
+|---|---|
+| https://staging.majorautoparts.shop | Boutique test |
+| https://crm-staging.majorautoparts.shop | CRM test (`demo-dg` / `MotDePasse!123`) |
+| https://pos-staging.majorautoparts.shop | POS test |
+
+Puis **mettre à jour Caddy** si le fichier serveur est encore l’ancienne version (sans staging) :
+
+```bash
+cp /opt/apps/caisse-crm/deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+### Déploiement continu → staging seulement
+
+`git push` sur `main` : CI (lint, tests, images) puis, **si tu l’actives**, déploiement auto du staging. **La prod n’est jamais déployée toute seule.**
+
+1. Sur le VPS, clé SSH **déploy** (pas le mot de passe root) :
+
+```bash
+# machine de deploy (ou root) : créer une clé dédiée GitHub → VPS
+ssh-keygen -t ed25519 -f /tmp/gh-staging -N "" -C "github-staging"
+cat /tmp/gh-staging.pub >> /home/deploy/.ssh/authorized_keys   # ou /root/.ssh/authorized_keys
+# Coller le CONTENU PRIVÉ de /tmp/gh-staging dans GitHub (une fois), puis `shred -u /tmp/gh-staging`
+```
+
+2. GitHub repo **ousbill80/crm-pos** → Settings :
+   - **Variables** : `STAGING_DEPLOY` = `true`
+   - **Secrets** :
+     - `STAGING_HOST` = `72.62.176.109`
+     - `STAGING_USER` = `deploy` (ou `root`)
+     - `STAGING_SSH_KEY` = clé privée ed25519
+   - **Environments** : créer `staging` (optionnel, pour protéger le job)
+
+3. Améliorations ensuite :
+
+```text
+push main → CI verte → staging mis à jour automatiquement
+tu testes staging. / crm-staging. / pos-staging.
+OK → sur le VPS : git pull && ./scripts/deploy-prod.sh
+```
+
+Prod = **manuel** (`scripts/deploy-prod.sh`) après validation staging.
+
+---
+
 ## 8. Checklist go-live
+
+### Staging (`staging` / `crm-staging` / `pos-staging`)
+- [ ] DNS A des 3 sous-domaines
+- [ ] `.env.staging` secrets ≠ prod, Paystack `sk_test_`
+- [ ] Login `demo-dg` / `MotDePasse!123` sur crm-staging
+- [ ] Catalogue / checkout sandbox sur staging
+- [ ] CD GitHub activé (`STAGING_DEPLOY=true` + clé SSH)
 
 ### Boutique `www`
 - [ ] Catalogue visible, panier, checkout
@@ -295,12 +383,13 @@ curl -I https://pos.majorautoparts.shop
 # Logs
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=100
 docker compose --env-file .env.shop -f docker-compose.shop.yml logs -f --tail=100
+docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --tail=100
 
-# Mise à jour code
-cd /opt/apps/caisse-crm
-git pull
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
-docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
+# Mise à jour staging (ou laisser la CI le faire)
+cd /opt/apps/caisse-crm && git pull && ./scripts/deploy-staging.sh
+
+# Mise à jour prod (après tests staging)
+cd /opt/apps/caisse-crm && git pull && ./scripts/deploy-prod.sh
 
 # RAM / CPU
 docker stats
@@ -327,24 +416,43 @@ autre.majorautoparts.shop {
 
 ---
 
-## 11. Sécurité minimale
+## 11. Sécurité (à vérifier après go-live)
 
-- SSH : clé uniquement, `PermitRootLogin no` (après user `deploy`)
-- `fail2ban` actif
-- Ne jamais exposer Postgres (`5432`) sur Internet
-- Secrets uniquement dans `.env.prod` / `.env.shop` (hors git)
-- Backups chiffrés / hors site
+**Réseau**
+- [ ] `ufw status` : seulement 22, 80, 443
+- [ ] `ss -tlnp` : 8080–8083 en `127.0.0.1`, **pas** `0.0.0.0`
+- [ ] `curl -I http://IP_PUBLIQUE:8081` depuis l’extérieur → timeout / refusé
+- [ ] Postgres 5432 non publié (`docker compose ps` : pas de 0.0.0.0:5432)
+
+**TLS**
+- [ ] `https://www` / `crm` / `pos` : certificat Let’s Encrypt valide
+- [ ] HSTS présent (`curl -sI https://crm.majorautoparts.shop | grep -i strict`)
+
+**Accès**
+- [ ] SSH clé uniquement, root refusé, user `deploy`
+- [ ] fail2ban actif (`fail2ban-client status sshd`)
+- [ ] unattended-upgrades actif
+
+**Application**
+- [ ] Secrets uniques (jamais les valeurs `change-me` des exemples)
+- [ ] `SEED_ON_START=false` (déjà forcé dans les compose prod)
+- [ ] Comptes `demo-*` absents
+- [ ] `SHOP_PANIER_SECRET` et `JWT_SECRET_SHOP` distincts de `JWT_SECRET`
+- [ ] Sauvegarde quotidienne **hors VPS** (`BACKUP.md`)
+
+Ne pas exposer l’API ni la DB. Le JWT CRM reste 24 h ; le login est limité à 5/min + verrouillage 5 échecs.
 
 ---
 
 ## Ordre du jour J1 (résumé)
 
-1. DNS A → IP VPS  
+1. DNS A → IP VPS (`www` `crm` `pos` + `staging` `crm-staging` `pos-staging`)  
 2. Ubuntu + Docker + UFW  
-3. Caddyfile (www / crm / pos)  
-4. `.env.prod` + `.env.shop`  
-5. `docker compose … up -d --build` (les 2 stacks)  
-6. Tester les 3 URLs en HTTPS  
-7. Configurer paiements + e-mails boutique  
+3. Caddyfile (prod + staging)  
+4. `.env.prod` + `.env.shop` + `.env.staging`  
+5. `docker compose … up` prod, puis `./scripts/deploy-staging.sh`  
+6. Tester les 3 URLs **staging**, puis les 3 URLs **prod**  
+7. Activer CD GitHub (`STAGING_DEPLOY` + secrets SSH)  
+8. Configurer paiements live **uniquement** en prod  
 
-Document lié : `DEPLOIEMENT-SHOP.md`, `BACKUP.md`, `.env.prod.example`, `.env.shop.example`.
+Document lié : `DEPLOIEMENT-SHOP.md`, `BACKUP.md`, `.env.prod.example`, `.env.shop.example`, `.env.staging.example`.

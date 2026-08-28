@@ -16,8 +16,12 @@ RUN pnpm --filter @caisse-crm/shared build
 RUN pnpm --filter shop build
 
 FROM nginx:1.27-alpine AS runtime
+ARG SHOP_NGINX_CONF=nginx.prod.conf
 RUN apk add --no-cache wget
 COPY --from=build /repo/apps/shop/dist /usr/share/nginx/html
-COPY apps/shop/nginx.prod.conf /etc/nginx/conf.d/default.conf
+COPY apps/web/nginx/00-http.conf /etc/nginx/conf.d/00-http.conf
+COPY apps/web/nginx/proxy-params.conf /etc/nginx/proxy-params.conf
+COPY apps/web/nginx/security-headers-shop.conf /etc/nginx/security-headers-shop.conf
+COPY apps/shop/${SHOP_NGINX_CONF} /etc/nginx/conf.d/default.conf
 EXPOSE 80
 HEALTHCHECK CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1

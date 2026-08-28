@@ -16,13 +16,14 @@ cp .env.shop.example .env.shop
 docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
 ```
 
-Boutique : `http://localhost:8080` (par défaut).
+Boutique : `http://127.0.0.1:8080` (bind localhost par défaut).
 
 ## Architecture
 
-- `api-shop` : NestJS `main.shop.js` — routes `/shop/*` uniquement
+- `api-shop` : NestJS `main.shop.js` — routes `/shop/*` uniquement (user non-root)
 - `gateway-shop` : SPA `apps/shop` + proxy nginx vers `api-shop`
 - `db` : PostgreSQL (réseau interne shop-backend)
+- Ports publics : uniquement via Caddy ; `SHOP_BIND=127.0.0.1`
 
 ## Checklist go-live
 
@@ -31,8 +32,9 @@ Boutique : `http://localhost:8080` (par défaut).
 - [ ] `ParametreShop.shopActif = true`, produits `visibleWeb` + `prixWeb`
 - [ ] Zones livraison et boutiques retrait actives
 - [ ] **Resend** : `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `SHOP_EMAIL_FROM` (domaine vérifié), `SHOP_ADMIN_EMAIL`
-- [ ] TLS + WAF en frontal
+- [ ] TLS + reverse-proxy (Caddy) — `SHOP_BIND=127.0.0.1`
 - [ ] `SEED_ON_START=false`
+- [ ] `SHOP_PANIER_SECRET` distinct, cookie panier `Secure` + `httpOnly`
 - [ ] PWA : HTTPS (obligatoire hors localhost), `manifest.webmanifest` + `sw.js` servis sans cache agressif (déjà dans `nginx.prod.conf`)
 
 ## PWA (Progressive Web App)

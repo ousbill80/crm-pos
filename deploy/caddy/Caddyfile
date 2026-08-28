@@ -1,0 +1,70 @@
+# Caddy — HTTPS Let’s Encrypt + HSTS. Les apps Docker n’écoutent que 127.0.0.1.
+#
+#   cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+#   systemctl reload caddy
+#
+# Adapter l’e-mail ACME (compte Let’s Encrypt).
+
+{
+	email admin@majorautoparts.shop
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	encode gzip
+}
+
+# Boutique e-commerce (PWA)
+majorautoparts.shop, www.majorautoparts.shop {
+	import security_headers
+	reverse_proxy 127.0.0.1:8080
+}
+
+# Back-office Caisse / CRM
+crm.majorautoparts.shop {
+	import security_headers
+	reverse_proxy 127.0.0.1:8081
+}
+
+# POS boutique → même passerelle CRM, page /pos
+pos.majorautoparts.shop {
+	import security_headers
+	@root path /
+	redir @root /pos permanent
+	reverse_proxy 127.0.0.1:8081
+}
+
+# --- Staging (tests ; base isolée ; noindex). Auth basique optionnelle :
+#   caddy hash-password
+#   puis décommenter basic_auth (échapper les $ : $$2a$$14$$…)
+(staging_gate) {
+	header X-Robots-Tag "noindex, nofollow"
+	# basic_auth {
+	# 	major $$2a$$14$$REMPLACER
+	# }
+}
+
+staging.majorautoparts.shop {
+	import security_headers
+	import staging_gate
+	reverse_proxy 127.0.0.1:8082
+}
+
+crm-staging.majorautoparts.shop {
+	import security_headers
+	import staging_gate
+	reverse_proxy 127.0.0.1:8083
+}
+
+pos-staging.majorautoparts.shop {
+	import security_headers
+	import staging_gate
+	@root path /
+	redir @root /pos permanent
+	reverse_proxy 127.0.0.1:8083
+}

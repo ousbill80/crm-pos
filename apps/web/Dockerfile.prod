@@ -22,6 +22,9 @@ RUN pnpm --filter web build
 FROM nginx:1.27-alpine AS runtime
 RUN apk add --no-cache wget
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
+COPY apps/web/nginx/00-http.conf /etc/nginx/conf.d/00-http.conf
+COPY apps/web/nginx/proxy-params.conf /etc/nginx/proxy-params.conf
+COPY apps/web/nginx/security-headers-crm.conf /etc/nginx/security-headers-crm.conf
 COPY apps/web/nginx.prod.conf /etc/nginx/conf.d/nginx.prod.conf
 COPY apps/web/nginx.prod.tls.conf /etc/nginx/conf.d/nginx.prod.tls.conf
 COPY apps/web/docker-gateway-entrypoint.sh /docker-gateway-entrypoint.sh

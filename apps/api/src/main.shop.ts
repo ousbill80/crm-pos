@@ -6,34 +6,13 @@ import cookieParser from 'cookie-parser';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ShopAppModule } from './shop-app.module';
-
-function configureCors(app: NestExpressApplication): void {
-  const rawOrigins = process.env.CORS_ORIGINS?.trim();
-  if (rawOrigins) {
-    const origins = rawOrigins
-      .split(',')
-      .map((o) => o.trim())
-      .filter(Boolean);
-    app.enableCors({
-      origin: origins,
-      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
-      credentials: true,
-    });
-    return;
-  }
-  if (process.env.NODE_ENV === 'production') {
-    app.enableCors({ origin: false });
-    return;
-  }
-  app.enableCors({ origin: true, credentials: true });
-}
+import { applyHttpSecurity, configureCors } from './http-security';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(ShopAppModule, {
     rawBody: true,
   });
-  app.set('trust proxy', 1);
+  applyHttpSecurity(app);
   app.use(
     json({
       limit: '2mb',
@@ -44,7 +23,7 @@ async function bootstrap() {
   );
   app.use(urlencoded({ extended: true, limit: '2mb' }));
   app.use(cookieParser());
-  configureCors(app);
+  configureCors(app, { credentials: true });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

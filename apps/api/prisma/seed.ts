@@ -947,6 +947,14 @@ async function ensureBoutiquePointDeVente(params: {
 }
 
 async function main() {
+  const dejaSeed = await prisma.utilisateur.findUnique({
+    where: { login: 'demo-dg' },
+  });
+  if (dejaSeed) {
+    console.log('Seed déjà appliqué (demo-dg présent) — skip.');
+    return;
+  }
+
   for (const role of ROLES) {
     await ensureRole(role.libelle, role.niveauHabilitation);
   }

@@ -2,10 +2,21 @@ import { refreshShopSession } from './shopAuth';
 
 const base = import.meta.env.VITE_API_URL ?? '';
 
-function shopErrorMessage(err: { message?: string | string[] }, status: number) {
+function shopErrorMessage(
+  err: { message?: string | string[] },
+  status: number,
+  path: string,
+) {
   const raw = Array.isArray(err.message) ? err.message.join(', ') : err.message;
   if (status >= 500 || !raw || /^internal server error$/i.test(raw)) {
-    return 'Le paiement n’a pas pu aboutir. Aucun débit n’a été effectué. Réessayez dans un instant.';
+    const isPaiement =
+      path.includes('/payer') ||
+      path.includes('/checkout') ||
+      path.includes('/webhooks/') ||
+      path.includes('/sandbox-confirmer');
+    return isPaiement
+      ? 'Le paiement n’a pas pu aboutir. Aucun débit n’a été effectué. Réessayez dans un instant.'
+      : 'Le service est temporairement indisponible. Réessayez dans un instant.';
   }
   return raw;
 }
@@ -47,7 +58,7 @@ export async function shopFetch<T>(
     const err = (await res.json().catch(() => ({}))) as {
       message?: string | string[];
     };
-    throw new Error(shopErrorMessage(err, res.status));
+    throw new Error(shopErrorMessage(err, res.status, path));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

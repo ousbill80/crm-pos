@@ -23,6 +23,7 @@ Internet / LAN
 
 - **gateway** : SPA React + proxy REST + WebSocket (`/socket.io`) vers l'API.
 - **api** et **db** : accessibles uniquement sur le réseau Docker interne.
+- **Ports gateway** : `127.0.0.1` par défaut (`GATEWAY_BIND`). HTTP clair n’est jamais public.
 - **Web** : `VITE_API_URL=""` → appels same-origin (`/auth`, `/ventes`, …).
 - **Seed démo** : désactivé (`SEED_ON_START=false`).
 
@@ -110,20 +111,23 @@ Restauration testée : voir `BACKUP.md` et `scripts/restore-postgres.sh`.
 |---|---|---|
 | Seed démo | `SEED_ON_START=true` | **false** |
 | Ports API/DB | exposés (3000, 5433) | **non exposés** |
-| Web | port 5173, API séparée | **passerelle unique** |
+| Web | port 5173, API séparée | **passerelle unique**, bind `127.0.0.1` |
 | CORS | ouvert (dev) | **restreint** |
 | JWT / Postgres | défauts faibles | **obligatoires** |
+| Process API | root possible | **non-root**, `cap_drop: ALL` |
 
 ## Checklist go-live
 
 - [ ] `.env.prod` avec secrets uniques (jamais les valeurs d'exemple)
 - [ ] `SEED_ON_START=false` confirmé
-- [ ] TLS actif (`TLS_ENABLED=1` ou proxy externe)
+- [ ] TLS actif (Caddy / `TLS_ENABLED=1`) — jamais HTTP public
+- [ ] `GATEWAY_BIND=127.0.0.1` (sauf TLS nginx standalone)
 - [ ] Sauvegarde quotidienne + restauration testée sur base de test
 - [ ] `CORS_ORIGINS` si mobile ou accès cross-origin
 - [ ] SMTP / SMS si campagnes et alertes e-mail/SMS requis (sinon export CSV)
 - [ ] Comptes utilisateurs réels créés (pas `demo-*`)
 - [ ] Monitoring `/health` sur la passerelle
+- [ ] `curl` depuis Internet sur `:8081` / `:8080` **refusé**
 
 ## CI
 
