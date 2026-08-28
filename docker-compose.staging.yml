@@ -65,6 +65,7 @@ services:
       SHOP_EMAIL_FROM: ${SHOP_EMAIL_FROM:-}
       SHOP_ADMIN_EMAIL: ${SHOP_ADMIN_EMAIL:-}
       SEED_ON_START: ${SEED_ON_START:-true}
+      P2P_EVIDENCE_STORAGE_DIR: /tmp/p2p-evidence
       PORT: 3000
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health | grep -q ok"]
