@@ -13,6 +13,7 @@ export const APP_PROFIL_IDS = [
   'treasury',
   'dashboard',
   'settings',
+  'help',
 ] as const;
 export type AppProfilId = (typeof APP_PROFIL_IDS)[number];
 
@@ -28,6 +29,7 @@ export const APP_PROFIL_LIBELLES: Record<AppProfilId, string> = {
   treasury: 'Trésorerie',
   dashboard: 'Tableau de bord',
   settings: 'Configuration',
+  help: 'Aide',
 };
 
 export const FAMILLE_PROFIL = {
@@ -427,6 +429,11 @@ export const LISTE_PROFILS: ProfilMetier[] = [
 export const ROLES_BOUTIQUE_REQUISE: RoleLibelle[] = LISTE_PROFILS.filter(
   (p) => p.boutiqueRequise,
 ).map((p) => p.role);
+
+// Aide : accessible à tous les profils (manuels d’utilisation).
+for (const profil of LISTE_PROFILS) {
+  profil.apps.help = true;
+}
 
 export function profilOf(role: RoleLibelle): ProfilMetier {
   return PROFILS[role];

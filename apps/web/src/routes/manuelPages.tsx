@@ -1,6 +1,6 @@
 import { ManuelDocPage } from './ManuelDocPage';
 
-/** @deprecated préférer /manuels — conservé pour les liens existants. */
+/** Conservé pour les liens /manuel-caisse. */
 export function ManuelCaissePage() {
   return (
     <ManuelDocPage
@@ -12,7 +12,6 @@ export function ManuelCaissePage() {
         base: '/manuel-caisse',
         htmlFile: 'Manuel_Utilisation_Caisse_POS.html',
         docxFile: 'Manuel_Utilisation_Caisse_POS.docx',
-        zipFile: 'Manuel_Utilisation_Caisse_POS_web.zip',
         iframeTitle: 'Manuel d’utilisation — Caisse boutique',
         relatedHref: '/pos',
         relatedLabel: 'Aller au point de vente',
@@ -32,7 +31,6 @@ export function ManuelTresorerieCentralePage() {
         base: '/manuel-tresorerie-centrale',
         htmlFile: 'Manuel_Utilisation_Tresorerie_Centrale.html',
         docxFile: 'Manuel_Utilisation_Tresorerie_Centrale.docx',
-        zipFile: 'Manuel_Utilisation_Tresorerie_Centrale_web.zip',
         iframeTitle: 'Manuel — Trésorerie centrale',
         relatedHref: '/tresorerie/reception',
         relatedLabel: 'Réception DAF',
@@ -52,7 +50,6 @@ export function ManuelCrmPage() {
         base: '/manuel-crm',
         htmlFile: 'Manuel_Utilisation_CRM.html',
         docxFile: 'Manuel_Utilisation_CRM.docx',
-        zipFile: 'Manuel_Utilisation_CRM_web.zip',
         iframeTitle: 'Manuel — CRM',
         relatedHref: '/clients',
         relatedLabel: 'Clients',
@@ -72,7 +69,6 @@ export function ManuelStocksAchatsPage() {
         base: '/manuel-stocks-achats',
         htmlFile: 'Manuel_Utilisation_Stocks_Achats.html',
         docxFile: 'Manuel_Utilisation_Stocks_Achats.docx',
-        zipFile: 'Manuel_Utilisation_Stocks_Achats_web.zip',
         iframeTitle: 'Manuel — Stocks & Achats',
         relatedHref: '/stocks',
         relatedLabel: 'Stocks',
@@ -92,7 +88,6 @@ export function ManuelDafFinancePage() {
         base: '/manuel-daf-finance',
         htmlFile: 'Manuel_Utilisation_DAF_Finance.html',
         docxFile: 'Manuel_Utilisation_DAF_Finance.docx',
-        zipFile: 'Manuel_Utilisation_DAF_Finance_web.zip',
         iframeTitle: 'Manuel — DAF & Finance',
         relatedHref: '/finance',
         relatedLabel: 'Finance',

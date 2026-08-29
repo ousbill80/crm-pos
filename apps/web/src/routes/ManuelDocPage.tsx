@@ -1,4 +1,4 @@
-import { BookOpen, Download, ExternalLink } from 'lucide-react';
+import { BookOpen, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export type ManuelDocConfig = {
@@ -8,20 +8,18 @@ export type ManuelDocConfig = {
   base: string;
   htmlFile: string;
   docxFile: string;
-  zipFile: string;
   iframeTitle: string;
   relatedHref?: string;
   relatedLabel?: string;
 };
 
 /**
- * Lecteur web d’un manuel + téléchargements Word / ZIP.
- * Assets servis depuis public/{base}/.
+ * Lecteur web d’un manuel + téléchargement Word.
+ * Contenu HTML servi depuis public/{base}/ (lecture dans l’app, pas de téléchargement HTML).
  */
 export function ManuelDocPage({ config }: { config: ManuelDocConfig }) {
   const htmlHref = `${config.base}/${config.htmlFile}`;
   const docxHref = `${config.base}/${config.docxFile}`;
-  const zipHref = `${config.base}/${config.zipFile}`;
 
   return (
     <div className="manuel-caisse-page">
@@ -42,23 +40,6 @@ export function ManuelDocPage({ config }: { config: ManuelDocConfig }) {
           >
             <Download size={16} aria-hidden />
             Télécharger Word
-          </a>
-          <a
-            className="manuel-caisse-btn manuel-caisse-btn--ghost"
-            href={zipHref}
-            download={config.zipFile}
-          >
-            <Download size={16} aria-hidden />
-            Télécharger Web (ZIP)
-          </a>
-          <a
-            className="manuel-caisse-btn manuel-caisse-btn--ghost"
-            href={htmlHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ExternalLink size={16} aria-hidden />
-            Ouvrir en plein écran
           </a>
           <Link className="manuel-caisse-btn manuel-caisse-btn--ghost" to="/manuels">
             Tous les manuels

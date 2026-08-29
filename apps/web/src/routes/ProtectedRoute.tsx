@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen,
+  CircleHelp,
   Grid2x2,
   LayoutDashboard,
   Package,
@@ -29,6 +30,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { OdooNavbarMenus } from '../components/OdooNavbarMenus';
 import {
+  TopbarHelp,
   TopbarPwaInstall,
   TopbarRealtimeIndicator,
   TopbarSystray,
@@ -532,6 +534,32 @@ const APPS: AppDef[] = [
       },
     ],
   },
+  {
+    id: 'help',
+    name: 'Aide',
+    color: '#0F766E',
+    icon: CircleHelp,
+    home: '/manuels',
+    match: ['/manuels', '/manuel-caisse'],
+    roles: rolesPourApp('help'),
+    menus: [
+      { to: '/manuels', label: 'Tous les manuels' },
+      {
+        to: '/manuel-caisse',
+        label: 'Manuels',
+        children: [
+          { to: '/manuel-caisse', label: 'Caisse boutique (POS)' },
+          {
+            to: '/manuels/tresorerie-centrale',
+            label: 'Trésorerie centrale',
+          },
+          { to: '/manuels/crm', label: 'CRM' },
+          { to: '/manuels/stocks-achats', label: 'Stocks & Achats' },
+          { to: '/manuels/daf-finance', label: 'DAF & Finance' },
+        ],
+      },
+    ],
+  },
 ];
 
 function resolveApp(pathname: string): AppDef {
@@ -712,6 +740,7 @@ export function ProtectedRoute() {
         <div className="odoo-navbar-right">
           <TopbarRealtimeIndicator />
           <TopbarPwaInstall />
+          <TopbarHelp />
           <TopbarSystray />
           {user && (
             <TopbarUserMenu

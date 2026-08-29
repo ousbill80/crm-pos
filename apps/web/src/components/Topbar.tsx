@@ -3,8 +3,8 @@ import {
   AlertCircle,
   AlertTriangle,
   Bell,
-  BookOpen,
   ChevronDown,
+  CircleHelp,
   Download,
   KeyRound,
   LogOut,
@@ -97,6 +97,22 @@ export function TopbarPwaInstall() {
       onClick={() => void promptPwaInstall()}
     >
       <Download size={17} />
+    </button>
+  );
+}
+
+/** Raccourci Aide (manuels) dans la barre système. */
+export function TopbarHelp() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      className="odoo-systray-btn"
+      title="Aide — manuels d’utilisation"
+      aria-label="Ouvrir l’aide"
+      onClick={() => navigate('/manuels')}
+    >
+      <CircleHelp size={17} />
     </button>
   );
 }
@@ -317,8 +333,8 @@ export function TopbarUserMenu({ user, onLogout }: TopbarUserMenuProps) {
               navigate('/manuels');
             }}
           >
-            <BookOpen size={16} />
-            Manuels d’utilisation
+            <CircleHelp size={16} />
+            Aide
           </button>
 
           <button

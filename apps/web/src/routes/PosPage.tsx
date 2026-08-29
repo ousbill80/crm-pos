@@ -25,6 +25,7 @@ import {
 import {
   ArrowLeft,
   Banknote,
+  CircleHelp,
   CreditCard,
   FileText,
   Minus,
@@ -2870,6 +2871,15 @@ function PosCaisse({
           </span>
         </div>
         <div className="pos-topbar-actions">
+          <Link
+            to="/manuel-caisse"
+            className="pos-topbar-help"
+            title="Aide — manuel caisse POS"
+            aria-label="Ouvrir le manuel caisse"
+          >
+            <CircleHelp size={17} aria-hidden />
+            <span>Aide</span>
+          </Link>
           <span
             className={`pos-online-chip${online ? '' : ' is-off'}${pending > 0 ? ' is-sync' : ''}`}
             title={

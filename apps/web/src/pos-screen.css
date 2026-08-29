@@ -102,6 +102,25 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
+.pos-topbar-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff !important;
+  padding: 0 14px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.pos-topbar-help:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .pos-topbar-count {
   min-width: 20px;
   height: 20px;
