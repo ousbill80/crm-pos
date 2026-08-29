@@ -108,8 +108,11 @@ export default function HomePage() {
               <em>MAJOR</em>
               <span>AUTO PARTS</span>
             </p>
-            <h1>Pièces & accessoires, prix showroom</h1>
-            <p>Tuning, jantes, éclairage, mécanique — pour tous véhicules.</p>
+            <h1>Pièces auto à Abidjan, Côte d’Ivoire</h1>
+            <p>
+              Phares LED, jantes, freins, électronique — livraison CIV et
+              retrait showroom.
+            </p>
             <span className="home-hero-cta">Voir les offres</span>
           </div>
         </Link>
@@ -310,10 +313,11 @@ export default function HomePage() {
 
       <section className="home-cta-band">
         <div>
-          <h2>Retrait showroom ou livraison</h2>
+          <h2>Pièces auto livrées à Abidjan</h2>
           <p>
-            Commandez en ligne, retirez en boutique ou faites-vous livrer.
-            Paiement mobile money, carte bancaire, ou au retrait.
+            Commandez en ligne vos pièces automobiles en Côte d’Ivoire :
+            retrait showroom ou livraison. Paiement Wave, Orange Money, carte
+            ou au retrait.
           </p>
         </div>
         <Link className="btn" to="/catalogue">

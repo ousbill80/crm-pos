@@ -11,6 +11,8 @@ import { trackShopEvent, getShopSessionId } from '../lib/aarrr';
 import { rememberInterest } from '../lib/interests';
 import { TRUST } from '../lib/brand';
 import { ProductCard } from '../components/ProductCard';
+import { useSeo } from '../components/SeoHead';
+import { seoForProduit, withBrand, DEFAULT_DESCRIPTION } from '../lib/seo';
 import {
   buildVariantAxes,
   colorSwatch,
@@ -48,6 +50,28 @@ export default function ProduitPage() {
     queryFn: () => shopFetch<ProduitDetail>(`/shop/catalogue/produit/${slug}`),
     enabled: !!slug,
   });
+
+  const seoPayload = useMemo(
+    () =>
+      data?.slug
+        ? seoForProduit({
+            designation: data.designation,
+            description: data.description,
+            categorie: data.categorie,
+            slug: data.slug,
+            prixAffiche: data.prixAffiche,
+            imageUrl: data.imageUrl,
+            stockDisponible: data.stockDisponible,
+          })
+        : {
+            title: withBrand('Pièce automobile Abidjan'),
+            description: DEFAULT_DESCRIPTION,
+            path: slug ? `/produit/${slug}` : '/catalogue',
+            robots: isError ? 'noindex, follow' : 'index, follow, noai, noimageai',
+          },
+    [data, isError, slug],
+  );
+  useSeo(seoPayload);
 
   useEffect(() => {
     if (!data?.id) return;

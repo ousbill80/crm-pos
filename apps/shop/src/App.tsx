@@ -3,6 +3,7 @@ import { SiteHeader } from './components/SiteHeader';
 import { CartDrawer } from './components/CartDrawer';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { FunnelTracker } from './components/FunnelTracker';
+import { RouteSeo } from './components/SeoHead';
 import HomePage from './routes/HomePage';
 import CataloguePage from './routes/CataloguePage';
 import ProduitPage from './routes/ProduitPage';
@@ -25,8 +26,9 @@ function SiteFooter() {
           <span className="brand-major">MAJOR</span>
           <span className="brand-auto">AUTO PARTS</span>
           <p>
-            Accessoires & pièces pour véhicules — tous modèles, toutes marques.
-            Click & collect et livraison.
+            Pièces et accessoires automobiles à Abidjan, Côte d’Ivoire —
+            phares, jantes, mécanique, électronique. Livraison CIV et retrait
+            showroom.
           </p>
         </div>
         <div className="footer-col">
@@ -44,7 +46,7 @@ function SiteFooter() {
       </div>
       <div className="footer-bottom">
         <span>
-          © {new Date().getFullYear()} MAJOR AUTO PARTS
+          © {new Date().getFullYear()} MAJOR AUTO PARTS — Abidjan, Côte d’Ivoire
           <span className="footer-sep"> · </span>
           Design by{' '}
           <a
@@ -56,7 +58,7 @@ function SiteFooter() {
             PRODESTIC
           </a>
         </span>
-        <span>Tous modèles · Toutes marques</span>
+        <span>Pièces auto Abidjan · Toutes marques</span>
       </div>
     </footer>
   );
@@ -69,6 +71,7 @@ export default function App() {
   return (
     <>
       <PwaInstallBanner />
+      <RouteSeo />
       <FunnelTracker />
       {!isCheckout && (
         <>

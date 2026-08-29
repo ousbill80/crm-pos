@@ -4,6 +4,29 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { shopFetch } from '../lib/api';
 import { CATEGORIES, MARQUES } from '../lib/brand';
 import { ProductCard, type ProductCardItem } from '../components/ProductCard';
+import { CategoryIcon } from '../components/CategoryIcon';
+
+const CAT_TONE: Record<string, string> = {
+  tuning: 'tone-a',
+  jantes: 'tone-b',
+  phares: 'tone-c',
+  eclairage: 'tone-d',
+  housses: 'tone-e',
+  electronique: 'tone-f',
+  mecanique: 'tone-g',
+  accessoires: 'tone-h',
+};
+
+const CAT_BANNER: Record<string, string> = {
+  tuning: '/banners/banner-tuning.jpg',
+  jantes: '/banners/banner-jantes.jpg',
+  phares: '/banners/banner-eclairage.jpg',
+  eclairage: '/banners/banner-eclairage.jpg',
+  housses: '/hero-major.jpg',
+  electronique: '/banners/banner-electronique.jpg',
+  mecanique: '/banners/banner-mecanique.jpg',
+  accessoires: '/banners/banner-tuning.jpg',
+};
 
 const PAGE_SIZE = 24;
 
@@ -105,7 +128,7 @@ export default function CataloguePage() {
       ? activeMarque
       : activeCat
         ? activeCat.label
-        : 'Catalogue';
+        : 'Pièces auto Abidjan';
   const lead = recherche
     ? activeMarque
       ? `Pièces ${activeMarque} — « ${recherche} »`
@@ -113,10 +136,10 @@ export default function CataloguePage() {
     : activeMarque && activeCat
       ? `${activeCat.hint} · compatible ${activeMarque}`
       : activeMarque
-        ? `Pièces et accessoires compatibles ${activeMarque}`
+        ? `Pièces et accessoires compatibles ${activeMarque} — Abidjan, Côte d’Ivoire`
         : activeCat
           ? activeCat.hint
-          : 'Pièces et accessoires — stock réseau MAJOR AUTO PARTS';
+          : 'Phares, jantes, freins, électronique — livraison Côte d’Ivoire, retrait showroom';
 
   function submitSearch(e: FormEvent) {
     e.preventDefault();
@@ -148,17 +171,19 @@ export default function CataloguePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  const bannerSrc = activeCat
+    ? (CAT_BANNER[activeCat.slug] ?? '/hero-major.jpg')
+    : '/hero-major.jpg';
+
   return (
     <div className="section catalogue-page flash">
-      <header className="catalogue-intro">
-        <p className="catalogue-kicker">
-          <span className="catalogue-kicker-brand">MAJOR</span>
-          <span aria-hidden>·</span>
-          <span>Boutique en ligne</span>
-        </p>
-        <h1 className="page-title">{title}</h1>
-        <p className="page-lead catalogue-lead">{lead}</p>
-        {hasFilters && (
+      <header className="catalogue-hero">
+        <div
+          className="catalogue-hero-media"
+          style={{ backgroundImage: `url(${bannerSrc})` }}
+          aria-hidden
+        />
+        <div className="catalogue-hero-copy">
           <nav className="catalogue-crumbs" aria-label="Fil d’Ariane">
             <Link to="/catalogue">Catalogue</Link>
             {activeMarque && (
@@ -180,122 +205,133 @@ export default function CataloguePage() {
               </>
             )}
           </nav>
-        )}
-
-        <div className="catalogue-intro-tools">
-          <form className="catalogue-search" onSubmit={submitSearch} role="search">
-            <label className="sr-only" htmlFor="catalogue-q">
-              Rechercher une pièce
-            </label>
-            <input
-              id="catalogue-q"
-              type="search"
-              value={searchDraft}
-              onChange={(e) => setSearchDraft(e.target.value)}
-              placeholder="Ex. freins mercedes, jante BMW, VW…"
-              autoComplete="off"
-            />
-            <button type="submit" className="btn">
-              Rechercher
-            </button>
-          </form>
-
-          <label className="catalogue-sort">
-            <span>Trier</span>
-            <select
-              value={tri}
-              onChange={(e) => setTri(e.target.value as Tri)}
-              aria-label="Trier le catalogue"
-            >
-              <option value="designation">Nom A–Z</option>
-              <option value="prix_asc">Prix croissant</option>
-              <option value="prix_desc">Prix décroissant</option>
-            </select>
-          </label>
-        </div>
-
-        <nav className="catalogue-marques" aria-label="Filtrer par marque">
-          {MARQUES.map((m) => {
-            const active =
-              activeMarque?.toLocaleUpperCase('fr-FR') ===
-              m.toLocaleUpperCase('fr-FR');
-            return (
-              <Link
-                key={m}
-                to={buildCataloguePath({
-                  categorie,
-                  q: recherche,
-                  marque: active ? undefined : m,
-                  tri,
-                })}
-                className={`catalogue-marque${active ? ' is-active' : ''}`}
-                aria-current={active ? 'page' : undefined}
-                title={
-                  active
-                    ? `Retirer le filtre ${m}`
-                    : `Pièces compatibles ${m}`
-                }
-              >
-                {m}
+          <p className="catalogue-hero-kicker">
+            <span>Hot</span>
+            Prix showroom
+          </p>
+          <h1 className="catalogue-hero-title">{title}</h1>
+          <p className="catalogue-hero-lead">{lead}</p>
+          <div className="catalogue-hero-meta">
+            {!isLoading && !isError && (
+              <span className="catalogue-hero-count">
+                {`${formatInt(total)} article${total > 1 ? 's' : ''}`}
+              </span>
+            )}
+            {hasFilters && (
+              <Link to="/catalogue" className="catalogue-hero-clear">
+                Tout voir
               </Link>
-            );
-          })}
-        </nav>
+            )}
+          </div>
+        </div>
       </header>
 
-      <div className="catalogue-layout">
-        <aside className="catalogue-nav" aria-label="Rayons">
-          <p className="catalogue-nav-label">Rayons</p>
-          <nav className="catalogue-nav-list">
+      <nav className="catalogue-cat-rail" aria-label="Rayons">
+        <Link
+          to={buildCataloguePath({ q: recherche, marque: marqueParam, tri })}
+          className={`catalogue-cat-orb${!categorie ? ' is-active' : ''}`}
+        >
+          <span className="home-cat-orb-icon tone-all">
+            <CategoryIcon slug="all" size={20} />
+          </span>
+          <strong>Tout</strong>
+        </Link>
+        {CATEGORIES.map((c) => {
+          const active = categorie === c.label;
+          return (
             <Link
+              key={c.slug}
               to={buildCataloguePath({
+                categorie: c.label,
                 q: recherche,
                 marque: marqueParam,
                 tri,
               })}
-              className={`catalogue-nav-link${!categorie ? ' is-active' : ''}`}
+              className={`catalogue-cat-orb${active ? ' is-active' : ''}`}
+              aria-current={active ? 'page' : undefined}
             >
-              <span>Tous les rayons</span>
+              <span
+                className={`home-cat-orb-icon ${CAT_TONE[c.slug] ?? 'tone-a'}`}
+              >
+                <CategoryIcon slug={c.slug} size={20} />
+              </span>
+              <strong>{c.label.split(' ')[0]}</strong>
             </Link>
-            {CATEGORIES.map((c) => {
-              const active = categorie === c.label;
-              return (
-                <Link
-                  key={c.slug}
-                  to={buildCataloguePath({
-                    categorie: c.label,
-                    q: recherche,
-                    marque: marqueParam,
-                    tri,
-                  })}
-                  className={`catalogue-nav-link${active ? ' is-active' : ''}`}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <span>{c.label}</span>
-                  <em>{c.hint}</em>
-                </Link>
-              );
-            })}
-          </nav>
-        </aside>
+          );
+        })}
+      </nav>
 
+      <div className="catalogue-filterbar">
+        <form className="catalogue-search" onSubmit={submitSearch} role="search">
+          <label className="sr-only" htmlFor="catalogue-q">
+            Rechercher une pièce
+          </label>
+          <input
+            id="catalogue-q"
+            type="search"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Freins Mercedes, jante BMW…"
+            autoComplete="off"
+          />
+          <button type="submit">Chercher</button>
+        </form>
+        <div className="catalogue-sort-chips" role="group" aria-label="Trier">
+          {(
+            [
+              ['designation', 'Recommandé'],
+              ['prix_asc', 'Prix ↑'],
+              ['prix_desc', 'Prix ↓'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={tri === value ? 'is-active' : undefined}
+              onClick={() => setTri(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <nav className="catalogue-marques" aria-label="Filtrer par marque">
+        {MARQUES.map((m) => {
+          const active =
+            activeMarque?.toLocaleUpperCase('fr-FR') ===
+            m.toLocaleUpperCase('fr-FR');
+          return (
+            <Link
+              key={m}
+              to={buildCataloguePath({
+                categorie,
+                q: recherche,
+                marque: active ? undefined : m,
+                tri,
+              })}
+              className={`catalogue-marque${active ? ' is-active' : ''}`}
+              aria-current={active ? 'page' : undefined}
+              title={
+                active ? `Retirer le filtre ${m}` : `Pièces compatibles ${m}`
+              }
+            >
+              {m}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="catalogue-layout">
         <div className={`catalogue-main${isFetching ? ' is-fetching' : ''}`}>
           <div className="catalogue-toolbar">
             <p aria-live="polite">
               {!isLoading && !isError
                 ? total === 0
                   ? 'Aucune référence'
-                  : `${formatInt(total)} référence${total > 1 ? 's' : ''} · ${formatInt(from)}–${formatInt(to)}`
+                  : `${formatInt(from)}–${formatInt(to)} / ${formatInt(total)}`
                 : 'Chargement…'}
-              {activeMarque && !isLoading ? ` · ${activeMarque}` : ''}
-              {categorie && !isLoading ? ` · ${categorie}` : ''}
-              {recherche && !isLoading ? ` · « ${recherche} »` : ''}
             </p>
-            {hasFilters && (
-              <Link to="/catalogue" className="section-link">
-                Tout effacer →
-              </Link>
-            )}
           </div>
 
           {!isLoading &&
@@ -318,9 +354,9 @@ export default function CataloguePage() {
             )}
 
           {isLoading && (
-            <div className="product-grid" aria-hidden>
+            <div className="product-grid product-grid-dense" aria-hidden>
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="product product-skeleton" />
+                <div key={i} className="product product-skeleton product-dense" />
               ))}
             </div>
           )}
@@ -348,9 +384,15 @@ export default function CataloguePage() {
 
           {!isLoading && !isError && items.length > 0 && (
             <>
-              <div className="product-grid">
+              <div className="product-grid product-grid-dense">
                 {items.map((p, i) => (
-                  <ProductCard key={p.id} p={p} index={i} />
+                  <ProductCard
+                    key={p.id}
+                    p={p}
+                    index={i}
+                    dense
+                    badge={i === 0 ? 'Hot' : p.badge}
+                  />
                 ))}
               </div>
 

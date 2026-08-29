@@ -16,13 +16,15 @@ export default defineConfig({
         'icons/maskable-192.png',
         'icons/maskable-512.png',
         'offline.html',
+        'robots.txt',
+        'sitemap.xml',
       ],
       manifest: {
         id: '/',
         name: 'MAJOR AUTO PARTS',
         short_name: 'MAJOR',
         description:
-          'Boutique en ligne MAJOR AUTO PARTS — pièces & accessoires véhicules, livraison et retrait showroom.',
+          'Pièces auto à Abidjan — MAJOR AUTO PARTS. Livraison Côte d’Ivoire, retrait showroom.',
         lang: 'fr',
         dir: 'ltr',
         start_url: '/',

@@ -55,3 +55,5 @@ Disallow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://www.majorautoparts.shop/sitemap.xml
