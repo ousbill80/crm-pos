@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
 import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { MajorBrandMark } from '../components/MajorBrandMark';
 
 // Parcours de changement de mot de passe forcé (§6.7) : atteint dès que
 // mustChangePassword=true (login ou reset par le Responsable SI/DG), et
@@ -57,9 +57,9 @@ export function ChangePasswordPage() {
       <main className="login-panel">
         <form onSubmit={handleSubmit} className="login-card">
           <div className="login-brand">
-            <p className="login-brand-mark login-brand-mark--icon">
-              <KeyRound size={16} aria-hidden /> CaissePOS
-            </p>
+            <div className="login-brand-mark login-brand-mark--icon">
+              <MajorBrandMark variant="login" />
+            </div>
             <h2>Changement de mot de passe</h2>
             <p className="login-brand-sub">
               Votre mot de passe temporaire doit être remplacé avant tout accès

@@ -2,7 +2,7 @@
 export function MajorBrandMark({
   variant = 'ticket',
 }: {
-  variant?: 'ticket' | 'doc';
+  variant?: 'ticket' | 'doc' | 'hero' | 'login';
 }) {
   return (
     <div

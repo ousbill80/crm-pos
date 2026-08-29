@@ -14,6 +14,7 @@ import {
   resetTurnstile,
   turnstileSiteKey,
 } from '../components/TurnstileWidget';
+import { MajorBrandMark } from '../components/MajorBrandMark';
 
 /** Mot de passe unique des comptes seed — jamais exposé hors DEV. */
 const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
@@ -124,21 +125,31 @@ export function LoginPage() {
   return (
     <div className="login-screen">
       <aside className="login-hero">
+        <div className="login-hero-media" aria-hidden />
+        <div className="login-hero-shade" aria-hidden />
         <div className="login-hero-glow" aria-hidden />
-        <div className="login-hero-grid" aria-hidden />
         <div className="login-hero-content">
-          <p className="login-hero-brand">CaissePOS</p>
+          <p className="login-hero-kicker">Showroom Abidjan · Côte d’Ivoire</p>
+          <MajorBrandMark variant="hero" />
           <h1 className="login-hero-title">
             Caisses &amp; CRM
             <span>pour le réseau boutique</span>
           </h1>
         </div>
+        <ul className="login-hero-pills" aria-label="Modules">
+          <li>POS</li>
+          <li>CRM</li>
+          <li>Stock</li>
+          <li>Trésorerie</li>
+        </ul>
       </aside>
 
       <main className="login-panel">
         <form onSubmit={handleSubmit} className="login-card">
           <header className="login-brand">
-            <p className="login-brand-mark">CaissePOS</p>
+            <div className="login-brand-mark">
+              <MajorBrandMark variant="login" />
+            </div>
             <h2>Connexion</h2>
             <p className="login-brand-sub">
               Identifiant personnel — actions tracées.

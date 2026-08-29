@@ -1543,6 +1543,21 @@ form.pos-gate-card {
   margin: 0 0 12px;
 }
 
+.major-brand-mark--login {
+  text-align: left;
+  margin: 0;
+}
+
+.major-brand-mark--login .brand-major {
+  font-size: 1.55rem;
+  letter-spacing: 0.08em;
+}
+
+.major-brand-mark--login .brand-auto {
+  font-size: 0.68rem;
+  letter-spacing: 0.28em;
+}
+
 .pos-receipt-addr {
   margin: 0;
   font-size: 12px;
