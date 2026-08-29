@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Manuel stocks &amp; achats</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; color: #1a1c22; background: #f7f8fa; }
+  h1,h2,h3 { line-height: 1.25; color: #0f766e; }
+  h1 { font-size: 1.75rem; }
+  img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #dde3ea; box-shadow: 0 8px 24px rgba(20,23,28,.06); margin: 12px 0 4px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; background: #fff; margin: 12px 0; }
+  th, td { border: 1px solid #dde3ea; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 0.92rem; }
+  th { background: #e6f4f2; }
+  blockquote { border-left: 4px solid #0f766e; margin: 12px 0; padding: 8px 14px; background: #eef8f6; }
+  code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #1a1c22; color: #e8f5f3; padding: 12px 14px; border-radius: 8px; overflow: auto; }
+  hr { border: none; border-top: 1px solid #dde3ea; margin: 28px 0; }
+</style>
+
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Manuel stocks &amp; achats</h1>
+</header>
+<h1 id="manuel-dutilisation-stocks-achats">Manuel d’utilisation — Stocks
+&amp; Achats</h1>
+<p><strong>Progiciel Caisses &amp; CRM — MAJOR AUTO PARTS</strong><br />
+Public : <strong>Achats</strong>, <strong>Logistique</strong>,
+<strong>Qualité / Stocks</strong>, <strong>RAF</strong>, <strong>Resp.
+SI / boutique</strong> (selon étapes)<br />
+Périmètre : catalogue, stocks, inventaires, fournisseurs, commandes,
+réceptions, factures fournisseur</p>
+<blockquote>
+<p>Captures réelles depuis l’application en production
+(<code>crm.majorautoparts.shop</code>). Les libellés correspondent
+exactement à l’interface.</p>
+</blockquote>
+<hr />
+<h2 id="table-des-matières">Table des matières</h2>
+<ol type="1">
+<li><a href="#1-avant-de-commencer">Avant de commencer</a></li>
+<li><a href="#2-connexion">Connexion</a></li>
+<li><a href="#3-catalogue-produits">Catalogue produits</a></li>
+<li><a href="#4-stocks-et-mouvements">Stocks et mouvements</a></li>
+<li><a href="#5-inventaires-physiques">Inventaires physiques</a></li>
+<li><a href="#6-fournisseurs-et-commandes">Fournisseurs et
+commandes</a></li>
+<li><a href="#7-réceptions-et-qualité">Réceptions et qualité</a></li>
+<li><a href="#8-factures-fournisseur">Factures fournisseur</a></li>
+<li><a href="#9-séparation-des-tâches-achats">Séparation des tâches
+Achats</a></li>
+<li><a href="#10-incidents-fréquents">Incidents fréquents</a></li>
+<li><a href="#11-comptes-démo">Comptes démo</a></li>
+</ol>
+<hr />
+<h2 id="avant-de-commencer">1. Avant de commencer</h2>
+<p>Le circuit P2P sépare volontairement les rôles :</p>
+<table>
+<thead>
+<tr>
+<th>Étape</th>
+<th>Qui</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Demande / commande</td>
+<td>Achats (± boutique)</td>
+</tr>
+<tr>
+<td>Approbation</td>
+<td>DAF / Direction</td>
+</tr>
+<tr>
+<td>Réception quantitative</td>
+<td><strong>Logistique</strong></td>
+</tr>
+<tr>
+<td>Qualité / mise en stock</td>
+<td><strong>Qualité / Stocks</strong></td>
+</tr>
+<tr>
+<td>Facture / matching</td>
+<td><strong>RAF / Comptable</strong></td>
+</tr>
+<tr>
+<td>Paiement</td>
+<td>Trésorerie / DAF (hors POS)</td>
+</tr>
+</tbody>
+</table>
+<p>Une même personne ne doit pas enchaîner toutes les validations
+(contrôle interne).</p>
+<hr />
+<h2 id="connexion">2. Connexion</h2>
+<ol type="1">
+<li>Se connecter sur <code>https://crm.majorautoparts.shop</code> avec
+le compte du métier (Achats, Logistique, Qualité…).</li>
+<li>Accueil selon profil : <strong>Commandes</strong>,
+<strong>Réceptions</strong>, <strong>Produits</strong>, etc.</li>
+</ol>
+<figure>
+<img src="captures/01-connexion.png" alt="Figure 1 — Connexion" />
+<figcaption aria-hidden="true">Figure 1 — Connexion</figcaption>
+</figure>
+<p><em>Figure 1 — Connexion</em></p>
+<hr />
+<h2 id="catalogue-produits">3. Catalogue produits</h2>
+<p>Menu <strong>Produits</strong> (<code>/produits</code>).</p>
+<ol type="1">
+<li>Rechercher / filtrer.</li>
+<li><strong>Nouveau produit</strong> → <strong>Créer</strong> <em>(SI /
+DG / DAF selon droits)</em>.</li>
+<li>Ou <strong>Importer</strong> / <strong>Importer CSV /
+Excel</strong>.</li>
+<li>Ouvrir une fiche <code>/produits/:id</code> pour le détail.</li>
+</ol>
+<figure>
+<img src="captures/02-produits.png" alt="Figure 2 — Catalogue" />
+<figcaption aria-hidden="true">Figure 2 — Catalogue</figcaption>
+</figure>
+<p><em>Figure 2 — Catalogue produits</em></p>
+<hr />
+<h2 id="stocks-et-mouvements">4. Stocks et mouvements</h2>
+<p>Menu <strong>Opérations</strong> → <strong>Stocks</strong>
+(<code>/stocks</code>).</p>
+<p>Actions fréquentes :</p>
+<ul>
+<li><strong>Ajuster</strong> → <strong>Enregistrer l’ajustement</strong>
+<em>(ajustement libre souvent réservé SI / DG)</em></li>
+<li><strong>Transférer</strong> → <strong>Confirmer le
+transfert</strong></li>
+<li>Lien <strong>Réception</strong> vers le module achats</li>
+<li><strong>Mouvements</strong> (<code>/stocks/operations</code>) :
+<strong>Nouveau bon</strong> → <strong>Créer le brouillon</strong></li>
+</ul>
+<figure>
+<img src="captures/03-stocks.png" alt="Figure 3 — Stocks" />
+<figcaption aria-hidden="true">Figure 3 — Stocks</figcaption>
+</figure>
+<p><em>Figure 3 — Stocks</em></p>
+<hr />
+<h2 id="inventaires-physiques">5. Inventaires physiques</h2>
+<p>Menu <strong>Opérations</strong> → <strong>Inventaires
+physiques</strong> (<code>/inventaires</code>).</p>
+<ol type="1">
+<li><strong>Ouvrir un inventaire</strong>.</li>
+<li><strong>Figer le théorique et compter</strong> (ou <strong>Reprendre
+le comptage</strong>).</li>
+<li>Saisir les quantités comptées ligne à ligne.</li>
+<li>Un <strong>tiers</strong> valide : <strong>Valider et ajuster le
+stock</strong>.</li>
+<li><strong>Annuler la session</strong> si l’inventaire est
+abandonné.</li>
+</ol>
+<blockquote>
+<p>Le compteur et le validateur ne doivent pas être la même personne
+(règle UI « tiers »).</p>
+</blockquote>
+<figure>
+<img src="captures/04-inventaire.png" alt="Figure 4 — Inventaire" />
+<figcaption aria-hidden="true">Figure 4 — Inventaire</figcaption>
+</figure>
+<p><em>Figure 4 — Inventaire physique</em></p>
+<hr />
+<h2 id="fournisseurs-et-commandes">6. Fournisseurs et commandes</h2>
+<h3 id="fournisseurs">Fournisseurs</h3>
+<p>Menu <strong>Fournisseurs</strong> (<code>/fournisseurs</code>) →
+<strong>Nouveau fournisseur</strong> → <strong>Créer</strong>.</p>
+<p>Sur la fiche : <strong>Créer un bon de commande</strong>,
+<strong>Enregistrer une réception</strong>, <strong>Enregistrer un
+paiement</strong> (selon droits).</p>
+<h3 id="planning-commandes">Planning &amp; commandes</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Écran</th>
+<th>Route</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planning &amp; sourcing</td>
+<td><code>/achats/planning</code> — <strong>Nouvelle demande</strong>,
+<strong>Soumettre</strong>, <strong>Approuver</strong></td>
+</tr>
+<tr>
+<td>Bons de commande</td>
+<td><code>/achats/commandes</code> — <strong>Nouvelle
+commande</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Sur un bon (<code>/achats/commandes/:id</code>) :
+<strong>Soumettre</strong> → <strong>Approuver</strong> →
+<strong>Confirmer</strong> → <strong>Réceptionner</strong> →
+<strong>Clôturer</strong> / <strong>Répartir vers
+boutiques</strong>.</p>
+<figure>
+<img src="captures/05-commandes.png" alt="Figure 5 — Commandes" />
+<figcaption aria-hidden="true">Figure 5 — Commandes</figcaption>
+</figure>
+<p><em>Figure 5 — Commandes d’achat</em></p>
+<hr />
+<h2 id="réceptions-et-qualité">7. Réceptions et qualité</h2>
+<p>Menu <strong>Cycle</strong> → <strong>Réceptions &amp;
+qualité</strong> (<code>/achats/receptions</code>).</p>
+<ol type="1">
+<li>Logistique : réception <strong>quantitative</strong>.</li>
+<li>Qualité : <strong>Décider la qualité</strong>.</li>
+<li><strong>Allouer un coût</strong> (si applicable).</li>
+<li><strong>Mettre en stock</strong> (putaway).</li>
+<li><strong>Préparer un retour</strong> en cas de non-conformité.</li>
+</ol>
+<figure>
+<img src="captures/06-receptions.png" alt="Figure 6 — Réceptions" />
+<figcaption aria-hidden="true">Figure 6 — Réceptions</figcaption>
+</figure>
+<p><em>Figure 6 — Réceptions &amp; qualité</em></p>
+<hr />
+<h2 id="factures-fournisseur">8. Factures fournisseur</h2>
+<p>Menu <strong>Cycle</strong> → <strong>Factures &amp;
+matching</strong> (<code>/achats/factures</code>).</p>
+<ol type="1">
+<li>Sélectionner les <strong>Réceptions à facturer</strong>.</li>
+<li><strong>Créer le brouillon</strong> (RAF).</li>
+<li>Matching / suite comptable dans <strong>Finance /
+Comptabilité</strong> selon procédure.</li>
+</ol>
+<hr />
+<h2 id="séparation-des-tâches-achats">9. Séparation des tâches
+Achats</h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Achats</th>
+<th>Logistique</th>
+<th>Qualité</th>
+<th>RAF</th>
+<th>DAF/DG</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Créer commande</td>
+<td>Oui</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Lecture / approbation</td>
+</tr>
+<tr>
+<td>Approuver</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Oui</td>
+</tr>
+<tr>
+<td>Réception quantitative</td>
+<td>—</td>
+<td>Oui</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Décision qualité / stock</td>
+<td>—</td>
+<td>—</td>
+<td>Oui</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Facture brouillon</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>Oui</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="incidents-fréquents">10. Incidents fréquents</h2>
+<table>
+<colgroup>
+<col style="width: 47%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr>
+<th>Symptôme</th>
+<th>Que faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pas de bouton <strong>Approuver</strong></td>
+<td>Compte Achats ≠ DAF/DG</td>
+</tr>
+<tr>
+<td>Impossible de <strong>Mettre en stock</strong></td>
+<td>Étape qualité non faite ou mauvais rôle</td>
+</tr>
+<tr>
+<td>Inventaire non validable</td>
+<td>Même utilisateur que le compteur — faire valider par un tiers</td>
+</tr>
+<tr>
+<td>Produit absent du POS</td>
+<td>Vérifier actif + stock boutique / emplacement</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="comptes-démo">11. Comptes démo</h2>
+<p>Mot de passe seed : <code>MotDePasse!123</code></p>
+<table>
+<thead>
+<tr>
+<th>Identifiant</th>
+<th>Rôle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>demo-achats</code></td>
+<td>Responsable achats</td>
+</tr>
+<tr>
+<td><code>demo-logistique</code></td>
+<td>Logistique / Transit</td>
+</tr>
+<tr>
+<td><code>demo-qualite</code></td>
+<td>Qualité / Stocks</td>
+</tr>
+<tr>
+<td><code>demo-raf</code></td>
+<td>RAF / Comptable</td>
+</tr>
+<tr>
+<td><code>demo-respsi</code></td>
+<td>Catalogue / structure</td>
+</tr>
+<tr>
+<td><code>demo-daf</code></td>
+<td>Approbations</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="checklist">Checklist</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />Référentiel produits à jour<br />
+</label></li>
+<li><label><input type="checkbox" />Commandes soumises puis
+approuvées<br />
+</label></li>
+<li><label><input type="checkbox" />Réceptions quantitatives + qualité
+bouclées<br />
+</label></li>
+<li><label><input type="checkbox" />Stocks ajustés / inventaires validés
+par un tiers<br />
+</label></li>
+<li><label><input type="checkbox" />Factures fournisseur
+matchées</label></li>
+</ul>
+<hr />
+<p><em>Document couvrant stocks, inventaires et cycle achats
+P2P.</em><br />
+<em>MAJOR AUTO PARTS · CaissePOS</em></p>
+</body>
+</html>

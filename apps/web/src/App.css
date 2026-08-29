@@ -1795,3 +1795,86 @@ a.odoo-user-menu-item {
   color: inherit;
   box-sizing: border-box;
 }
+
+/* Hub manuels */
+.manuels-hub {
+  padding: 20px 18px 40px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.manuels-hub-head h1 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.manuels-hub-lead {
+  margin: 8px 0 0;
+  max-width: 42rem;
+  color: var(--muted, #5c6570);
+  line-height: 1.5;
+}
+
+.manuels-hub-grid {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.manuels-hub-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 16px 18px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #dde3ea);
+  border-radius: calc(var(--radius, 8px) + 2px);
+  box-shadow: var(--shadow, 0 1px 3px rgba(0, 0, 0, 0.04));
+}
+
+.manuels-hub-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.manuels-hub-card h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.manuels-hub-card h2 a:hover {
+  color: var(--accent, #0f766e);
+}
+
+.manuels-hub-public {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent, #0f766e);
+}
+
+.manuels-hub-resume {
+  margin: 6px 0 0;
+  max-width: 36rem;
+  color: var(--muted, #5c6570);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.manuels-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+

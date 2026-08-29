@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Manuel DAF &amp; finance</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; color: #1a1c22; background: #f7f8fa; }
+  h1,h2,h3 { line-height: 1.25; color: #0f766e; }
+  h1 { font-size: 1.75rem; }
+  img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #dde3ea; box-shadow: 0 8px 24px rgba(20,23,28,.06); margin: 12px 0 4px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; background: #fff; margin: 12px 0; }
+  th, td { border: 1px solid #dde3ea; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 0.92rem; }
+  th { background: #e6f4f2; }
+  blockquote { border-left: 4px solid #0f766e; margin: 12px 0; padding: 8px 14px; background: #eef8f6; }
+  code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #1a1c22; color: #e8f5f3; padding: 12px 14px; border-radius: 8px; overflow: auto; }
+  hr { border: none; border-top: 1px solid #dde3ea; margin: 28px 0; }
+</style>
+
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Manuel DAF &amp; finance</h1>
+</header>
+<h1 id="manuel-dutilisation-daf-finance">Manuel d’utilisation — DAF
+&amp; Finance</h1>
+<p><strong>Progiciel Caisses &amp; CRM — MAJOR AUTO PARTS</strong><br />
+Public : <strong>DAF</strong>, <strong>Direction générale</strong>
+(consultation), <strong>Caissier central</strong> (finance +
+trésorerie), <strong>Contrôleur interne</strong><br />
+Périmètre : cockpit financier, résultat, stocks valorisés, trésorerie
+réseau, validation niveau 2, litiges</p>
+<blockquote>
+<p>Captures réelles depuis l’application en production
+(<code>crm.majorautoparts.shop</code>, compte <code>demo-daf</code>).
+Les libellés correspondent exactement à l’interface.</p>
+</blockquote>
+<hr />
+<h2 id="table-des-matières">Table des matières</h2>
+<ol type="1">
+<li><a href="#1-avant-de-commencer">Avant de commencer</a></li>
+<li><a href="#2-connexion">Connexion</a></li>
+<li><a href="#3-cockpit-finance">Cockpit Finance</a></li>
+<li><a href="#4-résultat-et-stocks">Résultat et stocks</a></li>
+<li><a href="#5-trésorerie-réseau">Trésorerie réseau</a></li>
+<li><a href="#6-validation-des-versements-niveau-2">Validation des
+versements (niveau 2)</a></li>
+<li><a href="#7-alertes-et-litiges">Alertes et litiges</a></li>
+<li><a href="#8-achats--comptabilité-aperçu">Achats &amp; comptabilité
+(aperçu)</a></li>
+<li><a href="#9-ce-que-le-daf-ne-fait-pas">Ce que le DAF ne fait
+pas</a></li>
+<li><a href="#10-incidents-fréquents">Incidents fréquents</a></li>
+<li><a href="#11-comptes-démo">Comptes démo</a></li>
+</ol>
+<hr />
+<h2 id="avant-de-commencer">1. Avant de commencer</h2>
+<h3 id="rôles">Rôles</h3>
+<table>
+<colgroup>
+<col style="width: 17%" />
+<col style="width: 50%" />
+<col style="width: 32%" />
+</colgroup>
+<thead>
+<tr>
+<th>Rôle</th>
+<th>Accueil typique</th>
+<th>Périmètre</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>DAF</strong></td>
+<td><code>/finance</code></td>
+<td>Réseau entier — validation niveau 2</td>
+</tr>
+<tr>
+<td><strong>Direction générale</strong></td>
+<td><code>/finance</code></td>
+<td>Consultation ; seuils exceptionnels</td>
+</tr>
+<tr>
+<td><strong>Caissier central</strong></td>
+<td>Finance / Trésorerie</td>
+<td>Réception / rapprochement opérationnel</td>
+</tr>
+<tr>
+<td><strong>Contrôleur interne</strong></td>
+<td>Finance / Litiges / Audit</td>
+<td>Lecture + régularisation litiges</td>
+</tr>
+</tbody>
+</table>
+<h3 id="règle-dor">Règle d’or</h3>
+<p>Le DAF <strong>ne tient pas la caisse boutique</strong>.<br />
+Il <strong>peut</strong> réceptionner / valider les versements magasin →
+centrale (comme le Caissier central), et pilote le
+<strong>cockpit</strong> consolidé.</p>
+<hr />
+<h2 id="connexion">2. Connexion</h2>
+<ol type="1">
+<li><code>https://crm.majorautoparts.shop</code></li>
+<li>Compte DAF (ex. <code>demo-daf</code> en démo).</li>
+<li>Accueil <strong>Finance</strong>.</li>
+</ol>
+<figure>
+<img src="captures/01-connexion.png" alt="Figure 1 — Connexion" />
+<figcaption aria-hidden="true">Figure 1 — Connexion</figcaption>
+</figure>
+<p><em>Figure 1 — Connexion</em></p>
+<hr />
+<h2 id="cockpit-finance">3. Cockpit Finance</h2>
+<p>Route : <code>/finance</code>.</p>
+<p>Onglets / sections typiques :</p>
+<ul>
+<li><strong>Vue</strong> — synthèse réseau</li>
+<li><strong>Résultat</strong> — CA net, CMV, marge brute, par boutique /
+mode de paiement</li>
+<li><strong>Stocks</strong> — valeur, ruptures, sous-seuil, santé</li>
+<li><strong>Trésorerie</strong> — soldes magasins / tiroirs / centrale,
+runway</li>
+</ul>
+<p>Filtres éventuels : magasin / siège (périmètre).</p>
+<p>Exports CSV disponibles selon boutons <strong>Exporter</strong> /
+icône téléchargement.</p>
+<figure>
+<img src="captures/02-finance-vue.png"
+alt="Figure 2 — Cockpit Finance" />
+<figcaption aria-hidden="true">Figure 2 — Cockpit Finance</figcaption>
+</figure>
+<p><em>Figure 2 — Cockpit Finance</em></p>
+<hr />
+<h2 id="résultat-et-stocks">4. Résultat et stocks</h2>
+<h3 id="résultat">Résultat</h3>
+<ul>
+<li>Suivre <strong>CA net</strong>, <strong>marge brute</strong>,
+<strong>taux de marge</strong>.</li>
+<li>Ventilation <strong>par boutique</strong> et <strong>par mode de
+paiement</strong>.</li>
+<li>Croiser avec le reporting ventes si besoin
+(<code>/ventes/reporting</code>).</li>
+</ul>
+<h3 id="stocks-valorisés">Stocks valorisés</h3>
+<ul>
+<li><strong>Valeur totale</strong>, <strong>ruptures</strong>, articles
+<strong>sous seuil</strong>.</li>
+<li>Santé stock et couverture médiane.</li>
+<li>Drill-down par boutique.</li>
+</ul>
+<figure>
+<img src="captures/03-resultat-stocks.png"
+alt="Figure 3 — Résultat / stocks" />
+<figcaption aria-hidden="true">Figure 3 — Résultat / stocks</figcaption>
+</figure>
+<p><em>Figure 3 — Indicateurs résultat ou stocks</em></p>
+<hr />
+<h2 id="trésorerie-réseau">5. Trésorerie réseau</h2>
+<p>Depuis Finance (onglet trésorerie) ou menu
+<strong>Trésorerie</strong> (<code>/tresorerie</code>) :</p>
+<ul>
+<li>Soldes consolidés</li>
+<li>Pipeline des versements (§6.4)</li>
+<li>Ageing / retards</li>
+<li>Alertes trésorerie</li>
+</ul>
+<p>Raccourcis : <strong>Réception DAF</strong>,
+<strong>Litiges</strong>, <strong>Caisses</strong>.</p>
+<figure>
+<img src="captures/04-tresorerie.png" alt="Figure 4 — Trésorerie" />
+<figcaption aria-hidden="true">Figure 4 — Trésorerie</figcaption>
+</figure>
+<p><em>Figure 4 — Trésorerie réseau</em></p>
+<hr />
+<h2 id="validation-des-versements-niveau-2">6. Validation des versements
+(niveau 2)</h2>
+<p>Même workflow que le Caissier central (voir aussi le <em>Manuel
+trésorerie centrale</em>) :</p>
+<ol type="1">
+<li><strong>Trésorerie</strong> → <strong>Réception DAF</strong></li>
+<li>Ouvrir un versement <strong>En transit</strong></li>
+<li><strong>Réceptionner (DAF / Caissier central)</strong></li>
+<li><strong>Rapprocher</strong> → <strong>Validée</strong> ou
+<strong>Litige</strong></li>
+</ol>
+<p>Le DAF intervient aussi pour les <strong>seuils / validations de
+niveau 2</strong> et le pilotage des retards.</p>
+<figure>
+<img src="captures/05-reception-daf.png"
+alt="Figure 5 — Réception DAF" />
+<figcaption aria-hidden="true">Figure 5 — Réception DAF</figcaption>
+</figure>
+<p><em>Figure 5 — Réception / validation</em></p>
+<hr />
+<h2 id="alertes-et-litiges">7. Alertes et litiges</h2>
+<ul>
+<li>Menu <strong>Alertes</strong> (<code>/alertes</code>) : écarts de
+caisse, versements en retard, accès refusés (§6.7).</li>
+<li><strong>Litiges</strong> (<code>/litiges</code>) :
+<strong>Régulariser → VALIDÉE</strong> avec motif (DAF / Contrôle).</li>
+</ul>
+<figure>
+<img src="captures/06-alertes-litiges.png"
+alt="Figure 6 — Alertes / litiges" />
+<figcaption aria-hidden="true">Figure 6 — Alertes / litiges</figcaption>
+</figure>
+<p><em>Figure 6 — Alertes ou litiges</em></p>
+<hr />
+<h2 id="achats-comptabilité-aperçu">8. Achats &amp; comptabilité
+(aperçu)</h2>
+<p>Le DAF dispose aussi, selon menu :</p>
+<table>
+<thead>
+<tr>
+<th>Domaine</th>
+<th>Routes utiles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Approbation commandes</td>
+<td><code>/achats/commandes</code>, <code>/achats/planning</code></td>
+</tr>
+<tr>
+<td>Factures fournisseur</td>
+<td><code>/achats/factures</code></td>
+</tr>
+<tr>
+<td>Comptabilité</td>
+<td><code>/finance/comptabilite</code></td>
+</tr>
+</tbody>
+</table>
+<p>Détail opérationnel Achats : voir le <em>Manuel Stocks &amp;
+Achats</em>.</p>
+<hr />
+<h2 id="ce-que-le-daf-ne-fait-pas">9. Ce que le DAF ne fait pas</h2>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>DAF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Encaisser en boutique</td>
+<td>Non</td>
+</tr>
+<tr>
+<td>Configurer le SI (zones, users)</td>
+<td>Non (Responsable SI)</td>
+</tr>
+<tr>
+<td>Admin campagnes CRM</td>
+<td>Non (Responsable CRM)</td>
+</tr>
+<tr>
+<td>Réceptionner / valider versements</td>
+<td><strong>Oui</strong></td>
+</tr>
+<tr>
+<td>Piloter résultat / stocks / cash</td>
+<td><strong>Oui</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="incidents-fréquents">10. Incidents fréquents</h2>
+<table>
+<thead>
+<tr>
+<th>Symptôme</th>
+<th>Que faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chiffres Finance vides</td>
+<td>Vérifier période / filtre magasin-siège</td>
+</tr>
+<tr>
+<td>Versement bloqué En transit</td>
+<td>Traiter <strong>Réception DAF</strong></td>
+</tr>
+<tr>
+<td>Litige ouvert</td>
+<td>Régulariser avec motif documenté</td>
+</tr>
+<tr>
+<td>Export CSV indisponible</td>
+<td>Droits rôle / période trop large</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="comptes-démo">11. Comptes démo</h2>
+<p>Mot de passe seed : <code>MotDePasse!123</code></p>
+<table>
+<thead>
+<tr>
+<th>Identifiant</th>
+<th>Rôle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>demo-daf</code></td>
+<td>DAF</td>
+</tr>
+<tr>
+<td><code>demo-dg</code></td>
+<td>Direction générale</td>
+</tr>
+<tr>
+<td><code>demo-central</code></td>
+<td>Caissier central</td>
+</tr>
+<tr>
+<td><code>demo-controle</code></td>
+<td>Contrôleur interne</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="checklist-daf-périodique">Checklist DAF (périodique)</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />Cockpit <strong>Finance</strong>
+(résultat, stocks, cash)<br />
+</label></li>
+<li><label><input type="checkbox" />File <strong>Réception DAF</strong>
+à jour<br />
+</label></li>
+<li><label><input type="checkbox" /><strong>Litiges</strong> et
+<strong>Alertes</strong> traités<br />
+</label></li>
+<li><label><input type="checkbox" />Approbations achats en attente<br />
+</label></li>
+<li><label><input type="checkbox" />Exports / reporting pour la
+Direction</label></li>
+</ul>
+<hr />
+<p><em>Document couvrant le pilotage DAF (§4, §6.2, §6.4,
+reporting).</em><br />
+<em>MAJOR AUTO PARTS · CaissePOS</em></p>
+</body>
+</html>

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Manuel CRM</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; color: #1a1c22; background: #f7f8fa; }
+  h1,h2,h3 { line-height: 1.25; color: #0f766e; }
+  h1 { font-size: 1.75rem; }
+  img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #dde3ea; box-shadow: 0 8px 24px rgba(20,23,28,.06); margin: 12px 0 4px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; background: #fff; margin: 12px 0; }
+  th, td { border: 1px solid #dde3ea; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 0.92rem; }
+  th { background: #e6f4f2; }
+  blockquote { border-left: 4px solid #0f766e; margin: 12px 0; padding: 8px 14px; background: #eef8f6; }
+  code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #1a1c22; color: #e8f5f3; padding: 12px 14px; border-radius: 8px; overflow: auto; }
+  hr { border: none; border-top: 1px solid #dde3ea; margin: 28px 0; }
+</style>
+
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Manuel CRM</h1>
+</header>
+<h1 id="manuel-dutilisation-module-crm">Manuel d’utilisation — Module
+CRM</h1>
+<p><strong>Progiciel Caisses &amp; CRM — MAJOR AUTO PARTS</strong><br />
+Public : <strong>Responsable commercial / CRM</strong> (et lecture
+Direction / DAF selon droits)<br />
+Périmètre : fiches clients, interactions, fidélité, segmentation,
+campagnes, pilotage (§6.6)</p>
+<blockquote>
+<p>Captures réelles depuis l’application en production
+(<code>crm.majorautoparts.shop</code>, compte <code>demo-crm</code>).
+Les libellés correspondent exactement à l’interface.</p>
+</blockquote>
+<hr />
+<h2 id="table-des-matières">Table des matières</h2>
+<ol type="1">
+<li><a href="#1-avant-de-commencer">Avant de commencer</a></li>
+<li><a href="#2-connexion">Connexion</a></li>
+<li><a href="#3-liste-des-clients">Liste des clients</a></li>
+<li><a href="#4-fiche-client">Fiche client</a></li>
+<li><a href="#5-interactions">Interactions</a></li>
+<li><a href="#6-fidélité-et-segmentation">Fidélité et
+segmentation</a></li>
+<li><a href="#7-campagnes">Campagnes</a></li>
+<li><a href="#8-pilotage-et-paramètres">Pilotage et paramètres</a></li>
+<li><a href="#9-ce-que-le-crm-ne-gère-pas">Ce que le CRM ne gère
+pas</a></li>
+<li><a href="#10-incidents-fréquents">Incidents fréquents</a></li>
+<li><a href="#11-comptes-démo">Comptes démo</a></li>
+</ol>
+<hr />
+<h2 id="avant-de-commencer">1. Avant de commencer</h2>
+<h3 id="rôles-concernés">Rôles concernés</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 66%" />
+</colgroup>
+<thead>
+<tr>
+<th>Rôle</th>
+<th>Peut faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Responsable CRM</strong></td>
+<td>Module complet : créer/modifier, fidélité, campagnes,
+paramètres</td>
+</tr>
+<tr>
+<td><strong>Caissier / Resp. boutique</strong></td>
+<td>Créer un client + tracer une interaction (pas d’admin
+campagnes)</td>
+</tr>
+<tr>
+<td><strong>DG / DAF / Central / Contrôle</strong></td>
+<td>Lecture (pilotage / campagnes selon profil)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="règles-métier-clés-6.6">Règles métier clés (§6.6)</h3>
+<ul>
+<li>Fiche client <strong>unique</strong> et consolidée réseau
+(historique visible depuis n’importe quelle boutique).</li>
+<li>Rattachement client à une vente POS = <strong>optionnel</strong> —
+la vente anonyme reste toujours possible.</li>
+<li>Segmentation et paliers de fidélité sont
+<strong>paramétrables</strong>.</li>
+</ul>
+<hr />
+<h2 id="connexion">2. Connexion</h2>
+<ol type="1">
+<li>Ouvrir <code>https://crm.majorautoparts.shop</code>.</li>
+<li>Se connecter avec un compte CRM (ex. <code>demo-crm</code> en
+démo).</li>
+<li>Accueil : <strong>Clients</strong> (<code>/clients</code>).</li>
+</ol>
+<figure>
+<img src="captures/01-connexion.png" alt="Figure 1 — Connexion" />
+<figcaption aria-hidden="true">Figure 1 — Connexion</figcaption>
+</figure>
+<p><em>Figure 1 — Connexion</em></p>
+<hr />
+<h2 id="liste-des-clients">3. Liste des clients</h2>
+<p>Menu <strong>Clients</strong> (<code>/clients</code>).</p>
+<ol type="1">
+<li>Filtrer par <strong>Segment</strong> (Nouveau / Régulier / VIP) si
+besoin.</li>
+<li>Rechercher par nom ou téléphone.</li>
+<li>Cliquer une ligne pour ouvrir la fiche.</li>
+<li><strong>Nouveau client</strong> → renseigner le type (physique /
+morale) → <strong>Créer le client</strong>.</li>
+</ol>
+<figure>
+<img src="captures/02-clients-liste.png"
+alt="Figure 2 — Liste clients" />
+<figcaption aria-hidden="true">Figure 2 — Liste clients</figcaption>
+</figure>
+<p><em>Figure 2 — Liste des clients</em></p>
+<hr />
+<h2 id="fiche-client">4. Fiche client</h2>
+<p>Route : <code>/clients/:clientId</code>.</p>
+<p>Onglets typiques : <strong>Vue d’ensemble</strong> ·
+<strong>Identité</strong> · <strong>Achats</strong> ·
+<strong>Devis</strong> · <strong>Factures</strong> ·
+<strong>Fidélité</strong> · <strong>Interactions</strong>.</p>
+<p>Actions fréquentes :</p>
+<ul>
+<li><strong>Modifier</strong> / <strong>Enregistrer</strong>
+(Responsable CRM)</li>
+<li><strong>Recalculer le segment</strong></li>
+<li><strong>Interaction</strong> (raccourci saisie)</li>
+<li>Fidélité : <strong>Créditer des points</strong> /
+<strong>Créditer</strong> (CRM seul)</li>
+</ul>
+<figure>
+<img src="captures/03-fiche-client.png" alt="Figure 3 — Fiche client" />
+<figcaption aria-hidden="true">Figure 3 — Fiche client</figcaption>
+</figure>
+<p><em>Figure 3 — Fiche client</em></p>
+<hr />
+<h2 id="interactions">5. Interactions</h2>
+<p>Menu <strong>Animation</strong> → <strong>Interactions</strong>
+(<code>/clients/interactions</code>), ou depuis la fiche.</p>
+<ol type="1">
+<li>Choisir le client (si pas déjà sur la fiche).</li>
+<li>Sélectionner le <strong>canal</strong> et le motif /
+commentaire.</li>
+<li><strong>Enregistrer</strong> / <strong>Enregistrer
+l’interaction</strong>.</li>
+</ol>
+<p>Le journal consolide l’historique réseau.</p>
+<figure>
+<img src="captures/04-interactions.png" alt="Figure 4 — Interactions" />
+<figcaption aria-hidden="true">Figure 4 — Interactions</figcaption>
+</figure>
+<p><em>Figure 4 — Interactions CRM</em></p>
+<hr />
+<h2 id="fidélité-et-segmentation">6. Fidélité et segmentation</h2>
+<h3 id="fidélité">Fidélité</h3>
+<p>Menu <strong>Animation</strong> → <strong>Fidélité</strong>
+(<code>/clients/fidelite</code>).</p>
+<ul>
+<li>Filtrer par <strong>Palier</strong> : Bronze / Argent / Or.</li>
+<li>Les points peuvent aussi être crédités depuis la fiche client.</li>
+</ul>
+<h3 id="segmentation">Segmentation</h3>
+<p>Menu <strong>Animation</strong> → <strong>Segmentation</strong>
+(<code>/clients/segmentation</code>).</p>
+<ul>
+<li>Vue des segments paramétrés.</li>
+<li>Action ligne : <strong>Recalculer</strong>.</li>
+</ul>
+<figure>
+<img src="captures/05-fidelite-segmentation.png"
+alt="Figure 5 — Fidélité / segmentation" />
+<figcaption aria-hidden="true">Figure 5 — Fidélité /
+segmentation</figcaption>
+</figure>
+<p><em>Figure 5 — Fidélité ou segmentation</em></p>
+<hr />
+<h2 id="campagnes">7. Campagnes</h2>
+<p>Menu <strong>Animation</strong> → <strong>Campagnes</strong>
+(<code>/campagnes</code>).</p>
+<ol type="1">
+<li><strong>Nouvelle campagne</strong> → définir segment / palier /
+canal.</li>
+<li><strong>Créer la campagne</strong>.</li>
+<li><strong>Voir les contacts ciblés</strong>.</li>
+<li><strong>Exporter CSV</strong> et/ou <strong>Envoyer la
+campagne</strong> (Responsable CRM).</li>
+</ol>
+<figure>
+<img src="captures/06-campagnes.png" alt="Figure 6 — Campagnes" />
+<figcaption aria-hidden="true">Figure 6 — Campagnes</figcaption>
+</figure>
+<p><em>Figure 6 — Campagnes</em></p>
+<hr />
+<h2 id="pilotage-et-paramètres">8. Pilotage et paramètres</h2>
+<table>
+<colgroup>
+<col style="width: 31%" />
+<col style="width: 31%" />
+<col style="width: 36%" />
+</colgroup>
+<thead>
+<tr>
+<th>Écran</th>
+<th>Route</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pilotage CRM</strong></td>
+<td><code>/clients/pilotage</code></td>
+<td>KPIs segments, paliers, campagnes</td>
+</tr>
+<tr>
+<td><strong>Paramètres CRM</strong></td>
+<td><code>/clients/parametres</code></td>
+<td>Paliers Bronze/Argent/Or, segments —
+<strong>Enregistrer</strong></td>
+</tr>
+<tr>
+<td><strong>Croissance boutique</strong></td>
+<td><code>/clients/croissance</code></td>
+<td>Funnel AARRR (souvent Direction / DAF)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="ce-que-le-crm-ne-gère-pas">9. Ce que le CRM ne gère pas</h2>
+<table>
+<thead>
+<tr>
+<th>Domaine</th>
+<th>CRM</th>
+<th>Autre module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Encaissement POS</td>
+<td>Non</td>
+<td>Caisse boutique</td>
+</tr>
+<tr>
+<td>Stocks / achats</td>
+<td>Non</td>
+<td>Stocks &amp; Achats</td>
+</tr>
+<tr>
+<td>Réception / validation fonds</td>
+<td>Non</td>
+<td>Trésorerie centrale</td>
+</tr>
+<tr>
+<td>Création utilisateurs</td>
+<td>Non</td>
+<td>Responsable SI</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="incidents-fréquents">10. Incidents fréquents</h2>
+<table>
+<colgroup>
+<col style="width: 47%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr>
+<th>Symptôme</th>
+<th>Que faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pas de bouton <strong>Nouveau client</strong></td>
+<td>Rôle lecture seule</td>
+</tr>
+<tr>
+<td>Impossible de <strong>Créditer</strong> des points</td>
+<td>Réservé Responsable CRM</td>
+</tr>
+<tr>
+<td>Campagne absente du menu</td>
+<td>Profil boutique sans campagnes</td>
+</tr>
+<tr>
+<td>Segment inchangé</td>
+<td>Utiliser <strong>Recalculer le segment</strong> après mise à
+jour</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="comptes-démo">11. Comptes démo</h2>
+<p>Mot de passe seed : <code>MotDePasse!123</code></p>
+<table>
+<thead>
+<tr>
+<th>Identifiant</th>
+<th>Rôle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>demo-crm</code></td>
+<td>Responsable CRM (manuel cible)</td>
+</tr>
+<tr>
+<td><code>demo-pos-caissier</code></td>
+<td>Création client + interaction boutique</td>
+</tr>
+<tr>
+<td><code>demo-daf</code></td>
+<td>Lecture / pilotage</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="checklist-crm">Checklist CRM</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />Fiches à jour (identité,
+téléphone)<br />
+</label></li>
+<li><label><input type="checkbox" />Interactions saisies après chaque
+contact important<br />
+</label></li>
+<li><label><input type="checkbox" />Segments / paliers cohérents
+(recalcul si besoin)<br />
+</label></li>
+<li><label><input type="checkbox" />Campagnes ciblées exportées /
+envoyées<br />
+</label></li>
+<li><label><input type="checkbox" />Consulter <strong>Pilotage
+CRM</strong> périodiquement</label></li>
+</ul>
+<hr />
+<p><em>Document couvrant le module CRM §6.6.</em><br />
+<em>MAJOR AUTO PARTS · CaissePOS</em></p>
+</body>
+</html>

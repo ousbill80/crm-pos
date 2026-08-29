@@ -29,7 +29,14 @@ import { InventairesPage } from './routes/InventairesPage';
 import { InventaireDetailPage } from './routes/InventaireDetailPage';
 import { OperationsStockPage } from './routes/OperationsStockPage';
 import { BonStockDetailPage } from './routes/BonStockDetailPage';
-import { ManuelCaissePage } from './routes/ManuelCaissePage';
+import { ManuelsPage } from './routes/ManuelsPage';
+import {
+  ManuelCaissePage,
+  ManuelCrmPage,
+  ManuelDafFinancePage,
+  ManuelStocksAchatsPage,
+  ManuelTresorerieCentralePage,
+} from './routes/manuelPages';
 import { LoginPage } from './routes/LoginPage';
 import { PosPage } from './routes/PosPage';
 import { ProduitsPage } from './routes/ProduitsPage';
@@ -141,7 +148,18 @@ function App() {
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/audit/controle-coherence" element={<ControleCoherencePage />} />
         <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
+        <Route path="/manuels" element={<ManuelsPage />} />
         <Route path="/manuel-caisse" element={<ManuelCaissePage />} />
+        <Route
+          path="/manuels/tresorerie-centrale"
+          element={<ManuelTresorerieCentralePage />}
+        />
+        <Route path="/manuels/crm" element={<ManuelCrmPage />} />
+        <Route
+          path="/manuels/stocks-achats"
+          element={<ManuelStocksAchatsPage />}
+        />
+        <Route path="/manuels/daf-finance" element={<ManuelDafFinancePage />} />
         <Route path="/pos" element={<PosPage />} />
       </Route>
     </Routes>
