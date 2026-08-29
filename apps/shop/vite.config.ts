@@ -106,13 +106,15 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        // SW désactivé en dev Vite (HMR) — actif en build / preview / prod.
-        enabled: false,
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html',
       },
     }),
   ],
   server: {
     port: 5174,
+    host: true,
     proxy: {
       // Dev : ShopModule est monté dans l’API interne (port 3000).
       '/shop': { target: 'http://localhost:3000', changeOrigin: true },

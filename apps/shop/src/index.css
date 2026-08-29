@@ -5746,6 +5746,43 @@ textarea:focus {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
+.pwa-install-sheet {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 90;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  background: #16181f;
+  color: #f4f5f7;
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+}
+
+.pwa-install-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: #1a1c22;
+}
+
+.pwa-install-sheet .pwa-banner-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.pwa-install-sheet .pwa-banner-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
 .pwa-banner-copy {
   display: flex;
   flex-direction: column;

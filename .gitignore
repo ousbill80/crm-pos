@@ -1,6 +1,7 @@
 node_modules/
 dist/
 apps/web/dev-dist/
+apps/shop/dev-dist/
 apps/mobile/dist-p2p-*/
 build/
 .env

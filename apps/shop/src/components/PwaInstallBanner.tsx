@@ -12,14 +12,37 @@ function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
-    // iOS Safari
-    ('standalone' in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
+    ('standalone' in navigator &&
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
   );
 }
 
+/** Téléphone / tablette tactile — pas le bureau. */
+export function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/Mobi|Android.+Mobile|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+    return true;
+  }
+  if (/iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    return true;
+  }
+  const hints = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  if (hints.userAgentData?.mobile) return true;
+  return window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
+}
+
+function isIosSafari(): boolean {
+  const ua = navigator.userAgent;
+  const ios =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome|Chromium|Edg/.test(ua);
+  return ios && safari;
+}
+
 /**
- * Bannière PWA : propose l’installation (beforeinstallprompt) et
- * le rechargement quand un nouveau service worker est prêt.
+ * Invite PWA sur mobile : installer l’app, plus mise à jour du service worker.
  */
 export function PwaInstallBanner() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
@@ -32,7 +55,6 @@ export function PwaInstallBanner() {
   } = useRegisterSW({
     onRegisteredSW(swUrl, registration) {
       if (!registration) return;
-      // Vérifie les mises à jour périodiquement (onglet ouvert longtemps).
       window.setInterval(() => {
         void registration.update();
       }, 60 * 60 * 1000);
@@ -42,27 +64,36 @@ export function PwaInstallBanner() {
 
   useEffect(() => {
     if (isStandalone()) return;
+    if (!isMobileDevice()) return;
     if (localStorage.getItem(DISMISS_KEY) === '1') return;
 
-    const ua = navigator.userAgent;
-    const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|Chrome/.test(ua);
+    const ios = isIosSafari();
 
     function onBeforeInstall(e: Event) {
       e.preventDefault();
       setDeferred(e as BeforeInstallPromptEvent);
-      setShowInstall(true);
       setIosHint(false);
+      setShowInstall(true);
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
 
-    if (isIos && isSafari) {
-      setIosHint(true);
-      setShowInstall(true);
-    }
+    const onInstalled = () => {
+      setShowInstall(false);
+      setDeferred(null);
+    };
+    window.addEventListener('appinstalled', onInstalled);
 
-    return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+    const timer = window.setTimeout(() => {
+      setIosHint(ios);
+      setShowInstall(true);
+    }, 1400);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
   }, []);
 
   function dismissInstall() {
@@ -82,47 +113,50 @@ export function PwaInstallBanner() {
     setDeferred(null);
   }
 
-  if (needRefresh) {
-    return (
-      <div className="pwa-banner" role="status">
-        <div className="pwa-banner-copy">
-          <strong>Mise à jour disponible</strong>
-          <span>Une nouvelle version de la boutique est prête.</span>
-        </div>
-        <div className="pwa-banner-actions">
-          <button type="button" className="pwa-btn" onClick={() => void updateServiceWorker(true)}>
-            Actualiser
-          </button>
-          <button type="button" className="pwa-btn ghost" onClick={() => setNeedRefresh(false)}>
-            Plus tard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!showInstall) return null;
+  const hint = iosHint
+    ? 'Sur iPhone : bouton Partager, puis « Sur l’écran d’accueil ».'
+    : deferred
+      ? 'Ajoutez MAJOR à l’écran d’accueil pour un accès plus rapide.'
+      : 'Menu du navigateur → Installer l’application / Ajouter à l’écran d’accueil.';
 
   return (
-    <div className="pwa-banner" role="region" aria-label="Installer l’application">
-      <div className="pwa-banner-copy">
-        <strong>Installer MAJOR</strong>
-        <span>
-          {iosHint
-            ? 'Sur iPhone : Partager → Sur l’écran d’accueil.'
-            : 'Ajoutez la boutique à l’écran d’accueil pour un accès rapide.'}
-        </span>
-      </div>
-      <div className="pwa-banner-actions">
-        {deferred && (
-          <button type="button" className="pwa-btn" onClick={() => void install()}>
-            Installer
-          </button>
-        )}
-        <button type="button" className="pwa-btn ghost" onClick={dismissInstall}>
-          Fermer
-        </button>
-      </div>
-    </div>
+    <>
+      {needRefresh && (
+        <div className="pwa-banner" role="status">
+          <div className="pwa-banner-copy">
+            <strong>Mise à jour disponible</strong>
+            <span>Une nouvelle version de la boutique est prête.</span>
+          </div>
+          <div className="pwa-banner-actions">
+            <button type="button" className="pwa-btn" onClick={() => void updateServiceWorker(true)}>
+              Actualiser
+            </button>
+            <button type="button" className="pwa-btn ghost" onClick={() => setNeedRefresh(false)}>
+              Plus tard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showInstall && (
+        <div className="pwa-install-sheet" role="dialog" aria-label="Installer l’application">
+          <img className="pwa-install-icon" src="/icons/icon-192.png" width={52} height={52} alt="" />
+          <div className="pwa-banner-copy">
+            <strong>Installer l’app MAJOR</strong>
+            <span>{hint}</span>
+          </div>
+          <div className="pwa-banner-actions">
+            {deferred && (
+              <button type="button" className="pwa-btn" onClick={() => void install()}>
+                Installer
+              </button>
+            )}
+            <button type="button" className="pwa-btn ghost" onClick={dismissInstall}>
+              Plus tard
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
