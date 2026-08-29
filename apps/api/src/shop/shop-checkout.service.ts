@@ -19,6 +19,7 @@ import type { CheckoutShopDto } from './dto/shop-checkout.dto';
 import {
   ModeFulfillmentCommandeWeb,
   ModeReglementCommandeWeb,
+  ProviderPspShop,
   StatutCommandeWeb,
 } from '@caisse-crm/shared';
 import { ShopOrderLifecycleService } from './shop-order-lifecycle.service';
@@ -273,6 +274,16 @@ export class ShopCheckoutService {
     };
   }
 
+  async getModesReglement() {
+    const params = await this.shopBase.assertShopActif();
+    return {
+      paiementRetraitActif: params.paiementRetraitActif,
+      paiementLivraisonActif: params.paiementLivraisonActif,
+      retraitActif: params.retraitActif,
+      livraisonActive: params.livraisonActive,
+    };
+  }
+
   async getStatut(commandeIdOrRef: string) {
     const commande = await this.prisma.commandeWeb.findFirst({
       where: {
@@ -321,6 +332,7 @@ export class ShopCheckoutService {
       statut: commande.statut,
       modeFulfillment: commande.modeFulfillment,
       modeReglement: commande.modeReglement,
+      providerPsp: commande.providerPsp,
       montantArticlesTtc: Number(commande.montantArticlesTtc),
       fraisLivraison: Number(commande.fraisLivraison),
       montantTotal: Number(commande.montantTotal),
@@ -409,7 +421,7 @@ export class ShopCheckoutService {
       dto.modeReglement === ModeReglementCommandeWeb.PREPAYE_PSP &&
       !dto.providerPsp
     ) {
-      throw new BadRequestException('Provider PSP requis pour le prépaiement.');
+      dto.providerPsp = ProviderPspShop.PAYSTACK;
     }
   }
 }

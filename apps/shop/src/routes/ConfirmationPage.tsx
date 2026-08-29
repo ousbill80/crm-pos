@@ -32,7 +32,6 @@ export default function ConfirmationPage() {
     params.get('reference') || params.get('trxref') || params.get('ref');
   const lookup = commandeId || ref;
   const sandboxTried = useRef(false);
-  const verifyTried = useRef(false);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -46,17 +45,6 @@ export default function ConfirmationPage() {
       .catch(() => undefined);
   }, [sandbox, lookup, qc]);
 
-  useEffect(() => {
-    if (sandbox || !lookup || !paystackRef || verifyTried.current) return;
-    verifyTried.current = true;
-    void shopFetch(`/shop/commandes/${lookup}/confirmer-paiement`, {
-      method: 'POST',
-      body: JSON.stringify({ reference: paystackRef }),
-    })
-      .then(() => qc.invalidateQueries({ queryKey: ['statut', lookup] }))
-      .catch(() => undefined);
-  }, [sandbox, lookup, paystackRef, qc]);
-
   const { data, isLoading, isError } = useQuery({
     queryKey: ['statut', lookup],
     queryFn: () =>
@@ -68,6 +56,17 @@ export default function ConfirmationPage() {
       return false;
     },
   });
+
+  useEffect(() => {
+    if (sandbox || !lookup || !paystackRef) return;
+    if (data?.statut && data.statut !== 'EN_ATTENTE_PAIEMENT') return;
+    void shopFetch(`/shop/commandes/${lookup}/confirmer-paiement`, {
+      method: 'POST',
+      body: JSON.stringify({ reference: paystackRef }),
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ['statut', lookup] }))
+      .catch(() => undefined);
+  }, [sandbox, lookup, paystackRef, data?.statut, qc]);
 
   const statut = data?.statut;
   const suiviToken = tokenParam || data?.suiviToken || '';

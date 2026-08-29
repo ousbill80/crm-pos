@@ -5,14 +5,15 @@ const base = import.meta.env.VITE_API_URL ?? '';
 
 function shopErrorMessage(
   err: { message?: string | string[] },
-  status: number,
+  _status: number,
   path: string,
 ) {
   const raw = Array.isArray(err.message) ? err.message.join(', ') : err.message;
-  if (status >= 500 || !raw || /^internal server error$/i.test(raw)) {
+  if (!raw || /^internal server error$/i.test(raw)) {
     const isPaiement =
       path.includes('/payer') ||
       path.includes('/checkout') ||
+      path.includes('/confirmer-paiement') ||
       path.includes('/webhooks/') ||
       path.includes('/sandbox-confirmer');
     return isPaiement

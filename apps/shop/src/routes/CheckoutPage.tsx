@@ -11,7 +11,7 @@ import {
 import { isValidPhoneE164, PhoneInput } from '../components/PhoneInput';
 
 type Mode = 'RETRAIT_BOUTIQUE' | 'LIVRAISON';
-type Reglement = 'PREPAYE_PSP' | 'PAIEMENT_RETRAIT';
+type Reglement = 'PREPAYE_PSP' | 'PAIEMENT_RETRAIT' | 'PAIEMENT_LIVRAISON';
 
 type CompteProfil = {
   email: string;
@@ -106,6 +106,36 @@ function OrderSummary({
   );
 }
 
+const PENDING_PAY_KEY = 'shop_pending_pay';
+
+function readPendingPay(): { id: string; token: string | null } | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_PAY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string; token?: string | null };
+    if (!parsed.id) return null;
+    return { id: parsed.id, token: parsed.token ?? null };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingPay(id: string, token: string | null) {
+  try {
+    sessionStorage.setItem(PENDING_PAY_KEY, JSON.stringify({ id, token }));
+  } catch {
+    /* private mode */
+  }
+}
+
+function clearPendingPay() {
+  try {
+    sessionStorage.removeItem(PENDING_PAY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function CheckoutPage() {
   const nav = useNavigate();
   const { panier, isLoading: cartLoading, ensurePanier } = useCart();
@@ -131,10 +161,10 @@ export default function CheckoutPage() {
   const [note, setNote] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [pendingCommandeId, setPendingCommandeId] = useState<string | null>(
-    null,
+    () => readPendingPay()?.id ?? null,
   );
   const [pendingSuiviToken, setPendingSuiviToken] = useState<string | null>(
-    null,
+    () => readPendingPay()?.token ?? null,
   );
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [profilHydrated, setProfilHydrated] = useState(false);
@@ -196,6 +226,19 @@ export default function CheckoutPage() {
     queryKey: ['boutiques-retrait'],
     queryFn: () => shopFetch<BoutiqueRetrait[]>('/shop/retrait/boutiques'),
   });
+  const { data: modesReglement } = useQuery({
+    queryKey: ['shop-reglements'],
+    queryFn: () =>
+      shopFetch<{
+        paiementRetraitActif: boolean;
+        paiementLivraisonActif: boolean;
+        retraitActif: boolean;
+        livraisonActive: boolean;
+      }>('/shop/reglements'),
+  });
+  const paiementRetraitActif = modesReglement?.paiementRetraitActif !== false;
+  const paiementLivraisonActif =
+    modesReglement?.paiementLivraisonActif !== false;
 
   const boutiquesRetrait = useMemo(() => {
     const raw = boutiques ?? [];
@@ -230,9 +273,14 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (mode === 'LIVRAISON' && reglement === 'PAIEMENT_RETRAIT') {
-      setReglement('PREPAYE_PSP');
+      setReglement(
+        paiementLivraisonActif ? 'PAIEMENT_LIVRAISON' : 'PREPAYE_PSP',
+      );
     }
-  }, [mode, reglement]);
+    if (mode === 'RETRAIT_BOUTIQUE' && reglement === 'PAIEMENT_LIVRAISON') {
+      setReglement(paiementRetraitActif ? 'PAIEMENT_RETRAIT' : 'PREPAYE_PSP');
+    }
+  }, [mode, reglement, paiementLivraisonActif, paiementRetraitActif]);
 
   const selectedZone = zones?.find((z) => z.id === zoneId);
   const fraisLivraison =
@@ -291,6 +339,7 @@ export default function CheckoutPage() {
         });
         setPendingCommandeId(commande.id);
         setPendingSuiviToken(commande.suiviToken);
+        writePendingPay(commande.id, commande.suiviToken);
       }
 
       if (reglement === 'PREPAYE_PSP') {
@@ -320,6 +369,7 @@ export default function CheckoutPage() {
       }
       setPendingCommandeId(null);
       setPendingSuiviToken(null);
+      clearPendingPay();
       return commande;
     },
     onSuccess: (res) => {
@@ -329,6 +379,7 @@ export default function CheckoutPage() {
       }
       setPendingCommandeId(null);
       setPendingSuiviToken(null);
+      clearPendingPay();
       nav(
         `/checkout/confirmation?commandeId=${res.id}&token=${res.suiviToken ?? ''}`,
       );
@@ -660,17 +711,37 @@ export default function CheckoutPage() {
                   <strong>Payer maintenant</strong>
                   <span>Carte ou mobile money</span>
                 </button>
-                {mode === 'RETRAIT_BOUTIQUE' && (
+                {mode === 'RETRAIT_BOUTIQUE' && paiementRetraitActif && (
                   <button
                     type="button"
                     className={`checkout-option ${reglement === 'PAIEMENT_RETRAIT' ? 'is-active' : ''}`}
                     onClick={() => setReglement('PAIEMENT_RETRAIT')}
                   >
                     <strong>Au retrait</strong>
-                    <span>En boutique</span>
+                    <span>Espèces en boutique</span>
+                  </button>
+                )}
+                {mode === 'LIVRAISON' && paiementLivraisonActif && (
+                  <button
+                    type="button"
+                    className={`checkout-option ${reglement === 'PAIEMENT_LIVRAISON' ? 'is-active' : ''}`}
+                    onClick={() => setReglement('PAIEMENT_LIVRAISON')}
+                  >
+                    <strong>À la livraison</strong>
+                    <span>Espèces ou mobile money au livreur</span>
                   </button>
                 )}
               </div>
+              {reglement === 'PAIEMENT_LIVRAISON' && (
+                <p className="checkout-hint">
+                  Aucun débit en ligne. Vous réglez quand le colis arrive.
+                </p>
+              )}
+              {reglement === 'PAIEMENT_RETRAIT' && (
+                <p className="checkout-hint">
+                  Aucun débit en ligne. Vous réglez au showroom.
+                </p>
+              )}
             </section>
 
             {!showNote ? (

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   Patch,
   Post,
@@ -51,6 +52,8 @@ function sessionShop(req: Request): string {
 @Public()
 @Controller('shop')
 export class ShopController {
+  private readonly logger = new Logger(ShopController.name);
+
   constructor(
     private readonly catalogue: ShopCatalogueService,
     private readonly panier: ShopPanierService,
@@ -114,6 +117,12 @@ export class ShopController {
   @Get('livraison/zones')
   listZones() {
     return this.catalogue.listZonesLivraison();
+  }
+
+  /** Modes de paiement proposés en caisse web (PLAN-E-COMMERCE paiement différé). */
+  @Get('reglements')
+  getReglements() {
+    return this.checkoutService.getModesReglement();
   }
 
   @Post('evenements')
@@ -214,26 +223,25 @@ export class ShopController {
       // Panier suivant optionnel — la commande est déjà créée.
     }
 
-    if (
-      dto.modeReglement === ModeReglementCommandeWeb.PREPAYE_PSP &&
-      dto.providerPsp &&
-      this.psp.doitUtiliserSandbox(dto.providerPsp)
-    ) {
-      try {
-        const pay = await this.psp.initierPaiement(
-          commande.id,
-          dto.providerPsp,
-        );
-        return {
-          ...commande,
-          authorizationUrl: pay.authorizationUrl,
-          sandbox: pay.sandbox === true,
-        };
-      } catch {
-        return commande;
-      }
+    if (dto.modeReglement !== ModeReglementCommandeWeb.PREPAYE_PSP) {
+      return commande;
     }
-    return commande;
+    try {
+      const pay = await this.psp.initierPaiement(
+        commande.id,
+        dto.providerPsp ?? 'PAYSTACK',
+      );
+      return {
+        ...commande,
+        authorizationUrl: pay.authorizationUrl,
+        sandbox: pay.sandbox === true,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Init Paystack checkout ${commande.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
+    }
   }
 
   @Get('commandes/:id/statut')
