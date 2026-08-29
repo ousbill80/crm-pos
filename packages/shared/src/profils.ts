@@ -354,7 +354,7 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       treasury: TRESORERIE_CAISSIER,
       dashboard: DASHBOARD,
     },
-    resume: 'Poste de caisse : encaisser, session tiroir, clients, stock boutique, inventaire.',
+    resume: 'Poste de caisse : encaisser, clôturer, initier le versement du jour vers la centrale.',
     interdit:
       'Pas de catalogue, pas d’achats, pas de configuration, pas de validation / réception / litige.',
   },

@@ -70,15 +70,32 @@ export type BoutiqueCa = {
   tickets: number;
 };
 
+export type MixPaiement = {
+  mode: string;
+  montant: number;
+  tickets: number;
+};
+
+export type HorizonVentes = 'JOUR' | 'SEMAINE' | 'MOIS';
+
 export type SnapshotVentes = {
+  horizon: HorizonVentes;
   periodeLabel: string;
   caReseau: number;
   tickets: number;
+  panierMoyen: number;
   parBoutique: BoutiqueCa[];
   caWeb: number;
   commandesWeb: number;
+  panierMoyenWeb: number;
+  caTotal: number;
+  mixPaiement: MixPaiement[];
   litigesOuverts: number;
   versementsEnRetard: number;
+  boutiquesActives: number;
+  boutiquesTotal: number;
+  caPrecedent: number;
+  ticketsPrecedent: number;
 };
 
 export type SnapshotStocks = {
@@ -242,6 +259,39 @@ export function shopNecessiteAttention(s: SnapshotShop): boolean {
   return s.commandes7j === 0;
 }
 
+export function assemblerSnapshotVentes(
+  input: Omit<
+    SnapshotVentes,
+    'panierMoyen' | 'panierMoyenWeb' | 'caTotal' | 'boutiquesActives'
+  > &
+    Partial<
+      Pick<
+        SnapshotVentes,
+        'panierMoyen' | 'panierMoyenWeb' | 'caTotal' | 'boutiquesActives'
+      >
+    >,
+): SnapshotVentes {
+  return {
+    horizon: input.horizon,
+    periodeLabel: input.periodeLabel,
+    caReseau: input.caReseau,
+    tickets: input.tickets,
+    parBoutique: input.parBoutique,
+    caWeb: input.caWeb,
+    commandesWeb: input.commandesWeb,
+    mixPaiement: input.mixPaiement,
+    litigesOuverts: input.litigesOuverts,
+    versementsEnRetard: input.versementsEnRetard,
+    boutiquesTotal: input.boutiquesTotal,
+    caPrecedent: input.caPrecedent,
+    ticketsPrecedent: input.ticketsPrecedent,
+    panierMoyen: panierMoyen(input.caReseau, input.tickets),
+    panierMoyenWeb: panierMoyen(input.caWeb, input.commandesWeb),
+    caTotal: input.caReseau + input.caWeb,
+    boutiquesActives: input.parBoutique.filter((b) => b.tickets > 0).length,
+  };
+}
+
 export function classementBoutiques(parBoutique: BoutiqueCa[]): BoutiqueCa[] {
   return [...parBoutique].sort(
     (a, b) => b.ca - a.ca || b.tickets - a.tickets || a.nom.localeCompare(b.nom),
@@ -253,10 +303,40 @@ export function partCa(boutique: number, total: number): number {
   return Math.round((boutique / total) * 10_000) / 100;
 }
 
+export function panierMoyen(ca: number, n: number): number {
+  if (n <= 0) return 0;
+  return Math.round(ca / n);
+}
+
+/** Variation en % ; `null` si la base précédente est nulle et l’actuel > 0. */
+export function evolutionPct(actuel: number, precedent: number): number | null {
+  if (precedent === 0) return actuel === 0 ? 0 : null;
+  return Math.round(((actuel - precedent) / precedent) * 1000) / 10;
+}
+
+export function libelleHorizon(h: HorizonVentes): string {
+  if (h === 'SEMAINE') return 'semaine';
+  if (h === 'MOIS') return 'mois';
+  return 'journée';
+}
+
+export function libelleModePaiement(mode: string): string {
+  if (mode === 'ESPECES') return 'Espèces';
+  if (mode === 'CARTE') return 'Carte';
+  if (mode === 'MOBILE_MONEY') return 'Mobile money';
+  return mode;
+}
+
 export function pointsAttentionVentes(s: SnapshotVentes): string[] {
   const points: string[] = [];
   if (s.tickets === 0 && s.commandesWeb === 0) {
     points.push('Aucune vente magasin ni commande web sur la période.');
+  }
+  const silencieuses = s.parBoutique.filter((b) => b.tickets === 0).map((b) => b.nom);
+  if (silencieuses.length > 0 && s.boutiquesTotal > 1) {
+    points.push(
+      `${silencieuses.length} magasin(s) sans ticket : ${silencieuses.join(', ')}.`,
+    );
   }
   if (s.litigesOuverts > 0) {
     points.push(
@@ -271,6 +351,12 @@ export function pointsAttentionVentes(s: SnapshotVentes): string[] {
   if (s.caReseau > 0 && s.caWeb === 0 && s.commandesWeb === 0) {
     points.push(
       'Le CA est 100 % magasin : la boutique en ligne n’a pas encore encaissé sur la période.',
+    );
+  }
+  const evo = evolutionPct(s.caTotal, s.caPrecedent);
+  if (evo !== null && evo <= -20 && s.caPrecedent > 0) {
+    points.push(
+      `CA total en baisse de ${Math.abs(evo)} % par rapport à la période précédente.`,
     );
   }
   return points;

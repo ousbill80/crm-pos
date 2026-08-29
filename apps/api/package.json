@@ -20,7 +20,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "prisma": "prisma",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "mail:test-echantillons": "ts-node --transpile-only -P tsconfig.scripts.json -r tsconfig-paths/register -r reflect-metadata scripts/envoyer-echantillons-mail.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

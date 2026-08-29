@@ -115,13 +115,12 @@ export const ROLES_MISE_EN_TRANSIT: RoleLibelle[] = [
   RoleLibelle.CONVOYEUR,
 ];
 
-// Initiation SORTIE_FONDS magasin → centrale (plan GS : Responsable boutique).
-// Décision confirmée : le §6.4 mentionne aussi le Caissier boutique pour Initiée,
-// mais le Caissier boutique reste volontairement exclu ici pour préserver la
-// séparation des tâches (celui qui encaisse ne doit pas aussi initier un
-// bordereau de versement) — choix utilisateur, ne pas ouvrir au Caissier boutique.
+// Initiation SORTIE_FONDS magasin → centrale (§6.4 Initiée).
+// Caissier boutique et Responsable boutique : la caisse auxiliaire initie
+// le bordereau, elle ne réceptionne ni ne valide jamais.
 export const ROLES_INITIATION_SORTIE_FONDS: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.CAISSIER_BOUTIQUE,
 ];
 
 // Seuil par défaut (FCFA) au-delà duquel seul la Direction Générale peut

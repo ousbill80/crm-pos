@@ -13,7 +13,7 @@ export function BordereauxPage() {
 export function ReceptionCentralePage() {
   return (
     <TransactionsPage
-      titre="Réception centrale"
+      titre="Réception DAF / Caissier central"
       typeDefaut={TypeTransaction.SORTIE_FONDS}
       statutDefaut={StatutTransaction.EN_TRANSIT}
     />

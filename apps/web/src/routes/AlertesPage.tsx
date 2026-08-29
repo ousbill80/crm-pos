@@ -33,11 +33,8 @@ export function AlertesPage() {
   const [filtre, setFiltre] = useState<FiltreSeverite>('TOUS');
   const typeRaw = searchParams.get('type');
   const filtreType: FiltreType =
-    typeRaw === 'ECART_CAISSE' ||
-    typeRaw === 'VERSEMENT_EN_RETARD' ||
-    typeRaw === 'ACCES_REFUSE' ||
-    typeRaw === 'STOCK_BAS'
-      ? typeRaw
+    typeRaw && typeRaw in TYPE_LABEL
+      ? (typeRaw as AlerteDto['type'])
       : 'TOUS';
 
   const alertes = useMemo(
@@ -61,7 +58,7 @@ export function AlertesPage() {
     <div>
       <PageHeader
         title="Alertes"
-        subtitle="Écarts de caisse, versements > 24 h, accès refusés — contrôle interne §6.7"
+        subtitle="Écarts, fonds non transférés, réception DAF, accès refusés — §6.7"
       />
 
       {isLoading && <LoadingState label="Chargement des alertes..." />}
@@ -140,7 +137,7 @@ export function AlertesPage() {
                         )}
                         {a.severite}
                       </span>
-                      <span className="badge badge-ok">{TYPE_LABEL[a.type]}</span>
+                      <span className="badge badge-ok">{TYPE_LABEL[a.type] ?? a.type}</span>
                       <InfoTooltip insight={insightAlerte(a.type, a.severite)} />
                       <time dateTime={a.dateHeure}>
                         {new Date(a.dateHeure).toLocaleString()}

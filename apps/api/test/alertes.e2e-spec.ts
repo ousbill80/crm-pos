@@ -4,7 +4,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcrypt';
-import { StatutTransaction, TypeCaisse, TypeTransaction } from '@prisma/client';
+import { StatutSessionCaisse, StatutTransaction, TypeCaisse, TypeTransaction } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
@@ -418,5 +418,55 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
       where: { id: societe.id },
       data: { seuilVersementAnticipe: null },
     });
+  });
+
+  it('signale POINT_JOUR_NON_VERSE après clôture sans SORTIE_FONDS (délai dépassé)', async () => {
+    const session = await env.prisma.sessionCaisse.create({
+      data: {
+        caisseId: caisseBoutique1Id,
+        statut: StatutSessionCaisse.FERMEE,
+        fondInitial: 5000,
+        ouvertureUtilisateurId: caissierB1Id,
+        ouvertureTemoinId: caissierB1Id,
+        clotureDateHeure: new Date(Date.now() - 48 * 60 * 60 * 1000),
+        fondCompteCloture: 7000,
+        clotureUtilisateurId: caissierB1Id,
+        clotureTemoinId: caissierB1Id,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const alerte = (response.body as AlerteDto[]).find(
+      (a) => a.type === 'POINT_JOUR_NON_VERSE' && a.entiteId === session.id,
+    );
+    expect(alerte).toBeDefined();
+    expect(alerte?.message).toContain('2000');
+    expect(alerte?.message).toContain('Boutique 1');
+  });
+
+  it('signale RECEPTION_DAF_EN_ATTENTE pour un SORTIE_FONDS EN_TRANSIT', async () => {
+    const tx = await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 3500,
+        statut: StatutTransaction.EN_TRANSIT,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/alertes')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const alerte = (response.body as AlerteDto[]).find(
+      (a) => a.type === 'RECEPTION_DAF_EN_ATTENTE' && a.entiteId === tx.id,
+    );
+    expect(alerte).toBeDefined();
+    expect(alerte?.message).toContain('3500');
+    expect(alerte?.message).toContain('Boutique 1');
   });
 });

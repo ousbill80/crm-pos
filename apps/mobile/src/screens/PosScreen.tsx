@@ -16,7 +16,7 @@ import {
   type CompositeScreenProps,
 } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ModePaiement, TypeCaisse } from '@caisse-crm/shared';
+import { ModePaiement, TypeCaisse, trouverProduitParScan } from '@caisse-crm/shared';
 import {
   enqueueCloturerSessionOp,
   enqueueLiberationOp,
@@ -27,7 +27,7 @@ import {
 } from '@caisse-crm/offline';
 import { apiFetch, ApiError } from '../api';
 import { libererReservation, upsertReservation } from '../api/ventes';
-import { formatFcfa } from '../circuit/actions';
+import { formatFcfa, peutNouveauVersement } from '../circuit/actions';
 import {
   ClientEntityFinder,
   libelleClient,
@@ -116,6 +116,11 @@ interface Session {
   id: string;
   caisseId: string;
   statut: string;
+  clotureDateHeure?: string | null;
+  fondInitial?: string | null;
+  fondCompteCloture?: string | null;
+  transactionVersementId?: string | null;
+  transactionSortieCentraleId?: string | null;
 }
 
 interface Produit {
@@ -123,6 +128,7 @@ interface Produit {
   designation: string;
   prixUnitaire: string;
   reference?: string | null;
+  codeBarres?: string | null;
   imageUrl?: string | null;
   actif?: boolean;
   stock?: number;
@@ -139,7 +145,9 @@ interface Temoin {
 interface ClotureResultat {
   sessionId: string;
   transactionId: string | null;
+  sortieCentraleId: string | null;
   fondCompte: number;
+  fondInitial: number;
 }
 
 interface ParametresCrmPos {
@@ -193,6 +201,8 @@ export function PosScreen({ navigation, route }: Props) {
   const [clotureResultat, setClotureResultat] = useState<ClotureResultat | null>(
     null,
   );
+  const [lastClosed, setLastClosed] = useState<Session | null>(null);
+  const [forceOuverture, setForceOuverture] = useState(false);
   const [etape, setEtape] = useState<EtapePos>('commande');
   const [recu, setRecu] = useState('');
   const [ticket, setTicket] = useState<TicketVenteData | null>(null);
@@ -324,25 +334,6 @@ export function PosScreen({ navigation, route }: Props) {
     setParts((prev) => synchroniserPartsAuTotal(prev, total));
   }, [total]);
 
-  /** Modes changent → Exact sur part espèces (jamais le total mixte). */
-  const modesKey = parts.map((p) => p.mode).join('|');
-  useEffect(() => {
-    if (etape !== 'paiement') return;
-    setRecu(recuEspecesParDefaut(partEspeces(parts)));
-    // Intentionnel : ne pas dépendre de `parts` montants (saisie reçu libre après Exact).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etape, modesKey]);
-
-  /** Si la part espèces augmente et dépasse le reçu, remonter à Exact. */
-  useEffect(() => {
-    if (etape !== 'paiement' || !aEspeces) return;
-    setRecu((prev) => {
-      const n = Number(prev) || 0;
-      if (n < cashPart) return recuEspecesParDefaut(cashPart);
-      return prev;
-    });
-  }, [etape, aEspeces, cashPart]);
-
   useEffect(() => {
     if (!user?.boutiqueId) {
       setBoutiqueNom(null);
@@ -384,20 +375,10 @@ export function PosScreen({ navigation, route }: Props) {
     return produits.filter(
       (p) =>
         p.designation.toLowerCase().includes(q) ||
-        (p.reference ?? '').toLowerCase().includes(q),
+        (p.reference ?? '').toLowerCase().includes(q) ||
+        (p.codeBarres ?? '').toLowerCase().includes(q),
     );
   }, [produits, rechercheProduit]);
-
-  // Index référence → produit (recalculé seulement quand le catalogue change)
-  // pour un lookup O(1) au scan/à la saisie "3xREF", au lieu d'un `find`
-  // linéaire répété à chaque article scanné en caisse.
-  const produitsParReference = useMemo(() => {
-    const index = new Map<string, Produit>();
-    for (const p of produits) {
-      if (p.reference) index.set(p.reference.toLowerCase(), p);
-    }
-    return index;
-  }, [produits]);
 
   const chargerCatalogue = useCallback(async (sessionId?: string) => {
     try {
@@ -462,8 +443,17 @@ export function PosScreen({ navigation, route }: Props) {
       const ouverte = sessions.find(
         (s) => s.caisseId === chosenId && s.statut === 'OUVERTE',
       );
+      const fermees = sessions
+        .filter((s) => s.caisseId === chosenId && s.statut === 'FERMEE')
+        .sort((a, b) => {
+          const da = Date.parse(a.clotureDateHeure ?? '');
+          const db = Date.parse(b.clotureDateHeure ?? '');
+          return db - da;
+        });
+      setLastClosed(fermees[0] ?? null);
       setSession(ouverte ?? null);
       if (ouverte) {
+        setForceOuverture(false);
         await chargerCatalogue(ouverte.id);
       } else {
         const t = await apiFetch<Temoin[]>('/ventes/temoins-eligibles');
@@ -641,23 +631,25 @@ export function PosScreen({ navigation, route }: Props) {
     );
   }
 
-  // Syntaxe préfixe quantité "3xREF"/"3*REF" sur Entrée (miroir simplifié de
-  // `onSearchKey` web, `PosPage.tsx:2341-2364`) : seul le cas préfixe +
-  // référence exacte est porté ici — sans préfixe reconnu, la grille de
-  // tuiles filtrée en direct ci-dessous reste le seul moyen d'ajout, ce qui
-  // suffit à l'usage tactile mobile (pas de fallback recherche large porté).
+  // Syntaxe préfixe quantité "3xREF"/"3*REF" + Entrée, et scan pistolet
+  // Bluetooth (le code arrive dans le champ puis Entrée) — même lookup
+  // EAN/INT/SKU que la caisse web.
   function onSoumissionRecherche() {
     const raw = rechercheProduit.trim();
     if (!raw) return;
-    const prefix = /^(\d+)\s*[x*]\s*(.*)$/i.exec(raw);
-    if (!prefix) return;
-    const qte = Math.max(1, Number(prefix[1]));
-    const query = prefix[2].trim().toLowerCase();
+    const prefix = /^(\d+)\s*[x*×]\s*(.*)$/i.exec(raw);
+    const qte = prefix ? Math.max(1, Number(prefix[1])) : 1;
+    const query = (prefix ? prefix[2] : raw).trim();
     if (!query) return;
-    const exact = produitsParReference.get(query);
+    const exact = trouverProduitParScan(produits, query);
     if (exact) {
       ajouter(exact, qte);
       setRechercheProduit('');
+      setError(null);
+      return;
+    }
+    if (prefix || query.length >= 8) {
+      setError(`Aucun produit pour le code « ${query} ».`);
     }
   }
 
@@ -709,7 +701,7 @@ export function PosScreen({ navigation, route }: Props) {
   useEffect(() => {
     const code = route.params?.scannedCode;
     if (!code || !session) return;
-    const trouve = produitsParReference.get(code.toLowerCase());
+    const trouve = trouverProduitParScan(produits, code);
     if (trouve) {
       ajouter(trouve);
       setError(null);
@@ -918,6 +910,7 @@ export function PosScreen({ navigation, route }: Props) {
     try {
       const result = await apiFetch<{
         transactionVersementId: string | null;
+        transactionSortieCentraleId?: string | null;
       }>(`/ventes/sessions/${sessionId}/cloture`, {
         method: 'POST',
         body: JSON.stringify({
@@ -932,10 +925,22 @@ export function PosScreen({ navigation, route }: Props) {
       setRemiseSaisie('0');
       setClient(null);
       setClotureOn(false);
+      setForceOuverture(false);
+      setLastClosed({
+        id: sessionId,
+        caisseId: session.caisseId,
+        statut: 'FERMEE',
+        fondInitial: session.fondInitial ?? '0',
+        fondCompteCloture: String(Number(fondCompteCloture) || 0),
+        transactionVersementId: result.transactionVersementId,
+        transactionSortieCentraleId: result.transactionSortieCentraleId ?? null,
+      });
       setClotureResultat({
         sessionId,
         transactionId: result.transactionVersementId,
+        sortieCentraleId: result.transactionSortieCentraleId ?? null,
         fondCompte: Number(fondCompteCloture) || 0,
+        fondInitial: Number(session.fondInitial ?? 0) || 0,
       });
       setFondCompteCloture('0');
       setClotureTemoinLogin('');
@@ -965,10 +970,22 @@ export function PosScreen({ navigation, route }: Props) {
         setRemiseSaisie('0');
         setClient(null);
         setClotureOn(false);
+        setForceOuverture(false);
+        setLastClosed({
+          id: sessionId,
+          caisseId: session.caisseId,
+          statut: 'FERMEE',
+          fondInitial: session.fondInitial ?? '0',
+          fondCompteCloture: String(Number(fondCompteCloture) || 0),
+          transactionVersementId: null,
+          transactionSortieCentraleId: null,
+        });
         setClotureResultat({
           sessionId,
           transactionId: null,
+          sortieCentraleId: null,
           fondCompte: Number(fondCompteCloture) || 0,
+          fondInitial: Number(session.fondInitial ?? 0) || 0,
         });
         setFondCompteCloture('0');
         setClotureTemoinLogin('');
@@ -993,7 +1010,7 @@ export function PosScreen({ navigation, route }: Props) {
     setInfo(null);
     const partsInit = partsInitiales(total);
     setParts(partsInit);
-    setRecu(recuEspecesParDefaut(partEspeces(partsInit)));
+    setRecu('');
     setEtape('paiement');
   }
 
@@ -1145,6 +1162,21 @@ export function PosScreen({ navigation, route }: Props) {
     }
   }
 
+  const hubFerme =
+    clotureResultat ??
+    (!session && lastClosed && !forceOuverture
+      ? {
+          sessionId: lastClosed.id,
+          transactionId: lastClosed.transactionVersementId ?? null,
+          sortieCentraleId: lastClosed.transactionSortieCentraleId ?? null,
+          fondCompte: Number(lastClosed.fondCompteCloture ?? 0),
+          fondInitial: Number(lastClosed.fondInitial ?? 0),
+        }
+      : null);
+  const peutInitierVersement = user
+    ? peutNouveauVersement(user.role)
+    : false;
+
   if (loading) {
     return (
       <View style={ui.center}>
@@ -1153,30 +1185,68 @@ export function PosScreen({ navigation, route }: Props) {
     );
   }
 
-  if (clotureResultat) {
+  if (hubFerme) {
+    const pointJour = Math.max(0, hubFerme.fondCompte - hubFerme.fondInitial);
+    const txCircuit = hubFerme.sortieCentraleId ?? hubFerme.transactionId;
     return (
       <View style={ui.wrap}>
-        <Text style={ui.title}>Poste clôturé</Text>
+        <Text style={ui.brand}>Journée clôturée · ventes fermées</Text>
+        <Text style={ui.title}>Transfert trésorerie principale</Text>
         <Text style={ui.subtitle}>
-          Transfert interne tiroir → magasin (hors convoyeur §6.4).
+          Point du jour = espèces comptées − fond d’ouverture. La boutique
+          initie ; le DAF réceptionne (§6.4).
         </Text>
-        <Text style={ui.kpi}>{formatFcfa(clotureResultat.fondCompte)}</Text>
+        <Text style={ui.kpi}>{formatFcfa(pointJour)}</Text>
+        <Text style={ui.subtitle}>
+          Fond compté {formatFcfa(hubFerme.fondCompte)} · ouverture{' '}
+          {formatFcfa(hubFerme.fondInitial)}
+        </Text>
         <Pressable
           style={ui.btn}
           onPress={() => {
-            const sid = clotureResultat.sessionId;
-            setClotureResultat(null);
-            navigation.navigate('EtatSession', { sessionId: sid });
+            navigation.navigate('EtatSession', { sessionId: hubFerme.sessionId });
           }}
         >
-          <Text style={ui.btnText}>État des ventes (clôture)</Text>
+          <Text style={ui.btnText}>Tirer l’état de clôture</Text>
         </Pressable>
-        {clotureResultat.transactionId ? (
+        {txCircuit ? (
+          <Pressable
+            style={ui.btn}
+            onPress={() => {
+              root.navigate('Main', {
+                screen: 'Circuit',
+                params: {
+                  screen: 'CircuitDetail',
+                  params: { transactionId: txCircuit },
+                },
+              });
+            }}
+          >
+            <Text style={ui.btnText}>
+              {hubFerme.sortieCentraleId
+                ? 'Suivre le versement vers la centrale'
+                : 'Transfert tiroir → magasin'}
+            </Text>
+          </Pressable>
+        ) : null}
+        {peutInitierVersement && !hubFerme.sortieCentraleId && pointJour > 0 ? (
+          <Pressable
+            style={ui.btn}
+            onPress={() => {
+              root.navigate('Main', {
+                screen: 'Circuit',
+                params: { screen: 'NouveauVersement' },
+              });
+            }}
+          >
+            <Text style={ui.btnText}>Transférer vers la trésorerie principale</Text>
+          </Pressable>
+        ) : null}
+        {hubFerme.transactionId && hubFerme.sortieCentraleId ? (
           <Pressable
             style={ui.btnGhost}
             onPress={() => {
-              const id = clotureResultat.transactionId;
-              setClotureResultat(null);
+              const id = hubFerme.transactionId;
               if (id) {
                 root.navigate('Main', {
                   screen: 'Circuit',
@@ -1188,13 +1258,28 @@ export function PosScreen({ navigation, route }: Props) {
               }
             }}
           >
-            <Text style={ui.btnGhostText}>Voir le transfert dans le circuit</Text>
+            <Text style={ui.btnGhostText}>Transfert tiroir → magasin</Text>
           </Pressable>
-        ) : (
-          <Text style={ui.muted}>Aucun transfert (fond compté à 0).</Text>
-        )}
-        <Pressable style={ui.btnGhost} onPress={() => setClotureResultat(null)}>
-          <Text style={ui.btnGhostText}>Nouvelle ouverture</Text>
+        ) : null}
+        <Pressable
+          style={ui.btnGhost}
+          onPress={() => {
+            root.navigate('Main', {
+              screen: 'Circuit',
+              params: { screen: 'CircuitList' },
+            });
+          }}
+        >
+          <Text style={ui.btnGhostText}>Circuit des versements</Text>
+        </Pressable>
+        <Pressable
+          style={ui.btnGhost}
+          onPress={() => {
+            setClotureResultat(null);
+            setForceOuverture(true);
+          }}
+        >
+          <Text style={ui.btnGhostText}>Ouvrir une nouvelle journée</Text>
         </Pressable>
       </View>
     );
@@ -1456,7 +1541,7 @@ export function PosScreen({ navigation, route }: Props) {
             <View style={ui.row}>
               <View style={{ flex: 1 }}>
                 <Text style={ui.muted}>Reçu du client</Text>
-                <Text style={ui.kpi}>{formatFcfa(recuNum)}</Text>
+                <Text style={ui.kpi}>{recu === '' ? '—' : formatFcfa(recuNum)}</Text>
               </View>
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
                 <Text style={ui.muted}>Monnaie à rendre</Text>

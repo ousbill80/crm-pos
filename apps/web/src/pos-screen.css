@@ -79,22 +79,6 @@
   z-index: 60;
 }
 
-.pos-shortcuts-hint {
-  display: none;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
-}
-
-@media (min-width: 1100px) {
-  .pos-shortcuts-hint {
-    display: inline-flex;
-  }
-}
-
 .pos-topbar-actions {
   display: flex;
   gap: 8px;
@@ -209,6 +193,26 @@
   background: var(--surface);
   box-shadow: var(--shadow);
   box-sizing: border-box;
+}
+
+.pos-scan-feedback {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  line-height: 1.35;
+}
+
+.pos-scan-feedback.is-ok {
+  background: #ecfdf3;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.pos-scan-feedback.is-err {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 .pos-qty-stepper {
@@ -891,6 +895,13 @@
   border-radius: var(--radius-sm);
 }
 
+.pos-mixte-parts input.is-numpad-cible,
+.pos-cash-head .is-numpad-cible {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+  background: #f0fdfa;
+}
+
 .pos-mixte-parts button {
   min-height: 44px;
   padding: 0 12px;
@@ -1322,6 +1333,11 @@
   color: var(--text-muted);
 }
 
+.pos-cash-head strong.is-empty {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .pos-cash-head strong {
   display: block;
   font-size: 1.2rem;
@@ -1467,6 +1483,170 @@ form.pos-gate-card {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0;
+}
+
+.pos-closed-card {
+  width: min(560px, 100%);
+}
+
+.pos-closed-badge {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pos-closed-recap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin: 4px 0 8px;
+}
+
+.pos-closed-recap dt {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-closed-recap dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+}
+
+.pos-closed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pos-closed-actions .pos-btn-primary,
+.pos-closed-actions .btn-secondary,
+.pos-closed-actions .btn-ghost {
+  justify-content: center;
+  gap: 8px;
+}
+
+.pos-closed-treso {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #b8921f;
+  border-radius: var(--radius);
+  background: #fbf7ea;
+}
+
+.pos-closed-treso h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.pos-closed-montant {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.pos-closed-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.pos-btn-transfert {
+  font-size: 1.05rem !important;
+  letter-spacing: 0.01em;
+}
+
+.circuit-fonds {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 16px;
+  padding: 0;
+}
+
+.circuit-fonds-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel, #fff);
+  min-width: 0;
+}
+
+.circuit-fonds-num {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.circuit-fonds-label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.circuit-fonds-qui {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.circuit-fonds-step.is-fait {
+  border-color: #1f7a4d;
+  background: #edf8f1;
+}
+
+.circuit-fonds-step.is-fait .circuit-fonds-num {
+  color: #1f7a4d;
+}
+
+.circuit-fonds-step.is-courant {
+  border-color: #b8921f;
+  background: #fbf7ea;
+  box-shadow: 0 0 0 1px #b8921f;
+}
+
+.circuit-fonds-step.is-courant .circuit-fonds-label {
+  color: #14171c;
+}
+
+.circuit-fonds-step.is-litige {
+  border-color: #b42318;
+  background: #fdecea;
+}
+
+.circuit-fonds-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #fbf7ea;
+  border: 1px solid #b8921f;
+  border-radius: var(--radius-sm);
+  font-weight: 650;
+}
+
+.circuit-fonds-wrap {
+  margin: 0 0 16px;
+}
+
+@media (max-width: 640px) {
+  .circuit-fonds {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .pos-btn-primary {
@@ -2113,10 +2293,6 @@ form.pos-gate-card {
 
   .pos-payment-side {
     min-height: 180px;
-  }
-
-  .pos-shortcuts-hint {
-    display: none;
   }
 }
 

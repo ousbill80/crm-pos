@@ -3,11 +3,16 @@ import {
   astucesShop,
   classementBoutiques,
   chargesAffichees,
+  evolutionPct,
   formatFcfa,
+  libelleHorizon,
+  libelleModePaiement,
   messageRelance,
+  panierMoyen,
   partCa,
   pointsAttentionVentes,
   produitsAffiches,
+  type HorizonVentes,
   type SnapshotCloture,
   type SnapshotFinance,
   type SnapshotGl,
@@ -71,18 +76,126 @@ function liste(items: string[]): string {
   return `<ul style="padding-left:18px;color:#222">${items.map((i) => `<li style="margin:6px 0">${esc(i)}</li>`).join('')}</ul>`;
 }
 
+function badgeEvo(pct: number | null): string {
+  if (pct === null) return `<span style="color:#888;font-size:12px">n/a vs préc.</span>`;
+  const couleur = pct > 0 ? '#1a7f37' : pct < 0 ? '#b42318' : '#666';
+  const signe = pct > 0 ? '+' : '';
+  return `<span style="color:${couleur};font-size:12px;font-weight:700">${signe}${pct} % vs préc.</span>`;
+}
+
+function kpiCell(label: string, value: string, hint?: string): string {
+  return `<td style="padding:12px 10px;background:#faf8f1;border:1px solid #eee;width:25%;vertical-align:top">
+    <div style="font-size:10px;letter-spacing:.08em;color:#888;text-transform:uppercase">${esc(label)}</div>
+    <div style="font-size:18px;font-weight:700;color:#14171c;margin:4px 0 2px">${esc(value)}</div>
+    ${hint ? `<div style="font-size:12px;color:#555">${hint}</div>` : ''}
+  </td>`;
+}
+
+function htmlKpisVentes(s: SnapshotVentes): string {
+  const evoCa = evolutionPct(s.caTotal, s.caPrecedent);
+  const evoTickets = evolutionPct(s.tickets, s.ticketsPrecedent);
+  const row1 = `<tr>
+    ${kpiCell('CA magasin', formatFcfa(s.caReseau), badgeEvo(evoCa))}
+    ${kpiCell('Tickets POS', String(s.tickets), badgeEvo(evoTickets))}
+    ${kpiCell('Panier moyen', formatFcfa(s.panierMoyen), `${s.tickets} ticket(s)`)}
+    ${kpiCell('CA web', formatFcfa(s.caWeb), `${s.commandesWeb} cmd · panier ${formatFcfa(s.panierMoyenWeb)}`)}
+  </tr>`;
+  const row2 = `<tr>
+    ${kpiCell('CA total', formatFcfa(s.caTotal), `POS + web`)}
+    ${kpiCell('Magasins actifs', `${s.boutiquesActives} / ${s.boutiquesTotal}`, 'au moins 1 ticket')}
+    ${kpiCell('Litiges versement', String(s.litigesOuverts), s.litigesOuverts > 0 ? 'Contrôle interne' : 'aucun')}
+    ${kpiCell('Versements retard', String(s.versementsEnRetard), s.versementsEnRetard > 0 ? 'hors délai' : 'dans les temps')}
+  </tr>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 20px">${row1}${row2}</table>`;
+}
+
+function barrePart(pct: number): string {
+  const w = Math.max(0, Math.min(100, pct));
+  return `<div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:6px;width:${w}%;background:#b8921f"></div></div>`;
+}
+
 function tableauBoutiques(s: SnapshotVentes): string {
   const rows = classementBoutiques(s.parBoutique);
   if (rows.length === 0) {
-    return `<p style="color:#555">Aucun ticket magasin sur la période.</p>`;
+    return `<p style="color:#555">Aucun magasin paramétré.</p>`;
   }
   const body = rows
-    .map(
-      (b) =>
-        `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${esc(b.nom)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${esc(formatFcfa(b.ca))}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${b.tickets}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${partCa(b.ca, s.caReseau)} %</td></tr>`,
-    )
+    .map((b, i) => {
+      const part = partCa(b.ca, s.caReseau);
+      const pm = panierMoyen(b.ca, b.tickets);
+      const mute = b.tickets === 0 ? 'color:#999' : 'color:#14171c';
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;${mute}">${i + 1}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;${mute}"><strong>${esc(b.nom)}</strong>${barrePart(part)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:700;${mute}">${esc(formatFcfa(b.ca))}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;${mute}">${b.tickets}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;${mute}">${esc(formatFcfa(pm))}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;${mute}">${part} %</td>
+      </tr>`;
+    })
     .join('');
-  return `<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:left;color:#666"><th style="padding:6px 8px">Magasin</th><th style="padding:6px 8px;text-align:right">CA</th><th style="padding:6px 8px;text-align:right">Tickets</th><th style="padding:6px 8px;text-align:right">Part</th></tr></thead><tbody>${body}</tbody></table>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:#14171c;color:#faf8f1">
+      <th style="padding:8px;text-align:left">#</th>
+      <th style="padding:8px;text-align:left">Magasin</th>
+      <th style="padding:8px;text-align:right">CA</th>
+      <th style="padding:8px;text-align:right">Tickets</th>
+      <th style="padding:8px;text-align:right">Panier</th>
+      <th style="padding:8px;text-align:right">Part</th>
+    </tr></thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+function htmlMixPaiement(s: SnapshotVentes): string {
+  if (s.mixPaiement.length === 0 || s.caReseau <= 0) return '';
+  const rows = [...s.mixPaiement]
+    .sort((a, b) => b.montant - a.montant)
+    .map((m) => {
+      const part = partCa(m.montant, s.caReseau);
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${esc(libelleModePaiement(m.mode))}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${esc(formatFcfa(m.montant))}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${m.tickets}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${part} %</td>
+      </tr>`;
+    })
+    .join('');
+  return `<h2 style="font-size:16px;color:#14171c;margin:22px 0 8px">Encaissements par mode</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left;color:#666">
+        <th style="padding:6px 8px">Mode</th>
+        <th style="padding:6px 8px;text-align:right">Montant</th>
+        <th style="padding:6px 8px;text-align:right">Tickets</th>
+        <th style="padding:6px 8px;text-align:right">Part</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function htmlPointsAttention(s: SnapshotVentes): string {
+  const pts = pointsAttentionVentes(s);
+  if (pts.length === 0) {
+    return `<p style="margin:16px 0 0;padding:10px 12px;background:#edf8f1;border-left:3px solid #1a7f37;color:#1a7f37;font-size:13px">Aucun point d’attention ventes sur cette période.</p>`;
+  }
+  return `<h2 style="font-size:16px;color:#14171c;margin:22px 0 8px">Points d’attention</h2>
+    <div style="padding:10px 12px;background:#fbf7ea;border-left:3px solid #b8921f">${liste(pts)}</div>`;
+}
+
+function titreEtatVentes(horizon: HorizonVentes, periodeLabel: string): string {
+  if (horizon === 'SEMAINE') return `État des ventes — semaine ${periodeLabel}`;
+  if (horizon === 'MOIS') return `État des ventes — ${periodeLabel}`;
+  return `État des ventes du ${periodeLabel}`;
+}
+
+function htmlBlocVentes(s: SnapshotVentes): string {
+  const h = libelleHorizon(s.horizon);
+  return `<p style="font-size:13px;color:#555;margin:0 0 16px">Classement de tous les magasins sur la ${h}. Le CA magasin est le total des tickets POS (remises déjà déduites). Le web est un canal séparé.</p>
+    ${htmlKpisVentes(s)}
+    <h2 style="font-size:16px;color:#14171c;margin:8px 0 8px">Classement des magasins</h2>
+    ${tableauBoutiques(s)}
+    ${htmlMixPaiement(s)}
+    ${htmlPointsAttention(s)}`;
 }
 
 export function renderSoir(
@@ -92,28 +205,28 @@ export function renderSoir(
   liens: LiensBriefing,
   cloture?: SnapshotCloture,
 ): BriefingHtml {
-  const objet = `Récap ventes ${s.periodeLabel} — ${formatFcfa(s.caReseau)}`;
+  const titre = titreEtatVentes(s.horizon, s.periodeLabel);
+  const objet = `${titre} — ${formatFcfa(s.caTotal)}`;
   const intro =
     role === RoleLibelle.DAF
-      ? `${prenom}, synthèse encaissements du jour (POS + web) pour le pôle financier.`
-      : `${prenom}, photographie du réseau ce soir — CA magasin, web, points d’attention.`;
-  const blocCloture = cloture ? htmlDisciplineCloture(cloture) : '';
+      ? `${prenom}, tableau de bord encaissements (POS + web) pour le pôle financier.`
+      : `${prenom}, photographie du réseau — CA par magasin, panier moyen, web, alertes fonds.`;
+  const blocCloture = cloture && s.horizon === 'JOUR' ? htmlDisciplineCloture(cloture) : '';
   const html = cadre(
-    `Récapitulatif du ${s.periodeLabel}`,
+    titre,
     `<p>${esc(intro)}</p>
-     <p style="font-size:28px;margin:16px 0 4px;font-weight:700">${esc(formatFcfa(s.caReseau))}</p>
-     <p style="color:#555;margin:0 0 16px">${s.tickets} ticket(s) magasin · ${s.commandesWeb} commande(s) web (${esc(formatFcfa(s.caWeb))})</p>
-     ${tableauBoutiques(s)}
-     ${liste(pointsAttentionVentes(s))}
+     ${htmlBlocVentes(s)}
      ${blocCloture}`,
     liens,
   );
   const text = [
     objet,
     intro,
-    `CA réseau ${formatFcfa(s.caReseau)} / ${s.tickets} tickets / web ${formatFcfa(s.caWeb)}`,
+    `CA magasin ${formatFcfa(s.caReseau)} · ${s.tickets} tickets · panier ${formatFcfa(s.panierMoyen)}`,
+    `CA web ${formatFcfa(s.caWeb)} (${s.commandesWeb} cmd) · total ${formatFcfa(s.caTotal)}`,
     ...classementBoutiques(s.parBoutique).map(
-      (b) => `${b.nom}: ${formatFcfa(b.ca)} (${b.tickets} t.)`,
+      (b) =>
+        `${b.nom}: ${formatFcfa(b.ca)} (${b.tickets} t. · panier ${formatFcfa(panierMoyen(b.ca, b.tickets))})`,
     ),
     ...pointsAttentionVentes(s),
     liens.dashboard,
@@ -225,8 +338,7 @@ export function renderExecutif(
        </tr>
      </table>
      <h2 style="font-size:16px;color:#14171c">1. Ventes (encaissements POS + web)</h2>
-     <p><strong>${esc(formatFcfa(ventes.caReseau))}</strong> · ${ventes.tickets} ticket(s) magasin · web ${esc(formatFcfa(ventes.caWeb))} (${ventes.commandesWeb} cmd)</p>
-     ${tableauBoutiques(ventes)}
+     ${htmlBlocVentes(ventes)}
      <h2 style="font-size:16px;color:#14171c">2. Dépenses / charges d’exploitation (classe 6)</h2>
      ${
        postesRows
@@ -262,15 +374,14 @@ export function renderExecutif(
        gl.fileAttente + gl.fileErreur > 0
          ? `File d’écritures : ${gl.fileAttente} en attente · ${gl.fileErreur} en erreur.`
          : 'File d’écritures vide.',
-     ])}
-     ${liste(pointsAttentionVentes(ventes))}`,
+     ])}`,
     liens,
   );
   const text = [
     objet,
     focus,
     `Produits ${formatFcfa(produits)} | Charges ${formatFcfa(charges)} | Résultat ${formatFcfa(gl.resultat)}`,
-    `CA magasin ${formatFcfa(ventes.caReseau)} | stock ${formatFcfa(stocks.valeurStock)}`,
+    `CA magasin ${formatFcfa(ventes.caReseau)} | ${ventes.tickets} tickets | panier ${formatFcfa(ventes.panierMoyen)} | web ${formatFcfa(ventes.caWeb)}`,
     ...gl.postesCharges.map((p) => `${p.libelle}: ${formatFcfa(p.montant)}`),
     liens.finance,
   ].join('\n');

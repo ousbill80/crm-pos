@@ -466,6 +466,8 @@ export interface SessionCaisseDto {
   clotureUtilisateurId: string | null;
   clotureTemoinId: string | null;
   transactionVersementId: string | null;
+  /** Bordereau magasin → centrale du point du jour (§6.4). */
+  transactionSortieCentraleId?: string | null;
   /** Présent sur GET /ventes/sessions (liste enrichie). */
   nombreVentes?: number;
   /** CA tickets de la session (somme montantTotal). */
@@ -549,6 +551,7 @@ export interface ClotureSessionResponseDto {
   session: SessionCaisseDto;
   releve: ReleveModePaiementDto[];
   transactionVersementId: string | null;
+  transactionSortieCentraleId?: string | null;
 }
 
 export interface FournisseurDto {

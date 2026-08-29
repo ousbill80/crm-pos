@@ -92,6 +92,14 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       'controleur@example.test',
     );
 
+    await creerUtilisateur(
+      'sched-daf',
+      'DAF',
+      null,
+      1,
+      'daf@example.test',
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -181,5 +189,67 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       where: { cleUnique },
     });
     expect(apresRegularisation).toHaveLength(1);
+  });
+
+  it('notifie POINT_JOUR_NON_VERSE + digest DAF une seule fois', async () => {
+    process.env.EMAIL_PROVIDER = 'mock';
+    const session = await env.prisma.sessionCaisse.create({
+      data: {
+        caisseId: caisseBoutique1Id,
+        statut: 'FERMEE',
+        fondInitial: 5000,
+        ouvertureUtilisateurId: caissierB1Id,
+        ouvertureTemoinId: caissierB1Id,
+        clotureDateHeure: new Date(Date.now() - 48 * 60 * 60 * 1000),
+        fondCompteCloture: 8000,
+        clotureUtilisateurId: caissierB1Id,
+        clotureTemoinId: caissierB1Id,
+      },
+    });
+
+    await scheduler.cycle();
+    const point = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}` },
+    });
+    expect(point).not.toBeNull();
+    const digests = await env.prisma.alerteNotifiee.findMany({
+      where: { type: 'DIGEST_FONDS_DAF' },
+    });
+    expect(digests.length).toBeGreaterThanOrEqual(1);
+
+    await scheduler.cycle();
+    const point2 = await env.prisma.alerteNotifiee.findMany({
+      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}` },
+    });
+    expect(point2).toHaveLength(1);
+    const digests2 = await env.prisma.alerteNotifiee.findMany({
+      where: { type: 'DIGEST_FONDS_DAF' },
+    });
+    expect(digests2).toHaveLength(digests.length);
+  });
+
+  it('notifie RECEPTION_DAF_EN_ATTENTE pour un versement EN_TRANSIT', async () => {
+    process.env.EMAIL_PROVIDER = 'mock';
+    const tx = await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 1200,
+        statut: StatutTransaction.EN_TRANSIT,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+      },
+    });
+
+    await scheduler.cycle();
+    const notif = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}` },
+    });
+    expect(notif).not.toBeNull();
+
+    await scheduler.cycle();
+    const notif2 = await env.prisma.alerteNotifiee.findMany({
+      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}` },
+    });
+    expect(notif2).toHaveLength(1);
   });
 });

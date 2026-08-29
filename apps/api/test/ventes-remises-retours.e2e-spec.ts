@@ -43,6 +43,7 @@ interface ClotureResponseDto {
   session: SessionCaisseDto;
   releve: { modePaiement: string; total: string; nombreVentes: number }[];
   transactionVersementId: string | null;
+  transactionSortieCentraleId?: string | null;
 }
 
 process.env.JWT_SECRET ??= 'test-secret-e2e';

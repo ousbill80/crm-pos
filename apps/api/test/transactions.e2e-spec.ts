@@ -443,7 +443,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
         .expect(403);
     });
 
-    it('refuse (403) qu’un CAISSIER_BOUTIQUE initie une SORTIE_FONDS (réservé Responsable boutique)', async () => {
+    it('autorise (201) un CAISSIER_BOUTIQUE à initier une SORTIE_FONDS (§6.4 Initiée)', async () => {
       await request(app.getHttpServer())
         .post('/transactions')
         .set('Authorization', `Bearer ${tokens.caissierB1}`)
@@ -452,7 +452,7 @@ describe('Transactions — machine à états §6.4 (e2e)', () => {
           type: 'SORTIE_FONDS',
           montant: 100,
         })
-        .expect(403);
+        .expect(201);
     });
 
     it('refuse (403) qu’un CAISSIER_CENTRAL initie une transaction (réservé magasin boutique)', async () => {

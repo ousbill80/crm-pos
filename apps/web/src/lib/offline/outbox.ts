@@ -50,6 +50,7 @@ export function enqueueTransactionInit(body: {
   caisseId: string;
   type: string;
   montant: number;
+  sessionCaisseId?: string;
 }): OutboxOp {
   return append({
     path: '/transactions',

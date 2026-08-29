@@ -61,8 +61,14 @@ export async function loginAs(
 export async function ouvrirPosteSiBesoin(page: Page): Promise<void> {
   const openForm = page.getByTestId('pos-open');
   const shell = page.getByTestId('pos-shell');
-  await expect(openForm.or(shell)).toBeVisible();
+  const journeeFermee = page.getByTestId('pos-journee-fermee');
+  await expect(openForm.or(shell).or(journeeFermee)).toBeVisible();
   if (await shell.isVisible()) return;
+
+  if (await journeeFermee.isVisible()) {
+    await page.getByTestId('pos-ouvrir-nouvelle-journee').click();
+    await expect(openForm).toBeVisible();
+  }
 
   await page.getByTestId('pos-open-submit').click();
   const temoin = page.getByTestId(`pos-temoin-${DEMO_TEMOIN}`);

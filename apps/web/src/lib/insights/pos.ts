@@ -52,7 +52,7 @@ export function insightSessionPos(input: {
   const ca = Math.round(input.chiffreAffaires).toLocaleString('fr-FR');
   return {
     title: 'Session de caisse',
-    interpretation: `${input.nombreVentes} vente(s) pour ${ca} FCFA, ouverte depuis ${input.dureeMinutes} min. La clôture génère un bordereau d'espèces au statut Initiée.`,
+    interpretation: `${input.nombreVentes} vente(s) pour ${ca} FCFA, ouverte depuis ${input.dureeMinutes} min. À la clôture sans écart, le point du jour (espèces comptées − fond d’ouverture) part vers la trésorerie principale, statut Initiée.`,
     recommendation:
       'Clôturer en fin de service. La boutique initie le versement ; elle ne peut ni réceptionner ni valider (§1, §6.4).',
     severity: 'info',
@@ -162,7 +162,7 @@ export function insightCommandeEnAttente(count: number): Insight {
     recommendation:
       count > 0
         ? `${count} ticket(s) en file — reprendre ou abandonner avant la clôture.`
-        : 'F3 parque. La file (barre du haut) rappelle le plus ancien en premier.',
+        : 'Le bouton file (barre du haut) parque le ticket. Reprendre le plus ancien en premier.',
     severity: count > 0 ? 'info' : 'neutral',
   };
 }
@@ -217,5 +217,96 @@ export function insightHorsLignePos(pending: number, online: boolean): Insight {
     title: 'Caisse en ligne',
     interpretation: 'Les encaissements partent directement au serveur. File hors-ligne vide.',
     severity: 'ok',
+  };
+}
+
+export function insightJourneeFermee(): Insight {
+  return {
+    title: 'Journée clôturée',
+    interpretation:
+      'Les ventes sont fermées sur ce tiroir jusqu’à l’ouverture d’une nouvelle journée. Vous restez au poste pour tirer l’état Z et transférer le point du jour vers la trésorerie principale.',
+    recommendation:
+      'Ne rouvrez une journée que lorsque le versement est initié (ou qu’il n’y a rien à verser).',
+    severity: 'info',
+  };
+}
+
+export function insightPointJourneeFonds(params: {
+  point: number;
+  fondCompte: number;
+  fondInitial: number;
+}): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  if (params.point <= 0) {
+    return {
+      title: 'Point du jour',
+      interpretation: `Aucune espèce nette à verser : fond compté ${fmt(params.fondCompte)} FCFA − fond d’ouverture ${fmt(params.fondInitial)} FCFA ≤ 0. Le float reste / revient au magasin, rien ne part à la centrale.`,
+      severity: 'ok',
+    };
+  }
+  return {
+    title: 'Point du jour',
+    interpretation: `C’est le montant qui part à la trésorerie principale : fond compté ${fmt(params.fondCompte)} FCFA − fond d’ouverture ${fmt(params.fondInitial)} FCFA = ${fmt(params.point)} FCFA. On ne verse pas tout le fond compté, sinon on viderait le float du magasin.`,
+    recommendation:
+      'Ce montant est verrouillé. La boutique initie ; le DAF ou le Caissier central réceptionne (§6.4).',
+    severity: 'info',
+  };
+}
+
+export function insightFondCompteCloture(fondCompte: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Fond compté',
+    interpretation: `Espèces physiquement comptées dans le tiroir à la clôture : ${fmt(fondCompte)} FCFA. Ce total inclut encore le fond d’ouverture.`,
+    recommendation:
+      'Il est remis au magasin (transfert interne). Seul le surplus (point du jour) continue vers la centrale.',
+    severity: 'info',
+  };
+}
+
+export function insightFondOuverture(fondInitial: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Fond d’ouverture',
+    interpretation: `Float mis dans le tiroir au début de la journée : ${fmt(fondInitial)} FCFA. Il n’est pas un encaissement client.`,
+    recommendation:
+      'Il reste au magasin après clôture. Il n’entre pas dans le versement vers la trésorerie principale.',
+    severity: 'info',
+  };
+}
+
+export function insightTransfertTiroirMagasin(): Insight {
+  return {
+    title: 'Transfert tiroir → magasin',
+    interpretation:
+      'Mouvement interne : les espèces comptées quittent le tiroir POS pour la caisse magasin (cash office) de la boutique. Hors circuit convoyeur §6.4.',
+    recommendation:
+      'Si le comptage est sans écart, ce transfert est validé tout de suite. Un écart ouvre un litige interne (responsable boutique / DAF), pas un versement centrale.',
+    severity: 'info',
+  };
+}
+
+export function insightTransfertTresoPrincipale(point: number): Insight {
+  const fmt = (n: number) => Math.round(n).toLocaleString('fr-FR');
+  return {
+    title: 'Trésorerie principale',
+    interpretation:
+      point > 0
+        ? `Versement magasin → centrale de ${fmt(point)} FCFA (point du jour). Statut de départ : Initiée. Ce n’est pas encore de l’argent arrivé au siège.`
+        : 'Rien à verser à la centrale pour cette journée.',
+    recommendation:
+      'Ensuite : responsable ou convoyeur met en transit, puis le DAF (ou le Caissier central) réceptionne et rapproche. La boutique ne peut jamais réceptionner (403 serveur).',
+    severity: point > 0 ? 'warning' : 'ok',
+  };
+}
+
+export function insightNouvelleJournee(): Insight {
+  return {
+    title: 'Nouvelle journée',
+    interpretation:
+      'Rouvrir un tiroir avec un nouveau fond d’ouverture et un confirmateur. Les ventes redeviennent possibles seulement après cette ouverture.',
+    recommendation:
+      'Le versement de la journée précédente reste visible ici tant que vous n’ouvrez pas. Ouvrir n’annule pas le bordereau déjà initié.',
+    severity: 'neutral',
   };
 }

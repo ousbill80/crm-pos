@@ -18,24 +18,26 @@ export function insightStatutTransaction(statut: string): Insight {
     case StatutTransaction.EN_TRANSIT:
       return {
         title: 'En transit',
-        interpretation: "Les fonds sont en cours d'acheminement vers la caisse centrale.",
-        recommendation: 'Le Caissier Central doit réceptionner la transaction à son arrivée.',
+        interpretation:
+          'Les fonds sont en cours d’acheminement vers la trésorerie principale.',
+        recommendation:
+          'Le DAF ou le Caissier central réceptionne à l’arrivée, puis rapproche.',
         severity: 'warning',
       };
     case StatutTransaction.RECEPTIONNEE:
       return {
         title: 'Réceptionnée',
         interpretation:
-          'Le Caissier Central a réceptionné les fonds ; le rapprochement (montant reçu vs montant annoncé) reste à effectuer.',
+          'Le DAF ou le Caissier central a réceptionné les fonds ; le rapprochement (montant reçu vs annoncé) reste à effectuer.',
         recommendation:
-          "Rapprocher le montant reçu pour valider la transaction, ou déclarer un litige en cas d'écart.",
+          "Rapprocher le montant reçu pour valider, ou déclarer un litige en cas d'écart.",
         severity: 'info',
       };
     case StatutTransaction.VALIDEE:
       return {
         title: 'Validée',
         interpretation:
-          'Rapprochement effectué sans écart par le Caissier Central — la transaction est soldée.',
+          'Rapprochement sans écart — les fonds sont à la trésorerie principale.',
         severity: 'ok',
       };
     case StatutTransaction.LITIGE:
@@ -184,6 +186,96 @@ export function insightDroitLitige(peutInterne: boolean, peutCentrale: boolean):
   return {
     title: 'Droit de régularisation',
     interpretation: `Votre rôle peut régulariser les litiges ${perimetres}. Vérifié côté serveur sur chaque endpoint sensible, pas seulement affiché/masqué côté UI (§4, §6.2).`,
+    severity: 'info',
+  };
+}
+
+export function insightCircuitFondsProcessus(): Insight {
+  return {
+    title: 'Circuit magasin → trésorerie principale',
+    interpretation:
+      'Après clôture : 1) la boutique initie le versement du point du jour, 2) le responsable ou le convoyeur le met en transit, 3) le DAF ou le Caissier central réceptionne, 4) le même profil rapproche sans écart → Validée. La boutique ne réceptionne jamais (§6.4).',
+    recommendation:
+      'Un mail part si le versement n’est pas lancé dans le délai, et un autre dès que des fonds attendent la réception DAF.',
+    severity: 'info',
+  };
+}
+
+export function insightEtapeCircuitFonds(
+  id: 'initiee' | 'transit' | 'reception' | 'validee',
+  etat: 'fait' | 'courant' | 'todo' | 'litige',
+): Insight {
+  const courant =
+    etat === 'courant'
+      ? ' Étape en cours.'
+      : etat === 'fait'
+        ? ' Étape déjà faite.'
+        : etat === 'litige'
+          ? ' Bloquée en litige.'
+          : ' Pas encore atteinte.';
+  switch (id) {
+    case 'initiee':
+      return {
+        title: 'Transfert initié',
+        interpretation: `Le bordereau magasin → centrale existe (statut Initiée). Les fonds sont encore au magasin boutique.${courant}`,
+        recommendation:
+          'Le responsable boutique ou le convoyeur clique « Mettre en transit » au départ physique des fonds. Le caissier ne peut pas le faire.',
+        severity: etat === 'litige' ? 'critical' : etat === 'courant' ? 'warning' : 'info',
+      };
+    case 'transit':
+      return {
+        title: 'En transit',
+        interpretation: `Les fonds ont quitté la boutique et voyagent vers le siège.${courant}`,
+        recommendation:
+          'À l’arrivée : DAF ou Caissier central uniquement — bouton « Réceptionner ». Un appel API boutique est rejeté (403).',
+        severity: etat === 'courant' ? 'warning' : 'info',
+      };
+    case 'reception':
+      return {
+        title: 'Réception DAF',
+        interpretation: `Les fonds sont physiquement à la trésorerie principale, mais pas encore rapprochés.${courant}`,
+        recommendation:
+          'Le DAF (ou le Caissier central) saisit le montant reçu. Égal au déclaré → Validée. Différent → Litige, bloqué jusqu’à régularisation.',
+        severity: etat === 'courant' ? 'info' : 'neutral',
+      };
+    case 'validee':
+      return {
+        title: 'Validée',
+        interpretation: `Rapprochement sans écart : le point du jour est au grand livre de la caisse centrale.${courant}`,
+        severity: etat === 'fait' || etat === 'courant' ? 'ok' : 'neutral',
+      };
+  }
+}
+
+export function insightReceptionDafAction(): Insight {
+  return {
+    title: 'Réceptionner',
+    interpretation:
+      'Confirme l’arrivée physique des fonds au siège. Réservé au DAF et au Caissier central — vérifié sur l’API, pas seulement masqué à l’écran (§4, §6.4).',
+    recommendation:
+      'Après réception, rapprocher le montant reçu. Sans écart la transaction passe à Validée et crédite la trésorerie principale.',
+    severity: 'warning',
+  };
+}
+
+export function insightMettreEnTransitAction(): Insight {
+  return {
+    title: 'Mettre en transit',
+    interpretation:
+      'Passe Initiée → En transit lorsque les fonds quittent réellement la boutique (responsable boutique ou convoyeur).',
+    recommendation:
+      'Ne pas le faire tant que l’enveloppe / le convoyage n’est pas parti. Ensuite le DAF voit le dossier dans Réception DAF.',
+    severity: 'info',
+  };
+}
+
+export function insightRapprocherAction(): Insight {
+  return {
+    title: 'Rapprocher',
+    interpretation:
+      'Comparer le montant déclaré sur le bordereau et le montant réellement reçu à la centrale.',
+    recommendation:
+      'Montant identique → Validée (fonds au grand livre centrale). Montant différent → Litige, arbitrage Contrôle interne / DAF.',
     severity: 'info',
   };
 }

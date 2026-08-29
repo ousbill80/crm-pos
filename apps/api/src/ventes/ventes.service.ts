@@ -13,6 +13,7 @@ import {
   StatutSessionCaisse,
   StatutTransaction,
   TypeCaisse,
+  TypeTransaction,
 } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
@@ -801,6 +802,7 @@ export class VentesService {
       nombreVentes: number;
     }[];
     transactionVersementId: string | null;
+    transactionSortieCentraleId: string | null;
   }> {
     const session = await this.trouverSessionOuEchouer(sessionId);
     this.verifierPerimetreBoutique(session, utilisateur);
@@ -853,6 +855,7 @@ export class VentesService {
 
     // 2) Remise tiroir → magasin (montant compté).
     let transactionVersementId: string | null = null;
+    let transactionSortieCentraleId: string | null = null;
     if (fondCompte.greaterThan(0)) {
       const statutTransfert = ecart.isZero()
         ? StatutTransaction.VALIDEE
@@ -865,6 +868,23 @@ export class VentesService {
         statut: statutTransfert,
       });
       transactionVersementId = transfert.id;
+
+      // 3) Point du jour → trésorerie principale (§6.4). Sans écart :
+      // fond compté − fond initial = espèces nettes à verser. INITIEE
+      // seulement — réception DAF / Caissier central, jamais la boutique.
+      const pointJournee = fondCompte.minus(fondInitial);
+      if (statutTransfert === StatutTransaction.VALIDEE && pointJournee.greaterThan(0)) {
+        const sortie = await this.transactionsService.initier(
+          {
+            caisseId: magasin.id,
+            type: TypeTransaction.SORTIE_FONDS,
+            montant: Number(pointJournee),
+            clientOperationId: `cloture-centrale-${session.id}`,
+          },
+          utilisateur,
+        );
+        transactionSortieCentraleId = sortie.id;
+      }
     }
 
     const sessionFermee = await this.prisma.sessionCaisse.update({
@@ -876,6 +896,7 @@ export class VentesService {
         clotureUtilisateurId: utilisateur.userId,
         clotureTemoinId: temoin.id,
         transactionVersementId,
+        transactionSortieCentraleId,
       },
     });
 
@@ -892,10 +913,16 @@ export class VentesService {
         temoinId: temoin.id,
         releve,
         transactionVersementId,
+        transactionSortieCentraleId,
       }),
     });
 
-    return { session: sessionFermee, releve, transactionVersementId };
+    return {
+      session: sessionFermee,
+      releve,
+      transactionVersementId,
+      transactionSortieCentraleId,
+    };
   }
 
   async findAll(utilisateur: AuthenticatedUser) {

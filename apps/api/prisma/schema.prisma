@@ -355,7 +355,8 @@ model TransactionCaisse {
   clientOperationId String? @unique
 
   bordereau      BordereauVersement?
-  sessionCaisse  SessionCaisse?
+  sessionRemiseMagasin  SessionCaisse? @relation("SessionRemiseMagasin")
+  sessionSortieCentrale SessionCaisse? @relation("SessionSortieCentrale")
   regularisation RegularisationLitige?
 
   @@index([caisseId])
@@ -2392,11 +2393,10 @@ enum ModePaiement {
 }
 
 // Session de caisse (§5.1) : comptage contradictoire à l'ouverture et à la
-// fermeture, période pendant laquelle les ventes s'accumulent. La clôture
-// génère automatiquement UNE TransactionCaisse de type VENTE (montant =
-// total des ventes ESPECES uniquement — seul mode de règlement qui transite
-// physiquement par la caisse auxiliaire, cf. plan de la tâche) qui entre
-// ensuite dans le circuit standard §6.4 (transit -> réception -> validation).
+// fermeture. À la clôture sans écart : TRANSFERT_INTERNE tiroir→magasin
+// (espèces comptées) puis SORTIE_FONDS magasin→centrale du point du jour
+// (fond compté − fond initial), circuit §6.4 Initiée → transit →
+// réception DAF / Caissier central → validation.
 enum StatutSessionCaisse {
   OUVERTE
   FERMEE
@@ -2421,8 +2421,12 @@ model SessionCaisse {
   clotureUtilisateurId   String?
   clotureTemoin          Utilisateur?        @relation("ClotureTemoin", fields: [clotureTemoinId], references: [id])
   clotureTemoinId        String?
-  transactionVersement   TransactionCaisse?  @relation(fields: [transactionVersementId], references: [id])
+  transactionVersement   TransactionCaisse?  @relation("SessionRemiseMagasin", fields: [transactionVersementId], references: [id])
   transactionVersementId String?             @unique
+  // Bordereau magasin → centrale du point du jour (§6.4), créé à la clôture
+  // sans écart. Réception / validation : Caissier Central ou DAF.
+  transactionSortieCentrale   TransactionCaisse?  @relation("SessionSortieCentrale", fields: [transactionSortieCentraleId], references: [id])
+  transactionSortieCentraleId String?             @unique
   // Idempotence hors-ligne (§6.7) : UUID généré côté appareil, unique si renseigné.
   clientOperationId      String?             @unique
   ventes                 Vente[]

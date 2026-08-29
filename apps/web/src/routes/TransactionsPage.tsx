@@ -42,10 +42,10 @@ const STATUT_LABEL: Record<string, string> = {
 };
 
 const STATUT_QUI: Record<string, string> = {
-  [StatutTransaction.INITIEE]: 'Boutique — mise en transit',
-  [StatutTransaction.EN_TRANSIT]: 'Caissier central — réceptionner',
-  [StatutTransaction.RECEPTIONNEE]: 'Caissier central — rapprocher',
-  [StatutTransaction.VALIDEE]: 'Soldée',
+  [StatutTransaction.INITIEE]: 'Boutique — transférer / mettre en transit',
+  [StatutTransaction.EN_TRANSIT]: 'DAF / Caissier central — réceptionner',
+  [StatutTransaction.RECEPTIONNEE]: 'DAF / Caissier central — rapprocher',
+  [StatutTransaction.VALIDEE]: 'Soldée à la trésorerie principale',
   [StatutTransaction.LITIGE]: 'Contrôle interne / DAF',
 };
 
@@ -419,7 +419,7 @@ export function TransactionsPage({
                 <Wallet size={14} /> Bordereaux
               </Link>
               <Link className="circuit-nav-item" to="/tresorerie/reception">
-                Réception
+                Réception DAF
               </Link>
               <Link className="circuit-nav-item" to="/litiges">
                 <Scale size={14} /> Litiges

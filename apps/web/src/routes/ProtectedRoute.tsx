@@ -430,7 +430,7 @@ const APPS: AppDef[] = [
           },
           {
             to: '/tresorerie/reception',
-            label: 'Réception centrale',
+            label: 'Réception DAF',
             roles: ROLES_VALIDATION_CAISSE_CENTRALE,
           },
           { to: '/litiges', label: 'Litiges', roles: rolesPourMenu('treasury', '/litiges') },

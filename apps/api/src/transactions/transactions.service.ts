@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,6 +12,7 @@ import {
 } from '@prisma/client';
 import {
   StatutTransaction,
+  StatutSessionCaisse,
   TypeCaisse,
   TypeTransaction,
   RoleLibelle,
@@ -123,6 +125,38 @@ export class TransactionsService {
     }
 
     const transaction = await this.prisma.$transaction(async (tx) => {
+      if (dto.sessionCaisseId) {
+        const session = await tx.sessionCaisse.findUnique({
+          where: { id: dto.sessionCaisseId },
+          include: { caisse: true },
+        });
+        if (!session) {
+          throw new NotFoundException('Session de caisse introuvable.');
+        }
+        if (session.statut !== StatutSessionCaisse.FERMEE) {
+          throw new BadRequestException(
+            'Le versement du point du jour n’est possible qu’après clôture.',
+          );
+        }
+        if (session.transactionSortieCentraleId) {
+          throw new ConflictException(
+            'Un versement vers la centrale existe déjà pour cette journée.',
+          );
+        }
+        if (session.caisse.boutiqueId !== caisse.boutiqueId) {
+          throw new ForbiddenException(
+            'Le magasin du versement doit être celui de la boutique de la session.',
+          );
+        }
+        const fondCompte = session.fondCompteCloture ?? new Prisma.Decimal(0);
+        const point = fondCompte.minus(session.fondInitial);
+        if (!point.equals(new Prisma.Decimal(dto.montant))) {
+          throw new BadRequestException(
+            'Le versement de clôture doit égaler le point du jour (fond compté − fond initial).',
+          );
+        }
+      }
+
       const creee = await tx.transactionCaisse.create({
         data: {
           type: TypeTransaction.SORTIE_FONDS,
@@ -141,6 +175,13 @@ export class TransactionsService {
           pieceJointe: dto.pieceJointe,
         },
       });
+
+      if (dto.sessionCaisseId) {
+        await tx.sessionCaisse.update({
+          where: { id: dto.sessionCaisseId },
+          data: { transactionSortieCentraleId: creee.id },
+        });
+      }
 
       return creee;
     });

@@ -12,6 +12,9 @@ import {
   messageRelance,
   parseHeureFinService,
   partCa,
+  panierMoyen,
+  evolutionPct,
+  assemblerSnapshotVentes,
   pointsAttentionVentes,
   produitsAffiches,
   serviceTermine,
@@ -43,20 +46,41 @@ describe('staff-briefing.engine', () => {
     expect(partCa(1, 0)).toBe(0);
   });
 
-  it('signale litiges, retards et absence de web', () => {
-    const pts = pointsAttentionVentes({
-      periodeLabel: 'j',
-      caReseau: 1000,
-      tickets: 3,
-      parBoutique: [],
-      caWeb: 0,
-      commandesWeb: 0,
-      litigesOuverts: 2,
-      versementsEnRetard: 1,
-    });
+  it('signale litiges, retards, magasins silencieux et absence de web', () => {
+    const pts = pointsAttentionVentes(
+      assemblerSnapshotVentes({
+        horizon: 'JOUR',
+        periodeLabel: 'j',
+        caReseau: 1000,
+        tickets: 3,
+        parBoutique: [
+          { nom: 'Marcory', ca: 1000, tickets: 3 },
+          { nom: 'Yopougon', ca: 0, tickets: 0 },
+        ],
+        caWeb: 0,
+        commandesWeb: 0,
+        mixPaiement: [],
+        litigesOuverts: 2,
+        versementsEnRetard: 1,
+        boutiquesTotal: 2,
+        caPrecedent: 2000,
+        ticketsPrecedent: 6,
+      }),
+    );
     expect(pts.some((p) => /litige/i.test(p))).toBe(true);
     expect(pts.some((p) => /versement/i.test(p))).toBe(true);
     expect(pts.some((p) => /100 % magasin/i.test(p))).toBe(true);
+    expect(pts.some((p) => /Yopougon/i.test(p))).toBe(true);
+    expect(pts.some((p) => /baisse/i.test(p))).toBe(true);
+  });
+
+  it('calcule panier moyen et évolution', () => {
+    expect(panierMoyen(10_000, 4)).toBe(2500);
+    expect(panierMoyen(10_000, 0)).toBe(0);
+    expect(evolutionPct(120, 100)).toBe(20);
+    expect(evolutionPct(80, 100)).toBe(-20);
+    expect(evolutionPct(10, 0)).toBeNull();
+    expect(evolutionPct(0, 0)).toBe(0);
   });
 
   it('n’alerte le shop que s’il est actif et non alimenté / sans commande', () => {

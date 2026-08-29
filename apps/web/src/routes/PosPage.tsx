@@ -9,13 +9,24 @@ import {
 } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ModePaiement, RoleLibelle } from '@caisse-crm/shared';
+import {
+  ModePaiement,
+  RAPIDE_ESPECES,
+  RoleLibelle,
+  ROLES_INITIATION_SORTIE_FONDS,
+  TypeCaisse,
+  appliquerChiffreNumpad,
+  completerPartMixte,
+  montantRestePart,
+  resteARepartir,
+  syntheseEncaissement,
+  toggleModePaiement,
+} from '@caisse-crm/shared';
 import {
   ArrowLeft,
   Banknote,
   CreditCard,
   FileText,
-  Keyboard,
   Minus,
   Pause,
   Plus,
@@ -78,6 +89,15 @@ import {
   nomClientPos,
 } from '../components/pos/AttenteCaisse';
 import { EtatCaissePrint } from '../components/pos/EtatCaissePrint';
+import { PosJourneeFermee } from '../components/pos/PosJourneeFermee';
+import { derniereSessionFermee } from '../lib/pos-journee-fermee';
+import {
+  appliquerTouchePistolet,
+  bipScan,
+  etatPistoletVide,
+  produitContientRechercheCaisse,
+  resoudreScanCaisse,
+} from '../lib/pos-scan';
 import { loadPosCache, savePosCache, hydratePosCache } from '../lib/offline/pos-cache';
 import {
   clearHolds,
@@ -116,7 +136,6 @@ const ROLES_PERIMETRE_BOUTIQUE: RoleLibelle[] = [
 ];
 
 const REMISE_MAX_RATIO = 0.2;
-const RAPIDE_ESPECES = [500, 1000, 2000, 5000, 10000];
 
 const MODE_META: Record<ModePaiement, { label: string; Icon: typeof Banknote }> = {
   [ModePaiement.ESPECES]: { label: 'Espèces', Icon: Banknote },
@@ -552,6 +571,7 @@ function OuvertureSessionForm({
   caissierLogin,
   tiroirs,
   onSelectTiroir,
+  onAnnuler,
 }: {
   caisseId: string;
   tiroirLabel: string;
@@ -559,6 +579,7 @@ function OuvertureSessionForm({
   caissierLogin?: string;
   tiroirs: CaisseDto[];
   onSelectTiroir: (id: string) => void;
+  onAnnuler?: () => void;
 }) {
   const queryClient = useQueryClient();
   const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
@@ -767,6 +788,11 @@ function OuvertureSessionForm({
       )}
 
       <div className="pos-open-actions">
+        {etape === 1 && onAnnuler ? (
+          <button type="button" className="pos-open-back" onClick={onAnnuler}>
+            ← Journée clôturée
+          </button>
+        ) : null}
         {etape === 2 && (
           <button
             type="button"
@@ -949,6 +975,7 @@ function CloturePanel({
   panierNonVide,
   commandesEnAttente,
   onFermer,
+  onCloturee,
 }: {
   session: SessionCaisseDto;
   ventes: VenteDto[];
@@ -956,6 +983,7 @@ function CloturePanel({
   panierNonVide: boolean;
   commandesEnAttente: number;
   onFermer: () => void;
+  onCloturee: (data: ClotureSessionResponseDto) => void;
 }) {
   const queryClient = useQueryClient();
   const { data: temoins, isLoading: loadingTemoins } = useTemoinsEligibles(true);
@@ -969,7 +997,6 @@ function CloturePanel({
   const [temoinLogin, setTemoinLogin] = useState('');
   const [temoinPassword, setTemoinPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [resultat, setResultat] = useState<ClotureSessionResponseDto | null>(null);
 
   useEffect(() => {
     if (!temoins || temoins.length !== 1) return;
@@ -1005,10 +1032,18 @@ function CloturePanel({
         }),
       }),
     onSuccess: (data) => {
-      setResultat(data);
       clearHolds(session.id);
+      queryClient.setQueryData(
+        ['ventes-sessions'],
+        (old: SessionCaisseDto[] | undefined) =>
+          old?.map((s) => (s.id === data.session.id ? data.session : s)) ?? old,
+      );
       void queryClient.invalidateQueries({ queryKey: ['ventes-sessions'] });
-      void queryClient.invalidateQueries({ queryKey: ['etat-session', session.id] });
+      void queryClient.invalidateQueries({
+        queryKey: ['etat-session', session.id],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['caisses'] });
+      onCloturee(data);
     },
     onError: (err) =>
       setError(
@@ -1018,14 +1053,14 @@ function CloturePanel({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !mutation.isPending && !resultat) {
+      if (e.key === 'Escape' && !mutation.isPending) {
         e.preventDefault();
         onFermer();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mutation.isPending, resultat, onFermer]);
+  }, [mutation.isPending, onFermer]);
 
   function allerConfirmateur() {
     if (commandesEnAttente > 0) {
@@ -1062,17 +1097,6 @@ function CloturePanel({
     }
     setError(null);
     mutation.mutate();
-  }
-
-  if (resultat) {
-    return (
-      <EtatCaissePrint
-        sessionId={session.id}
-        autoPrint
-        bordereauId={resultat.transactionVersementId}
-        onFermer={onFermer}
-      />
-    );
   }
 
   return (
@@ -1537,28 +1561,22 @@ function ClientPicker({
 }
 
 function NumpadEspeces({
-  recu,
+  valeur,
   onChange,
+  libelle,
 }: {
-  recu: string;
+  valeur: string;
   onChange: (v: string) => void;
+  libelle: string;
 }) {
   function tap(digit: string) {
-    if (digit === 'C') {
-      onChange('');
-      return;
-    }
-    if (digit === '⌫') {
-      onChange(recu.slice(0, -1));
-      return;
-    }
-    onChange(recu === '0' ? digit : recu + digit);
+    onChange(appliquerChiffreNumpad(valeur, digit));
   }
 
   const touches = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'];
 
   return (
-    <div className="pos-numpad" role="group" aria-label="Pavé numérique espèces">
+    <div className="pos-numpad" role="group" aria-label={libelle}>
       {touches.map((t) => (
         <button key={t} type="button" onClick={() => tap(t)}>
           {t}
@@ -1602,7 +1620,7 @@ function PaiementScreen({
   const [parts, setParts] = useState<{ mode: ModePaiement; montant: string }[]>([
     { mode: ModePaiement.ESPECES, montant: String(arrondiFcfa(totalInitial)) },
   ]);
-  const [recu, setRecu] = useState(() => String(arrondiFcfa(totalInitial)));
+  const [recu, setRecu] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [derogation, setDerogation] = useState<{
     motifs: Array<'REMISE_PLAFOND' | 'STOCK_INSUFFISANT'>;
@@ -1615,44 +1633,28 @@ function PaiementScreen({
   );
   const total = totalNet(panier);
   const recuNum = Number(recu) || 0;
+  const syn = syntheseEncaissement({
+    totalNet: total,
+    parts,
+    recuEspeces: recuNum,
+  });
+  const {
+    cashPart,
+    aEspeces,
+    monnaie: rendu,
+    repartitionOk: mixteOk,
+    especesOk: especeOk,
+  } = syn;
   const partsNum = parts.map((p) => ({
     mode: p.mode,
     montant: Number(p.montant) || 0,
   }));
-  const sommeParts = partsNum.reduce((s, p) => s + p.montant, 0);
-  const reste = arrondiFcfa(total - sommeParts);
-  const mixteOk = Math.abs(reste) < 0.5 && partsNum.every((p) => p.montant > 0);
+  const reste = resteARepartir(total, parts);
   const surAllocation = parts.length > 1 && reste < -0.5;
-  const cashPart =
-    partsNum.find((p) => p.mode === ModePaiement.ESPECES)?.montant ?? 0;
-  const aEspeces = cashPart > 0;
-  const especeOk = !aEspeces || recuNum >= cashPart;
   const modePrincipal = aEspeces
     ? ModePaiement.ESPECES
     : (parts[0]?.mode ?? ModePaiement.ESPECES);
   const client = clients.find((c) => c.id === clientId) ?? null;
-
-  const modesKey = parts.map((p) => p.mode).join('|');
-
-  /** Modes changent → Exact sur part espèces (aligné mobile). */
-  useEffect(() => {
-    if (cashPart > 0) {
-      setRecu(String(arrondiFcfa(cashPart)));
-    } else {
-      setRecu('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- montants libres après changement de modes
-  }, [modesKey]);
-
-  /** Part espèces augmente au-dessus du reçu → remonter à Exact. */
-  useEffect(() => {
-    if (!aEspeces) return;
-    setRecu((prev) => {
-      const n = Number(prev) || 0;
-      if (n < cashPart) return String(arrondiFcfa(cashPart));
-      return prev;
-    });
-  }, [aEspeces, cashPart]);
 
   function construirePayload(clientOperationId: string) {
     const paiements = partsNum
@@ -1748,25 +1750,7 @@ function PaiementScreen({
   }
 
   function toggleMode(m: ModePaiement) {
-    const existe = parts.some((p) => p.mode === m);
-    if (existe) {
-      if (parts.length === 1) return;
-      const next = parts.filter((p) => p.mode !== m);
-      if (next.length === 1) {
-        setParts([{ mode: next[0]!.mode, montant: String(arrondiFcfa(total)) }]);
-        return;
-      }
-      setParts(next);
-      return;
-    }
-    if (parts.length === 1) {
-      setParts([
-        { mode: parts[0]!.mode, montant: '' },
-        { mode: m, montant: '' },
-      ]);
-      return;
-    }
-    setParts([...parts, { mode: m, montant: reste > 0 ? String(arrondiFcfa(reste)) : '' }]);
+    setParts(toggleModePaiement(parts, m, total));
   }
 
   useEffect(() => {
@@ -1801,8 +1785,6 @@ function PaiementScreen({
     mixteOk,
     derogation,
   ]);
-
-  const rendu = recuNum - cashPart;
 
   return (
     <div className="pos-payment">
@@ -1868,8 +1850,8 @@ function PaiementScreen({
           <div className="pos-mixte-section">
             <h2 className="pos-mixte-title">Répartition du ticket</h2>
             <p className="pos-mixte-hint">
-              Chaque part est une portion du total à encaisser par mode (somme ={' '}
-              {formatMontant(total)} FCFA).
+              Chaque part est une portion du total ({formatMontant(total)}{' '}
+              FCFA). Le pavé remplit la case surlignée, pas le reçu espèces.
             </p>
             <ul className="pos-mixte-parts">
               {parts.map((p) => (
@@ -1885,32 +1867,32 @@ function PaiementScreen({
                     inputMode="numeric"
                     value={p.montant}
                     onChange={(e) =>
-                      setParts((prev) =>
-                        prev.map((x) =>
-                          x.mode === p.mode ? { ...x, montant: e.target.value } : x,
+                      setParts(
+                        completerPartMixte(
+                          parts,
+                          p.mode,
+                          e.target.value,
+                          total,
                         ),
                       )
                     }
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const autres = partsNum
-                        .filter((x) => x.mode !== p.mode)
-                        .reduce((s, x) => s + x.montant, 0);
+                    onClick={() =>
                       setParts((prev) =>
                         prev.map((x) =>
                           x.mode === p.mode
                             ? {
                                 ...x,
                                 montant: String(
-                                  Math.max(0, arrondiFcfa(total - autres)),
+                                  montantRestePart(total, prev, p.mode),
                                 ),
                               }
                             : x,
                         ),
-                      );
-                    }}
+                      )
+                    }
                   >
                     Reste
                   </button>
@@ -1922,28 +1904,46 @@ function PaiementScreen({
 
         {aEspeces && (
           <div className="pos-cash-section">
-            <h2 className="pos-cash-title">Billet remis par le client</h2>
+            <h2 className="pos-cash-title">Billets espèces remis</h2>
             <p className="pos-mixte-hint">
-              Montant remis en espèces par le client (part ticket espèces :{' '}
-              {formatMontant(cashPart)} FCFA). Indépendant de la répartition mixte
-              ci-dessus.
+              Uniquement les espèces tendues. Monnaie = billets − part
+              espèces ({formatMontant(cashPart)} FCFA), jamais le total mixte
+              ni le premier mode s’il n’est pas espèces.
             </p>
             <div className="pos-cash">
               <div className="pos-cash-head">
                 <div>
-                  <span>Reçu du client</span>
-                  <strong className="money">{formatMontant(recuNum)} FCFA</strong>
+                  <span>Reçu du client (billets)</span>
+                  <strong
+                    className={recu === '' ? 'money is-empty' : 'money'}
+                    data-testid="pos-cash-recu"
+                  >
+                    {recu === ''
+                      ? '—'
+                      : `${formatMontant(recuNum)} FCFA`}
+                  </strong>
                 </div>
                 <div>
                   <span>
                     Monnaie à rendre
                     <InfoTooltip insight={insightMonnaiePos(recuNum, cashPart)} />
                   </span>
-                  <strong className={rendu < 0 ? 'money pos-neg' : 'money'}>
-                    {rendu < 0 ? '—' : `${formatMontant(rendu)} FCFA`}
+                  <strong
+                    className={rendu < 0 ? 'money pos-neg' : 'money'}
+                    data-testid="pos-cash-monnaie"
+                  >
+                    {recu === '' || rendu < 0
+                      ? '—'
+                      : `${formatMontant(rendu)} FCFA`}
                   </strong>
                 </div>
               </div>
+              {recu !== '' && aEspeces ? (
+                <p className="pos-mixte-hint" data-testid="pos-cash-formule">
+                  {formatMontant(recuNum)} − {formatMontant(cashPart)} (espèces) ={' '}
+                  {rendu < 0 ? 'insuffisant' : `${formatMontant(rendu)} FCFA`}
+                </p>
+              ) : null}
             <div className="pos-cash-rapide">
               <button
                 type="button"
@@ -1962,7 +1962,11 @@ function PaiementScreen({
                 </button>
               ))}
             </div>
-            <NumpadEspeces recu={recu} onChange={setRecu} />
+            <NumpadEspeces
+              valeur={recu}
+              onChange={setRecu}
+              libelle="Pavé : billets espèces remis par le client"
+            />
             </div>
           </div>
         )}
@@ -2099,12 +2103,14 @@ function PosCaisse({
   clients,
   userLogin,
   boutiqueNom,
+  onSessionCloturee,
 }: {
   session: SessionCaisseDto;
   produits: ProduitDto[];
   clients: ClientDto[];
   userLogin: string;
   boutiqueNom?: string;
+  onSessionCloturee: (data: ClotureSessionResponseDto) => void;
 }) {
   const [panier, setPanier] = useState<LignePanier[]>([]);
   const [remisePanier, setRemisePanier] = useState('');
@@ -2121,6 +2127,15 @@ function PosCaisse({
   const [coupon, setCoupon] = useState<CommandeEnAttente | null>(null);
   const [holdIdEnCours, setHoldIdEnCours] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [scanFeedback, setScanFeedback] = useState<{
+    kind: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+  const scanFeedbackTimer = useRef<number | null>(null);
+  const pistoletRef = useRef(etatPistoletVide());
+  const traiterScanRef = useRef<
+    (code: string, mode: 'saisie' | 'pistolet') => void
+  >(() => undefined);
   const [confirm, setConfirm] = useState<
     null | { kind: 'vider' } | { kind: 'abandonner'; id: string }
   >(null);
@@ -2251,10 +2266,7 @@ function PosCaisse({
         return false;
       }
       if (!q) return true;
-      return (
-        p.designation.toLowerCase().includes(q) ||
-        (p.reference?.toLowerCase().includes(q) ?? false)
-      );
+      return produitContientRechercheCaisse(p, q);
     });
   }, [produits, recherche, filtre]);
 
@@ -2291,15 +2303,29 @@ function PosCaisse({
     }, 0);
   }
 
-  function ajouter(p: ProduitDto, qteDemandee?: number) {
+  function signalerScan(kind: 'ok' | 'err', text: string) {
+    setScanFeedback({ kind, text });
+    bipScan(kind);
+    if (scanFeedbackTimer.current != null) {
+      window.clearTimeout(scanFeedbackTimer.current);
+    }
+    scanFeedbackTimer.current = window.setTimeout(
+      () => setScanFeedback(null),
+      kind === 'err' ? 4200 : 1600,
+    );
+  }
+
+  function ajouter(p: ProduitDto, qteDemandee?: number): boolean {
     const dispo = stockDisponible(p.id, p.stock);
-    if (dispo <= 0 || !p.actif) return;
+    if (dispo <= 0 || !p.actif) return false;
     const demande = Math.max(1, qteDemandee ?? qteSaisie);
+    let added = false;
     setPanier((prev) => {
       const ex = prev.find((l) => l.produitId === p.id);
       const deja = ex?.quantite ?? 0;
       const ajout = Math.min(demande, dispo - deja);
       if (ajout <= 0) return prev;
+      added = true;
       if (ex) {
         return prev.map((l) =>
           l.produitId === p.id ? { ...l, quantite: l.quantite + ajout } : l,
@@ -2318,11 +2344,76 @@ function PosCaisse({
         },
       ];
     });
+    if (!added) return false;
     setLastProduitId(p.id);
     setQteSaisie(1);
     setRecherche('');
     focuserScan();
+    return true;
   }
+
+  function traiterCodeScanne(raw: string, mode: 'saisie' | 'pistolet') {
+    const resultat = resoudreScanCaisse(
+      produits,
+      raw,
+      qteSaisie,
+      (p) => {
+        const deja = panier.find((l) => l.produitId === p.id)?.quantite ?? 0;
+        return stockDisponible(p.id, p.stock) - deja;
+      },
+      mode,
+    );
+    switch (resultat.statut) {
+      case 'ignore':
+        return;
+      case 'qte_seule':
+        setQteSaisie(resultat.qte);
+        setRecherche('');
+        focuserScan();
+        return;
+      case 'ok': {
+        const ok = ajouter(resultat.produit, resultat.qte);
+        if (!ok) {
+          signalerScan(
+            'err',
+            `Stock insuffisant pour « ${resultat.produit.designation} ».`,
+          );
+          focuserScan();
+          return;
+        }
+        signalerScan(
+          'ok',
+          `${resultat.produit.designation} × ${resultat.qte}`,
+        );
+        return;
+      }
+      case 'inconnu':
+        setRecherche('');
+        signalerScan(
+          'err',
+          `Aucun article pour le code « ${resultat.code} ».`,
+        );
+        focuserScan();
+        return;
+      case 'rupture':
+        setRecherche('');
+        signalerScan(
+          'err',
+          `Rupture de stock : « ${resultat.produit.designation} ».`,
+        );
+        focuserScan();
+        return;
+      case 'inactif':
+        setRecherche('');
+        signalerScan(
+          'err',
+          `Article inactif : « ${resultat.produit.designation} ».`,
+        );
+        focuserScan();
+        return;
+    }
+  }
+  traiterScanRef.current = (code, mode) => traiterCodeScanne(code, mode);
 
   function ouvrirPark() {
     if (panier.length === 0) return;
@@ -2451,36 +2542,18 @@ function PosCaisse({
   }
 
   function onSearchKey(e: ReactKeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' && e.key !== 'NumpadEnter') return;
     e.preventDefault();
-    const raw = recherche.trim();
-    if (!raw) return;
-    const prefix = /^(\d+)\s*[x*]\s*(.*)$/i.exec(raw);
-    const qte = prefix ? Math.max(1, Number(prefix[1])) : qteSaisie;
-    const query = (prefix ? prefix[2] : raw).trim().toLowerCase();
-    if (!query) {
-      setQteSaisie(qte);
-      setRecherche('');
-      return;
-    }
-    const exact = produits.find(
-      (p) =>
-        p.reference &&
-        p.reference.toLowerCase() === query &&
-        p.actif &&
-        stockDisponible(p.id, p.stock) > 0,
-    );
-    if (exact) {
-      ajouter(exact, qte);
-      return;
-    }
-    const visibles = produitsCorrespondants.filter(
-      (p) => stockDisponible(p.id, p.stock) > 0 && p.actif,
-    );
-    if (visibles.length === 1) {
-      ajouter(visibles[0]!, qte);
-    }
+    traiterCodeScanne(e.currentTarget.value, 'saisie');
   }
+
+  useEffect(() => {
+    return () => {
+      if (scanFeedbackTimer.current != null) {
+        window.clearTimeout(scanFeedbackTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -2548,6 +2621,48 @@ function PosCaisse({
           ),
         );
         setEtape('paiement');
+        return;
+      }
+
+      const overlays = Boolean(notice || confirm || parkOpen || fileOpen || cloture);
+      if (overlays) return;
+
+      const target = e.target as HTMLElement | null;
+      const search = searchRef.current;
+      const searchFocused = search != null && target === search;
+      const typeChamp =
+        target instanceof HTMLInputElement ? target.type : '';
+      const autreChamp =
+        target != null &&
+        target !== search &&
+        (target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          (target.tagName === 'INPUT' &&
+            typeChamp !== 'button' &&
+            typeChamp !== 'submit' &&
+            typeChamp !== 'checkbox' &&
+            typeChamp !== 'radio' &&
+            typeChamp !== 'hidden'));
+
+      if (
+        !searchFocused &&
+        !autreChamp &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        const result = appliquerTouchePistolet(
+          pistoletRef.current,
+          Date.now(),
+          e.key,
+        );
+        pistoletRef.current = result.etat;
+        if (result.code) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          traiterScanRef.current(result.code, 'pistolet');
+        }
       }
     }
     window.addEventListener('keydown', onKey, true);
@@ -2754,10 +2869,6 @@ function PosCaisse({
             />
           </span>
         </div>
-        <p className="pos-shortcuts-hint" title="Raccourcis">
-          <Keyboard size={13} />
-          F2 scan · F3 attente · F8 file · F4 / Ctrl+Entrée paiement · Échap
-        </p>
         <div className="pos-topbar-actions">
           <span
             className={`pos-online-chip${online ? '' : ' is-off'}${pending > 0 ? ' is-sync' : ''}`}
@@ -2780,8 +2891,8 @@ function PosCaisse({
             data-testid="pos-file-btn"
             title={
               holds.length > 0
-                ? 'File d’attente — reprendre un ticket (F8)'
-                : 'Mettre la commande en attente (F3)'
+                ? 'File d’attente — reprendre un ticket'
+                : 'Mettre la commande en attente'
             }
             onClick={() => {
               if (holds.length > 0) {
@@ -2861,13 +2972,18 @@ function PosCaisse({
               <input
                 ref={searchRef}
                 type="search"
+                name="pos-scan"
                 data-testid="pos-search-input"
-                placeholder="Scanner, référence, désignation, 3×SKU…"
+                placeholder="Scanner l’étiquette, référence, désignation, 3×SKU…"
                 value={recherche}
                 onChange={(e) => setRecherche(e.target.value)}
                 onKeyDown={onSearchKey}
                 autoFocus
                 autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="done"
               />
             </div>
             {lastProduitId && (
@@ -2884,6 +3000,15 @@ function PosCaisse({
               </button>
             )}
           </div>
+          {scanFeedback && (
+            <div
+              className={`pos-scan-feedback is-${scanFeedback.kind}`}
+              role="status"
+              data-testid="pos-scan-feedback"
+            >
+              {scanFeedback.text}
+            </div>
+          )}
           <div className="pos-chips" role="tablist" aria-label="Catégories">
             <button
               type="button"
@@ -2915,8 +3040,9 @@ function PosCaisse({
               <div className="pos-catalog-idle">
                 <p className="pos-catalog-idle-title">Rechercher un article</p>
                 <p className="pos-catalog-idle-hint">
-                  Scannez un code-barres ou saisissez une référence / une désignation —
-                  seuls les articles correspondants s&apos;affichent ici.
+                  Scannez le code-barres de l&apos;étiquette (EAN ou INT) ou
+                  saisissez une référence / une désignation — seuls les articles
+                  correspondants s&apos;affichent ici.
                 </p>
                 <p className="pos-catalog-idle-hint">
                   Vous pouvez aussi choisir une catégorie ou « Rupture » ci-dessus.
@@ -3257,6 +3383,7 @@ function PosCaisse({
           panierNonVide={panier.length > 0}
           commandesEnAttente={holds.length}
           onFermer={() => setCloture(false)}
+          onCloturee={onSessionCloturee}
         />
       )}
       {overlays}
@@ -3269,6 +3396,9 @@ export function PosPage() {
   const navigate = useNavigate();
   const peut = user !== null && ROLES_PERIMETRE_BOUTIQUE.includes(user.role);
   const [tiroirId, setTiroirId] = useState<string>('');
+  const [ouvrirNouvelleJournee, setOuvrirNouvelleJournee] = useState(false);
+  const [apresCloture, setApresCloture] =
+    useState<ClotureSessionResponseDto | null>(null);
 
   function allerChangerCompte() {
     logout();
@@ -3283,10 +3413,16 @@ export function PosPage() {
   const tiroirs =
     caisses?.filter(
       (c) =>
-        c.type === 'TIROIR' &&
+        c.type === TypeCaisse.TIROIR &&
         c.boutiqueId === user?.boutiqueId &&
         c.actif !== false,
     ) ?? [];
+  const magasin = caisses?.find(
+    (c) =>
+      c.type === TypeCaisse.MAGASIN &&
+      c.boutiqueId === user?.boutiqueId &&
+      c.actif !== false,
+  );
 
   useEffect(() => {
     if (!tiroirId && tiroirs.length > 0) {
@@ -3300,6 +3436,11 @@ export function PosPage() {
   const session = sessions?.find(
     (s) => s.caisseId === caisse?.id && s.statut === 'OUVERTE',
   );
+  const sessionFermee = derniereSessionFermee(sessions, caisse?.id);
+
+  useEffect(() => {
+    if (session) setOuvrirNouvelleJournee(false);
+  }, [session]);
 
   const { data: produits } = useProduitsPos(peut && !!session);
   const { data: entrepotPos } = useEntrepotPrincipalBoutique(
@@ -3313,6 +3454,13 @@ export function PosPage() {
   const { data: clients } = useClients(peut && !!session);
   const { data: boutiques } = useBoutiques(peut);
   const boutiqueNom = boutiques?.find((b) => b.id === user?.boutiqueId)?.nom;
+  const tiroirLabel = caisse
+    ? caisse.code
+      ? `${caisse.code}${caisse.libelle ? ` — ${caisse.libelle}` : ''}`
+      : (caisse.libelle ?? 'Tiroir')
+    : 'Tiroir';
+  const peutInitierVersement =
+    user !== null && ROLES_INITIATION_SORTIE_FONDS.includes(user.role);
 
   const produitsEntrepot =
     produits && stocksPos
@@ -3329,6 +3477,17 @@ export function PosPage() {
           };
         })
       : undefined;
+
+  if (apresCloture) {
+    return (
+      <EtatCaissePrint
+        sessionId={apresCloture.session.id}
+        autoPrint
+        bordereauId={apresCloture.transactionVersementId}
+        onFermer={() => setApresCloture(null)}
+      />
+    );
+  }
 
   if (!peut) {
     return (
@@ -3432,19 +3591,33 @@ export function PosPage() {
   }
 
   if (!session) {
+    if (sessionFermee && !ouvrirNouvelleJournee) {
+      return (
+        <PosJourneeFermee
+          session={sessionFermee}
+          magasin={magasin}
+          boutiqueNom={boutiqueNom}
+          tiroirLabel={tiroirLabel}
+          caissierLogin={user?.login}
+          peutInitierVersement={peutInitierVersement}
+          onOuvrirJournee={() => setOuvrirNouvelleJournee(true)}
+        />
+      );
+    }
     return (
       <div className="pos-gate">
         <OuvertureSessionForm
           caisseId={caisse.id}
-          tiroirLabel={
-            caisse.code
-              ? `${caisse.code}${caisse.libelle ? ` — ${caisse.libelle}` : ''}`
-              : (caisse.libelle ?? 'Tiroir')
-          }
+          tiroirLabel={tiroirLabel}
           boutiqueNom={boutiqueNom}
           caissierLogin={user?.login}
           tiroirs={tiroirs}
           onSelectTiroir={setTiroirId}
+          onAnnuler={
+            sessionFermee
+              ? () => setOuvrirNouvelleJournee(false)
+              : undefined
+          }
         />
       </div>
     );
@@ -3465,6 +3638,7 @@ export function PosPage() {
       clients={clients}
       userLogin={user.login}
       boutiqueNom={boutiqueNom}
+      onSessionCloturee={setApresCloture}
     />
   );
 }

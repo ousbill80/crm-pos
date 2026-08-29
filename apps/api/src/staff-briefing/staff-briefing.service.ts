@@ -7,7 +7,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
 import { STATUTS_COMMANDE_REVENUE } from '../shop/shop-aarrr.engine';
 import { StaffBriefingMailer } from './staff-briefing.mailer';
-import { renderBriefing, type LiensBriefing } from './staff-briefing.templates';
+import { renderBriefing, type BriefingHtml, type LiensBriefing } from './staff-briefing.templates';
+import { echantillonsIllustration } from './staff-briefing-echantillons';
+import { AlertesMailer } from '../alertes/alertes-mailer';
+import {
+  renderMailDigestDaf,
+  renderMailPointNonVerse,
+  renderMailReceptionDaf,
+} from '../alertes/alertes-mail';
 import {
   ROLES_ALERTE_SHOP,
   ROLES_BRIEFING_EXECUTIF,
@@ -24,6 +31,8 @@ import {
   shopNecessiteAttention,
   synthetiserCloture,
   synthetiserCompteResultat,
+  assemblerSnapshotVentes,
+  type HorizonVentes,
   type SnapshotCloture,
   type SnapshotFinance,
   type SnapshotGl,
@@ -43,6 +52,7 @@ export class StaffBriefingService {
     private readonly prisma: PrismaService,
     private readonly stocks: StockService,
     private readonly mailer: StaffBriefingMailer,
+    private readonly alertesMailer: AlertesMailer,
     private readonly config: ConfigService,
   ) {}
 
@@ -51,10 +61,229 @@ export class StaffBriefingService {
     return this.config.get<string>('STAFF_BRIEFING_ENABLED')?.trim() === 'true';
   }
 
+  /**
+   * Envoi unique de tous les modèles (briefings + alertes fonds) vers une
+   * liste d’adresses. Préfixe [TEST], n’écrit pas StaffBriefingEnvoi.
+   */
+  async envoyerEchantillonsTest(
+    emails: string[],
+  ): Promise<{ type: string; to: string; ok: boolean }[]> {
+    const dest = [
+      ...new Set(
+        emails.map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@')),
+      ),
+    ];
+    if (dest.length === 0) return [];
+    const illustration =
+      this.config.get<string>('STAFF_MAIL_TEST_ILLUSTRATION')?.trim() === '1';
+    const pieces = illustration
+      ? echantillonsIllustration(this.liens())
+      : await this.construireEchantillons(new Date());
+    const resultats: { type: string; to: string; ok: boolean }[] = [];
+    for (const to of dest) {
+      for (const p of pieces) {
+        let id: string | null = null;
+        try {
+          id =
+            p.canal === 'briefing'
+              ? await this.mailer.envoyer(to, p.mail)
+              : await this.alertesMailer.envoyer(to, p.mail);
+        } catch (err) {
+          this.logger.warn(
+            `Échantillon ${p.type} → ${to}: ${String(err)}`,
+          );
+        }
+        resultats.push({ type: p.type, to, ok: Boolean(id) });
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
+    return resultats;
+  }
+
+  async construireEchantillonsTest(now = new Date()) {
+    return this.construireEchantillons(now);
+  }
+
+  private marquerTest(mail: BriefingHtml): BriefingHtml {
+    const bandeau =
+      '<div style="background:#b42318;color:#fff;padding:10px 16px;font:12px/1.4 sans-serif">E-MAIL DE TEST — maquette des envois automatiques. Ne pas traiter comme une alerte opérationnelle.</div>';
+    return {
+      objet: `[TEST] ${mail.objet}`.slice(0, 180),
+      text: `[TEST — ne pas traiter comme une alerte opérationnelle]\n${mail.text}`,
+      html: mail.html.includes('<body')
+        ? mail.html.replace(/<body([^>]*)>/i, `<body$1>${bandeau}`)
+        : `${bandeau}${mail.html}`,
+    };
+  }
+
+  private async construireEchantillons(
+    now: Date,
+  ): Promise<Array<{ type: string; canal: 'briefing' | 'alerte'; mail: BriefingHtml }>> {
+    const jour = jourCleAbidjan(now);
+    const fin = finJourAbidjan(now);
+    const debutJour = debutJourAbidjan(now);
+    const debutSemaine = new Date(debutJour);
+    debutSemaine.setUTCDate(debutSemaine.getUTCDate() - 6);
+    const mois = jour.slice(0, 7);
+    const debutMois = new Date(`${mois}-01T00:00:00.000Z`);
+    const [
+      ventesJour,
+      ventesSemaine,
+      ventesMois,
+      cloture,
+      stocks,
+      finance,
+      gl,
+      shop,
+    ] = await Promise.all([
+      this.snapshotVentes(debutJour, fin, jour, 'JOUR'),
+      this.snapshotVentes(
+        debutSemaine,
+        fin,
+        `semaine ${cleSemaineIso(now)}`,
+        'SEMAINE',
+      ),
+      this.snapshotVentes(debutMois, fin, mois, 'MOIS'),
+      this.snapshotCloture(now, debutJour),
+      this.snapshotStocks(),
+      this.snapshotFinance(debutSemaine, fin),
+      this.snapshotGl(debutMois, fin),
+      this.snapshotShop(now),
+    ]);
+    return this.rendrePieces({
+      ventesJour,
+      ventesSemaine,
+      ventesMois,
+      cloture,
+      stocks,
+      finance,
+      gl,
+      shop,
+    });
+  }
+
+  private rendrePieces(ctx: {
+      ventesJour: SnapshotVentes;
+      ventesSemaine: SnapshotVentes;
+      ventesMois: SnapshotVentes;
+      cloture: SnapshotCloture;
+      stocks: SnapshotStocks;
+      finance: SnapshotFinance;
+      gl: SnapshotGl;
+      shop: SnapshotShop;
+    },
+  ) {
+    const { ventesJour, ventesSemaine, ventesMois, cloture, stocks, finance, gl, shop } =
+      ctx;
+    const role = RoleLibelle.DAF;
+    const prenom = 'Équipe';
+    const liens = this.liens();
+    const briefings: Array<{ type: TypeBriefing; mail: BriefingHtml }> = [
+      {
+        type: 'SOIR',
+        mail: renderBriefing('SOIR', role, prenom, {
+          ventes: ventesJour,
+          cloture,
+          liens,
+        }),
+      },
+      {
+        type: 'HEBDO',
+        mail: renderBriefing('HEBDO', role, prenom, {
+          ventes: ventesSemaine,
+          stocks,
+          finance,
+          gl,
+          liens,
+        }),
+      },
+      {
+        type: 'MOIS',
+        mail: renderBriefing('MOIS', role, prenom, {
+          ventes: ventesMois,
+          stocks,
+          finance,
+          gl,
+          liens,
+        }),
+      },
+      {
+        type: 'CLOTURE_CAISSE',
+        mail: renderBriefing('CLOTURE_CAISSE', role, prenom, { cloture, liens }),
+      },
+      {
+        type: 'RELANCE_CONNEXION',
+        mail: renderBriefing('RELANCE_CONNEXION', role, prenom, {
+          heuresSansConnexion: 72,
+          liens,
+        }),
+      },
+      {
+        type: 'SHOP_INACTIF',
+        mail: renderBriefing('SHOP_INACTIF', role, prenom, { shop, liens }),
+      },
+    ];
+    const posUrl = this.alertesMailer.crmUrl('/pos');
+    const receptionUrl = this.alertesMailer.crmUrl('/tresorerie/reception');
+    const alertes = [
+      {
+        type: 'POINT_JOUR_NON_VERSE',
+        mail: renderMailPointNonVerse({
+          boutique: 'Marcory',
+          montant: '125000',
+          ageHeures: 26,
+          ctaUrl: posUrl,
+        }),
+      },
+      {
+        type: 'RECEPTION_DAF_EN_ATTENTE',
+        mail: renderMailReceptionDaf({
+          boutique: 'Yopougon',
+          montant: '84000',
+          ctaUrl: receptionUrl,
+        }),
+      },
+      {
+        type: 'DIGEST_FONDS_DAF',
+        mail: renderMailDigestDaf({
+          nonTransferes: [
+            {
+              boutique: 'Marcory',
+              montant: '125000',
+              etape: 'Non transféré',
+              age: '26 h',
+            },
+          ],
+          aReceptionner: [
+            {
+              boutique: 'Yopougon',
+              montant: '84000',
+              etape: 'En transit — à réceptionner',
+              age: '2 h',
+            },
+          ],
+          ctaUrl: receptionUrl,
+        }),
+      },
+    ];
+    return [
+      ...briefings.map((b) => ({
+        type: b.type,
+        canal: 'briefing' as const,
+        mail: this.marquerTest(b.mail),
+      })),
+      ...alertes.map((a) => ({
+        type: a.type,
+        canal: 'alerte' as const,
+        mail: this.marquerTest(a.mail),
+      })),
+    ];
+  }
+
   async cycleSoir(now = new Date()): Promise<number> {
     const jour = jourCleAbidjan(now);
     const [ventes, cloture] = await Promise.all([
-      this.snapshotVentes(debutJourAbidjan(now), finJourAbidjan(now), jour),
+      this.snapshotVentes(debutJourAbidjan(now), finJourAbidjan(now), jour, 'JOUR'),
       this.snapshotCloture(now, debutJourAbidjan(now)),
     ]);
     return this.diffuser('SOIR', ROLES_BRIEFING_SOIR, `SOIR:${jour}`, {
@@ -71,6 +300,7 @@ export class StaffBriefingService {
       debut,
       fin,
       `semaine ${cleSemaineIso(now)}`,
+      'SEMAINE',
     );
     const [stocks, finance, gl] = await Promise.all([
       this.snapshotStocks(),
@@ -90,7 +320,7 @@ export class StaffBriefingService {
     const jour = jourCleAbidjan(now);
     const mois = jour.slice(0, 7);
     const debut = new Date(`${mois}-01T00:00:00.000Z`);
-    const ventes = await this.snapshotVentes(debut, finJourAbidjan(now), mois);
+    const ventes = await this.snapshotVentes(debut, finJourAbidjan(now), mois, 'MOIS');
     const [stocks, finance, gl] = await Promise.all([
       this.snapshotStocks(),
       this.snapshotFinance(debut, finJourAbidjan(now)),
@@ -272,16 +502,48 @@ export class StaffBriefingService {
     return createHash('sha256').update(email.toLowerCase()).digest('hex');
   }
 
+  private periodePrecedente(
+    from: Date,
+    to: Date,
+    horizon: HorizonVentes,
+  ): { from: Date; to: Date } {
+    if (horizon === 'JOUR') {
+      const d = new Date(from);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return { from: debutJourAbidjan(d), to: finJourAbidjan(d) };
+    }
+    if (horizon === 'SEMAINE') {
+      const duree = to.getTime() - from.getTime();
+      return {
+        from: new Date(from.getTime() - duree - 1),
+        to: new Date(from.getTime() - 1),
+      };
+    }
+    const jour = jourCleAbidjan(from);
+    const [y, m] = jour.split('-').map(Number);
+    const prevM = m === 1 ? 12 : m - 1;
+    const prevY = m === 1 ? y - 1 : y;
+    const debutPrev = new Date(
+      `${prevY}-${String(prevM).padStart(2, '0')}-01T00:00:00.000Z`,
+    );
+    return { from: debutPrev, to: new Date(from.getTime() - 1) };
+  }
+
   private async snapshotVentes(
     from: Date,
     to: Date,
     periodeLabel: string,
+    horizon: HorizonVentes = 'JOUR',
   ): Promise<SnapshotVentes> {
-    const [ventes, web, litiges, retards] = await Promise.all([
+    const prec = this.periodePrecedente(from, to, horizon);
+    const [ventes, web, litiges, retards, boutiques, precAgg, precWeb] =
+      await Promise.all([
       this.prisma.vente.findMany({
         where: { dateVente: { gte: from, lte: to } },
         select: {
           montantTotal: true,
+          modePaiement: true,
+          paiements: { select: { modePaiement: true, montant: true } },
           caisse: { select: { boutique: { select: { nom: true } } } },
         },
       }),
@@ -310,8 +572,25 @@ export class StaffBriefingService {
           },
         }),
       ),
+      this.prisma.boutique.findMany({ select: { nom: true } }),
+      this.prisma.vente.aggregate({
+        where: { dateVente: { gte: prec.from, lte: prec.to } },
+        _sum: { montantTotal: true },
+        _count: { _all: true },
+      }),
+      this.prisma.commandeWeb.aggregate({
+        where: {
+          createdAt: { gte: prec.from, lte: prec.to },
+          statut: { in: [...STATUTS_COMMANDE_REVENUE] },
+        },
+        _sum: { montantTotal: true },
+      }),
     ]);
     const parMap = new Map<string, { ca: number; tickets: number }>();
+    for (const b of boutiques) {
+      parMap.set(b.nom, { ca: 0, tickets: 0 });
+    }
+    const mixMap = new Map<string, { montant: number; tickets: number }>();
     let caReseau = 0;
     for (const v of ventes) {
       const nom = v.caisse.boutique?.nom ?? 'Caisse';
@@ -321,8 +600,25 @@ export class StaffBriefingService {
       row.ca += mt;
       row.tickets += 1;
       parMap.set(nom, row);
+      const lignes =
+        v.paiements.length > 0
+          ? v.paiements.map((p) => ({
+              mode: p.modePaiement,
+              montant: Number(p.montant),
+            }))
+          : [{ mode: v.modePaiement, montant: mt }];
+      for (const l of lignes) {
+        const mix = mixMap.get(l.mode) ?? { montant: 0, tickets: 0 };
+        mix.montant += l.montant;
+        mix.tickets += 1;
+        mixMap.set(l.mode, mix);
+      }
     }
-    return {
+    const webCa = Number(web._sum.montantTotal ?? 0);
+    const precCa =
+      Number(precAgg._sum.montantTotal ?? 0) + Number(precWeb._sum.montantTotal ?? 0);
+    return assemblerSnapshotVentes({
+      horizon,
       periodeLabel,
       caReseau,
       tickets: ventes.length,
@@ -331,11 +627,19 @@ export class StaffBriefingService {
         ca: r.ca,
         tickets: r.tickets,
       })),
-      caWeb: Number(web._sum.montantTotal ?? 0),
+      caWeb: webCa,
       commandesWeb: web._count._all,
+      mixPaiement: [...mixMap.entries()].map(([mode, r]) => ({
+        mode,
+        montant: r.montant,
+        tickets: r.tickets,
+      })),
       litigesOuverts: litiges,
       versementsEnRetard: retards,
-    };
+      boutiquesTotal: Math.max(boutiques.length, parMap.size),
+      caPrecedent: precCa,
+      ticketsPrecedent: precAgg._count._all,
+    });
   }
 
   private async snapshotStocks(): Promise<SnapshotStocks> {

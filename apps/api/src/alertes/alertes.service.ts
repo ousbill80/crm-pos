@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   Prisma,
+  StatutSessionCaisse,
   StatutTransaction,
   TypeCaisse,
   TypeTransaction,
@@ -30,7 +31,9 @@ export type TypeAlerte =
   | 'ACCES_REFUSE'
   | 'STOCK_BAS'
   | 'SEUIL_CAISSE_DEPASSE'
-  | 'LITIGE_EN_RETARD';
+  | 'LITIGE_EN_RETARD'
+  | 'POINT_JOUR_NON_VERSE'
+  | 'RECEPTION_DAF_EN_ATTENTE';
 
 export interface AlerteDto {
   type: TypeAlerte;
@@ -91,20 +94,29 @@ export class AlertesService {
       societe?.delaiRegularisationLitigeHeures ??
       DELAI_REGULARISATION_LITIGE_HEURES_DEFAUT;
 
-    const [ecarts, retards, stocksBas, seuilsCaisse, litigesRetard] =
-      await Promise.all([
-        this.alertesEcarts(caisseFilter),
-        this.alertesRetards(caisseFilter, delaiVersementHeures),
-        this.alertesStockBas(),
-        this.alertesSeuilCaisse(
-          caisseFilter,
-          societe?.seuilVersementAnticipe ?? null,
-        ),
-        this.alertesLitigesEnRetard(
-          caisseFilter,
-          delaiRegularisationLitigeHeures,
-        ),
-      ]);
+    const [
+      ecarts,
+      retards,
+      stocksBas,
+      seuilsCaisse,
+      litigesRetard,
+      pointsNonVerses,
+      receptionsDaf,
+    ] = await Promise.all([
+      this.alertesEcarts(caisseFilter),
+      this.alertesRetards(caisseFilter, delaiVersementHeures),
+      this.alertesStockBas(),
+      this.alertesSeuilCaisse(
+        caisseFilter,
+        societe?.seuilVersementAnticipe ?? null,
+      ),
+      this.alertesLitigesEnRetard(
+        caisseFilter,
+        delaiRegularisationLitigeHeures,
+      ),
+      this.alertesPointJourNonVerse(caisseFilter, delaiVersementHeures),
+      this.alertesReceptionDaf(caisseFilter),
+    ]);
 
     return [
       ...ecarts,
@@ -113,6 +125,8 @@ export class AlertesService {
       ...stocksBas,
       ...seuilsCaisse,
       ...litigesRetard,
+      ...pointsNonVerses,
+      ...receptionsDaf,
     ].sort(
       (a, b) =>
         new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime(),
@@ -220,6 +234,7 @@ export class AlertesService {
           statut: t.statut,
           ageHeures: ageH,
           boutiqueId: t.caisse.boutiqueId,
+          boutiqueNom: boutique,
         },
       };
     });
@@ -379,6 +394,99 @@ export class AlertesService {
           montant: t.montant.toFixed(2),
           ageHeures: ageH,
           boutiqueId: t.caisse.boutiqueId,
+        },
+      };
+    });
+  }
+
+  // Journée clôturée, espèces nettes encore en boutique, aucun SORTIE_FONDS
+  // magasin → centrale (§6.4 / §6.7 versement non transmis).
+  private async alertesPointJourNonVerse(
+    caisseFilter: Prisma.CaisseWhereInput | undefined,
+    delaiVersementHeures: number,
+  ): Promise<AlerteDto[]> {
+    const seuil = new Date(Date.now() - delaiVersementHeures * 60 * 60 * 1000);
+    const sessions = await this.prisma.sessionCaisse.findMany({
+      where: {
+        statut: StatutSessionCaisse.FERMEE,
+        clotureDateHeure: { lt: seuil },
+        transactionSortieCentraleId: null,
+        ...(caisseFilter ? { caisse: caisseFilter } : {}),
+      },
+      include: {
+        caisse: { include: { boutique: { select: { nom: true } } } },
+        transactionVersement: { select: { statut: true } },
+      },
+      orderBy: { clotureDateHeure: 'asc' },
+      take: 100,
+    });
+
+    return sessions.flatMap((s) => {
+      const fondCompte = s.fondCompteCloture ?? new Prisma.Decimal(0);
+      const point = fondCompte.minus(s.fondInitial);
+      if (point.lessThanOrEqualTo(0)) return [];
+      if (s.transactionVersement?.statut === StatutTransaction.LITIGE) {
+        return [];
+      }
+      const boutique = s.caisse.boutique?.nom ?? 'inconnue';
+      const cloture = s.clotureDateHeure ?? s.ouvertureDateHeure;
+      const ageH = Math.floor((Date.now() - cloture.getTime()) / (60 * 60 * 1000));
+      return [
+        {
+          type: 'POINT_JOUR_NON_VERSE' as const,
+          severite: 'CRITICAL' as const,
+          message: `Point du jour non transféré vers la trésorerie principale (${delaiVersementHeures} h) — ${boutique}, ${point.toFixed(0)} FCFA, clôturé depuis ${ageH} h`,
+          dateHeure: cloture.toISOString(),
+          entite: 'SessionCaisse',
+          entiteId: s.id,
+          details: {
+            montant: point.toFixed(2),
+            fondCompte: fondCompte.toFixed(2),
+            fondInitial: s.fondInitial.toFixed(2),
+            ageHeures: ageH,
+            boutiqueId: s.caisse.boutiqueId,
+            boutiqueNom: boutique,
+          },
+        },
+      ];
+    });
+  }
+
+  // SORTIE_FONDS EN_TRANSIT : réception DAF / Caissier central (§6.4).
+  private async alertesReceptionDaf(
+    caisseFilter: Prisma.CaisseWhereInput | undefined,
+  ): Promise<AlerteDto[]> {
+    const enTransit = await this.prisma.transactionCaisse.findMany({
+      where: {
+        type: TypeTransaction.SORTIE_FONDS,
+        statut: StatutTransaction.EN_TRANSIT,
+        ...(caisseFilter ? { caisse: caisseFilter } : {}),
+      },
+      include: {
+        caisse: { include: { boutique: { select: { nom: true } } } },
+      },
+      orderBy: { dateHeure: 'asc' },
+      take: 100,
+    });
+
+    return enTransit.map((t) => {
+      const boutique = t.caisse.boutique?.nom ?? 'inconnue';
+      const ageH = Math.floor(
+        (Date.now() - t.dateHeure.getTime()) / (60 * 60 * 1000),
+      );
+      return {
+        type: 'RECEPTION_DAF_EN_ATTENTE' as const,
+        severite: 'WARNING' as const,
+        message: `Réception DAF en attente — ${boutique}, ${t.montant.toFixed(0)} FCFA en transit`,
+        dateHeure: t.dateHeure.toISOString(),
+        entite: 'TransactionCaisse',
+        entiteId: t.id,
+        details: {
+          montant: t.montant.toFixed(2),
+          statut: t.statut,
+          ageHeures: ageH,
+          boutiqueId: t.caisse.boutiqueId,
+          boutiqueNom: boutique,
         },
       };
     });

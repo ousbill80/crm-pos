@@ -20,6 +20,7 @@ interface SessionCaisseDto {
   caisseId: string;
   fondInitial: string;
   transactionVersementId: string | null;
+  transactionSortieCentraleId?: string | null;
 }
 
 interface VenteDto {
@@ -36,6 +37,7 @@ interface ClotureResponseDto {
   session: SessionCaisseDto;
   releve: { modePaiement: string; total: string; nombreVentes: number }[];
   transactionVersementId: string | null;
+  transactionSortieCentraleId: string | null;
 }
 
 process.env.JWT_SECRET ??= 'test-secret-e2e';
@@ -660,6 +662,17 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         expect(transaction?.statut).toBe('VALIDEE');
         expect(Number(transaction?.montant)).toBe(7000);
 
+        expect(body.transactionSortieCentraleId).toEqual(expect.any(String));
+        const sortie = await env.prisma.transactionCaisse.findUnique({
+          where: { id: body.transactionSortieCentraleId as string },
+        });
+        expect(sortie?.type).toBe('SORTIE_FONDS');
+        expect(sortie?.statut).toBe('INITIEE');
+        expect(Number(sortie?.montant)).toBe(2000);
+        expect(body.session.transactionSortieCentraleId).toBe(
+          body.transactionSortieCentraleId,
+        );
+
         const entreeAudit = await env.prisma.journalAudit.findFirst({
           where: {
             entite: 'SessionCaisse',
@@ -718,6 +731,35 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
         // Fond initial remis + ventes espèces (7000) moins le float sorti à l'ouverture (5000) = +2000 net ventes
         // Magasin : -5000 (float out) +7000 (retour) = +2000
         expect((soldeMagasin.body as { solde: string }).solde).toBe('2000.00');
+      });
+
+      it('le DAF réceptionne le point du jour après mise en transit (§6.4) — le caissier boutique ne peut pas', async () => {
+        const session = await env.prisma.sessionCaisse.findUnique({
+          where: { id: sessionBoutique1Id },
+        });
+        const sortieId = session?.transactionSortieCentraleId;
+        expect(sortieId).toEqual(expect.any(String));
+
+        await request(app.getHttpServer())
+          .patch(`/transactions/${sortieId}/receptionner`)
+          .set(auth(tokens.caissierB1))
+          .expect(403);
+
+        await request(app.getHttpServer())
+          .patch(`/transactions/${sortieId}/transit`)
+          .set(auth(tokens.respB1))
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .patch(`/transactions/${sortieId}/receptionner`)
+          .set(auth(tokens.caissierB1))
+          .expect(403);
+
+        const recu = await request(app.getHttpServer())
+          .patch(`/transactions/${sortieId}/receptionner`)
+          .set(auth(tokens.daf))
+          .expect(200);
+        expect((recu.body as { statut: string }).statut).toBe('RECEPTIONNEE');
       });
     });
   });
@@ -788,6 +830,7 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       });
       expect(transfert?.type).toBe('TRANSFERT_INTERNE');
       expect(Number(transfert?.montant)).toBe(1000);
+      expect(body.transactionSortieCentraleId).toBeNull();
     });
   });
 

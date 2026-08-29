@@ -13,7 +13,7 @@ import {
 } from './actions';
 
 describe('visibilité mobile — constantes @caisse-crm/shared (§4 / §6.4)', () => {
-  it('caissier : POS, pas de Nouveau versement, pas de réception', () => {
+  it('caissier : POS, initiation SORTIE_FONDS, pas de réception', () => {
     const r = RoleLibelle.CAISSIER_BOUTIQUE;
     expect(peutEncaisserPos(r)).toBe(true);
     expect(ongletsMobile(r)).toEqual([
@@ -23,7 +23,7 @@ describe('visibilité mobile — constantes @caisse-crm/shared (§4 / §6.4)', (
       'Inventaire',
     ]);
     expect(accueilOnglet(r)).toBe('Caisse');
-    expect(peutNouveauVersement(r)).toBe(false);
+    expect(peutNouveauVersement(r)).toBe(true);
     expect(peutPasserEnTransit(r, StatutTransaction.INITIEE)).toBe(false);
     expect(peutReceptionner(r, StatutTransaction.EN_TRANSIT)).toBe(false);
     expect(peutRapprocher(r, StatutTransaction.RECEPTIONNEE)).toBe(false);

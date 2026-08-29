@@ -23,6 +23,37 @@ export function insightAlerte(type: string, severite: string): Insight {
         recommendation: 'Relancer le responsable de la boutique concernée pour accélérer le versement.',
         severity: sev,
       };
+    case 'POINT_JOUR_NON_VERSE':
+      return {
+        title: 'Fonds non transférés',
+        interpretation:
+          'La journée est clôturée mais le point du jour n’a pas été transféré vers la trésorerie principale.',
+        recommendation:
+          'Ouvrir le POS, lancer « Transférer vers la trésorerie principale ». Réception : DAF uniquement.',
+        severity: sev,
+      };
+    case 'RECEPTION_DAF_EN_ATTENTE':
+      return {
+        title: 'Réception DAF',
+        interpretation:
+          'Des fonds sont en transit vers la centrale. Seuls le DAF et le Caissier central peuvent réceptionner (§6.4).',
+        recommendation: 'Ouvrir la fiche et cliquer Réceptionner, puis rapprocher.',
+        severity: sev,
+      };
+    case 'LITIGE_EN_RETARD':
+      return {
+        title: 'Litige en retard',
+        interpretation: 'Un litige de caisse n’a pas été régularisé dans le délai prévu (§5.1).',
+        recommendation: 'Arbitrer la régularisation (Contrôle interne / DAF).',
+        severity: sev,
+      };
+    case 'SEUIL_CAISSE_DEPASSE':
+      return {
+        title: 'Seuil de caisse',
+        interpretation: 'Le solde magasin dépasse le seuil de versement anticipé.',
+        recommendation: 'Initier un versement vers la centrale sans attendre la clôture.',
+        severity: sev,
+      };
     case 'ACCES_REFUSE':
       return {
         title: 'Accès refusé',

@@ -31,4 +31,9 @@ export class CreateTransactionDto {
   @MinLength(8)
   @MaxLength(64)
   clientOperationId?: string;
+
+  /** Lie le bordereau au point du jour d’une session déjà clôturée. */
+  @IsOptional()
+  @IsUUID()
+  sessionCaisseId?: string;
 }

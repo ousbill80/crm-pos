@@ -194,7 +194,7 @@ export function TopbarSystray() {
                     </span>
                     <span className="odoo-systray-item-body">
                       <span className="odoo-systray-item-meta">
-                        <span className="odoo-systray-item-type">{TYPE_LABEL[a.type]}</span>
+                        <span className="odoo-systray-item-type">{TYPE_LABEL[a.type] ?? a.type}</span>
                         <time dateTime={a.dateHeure}>{formatAlerteRelative(a.dateHeure)}</time>
                       </span>
                       <span className="odoo-systray-item-msg">{a.message}</span>

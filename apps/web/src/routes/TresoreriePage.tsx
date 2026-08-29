@@ -102,6 +102,8 @@ const ALERTE_TYPE_LABEL: Record<string, string> = {
   ECART_CAISSE: 'Écart de caisse',
   VERSEMENT_EN_RETARD: 'Versement en retard',
   ACCES_REFUSE: 'Accès refusé',
+  POINT_JOUR_NON_VERSE: 'Fonds non transférés',
+  RECEPTION_DAF_EN_ATTENTE: 'Réception DAF',
 };
 
 function formatFcfa(value: string | number): string {
@@ -197,6 +199,8 @@ export function TresoreriePage() {
     (a) =>
       a.type === 'ECART_CAISSE' ||
       a.type === 'VERSEMENT_EN_RETARD' ||
+      a.type === 'POINT_JOUR_NON_VERSE' ||
+      a.type === 'RECEPTION_DAF_EN_ATTENTE' ||
       a.type === 'ACCES_REFUSE',
   );
 

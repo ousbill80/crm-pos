@@ -17,6 +17,7 @@ import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { insightStatutTransaction } from '../lib/insights/transactions';
+import { CircuitFondsStepper } from '../components/CircuitFondsStepper';
 import type { TransactionDto } from '../lib/types';
 
 function labelType(type: string) {
@@ -72,6 +73,7 @@ function RapprocherForm({
     >
       <p className="lead">
         Montant déclaré : <strong className="money">{transaction.montant} FCFA</strong>
+        {' '}— réception DAF / Caissier central, puis rapprochement.
       </p>
       <label htmlFor="montantRecu">Montant reçu</label>
       <input
@@ -197,7 +199,7 @@ function TransactionActions({
         className="btn-primary"
         onClick={() => transition.mutate('receptionner')}
       >
-        Réceptionner
+        Réceptionner (DAF / Caissier central)
       </button>,
     );
   }
@@ -272,9 +274,14 @@ export function TransactionDetailPage() {
           TX
         </div>
         <div className="client-workspace-hero-main">
-          <h1>{labelType(t.type)}</h1>
+          <h1>
+            {t.type === TypeTransaction.SORTIE_FONDS
+              ? 'Versement vers la trésorerie principale'
+              : labelType(t.type)}
+          </h1>
           <p className="client-workspace-hero-sub">
             {new Date(t.dateHeure).toLocaleString('fr-FR')}
+            {t.caisse?.boutique?.nom ? ` · ${t.caisse.boutique.nom}` : ''}
           </p>
           <div className="client-workspace-chips">
             <span className={badgeStatut(t.statut)}>{t.statut}</span>
@@ -282,6 +289,19 @@ export function TransactionDetailPage() {
           </div>
         </div>
       </header>
+
+      {t.type === TypeTransaction.SORTIE_FONDS ? (
+        <div className="circuit-fonds-wrap">
+          <CircuitFondsStepper statutSortie={t.statut} />
+          {t.statut === StatutTransaction.EN_TRANSIT &&
+          user &&
+          ROLES_VALIDATION_CAISSE_CENTRALE.includes(user.role) ? (
+            <p className="circuit-fonds-banner" data-testid="daf-reception-banner">
+              À réceptionner par le DAF ou le Caissier central — {t.montant} FCFA.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="client-kpi-grid">
         <article className="client-kpi-card">
