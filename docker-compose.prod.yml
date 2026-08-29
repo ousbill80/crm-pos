@@ -1,4 +1,4 @@
-name: caisse-prod
+name: caisse-crm-prod
 
 # Stack production — passerelle unique (SPA + API + WebSocket), DB/API non exposées.
 #
@@ -6,6 +6,7 @@ name: caisse-prod
 #
 #   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 #
+# Project name must stay caisse-crm-prod (stacks Hostinger déjà en place).
 # Les ports gateway sont bindés sur 127.0.0.1 par défaut (Caddy / reverse-proxy).
 # Exposition publique : GATEWAY_BIND=0.0.0.0 ET TLS_ENABLED=1 — jamais HTTP clair sur Internet.
 #

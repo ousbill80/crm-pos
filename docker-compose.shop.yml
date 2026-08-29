@@ -1,9 +1,10 @@
-name: caisse-shop
+name: caisse-crm-shop
 
 # Stack shop (DMZ) — api-shop + gateway boutique. Option A PLAN-E-COMMERCE.
 #
 #   docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
 #
+# Project name must stay caisse-crm-shop (stacks Hostinger déjà en place).
 # Ports bindés sur 127.0.0.1 par défaut (Caddy). Ne pas mettre SHOP_BIND=0.0.0.0
 # sans TLS en frontal.
 

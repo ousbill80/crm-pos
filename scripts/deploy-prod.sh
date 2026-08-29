@@ -14,12 +14,12 @@ if [ ! -f .env.prod ] || [ ! -f .env.shop ]; then
 fi
 
 echo "→ CRM prod"
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build --remove-orphans
+docker compose --env-file .env.prod -p caisse-crm-prod -f docker-compose.prod.yml up -d --build --remove-orphans
 echo "→ Shop prod"
-docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build --remove-orphans
+docker compose --env-file .env.shop -p caisse-crm-shop -f docker-compose.shop.yml up -d --build --remove-orphans
 
-docker compose --env-file .env.prod -f docker-compose.prod.yml ps
-docker compose --env-file .env.shop -f docker-compose.shop.yml ps
+docker compose --env-file .env.prod -p caisse-crm-prod -f docker-compose.prod.yml ps
+docker compose --env-file .env.shop -p caisse-crm-shop -f docker-compose.shop.yml ps
 
 echo "→ Santé CRM prod (8081)"
 for i in $(seq 1 45); do
@@ -30,7 +30,7 @@ for i in $(seq 1 45); do
   fi
   if [ "$i" = "45" ]; then
     echo "CRM prod n'a pas répondu /health (dernier HTTP=$code)" >&2
-    docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=80 api gateway
+    docker compose --env-file .env.prod -p caisse-crm-prod -f docker-compose.prod.yml logs --tail=80 api gateway
     exit 1
   fi
   sleep 2
