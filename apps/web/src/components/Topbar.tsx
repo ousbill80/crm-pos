@@ -3,6 +3,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Bell,
+  BookOpen,
   ChevronDown,
   Download,
   KeyRound,
@@ -306,6 +307,41 @@ export function TopbarUserMenu({ user, onLogout }: TopbarUserMenuProps) {
               Point de vente
             </button>
           )}
+
+          <button
+            type="button"
+            role="menuitem"
+            className="odoo-user-menu-item"
+            onClick={() => {
+              setOpen(false);
+              navigate('/manuel-caisse');
+            }}
+          >
+            <BookOpen size={16} />
+            Manuel caisse (POS)
+          </button>
+
+          <a
+            role="menuitem"
+            className="odoo-user-menu-item"
+            href="/manuel-caisse/Manuel_Utilisation_Caisse_POS.docx"
+            download="Manuel_Utilisation_Caisse_POS.docx"
+            onClick={() => setOpen(false)}
+          >
+            <Download size={16} />
+            Télécharger le manuel (Word)
+          </a>
+
+          <a
+            role="menuitem"
+            className="odoo-user-menu-item"
+            href="/manuel-caisse/Manuel_Utilisation_Caisse_POS_web.zip"
+            download="Manuel_Utilisation_Caisse_POS_web.zip"
+            onClick={() => setOpen(false)}
+          >
+            <Download size={16} />
+            Télécharger le manuel (Web)
+          </a>
 
           <button
             type="button"

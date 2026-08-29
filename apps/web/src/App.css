@@ -1695,3 +1695,103 @@ button.login-password-toggle[type='button']:hover:not(:disabled) {
     display: none !important;
   }
 }
+
+/* Manuel caisse POS */
+.manuel-caisse-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: calc(100svh - 64px);
+  padding: 16px 18px 24px;
+}
+
+.manuel-caisse-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.manuel-caisse-kicker {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #0f766e);
+}
+
+.manuel-caisse-head h1 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.manuel-caisse-lead {
+  margin: 8px 0 0;
+  max-width: 52rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.manuel-caisse-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.manuel-caisse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--border, #dde3ea);
+  background: var(--surface, #fff);
+  color: var(--text, #1a1c22);
+  cursor: pointer;
+}
+
+.manuel-caisse-btn--ghost:hover {
+  border-color: var(--accent, #0f766e);
+  color: var(--accent, #0f766e);
+}
+
+a.manuel-caisse-btn.btn-primary,
+.manuel-caisse-btn.btn-primary {
+  border-color: transparent;
+  color: #fff;
+}
+
+.manuel-caisse-frame-wrap {
+  flex: 1;
+  min-height: 70vh;
+  border: 1px solid var(--border, #dde3ea);
+  border-radius: calc(var(--radius, 8px) + 2px);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: var(--shadow, 0 1px 3px rgba(0, 0, 0, 0.06));
+}
+
+.manuel-caisse-frame {
+  width: 100%;
+  height: min(78vh, 920px);
+  border: 0;
+  display: block;
+  background: #f7f8fa;
+}
+
+a.odoo-user-menu-item {
+  text-decoration: none;
+  color: inherit;
+  box-sizing: border-box;
+}

@@ -29,6 +29,7 @@ import { InventairesPage } from './routes/InventairesPage';
 import { InventaireDetailPage } from './routes/InventaireDetailPage';
 import { OperationsStockPage } from './routes/OperationsStockPage';
 import { BonStockDetailPage } from './routes/BonStockDetailPage';
+import { ManuelCaissePage } from './routes/ManuelCaissePage';
 import { LoginPage } from './routes/LoginPage';
 import { PosPage } from './routes/PosPage';
 import { ProduitsPage } from './routes/ProduitsPage';
@@ -140,6 +141,7 @@ function App() {
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/audit/controle-coherence" element={<ControleCoherencePage />} />
         <Route path="/changer-mot-de-passe" element={<ChangePasswordPage />} />
+        <Route path="/manuel-caisse" element={<ManuelCaissePage />} />
         <Route path="/pos" element={<PosPage />} />
       </Route>
     </Routes>

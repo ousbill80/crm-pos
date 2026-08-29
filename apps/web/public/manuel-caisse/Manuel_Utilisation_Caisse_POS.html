@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Manuel d'utilisation — Caisse boutique (POS)</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="" />
+
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.55; max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; color: #1a1c22; background: #f7f8fa; }
+  h1,h2,h3 { line-height: 1.25; color: #0f766e; }
+  h1 { font-size: 1.75rem; }
+  img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid #dde3ea; box-shadow: 0 8px 24px rgba(20,23,28,.06); margin: 12px 0 4px; background: #fff; }
+  table { border-collapse: collapse; width: 100%; background: #fff; margin: 12px 0; }
+  th, td { border: 1px solid #dde3ea; padding: 8px 10px; text-align: left; vertical-align: top; font-size: 0.92rem; }
+  th { background: #e6f4f2; }
+  blockquote { border-left: 4px solid #0f766e; margin: 12px 0; padding: 8px 14px; background: #eef8f6; }
+  code { background: #eef1f4; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #1a1c22; color: #e8f5f3; padding: 12px 14px; border-radius: 8px; overflow: auto; }
+  hr { border: none; border-top: 1px solid #dde3ea; margin: 28px 0; }
+</style>
+
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Manuel d'utilisation — Caisse boutique (POS)</h1>
+</header>
+<h1 id="manuel-dutilisation-caisse-boutique-pos">Manuel d’utilisation —
+Caisse boutique (POS)</h1>
+<p><strong>Progiciel Caisses &amp; CRM — MAJOR AUTO PARTS</strong><br />
+Public : <strong>Caissier(ère) boutique</strong> et <strong>Responsable
+boutique</strong><br />
+Périmètre : ouverture de session → ventes → clôture → transfert vers la
+trésorerie principale (caisse centrale)</p>
+<blockquote>
+<p>Captures réelles depuis l’application en production
+(<code>crm.majorautoparts.shop</code>, compte démo POS). Les libellés
+correspondent exactement à CaissePOS.</p>
+</blockquote>
+<hr />
+<h2 id="table-des-matières">Table des matières</h2>
+<ol type="1">
+<li><a href="#1-avant-de-commencer">Avant de commencer</a></li>
+<li><a href="#2-connexion">Connexion</a></li>
+<li><a href="#3-ouvrir-le-poste-fond-de-tiroir">Ouvrir le poste (fond de
+tiroir)</a></li>
+<li><a href="#4-encaisser-une-vente">Encaisser une vente</a></li>
+<li><a href="#5-clôturer-la-journée">Clôturer la journée</a></li>
+<li><a href="#6-transfert-vers-la-caisse-principale">Transfert vers la
+caisse principale</a></li>
+<li><a href="#7-circuit-des-fonds-statuts">Circuit des fonds
+(statuts)</a></li>
+<li><a href="#8-ce-que-la-boutique-ne-peut-jamais-faire">Ce que la
+boutique ne peut jamais faire</a></li>
+<li><a href="#9-incidents-fréquents">Incidents fréquents</a></li>
+<li><a href="#10-rappel-des-comptes-démo-local--staging">Rappel des
+comptes démo (local / staging)</a></li>
+</ol>
+<hr />
+<h2 id="avant-de-commencer">1. Avant de commencer</h2>
+<h3 id="rôles-concernés">Rôles concernés</h3>
+<table>
+<colgroup>
+<col style="width: 17%" />
+<col style="width: 48%" />
+<col style="width: 34%" />
+</colgroup>
+<thead>
+<tr>
+<th>Rôle</th>
+<th>Accès principal</th>
+<th>Peut faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Caissier(ère) boutique</strong></td>
+<td>Point de vente (<code>/pos</code>)</td>
+<td>Encaisser, clôturer, <strong>initier</strong> le versement du
+jour</td>
+</tr>
+<tr>
+<td><strong>Responsable boutique</strong></td>
+<td>Dashboard + POS</td>
+<td>Idem + <strong>mettre en transit</strong> le versement</td>
+</tr>
+</tbody>
+</table>
+<h3 id="matériel-recommandé">Matériel recommandé</h3>
+<ul>
+<li>Navigateur à jour (Chrome / Edge / Safari)</li>
+<li>Connexion Internet (mode hors-ligne limité aux ventes en file
+d’attente)</li>
+<li>Imprimante ticket (si utilisée en boutique)</li>
+<li>Un <strong>confirmateur</strong> (coéquipier ou responsable) pour
+l’ouverture et la clôture</li>
+</ul>
+<h3 id="règle-dor-séparation-des-tâches">Règle d’or (séparation des
+tâches)</h3>
+<p>Une caisse boutique <strong>encaisser</strong> et
+<strong>initier</strong> le versement.<br />
+Elle <strong>ne réceptionne jamais</strong> et <strong>ne valide
+jamais</strong> un versement à la centrale.<br />
+Seuls le <strong>Caissier central</strong> et le <strong>DAF</strong>
+réceptionnent / valident.</p>
+<hr />
+<h2 id="connexion">2. Connexion</h2>
+<ol type="1">
+<li>Ouvrir l’adresse CRM / POS de votre environnement (ex.
+<code>https://pos.majorautoparts.shop</code> ou
+<code>https://crm.majorautoparts.shop</code>).</li>
+<li>Saisir votre <strong>Identifiant</strong> et votre <strong>Mot de
+passe</strong>.</li>
+<li>Cliquer sur <strong>Se connecter</strong>.</li>
+<li>En production, valider le widget <strong>Cloudflare
+Turnstile</strong> (anti-bots) s’il s’affiche.</li>
+</ol>
+<figure>
+<img src="captures/01-connexion.png"
+alt="Figure 1 — Écran de connexion" />
+<figcaption aria-hidden="true">Figure 1 — Écran de
+connexion</figcaption>
+</figure>
+<p><em>Figure 1 — Connexion CaissePOS</em></p>
+<p>Après connexion, le caissier arrive sur le <strong>Point de
+vente</strong>. Le responsable peut aussi ouvrir <strong>Point de
+vente</strong> depuis le menu <strong>Ventes</strong>.</p>
+<hr />
+<h2 id="ouvrir-le-poste-fond-de-tiroir">3. Ouvrir le poste (fond de
+tiroir)</h2>
+<p>Sans session ouverte, aucune vente n’est possible.</p>
+<h3 id="étape-a-fond-de-tiroir">Étape A — Fond de tiroir</h3>
+<ol type="1">
+<li>Sur l’écran <strong>Ouvrir le poste</strong>, choisir le
+<strong>tiroir</strong> si plusieurs sont proposés.</li>
+<li>Compter les espèces déjà présentes dans le tiroir.</li>
+<li>Saisir le <strong>Montant compté (FCFA)</strong> (ou utiliser les
+pastilles rapides : Vide, montants types).</li>
+<li>Cliquer sur <strong>Continuer</strong>.</li>
+</ol>
+<figure>
+<img src="captures/02-ouverture-fond.png"
+alt="Figure 2 — Fond de tiroir" />
+<figcaption aria-hidden="true">Figure 2 — Fond de tiroir</figcaption>
+</figure>
+<p><em>Figure 2 — Ouverture : comptage du fond</em></p>
+<h3 id="étape-b-confirmateur">Étape B — Confirmateur</h3>
+<ol type="1">
+<li>Sélectionner le <strong>confirmateur présent</strong> (responsable
+magasin ou autre caissier habilité).</li>
+<li>Saisir le <strong>mot de passe</strong> du confirmateur.</li>
+<li>Cliquer sur <strong>Démarrer les ventes</strong>.</li>
+</ol>
+<p>La session passe à l’état <strong>OUVERTE</strong>. Vous pouvez
+encaisser.</p>
+<blockquote>
+<p>Le fond d’ouverture servira de référence au moment de la clôture
+(calcul de l’attendu).</p>
+</blockquote>
+<hr />
+<h2 id="encaisser-une-vente">4. Encaisser une vente</h2>
+<h3 id="composer-le-panier">4.1 Composer le panier</h3>
+<ol type="1">
+<li>Scanner le code-barres ou rechercher l’article (référence,
+désignation, SKU).</li>
+<li>Ajuster les quantités.</li>
+<li>Appliquer une <strong>remise</strong> si besoin (plafond usuel
+<strong>20 %</strong> ; au-delà, dérogation chef de caisse).</li>
+<li>Vérifier <strong>Sous-total</strong>, <strong>Remise</strong>,
+<strong>Total</strong>.</li>
+<li>Actions utiles :
+<ul>
+<li><strong>Mettre en attente</strong> — park du ticket</li>
+<li><strong>Vider le panier</strong></li>
+<li><strong>Paiement · {montant}</strong> — passer à l’encaissement</li>
+</ul></li>
+</ol>
+<figure>
+<img src="captures/03-vente-panier.png"
+alt="Figure 3 — Panier / caisse" />
+<figcaption aria-hidden="true">Figure 3 — Panier / caisse</figcaption>
+</figure>
+<p><em>Figure 3 — Composition du panier</em></p>
+<p>Barre supérieure utile : <strong>File</strong>,
+<strong>Commandes</strong>, <strong>Ventes du jour</strong>,
+<strong>Clôturer</strong>.<br />
+Indicateur <strong>En ligne</strong> / <strong>Hors ligne</strong> :
+hors ligne, les ventes partent en file et se synchronisent au retour
+réseau.</p>
+<h3 id="paiement">4.2 Paiement</h3>
+<ol type="1">
+<li>Choisir un ou plusieurs modes : <strong>Espèces</strong>,
+<strong>Carte</strong>, <strong>Mobile Money</strong>.</li>
+<li>En espèces :
+<ul>
+<li>Saisir le <strong>reçu du client (billets)</strong></li>
+<li>Vérifier la <strong>monnaie à rendre</strong></li>
+</ul></li>
+<li>Client : laisser <strong>Client anonyme</strong> ou rattacher une
+fiche CRM (optionnel — la vente anonyme est toujours autorisée).</li>
+<li>Cliquer sur <strong>Valider · {total}</strong>.</li>
+</ol>
+<figure>
+<img src="captures/04-paiement.png" alt="Figure 4 — Écran paiement" />
+<figcaption aria-hidden="true">Figure 4 — Écran paiement</figcaption>
+</figure>
+<p><em>Figure 4 — Paiement</em></p>
+<h3 id="ticket">4.3 Ticket</h3>
+<ul>
+<li>Le ticket s’affiche (et s’imprime si l’imprimante est
+configurée).</li>
+<li>Boutons : <strong>Réimprimer</strong>, <strong>Nouvelle
+commande</strong>.</li>
+<li>Reprendre les ventes pour le reste de la journée.</li>
+</ul>
+<hr />
+<h2 id="clôturer-la-journée">5. Clôturer la journée</h2>
+<p>Quand le magasin ferme (ou en fin de vacation) :</p>
+<ol type="1">
+<li>Vider ou finaliser le panier en cours.</li>
+<li>Cliquer sur <strong>Clôturer</strong> (indisponible s’il reste des
+ventes hors-ligne non synchronisées ou une file bloquante).</li>
+<li>Dans <strong>Fermer le poste</strong> :</li>
+</ol>
+<h3 id="étape-1-comptage">Étape 1 — Comptage</h3>
+<ul>
+<li>Relire <strong>Fond d’ouverture</strong>, <strong>Espèces nettes
+session</strong>, <strong>Attendu</strong>.</li>
+<li>Saisir le <strong>Fond compté (FCFA)</strong> réel du tiroir.</li>
+<li>Message attendu si tout est juste : <em>Tiroir juste — aucun
+écart</em>.</li>
+<li>Un <strong>écart</strong> peut déclencher un <strong>litige</strong>
+sur le versement magasin.</li>
+</ul>
+<h3 id="étape-2-confirmateur">Étape 2 — Confirmateur</h3>
+<ul>
+<li>Mot de passe du confirmateur.</li>
+<li>Cliquer sur <strong>Clôturer</strong>.</li>
+</ul>
+<figure>
+<img src="captures/05-cloture.png" alt="Figure 5 — Clôture du poste" />
+<figcaption aria-hidden="true">Figure 5 — Clôture du poste</figcaption>
+</figure>
+<p><em>Figure 5 — Fermeture / comptage</em></p>
+<h3 id="ce-que-fait-le-système-à-la-clôture">Ce que fait le système à la
+clôture</h3>
+<ol type="1">
+<li>Ferme la session de caisse.</li>
+<li>Enregistre les espèces sur le tiroir.</li>
+<li>Transfert interne <strong>tiroir → caisse magasin</strong>.</li>
+<li>Si <strong>aucun écart</strong> et un point du jour &gt; 0 : peut
+<strong>initier automatiquement</strong> une sortie de fonds magasin →
+centrale au statut <strong>Initiée</strong>.</li>
+</ol>
+<p>Vous arrivez ensuite sur l’écran <strong>Fonds du jour</strong>
+(<em>Journée clôturée · ventes fermées</em>).</p>
+<hr />
+<h2 id="transfert-vers-la-caisse-principale">6. Transfert vers la caisse
+principale</h2>
+<p>Objectif : faire partir les fonds du magasin vers la
+<strong>trésorerie principale</strong> (caisse centrale).</p>
+<h3 id="depuis-lécran-fonds-du-jour-recommandé">Depuis l’écran « Fonds
+du jour » (recommandé)</h3>
+<ol type="1">
+<li>Section <strong>Transfert vers la trésorerie
+principale</strong>.</li>
+<li>Suivre le circuit affiché :
+<ul>
+<li>Transfert initié<br />
+</li>
+<li>En transit<br />
+</li>
+<li>Réception DAF / Caissier central<br />
+</li>
+<li>Validée<br />
+</li>
+</ul></li>
+<li>Si le versement n’est pas encore initié : cliquer sur
+<strong>Transférer vers la trésorerie principale</strong>.</li>
+<li>Statut attendu côté boutique : <strong>Initiée — à mettre en
+transit</strong>.</li>
+<li>Le <strong>Responsable boutique</strong> (ou le convoyeur selon
+procédure) clique sur <strong>Mettre en transit</strong>.</li>
+<li>Options utiles :
+<ul>
+<li><strong>Voir le bordereau</strong></li>
+<li><strong>Tirer l’état de clôture</strong></li>
+<li><strong>Ouvrir une nouvelle journée</strong> (nouvelle session le
+lendemain)</li>
+</ul></li>
+</ol>
+<figure>
+<img src="captures/06-transfert-centrale.png"
+alt="Figure 6 — Transfert vers la centrale" />
+<figcaption aria-hidden="true">Figure 6 — Transfert vers la
+centrale</figcaption>
+</figure>
+<p><em>Figure 6 — Fonds du jour et transfert</em></p>
+<h3 id="depuis-le-menu-trésorerie-manuel">Depuis le menu Trésorerie
+(manuel)</h3>
+<ol type="1">
+<li>Menu <strong>Trésorerie</strong> → <strong>Transactions</strong> (ou
+<strong>Bordereaux</strong>).</li>
+<li><strong>Nouveau versement</strong> → renseigner le montant / motif →
+<strong>Initier le versement</strong>.</li>
+<li>Sur la fiche transaction : <strong>Passer en transit</strong> /
+<strong>Mettre en transit</strong>.</li>
+</ol>
+<blockquote>
+<p>Après <strong>En transit</strong>, le travail boutique s’arrête pour
+ce versement. La suite est exclusivement <strong>Centrale /
+DAF</strong>.</p>
+</blockquote>
+<hr />
+<h2 id="circuit-des-fonds-statuts">7. Circuit des fonds (statuts)</h2>
+<p>Machine à états (§6.4 du cahier des charges) :</p>
+<pre><code>Initiée → En transit → Réceptionnée → Validée
+                   ↘ Litige (bloqué jusqu’à régularisation)</code></pre>
+<table>
+<colgroup>
+<col style="width: 24%" />
+<col style="width: 30%" />
+<col style="width: 45%" />
+</colgroup>
+<thead>
+<tr>
+<th>Statut</th>
+<th>Qui agit</th>
+<th>Signification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Initiée</strong></td>
+<td>Caissier / Responsable boutique</td>
+<td>Demande de sortie créée</td>
+</tr>
+<tr>
+<td><strong>En transit</strong></td>
+<td>Responsable boutique / Convoyeur</td>
+<td>Fonds en route vers la centrale</td>
+</tr>
+<tr>
+<td><strong>Réceptionnée</strong></td>
+<td><strong>Caissier central / DAF uniquement</strong></td>
+<td>Arrivée physique / saisie centrale</td>
+</tr>
+<tr>
+<td><strong>Validée</strong></td>
+<td><strong>Caissier central / DAF uniquement</strong></td>
+<td>Rapprochement sans écart</td>
+</tr>
+<tr>
+<td><strong>Litige</strong></td>
+<td>Contrôle interne / DAF</td>
+<td>Écart à régulariser</td>
+</tr>
+</tbody>
+</table>
+<h3 id="schéma">Schéma</h3>
+<pre class="mermaid"><code>flowchart LR
+  A[Initiée&lt;br/&gt;Boutique] --&gt; B[En transit&lt;br/&gt;Resp. / Convoyeur]
+  B --&gt; C[Réceptionnée&lt;br/&gt;Caissier central / DAF]
+  C --&gt; D[Validée&lt;br/&gt;Centrale]
+  C -.-&gt; E[Litige]
+  B -.-&gt; E
+  E --&gt; D</code></pre>
+<hr />
+<h2 id="ce-que-la-boutique-ne-peut-jamais-faire">8. Ce que la boutique
+ne peut jamais faire</h2>
+<table>
+<colgroup>
+<col style="width: 23%" />
+<col style="width: 29%" />
+<col style="width: 47%" />
+</colgroup>
+<thead>
+<tr>
+<th>Action</th>
+<th>Boutique</th>
+<th>Centrale / DAF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Encaisser une vente</td>
+<td>Oui</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Initier un versement</td>
+<td>Oui</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Mettre en transit</td>
+<td>Responsable / Convoyeur</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>Réceptionner</strong> un versement</td>
+<td><strong>Non</strong></td>
+<td>Oui</td>
+</tr>
+<tr>
+<td><strong>Valider / rapprocher</strong></td>
+<td><strong>Non</strong></td>
+<td>Oui</td>
+</tr>
+<tr>
+<td>Régulariser un litige magasin→centrale</td>
+<td><strong>Non</strong></td>
+<td>Contrôle interne / DAF</td>
+</tr>
+</tbody>
+</table>
+<p>Toute tentative d’appel API hors rôle est <strong>refusée
+(403)</strong> et journalisée.</p>
+<hr />
+<h2 id="incidents-fréquents">9. Incidents fréquents</h2>
+<table>
+<colgroup>
+<col style="width: 47%" />
+<col style="width: 52%" />
+</colgroup>
+<thead>
+<tr>
+<th>Symptôme</th>
+<th>Que faire</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bouton <strong>Clôturer</strong> grisé</td>
+<td>Synchroniser les ventes hors-ligne ; vider / finaliser la file</td>
+</tr>
+<tr>
+<td>Écart à la clôture</td>
+<td>Recompter ; l’écart peut créer un <strong>litige</strong> — prévenir
+le responsable / contrôle</td>
+</tr>
+<tr>
+<td>« Compte verrouillé » à la connexion</td>
+<td>Attendre 15 min après 5 échecs, ou faire débloquer par l’admin</td>
+</tr>
+<tr>
+<td>Widget anti-bot (Turnstile)</td>
+<td>Cocher / attendre la validation Cloudflare avant <strong>Se
+connecter</strong></td>
+</tr>
+<tr>
+<td>Pas d’imprimante</td>
+<td>Utiliser <strong>Réimprimer</strong> plus tard ou l’état de clôture
+PDF</td>
+</tr>
+<tr>
+<td>Versement déjà <strong>Initiée</strong></td>
+<td>Ne pas ré-initier : passer à <strong>Mettre en transit</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="rappel-des-comptes-démo-local-staging">10. Rappel des comptes
+démo (local / staging)</h2>
+<p>Mot de passe seed : <code>MotDePasse!123</code><br />
+<em>(jamais pour la production live)</em></p>
+<table>
+<colgroup>
+<col style="width: 48%" />
+<col style="width: 22%" />
+<col style="width: 29%" />
+</colgroup>
+<thead>
+<tr>
+<th>Identifiant</th>
+<th>Rôle</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>demo-pos-caissier</code></td>
+<td>Caissier boutique</td>
+<td>Encaisser / clôturer / initier</td>
+</tr>
+<tr>
+<td><code>demo-pos-temoin</code></td>
+<td>Responsable boutique</td>
+<td>Confirmateur + transit</td>
+</tr>
+<tr>
+<td><code>demo-central</code></td>
+<td>Caissier central</td>
+<td>Réception / validation (<strong>pas boutique</strong>)</td>
+</tr>
+<tr>
+<td><code>demo-daf</code></td>
+<td>DAF</td>
+<td>Validation niveau 2</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="checklist-de-fin-de-journée-boutique">Checklist de fin de
+journée (boutique)</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />Toutes les ventes de la session sont
+encaissées<br />
+</label></li>
+<li><label><input type="checkbox" />File hors-ligne vide /
+synchronisée<br />
+</label></li>
+<li><label><input type="checkbox" /><strong>Clôturer</strong> avec
+comptage + confirmateur<br />
+</label></li>
+<li><label><input type="checkbox" />Écart = 0 (sinon signaler)<br />
+</label></li>
+<li><label><input type="checkbox" />Versement <strong>Initiée</strong>
+(auto ou bouton <strong>Transférer…</strong>)<br />
+</label></li>
+<li><label><input type="checkbox" />Responsable : <strong>Mettre en
+transit</strong><br />
+</label></li>
+<li><label><input type="checkbox" />Conserver / imprimer l’<strong>état
+de clôture</strong><br />
+</label></li>
+<li><label><input type="checkbox" /><strong>Ne pas</strong> tenter de
+réceptionner ni valider à la centrale</label></li>
+</ul>
+<hr />
+<p><em>Document couvrant le workflow POS §6.3 et la machine à états des
+versements §6.4 — séparation des tâches §6.2.</em><br />
+<em>MAJOR AUTO PARTS · CaissePOS</em></p>
+</body>
+</html>
