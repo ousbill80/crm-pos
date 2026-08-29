@@ -4,7 +4,7 @@ const TURNSTILE_SCRIPT =
   'https://challenges.cloudflare.com/turnstile/v0/api.js';
 
 /** Site key publique du widget Turnstile MAJOR (dashboard Cloudflare). */
-export const TURNSTILE_SITE_KEY_DEFAULT = '0x4AAAAAAEguFSvWV8IHo6q_';
+export const TURNSTILE_SITE_KEY_DEFAULT = '0x4AAAAAAEgufSvWV8IHo6q_';
 
 declare global {
   interface Window {
