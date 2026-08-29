@@ -310,7 +310,17 @@ export class ShopCheckoutService {
     const commande = await this.prisma.commandeWeb.findUnique({
       where: { suiviToken: token },
       include: {
-        lignes: true,
+        lignes: {
+          include: {
+            produit: {
+              select: {
+                imageUrl: true,
+                slug: true,
+                parent: { select: { imageUrl: true, slug: true } },
+              },
+            },
+          },
+        },
         boutiqueRetrait: { select: { nom: true, adresse: true } },
         zoneLivraison: { select: { libelle: true, tarifForfait: true } },
       },
@@ -366,6 +376,8 @@ export class ShopCheckoutService {
         quantite: l.quantite,
         prixUnitaireTtc: Number(l.prixUnitaireTtc),
         montantLigne: Number(l.prixUnitaireTtc) * l.quantite,
+        imageUrl: l.produit.imageUrl || l.produit.parent?.imageUrl || null,
+        slug: l.produit.slug ?? l.produit.parent?.slug ?? null,
       })),
       createdAt: commande.createdAt,
       payeeAt: commande.payeeAt,

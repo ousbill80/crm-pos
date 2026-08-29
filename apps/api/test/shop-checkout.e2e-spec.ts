@@ -69,6 +69,7 @@ describe('Shop checkout (e2e)', () => {
         prixWeb: 5500,
         visibleWeb: true,
         slug: 'coque-test',
+        imageUrl: '/catalogue/coque-test.jpg',
         stock: 10,
       },
     });
@@ -146,6 +147,7 @@ describe('Shop checkout (e2e)', () => {
       id: string;
       statut: string;
       montantTotal: string | number;
+      suiviToken: string | null;
     }>(res);
     expect(checkout.statut).toBe('EN_ATTENTE_PAIEMENT');
     expect(Number(checkout.montantTotal)).toBeGreaterThan(5500);
@@ -153,6 +155,15 @@ describe('Shop checkout (e2e)', () => {
       where: { commandeWebId: checkout.id },
     });
     expect(lignes[0].prixUnitaireHt.toString()).toBe('5500');
+
+    const suivi = await request(app.getHttpServer())
+      .get(`/shop/suivi/${checkout.suiviToken}`)
+      .expect(200);
+    const payload = body<{
+      lignes: Array<{ imageUrl: string | null; slug: string | null }>;
+    }>(suivi);
+    expect(payload.lignes[0].imageUrl).toBe('/catalogue/coque-test.jpg');
+    expect(payload.lignes[0].slug).toBe('coque-test');
   });
 
   it('expose les modes de règlement publics (espèces livraison / retrait)', async () => {

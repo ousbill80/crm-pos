@@ -1,6 +1,7 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { formatFcfa, shopFetch } from '../lib/api';
+import { ProductMedia } from '../components/ProductCard';
 import {
   buildTimeline,
   formatDateFr,
@@ -34,6 +35,8 @@ type SuiviPayload = {
     quantite: number;
     prixUnitaireTtc: number;
     montantLigne: number;
+    imageUrl?: string | null;
+    slug?: string | null;
   }>;
   createdAt: string;
   payeeAt: string | null;
@@ -180,15 +183,40 @@ export default function SuiviPage() {
 
       <div className="panel">
         <h2 className="suivi-articles-title">Articles</h2>
-        <ul className="stack-list">
-          {data.lignes.map((l, i) => (
-            <li key={`${l.designation}-${i}`}>
-              <span>
-                {l.designation} × {l.quantite}
-              </span>
-              <strong>{formatFcfa(l.montantLigne)}</strong>
-            </li>
-          ))}
+        <ul className="stack-list suivi-lignes">
+          {data.lignes.map((l, i) => {
+            const media = (
+              <ProductMedia
+                designation={l.designation}
+                imageUrl={l.imageUrl}
+                eager={i === 0}
+              />
+            );
+            return (
+              <li key={`${l.designation}-${i}`} className="suivi-ligne">
+                {l.slug ? (
+                  <Link
+                    to={`/produit/${l.slug}`}
+                    className="suivi-ligne-media"
+                    aria-label={l.designation}
+                  >
+                    {media}
+                  </Link>
+                ) : (
+                  <div className="suivi-ligne-media">{media}</div>
+                )}
+                <div className="suivi-ligne-info">
+                  {l.slug ? (
+                    <Link to={`/produit/${l.slug}`}>{l.designation}</Link>
+                  ) : (
+                    <span>{l.designation}</span>
+                  )}
+                  <span className="muted">× {l.quantite}</span>
+                </div>
+                <strong>{formatFcfa(l.montantLigne)}</strong>
+              </li>
+            );
+          })}
         </ul>
         <dl className="suivi-totals">
           <div>
