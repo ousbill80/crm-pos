@@ -23,9 +23,9 @@ ENV NODE_ENV=production
 RUN apk add --no-cache wget \
   && addgroup -S app && adduser -S -G app app
 WORKDIR /repo
-COPY --from=build /repo /repo
-RUN chmod +x apps/api/docker-entrypoint.sh \
-  && chown -R app:app /repo
+# --chown pendant le COPY : évite un chown -R sur node_modules (très lent sur VPS)
+COPY --from=build --chown=app:app /repo /repo
+RUN chmod +x apps/api/docker-entrypoint.sh
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=30s \
