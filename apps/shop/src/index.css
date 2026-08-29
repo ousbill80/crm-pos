@@ -3696,7 +3696,7 @@ textarea:focus {
 .compte-temu-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
@@ -3753,9 +3753,10 @@ textarea:focus {
   list-style: none;
   margin: 0;
   padding: 0.85rem 0.35rem 0.35rem;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.35rem;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
   text-align: center;
 }
 
@@ -3763,6 +3764,7 @@ textarea:focus {
   display: grid;
   gap: 0.2rem;
   justify-items: center;
+  width: 8.5rem;
 }
 
 .compte-temu-perk-ico {

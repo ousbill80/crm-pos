@@ -134,6 +134,16 @@ export class ShopCatalogueService {
       and.push({ categorie: categorie.trim() });
     }
 
+    // Navigation rayon : une carte par famille. La recherche (H7, 18"…)
+    // inclut les SKUs enfants pour atterrir sur la bonne variante.
+    const browsing =
+      interpreted.tokens.length === 0 &&
+      interpreted.marqueTerms.length === 0 &&
+      !interpreted.raw;
+    if (browsing) {
+      and.push({ parentId: null });
+    }
+
     if (interpreted.marqueTerms.length > 0) {
       and.push({
         OR: marqueFieldOr(interpreted.marqueTerms),

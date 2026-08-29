@@ -3,6 +3,7 @@
 import { PrismaClient, TypeJournalComptable, TypeTaxeAchat } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { periodesMensuellesExercice } from '../src/accounting-gl/exercice-scaffold';
+import { seedCatalogueWeb } from './seed-catalogue-web';
 
 const prisma = new PrismaClient();
 const MOT_DE_PASSE = 'MotDePasse!123';
@@ -1758,91 +1759,7 @@ async function main() {
     },
   });
 
-  const refsWeb = [
-    { ref: 'COQ-IP15', slug: 'coque-silicone-iphone', prixWeb: 4500 },
-    { ref: 'CHG-20W', slug: 'chargeur-usbc-20w', prixWeb: 8500 },
-    { ref: 'ECO-BT', slug: 'ecouteurs-bluetooth', prixWeb: 12000 },
-    { ref: 'VRG-UNIV', slug: 'verre-trempe-universel', prixWeb: 2500 },
-    { ref: 'CBL-USBC', slug: 'cable-usbc-1m', prixWeb: 3500 },
-  ];
-  for (const item of refsWeb) {
-    const p = await prisma.produit.findFirst({ where: { reference: item.ref } });
-    if (p) {
-      await prisma.produit.update({
-        where: { id: p.id },
-        data: {
-          visibleWeb: true,
-          prixWeb: item.prixWeb,
-          slug: item.slug,
-          tauxTva: 18,
-        },
-      });
-    }
-  }
-
-  // Variantes e-commerce démo — kit phares LED (sélecteurs type Temu)
-  const phareVariants = [
-    {
-      ref: 'LED-H7-W',
-      slug: 'kit-phares-led-h7',
-      designation: 'Kit phares LED H7 blanc 6000K',
-      attributs: 'Culot: H7 | Couleur: Blanc | Température: 6000K',
-      prixWeb: 28500,
-    },
-    {
-      ref: 'LED-H4-W',
-      slug: 'kit-phares-led-h4',
-      designation: 'Kit phares LED H4 blanc 6000K',
-      attributs: 'Culot: H4 | Couleur: Blanc | Température: 6000K',
-      prixWeb: 29500,
-    },
-    {
-      ref: 'LED-H11-W',
-      slug: 'kit-phares-led-h11',
-      designation: 'Kit phares LED H11 blanc 6000K',
-      attributs: 'Culot: H11 | Couleur: Blanc | Température: 6000K',
-      prixWeb: 27500,
-    },
-    {
-      ref: 'LED-H7-Y',
-      slug: 'kit-phares-led-h7-jaune',
-      designation: 'Kit phares LED H7 jaune 3000K',
-      attributs: 'Culot: H7 | Couleur: Jaune | Température: 3000K',
-      prixWeb: 28900,
-    },
-  ] as const;
-
-  let phareParentId: string | null = null;
-  for (const [i, v] of phareVariants.entries()) {
-    const existing = await prisma.produit.findFirst({
-      where: { reference: v.ref },
-    });
-    const data = {
-      designation: v.designation,
-      reference: v.ref,
-      categorie: 'Phares',
-      description:
-        'Kit LED plug & play — faisceau adapté, faible consommation. Vérifier le culot avant montage.',
-      prixUnitaire: v.prixWeb,
-      prixWeb: v.prixWeb,
-      visibleWeb: true,
-      actif: true,
-      slug: v.slug,
-      tauxTva: 18,
-      attributs: v.attributs,
-      parentId: i === 0 ? null : phareParentId,
-    };
-    const row = existing
-      ? await prisma.produit.update({ where: { id: existing.id }, data })
-      : await prisma.produit.create({ data });
-    if (i === 0) phareParentId = row.id;
-    else if (phareParentId && row.parentId !== phareParentId) {
-      await prisma.produit.update({
-        where: { id: row.id },
-        data: { parentId: phareParentId },
-      });
-    }
-  }
+  const catalogueWeb = await seedCatalogueWeb(prisma, { hubId: hubStock.id });
 
   console.log(
     [
@@ -1858,6 +1775,7 @@ async function main() {
       '  Support: demo-respsi / demo-crm',
       '  Achats P2P: demo-achats / demo-logistique / demo-qualite / demo-raf',
       '  (aussi) GSM: demo-caissier-gsm / demo-resp-gsm · Café: demo-caissier-cafe / demo-resp-cafe',
+      `Catalogue web: ${catalogueWeb.familles} familles / ${catalogueWeb.skus} SKUs (photos + variantes).`,
     ].join('\n'),
   );
 }

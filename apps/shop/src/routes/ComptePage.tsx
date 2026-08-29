@@ -794,15 +794,6 @@ export default function ComptePage() {
             <span className="brand-major">MAJOR</span>
             <span className="brand-auto">AUTO PARTS</span>
           </p>
-          <p className="compte-temu-secure">
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
-              <path
-                fill="currentColor"
-                d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2H9Z"
-              />
-            </svg>
-            Toutes les données sont protégées
-          </p>
         </header>
 
         <h1 className="compte-temu-title">Se connecter / S&apos;inscrire</h1>
@@ -819,18 +810,6 @@ export default function ComptePage() {
             </span>
             <strong>Livraison CIV</strong>
             <em>Partout · showroom</em>
-          </li>
-          <li>
-            <span className="compte-temu-perk-ico" aria-hidden>
-              <svg viewBox="0 0 24 24" width="28" height="28">
-                <path
-                  fill="currentColor"
-                  d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 2.2 6 2.25V11c0 3.9-2.5 7.3-6 8.7-3.5-1.4-6-4.8-6-8.7V6.45l6-2.25Zm-1 4.3v3.2H8v2h3v3h2v-3h3v-2h-3V8.5h-2Z"
-                />
-              </svg>
-            </span>
-            <strong>Paiement sûr</strong>
-            <em>Wave · OM · carte</em>
           </li>
           <li>
             <span className="compte-temu-perk-ico" aria-hidden>
@@ -1004,11 +983,6 @@ export default function ComptePage() {
             </p>
           </form>
         </div>
-
-        <p className="compte-temu-foot">
-          Click &amp; collect showroom · Retours sous conditions · Fidélité
-          Bronze → Or
-        </p>
       </div>
     </div>
   );
