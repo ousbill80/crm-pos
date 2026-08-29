@@ -62,7 +62,7 @@ export const CATEGORIES = [
 
 export const TRUST = [
   { title: 'Livraison rapide', text: 'Zones Abidjan & retrait showroom' },
-  { title: 'Paiement sécurisé', text: 'Carte, Orange Money, Wave' },
+  { title: 'Paiement sécurisé', text: 'Mobile money et carte bancaire' },
   { title: 'Toutes marques', text: 'Mercedes, Toyota, BMW, Audi…' },
   { title: 'Conseil atelier', text: 'Équipe technique showroom' },
 ] as const;

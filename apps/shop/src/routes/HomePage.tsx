@@ -313,7 +313,7 @@ export default function HomePage() {
           <h2>Retrait showroom ou livraison</h2>
           <p>
             Commandez en ligne, retirez en boutique ou faites-vous livrer.
-            Wave, Orange Money, carte — ou paiement au retrait.
+            Paiement mobile money, carte bancaire, ou au retrait.
           </p>
         </div>
         <Link className="btn" to="/catalogue">
