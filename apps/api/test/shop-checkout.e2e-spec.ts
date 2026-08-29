@@ -155,6 +155,18 @@ describe('Shop checkout (e2e)', () => {
     expect(lignes[0].prixUnitaireHt.toString()).toBe('5500');
   });
 
+  it('expose les modes de règlement publics (espèces livraison / retrait)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/shop/reglements')
+      .expect(200);
+    const modes = body<{
+      paiementLivraisonActif: boolean;
+      paiementRetraitActif: boolean;
+    }>(res);
+    expect(modes.paiementLivraisonActif).toBe(true);
+    expect(modes.paiementRetraitActif).toBe(true);
+  });
+
   it('checkout différé retrait → PREPARATION', async () => {
     const cookie = await panierAvecLigne(1);
     const res = await request(app.getHttpServer())
@@ -170,6 +182,27 @@ describe('Shop checkout (e2e)', () => {
       .expect(201);
 
     expect(body<{ statut: string }>(res).statut).toBe('PREPARATION');
+  });
+
+  it('checkout paiement à la livraison → PREPARATION (pas EN_ATTENTE_PAIEMENT)', async () => {
+    const cookie = await panierAvecLigne(1);
+    const res = await request(app.getHttpServer())
+      .post('/shop/checkout')
+      .set('Cookie', cookie)
+      .send({
+        clientOperationId: '44444444-4444-4444-8444-444444444444',
+        modeFulfillment: 'LIVRAISON',
+        modeReglement: 'PAIEMENT_LIVRAISON',
+        zoneLivraisonId: zoneId,
+        adresseLivraison: { ville: 'Abidjan', ligne1: 'Cocody' },
+        emailInvite: 'guest-cod@test.local',
+        telephoneInvite: '+2250700000000',
+      })
+      .expect(201);
+
+    const checkout = body<{ statut: string; modeReglement: string }>(res);
+    expect(checkout.statut).toBe('PREPARATION');
+    expect(checkout.modeReglement).toBe('PAIEMENT_LIVRAISON');
   });
 
   it('rupture stock → 400', async () => {

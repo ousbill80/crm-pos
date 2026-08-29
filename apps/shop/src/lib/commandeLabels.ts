@@ -172,15 +172,25 @@ export function messageAideStatut(
     return 'Finalisez le paiement en ligne. La commande passera automatiquement en préparation dès confirmation du prestataire.';
   }
   if (statut === 'PREPARATION') {
+    if (modeReglement === 'PAIEMENT_LIVRAISON') {
+      return 'Commande enregistrée. Vous réglerez au livreur (espèces ou mobile money). Nous préparons le colis.';
+    }
+    if (modeReglement === 'PAIEMENT_RETRAIT') {
+      return 'Commande enregistrée. Vous paierez au retrait en boutique. Notre équipe prépare votre commande.';
+    }
     return modeFulfillment === 'RETRAIT_BOUTIQUE'
       ? 'Notre équipe prépare votre commande. Vous serez notifié dès qu’elle sera prête au retrait.'
       : 'Notre équipe prépare votre colis. Vous serez notifié dès l’expédition.';
   }
   if (statut === 'PRETE') {
-    return 'Votre commande est prête. Présentez-vous en boutique avec votre référence.';
+    return modeReglement === 'PAIEMENT_RETRAIT'
+      ? 'Votre commande est prête. Présentez-vous en boutique avec votre référence — paiement au retrait.'
+      : 'Votre commande est prête. Présentez-vous en boutique avec votre référence.';
   }
   if (statut === 'EXPEDIEE') {
-    return 'Votre colis est en route. Gardez cet e-mail / ce lien pour le suivi.';
+    return modeReglement === 'PAIEMENT_LIVRAISON'
+      ? 'Votre colis est en route. Préparez le règlement à remettre au livreur.'
+      : 'Votre colis est en route. Gardez cet e-mail / ce lien pour le suivi.';
   }
   if (statut === 'LIVREE' || statut === 'REMISE') {
     return modeReglement === 'PREPAYE_PSP'
@@ -200,6 +210,73 @@ export function messageAideStatut(
     return 'Un litige est ouvert. Notre service client vous contactera.';
   }
   return 'Nous vous tiendrons informé de chaque étape par e-mail.';
+}
+
+export type ProchainGeste = {
+  titre: string;
+  detail: string;
+  variant: 'payer' | 'retirer' | 'livraison' | 'attente' | 'ok' | 'ko';
+};
+
+export function prochainGeste(
+  statut: string,
+  modeFulfillment: string,
+  modeReglement: string,
+): ProchainGeste {
+  if (statut === 'ANNULEE' || statut === 'REMBOURSEE' || statut === 'LITIGE') {
+    return {
+      titre: labelStatut(statut),
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: 'ko',
+    };
+  }
+  if (statut === 'EN_ATTENTE_PAIEMENT' && modeReglement === 'PREPAYE_PSP') {
+    return {
+      titre: 'Paiement en ligne à finaliser',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: 'payer',
+    };
+  }
+  if (modeReglement === 'PAIEMENT_LIVRAISON' && statut !== 'LIVREE' && statut !== 'PAYEE') {
+    return {
+      titre: 'Paiement à la livraison',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: statut === 'EXPEDIEE' ? 'livraison' : 'attente',
+    };
+  }
+  if (modeReglement === 'PAIEMENT_RETRAIT' && statut !== 'REMISE' && statut !== 'PAYEE') {
+    return {
+      titre: 'Paiement au retrait',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: statut === 'PRETE' ? 'retirer' : 'attente',
+    };
+  }
+  if (statut === 'PRETE') {
+    return {
+      titre: 'À récupérer en boutique',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: 'retirer',
+    };
+  }
+  if (statut === 'EXPEDIEE') {
+    return {
+      titre: 'Colis en route',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: 'livraison',
+    };
+  }
+  if (statut === 'LIVREE' || statut === 'REMISE' || statut === 'PAYEE') {
+    return {
+      titre: 'Commande terminée',
+      detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+      variant: 'ok',
+    };
+  }
+  return {
+    titre: labelStatut(statut),
+    detail: messageAideStatut(statut, modeFulfillment, modeReglement),
+    variant: 'attente',
+  };
 }
 
 export function formatDateFr(iso: string | Date | null | undefined): string {

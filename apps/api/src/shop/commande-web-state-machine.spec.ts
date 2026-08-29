@@ -73,6 +73,9 @@ describe('commande-web-state-machine', () => {
       StatutCommandeWeb.PREPARATION,
     );
     expect(
+      statutApresCheckout(ModeReglementCommandeWeb.PAIEMENT_LIVRAISON),
+    ).toBe(StatutCommandeWeb.PREPARATION);
+    expect(
       transitionCommandeWebAutorisee(
         StatutCommandeWeb.PANIER,
         StatutCommandeWeb.PREPARATION,
