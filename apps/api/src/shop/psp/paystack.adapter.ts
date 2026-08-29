@@ -42,6 +42,7 @@ export class PaystackAdapter implements ShopPspAdapter {
         currency: 'XOF',
         reference: input.clientOperationId,
         callback_url: input.callbackUrl,
+        channels: ['card', 'mobile_money'],
         metadata: {
           commandeWebId: input.commandeWebId,
           clientOperationId: input.clientOperationId,
@@ -69,6 +70,44 @@ export class PaystackAdapter implements ShopPspAdapter {
       authorizationUrl: body.data.authorization_url,
       reference: body.data.reference ?? input.clientOperationId,
       providerReference: body.data.access_code,
+    };
+  }
+
+  /** Retour client (callback_url) : confirme le paiement même si le webhook n’est pas encore arrivé. */
+  async verifierTransaction(reference: string): Promise<PspEvenement | null> {
+    const secret = this.secretKey();
+    if (!secret || !reference.trim()) return null;
+    const res = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      { headers: { Authorization: `Bearer ${secret}` } },
+    );
+    const body = (await res.json()) as {
+      status?: boolean;
+      message?: string;
+      data?: {
+        id?: number;
+        status?: string;
+        reference?: string;
+        amount?: number;
+        currency?: string;
+      };
+    };
+    if (!res.ok || !body.status || body.data?.status !== 'success') {
+      this.logger.warn(
+        `Paystack verify ${reference}: ${body.message ?? body.data?.status ?? res.status}`,
+      );
+      return null;
+    }
+    const data = body.data;
+    if (!data.reference) return null;
+    return {
+      type: 'charge.success',
+      reference: data.reference,
+      providerReference: String(data.id ?? data.reference),
+      montant: Number(data.amount ?? 0),
+      devise: data.currency ?? 'XOF',
+      webhookEventId: `verify:${data.id ?? data.reference}`,
+      payload: body,
     };
   }
 

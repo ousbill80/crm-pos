@@ -10,12 +10,19 @@ import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { Public } from '../../auth/decorators/public.decorator';
 import { ShopPspService } from './shop-psp.service';
-import { IsEnum } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ProviderPspShop } from '@caisse-crm/shared';
 
 class PayerCommandeDto {
+  @IsOptional()
   @IsEnum(ProviderPspShop)
-  provider!: ProviderPspShop;
+  provider?: ProviderPspShop;
+}
+
+class ConfirmerPaiementDto {
+  @IsOptional()
+  @IsString()
+  reference?: string;
 }
 
 @Public()
@@ -25,7 +32,16 @@ export class ShopWebhookController {
 
   @Post('commandes/:id/payer')
   payer(@Param('id') id: string, @Body() dto: PayerCommandeDto) {
-    return this.psp.initierPaiement(id, dto.provider);
+    return this.psp.initierPaiement(id, dto.provider ?? 'PAYSTACK');
+  }
+
+  /** Retour Paystack (callback) : vérifie la transaction côté API. */
+  @Post('commandes/:id/confirmer-paiement')
+  confirmerPaiement(
+    @Param('id') id: string,
+    @Body() dto: ConfirmerPaiementDto,
+  ) {
+    return this.psp.confirmerRetourPaystack(id, dto.reference);
   }
 
   /** Local / staging : simule un webhook de succès (jamais en production). */

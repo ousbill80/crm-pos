@@ -128,7 +128,7 @@ export default function CataloguePage() {
       ? activeMarque
       : activeCat
         ? activeCat.label
-        : 'Pièces auto Abidjan';
+        : 'La pièce auto qu’il vous faut';
   const lead = recherche
     ? activeMarque
       ? `Pièces ${activeMarque} — « ${recherche} »`
@@ -138,8 +138,22 @@ export default function CataloguePage() {
       : activeMarque
         ? `Pièces et accessoires compatibles ${activeMarque} — Abidjan, Côte d’Ivoire`
         : activeCat
-          ? activeCat.hint
-          : 'Phares, jantes, freins, électronique — livraison Côte d’Ivoire, retrait showroom';
+          ? `${activeCat.hint}. Commandez en ligne, retirez au showroom ou faites-vous livrer.`
+          : 'Phares, jantes, freins, électronique. Voyez le stock, commandez — retrait à Abidjan ou livraison partout en Côte d’Ivoire.';
+  const kickerBadge = recherche
+    ? 'Recherche'
+    : activeMarque
+      ? 'Compatible'
+      : activeCat
+        ? 'Rayon'
+        : 'Showroom';
+  const kickerRest = recherche
+    ? 'Catalogue MAJOR'
+    : activeMarque && !activeCat
+      ? `${activeMarque} · Abidjan`
+      : activeCat
+        ? 'Stock showroom Abidjan'
+        : 'Retrait showroom · Livraison CIV';
 
   function submitSearch(e: FormEvent) {
     e.preventDefault();
@@ -206,8 +220,8 @@ export default function CataloguePage() {
             )}
           </nav>
           <p className="catalogue-hero-kicker">
-            <span>Hot</span>
-            Prix showroom
+            <span>{kickerBadge}</span>
+            {kickerRest}
           </p>
           <h1 className="catalogue-hero-title">{title}</h1>
           <p className="catalogue-hero-lead">{lead}</p>

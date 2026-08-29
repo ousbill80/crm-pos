@@ -12,7 +12,6 @@ import { isValidPhoneE164, PhoneInput } from '../components/PhoneInput';
 
 type Mode = 'RETRAIT_BOUTIQUE' | 'LIVRAISON';
 type Reglement = 'PREPAYE_PSP' | 'PAIEMENT_RETRAIT';
-type Provider = 'PAYSTACK' | 'ORANGE_MONEY' | 'WAVE';
 
 type CompteProfil = {
   email: string;
@@ -33,12 +32,6 @@ type AdresseCompte = {
   lng?: number | null;
   source?: string;
 };
-
-const PAY_METHODS: Array<{ id: Provider; label: string }> = [
-  { id: 'PAYSTACK', label: 'Carte' },
-  { id: 'ORANGE_MONEY', label: 'Orange Money' },
-  { id: 'WAVE', label: 'Wave' },
-];
 
 type BoutiqueRetrait = {
   id: string;
@@ -128,7 +121,6 @@ export default function CheckoutPage() {
   );
   const [mode, setMode] = useState<Mode>('RETRAIT_BOUTIQUE');
   const [reglement, setReglement] = useState<Reglement>('PREPAYE_PSP');
-  const [provider, setProvider] = useState<Provider>('PAYSTACK');
   const [boutiqueId, setBoutiqueId] = useState('');
   const [zoneId, setZoneId] = useState('');
   const [ligne1, setLigne1] = useState('');
@@ -278,7 +270,7 @@ export default function CheckoutPage() {
             clientOperationId: crypto.randomUUID(),
             modeFulfillment: mode,
             modeReglement: reglement,
-            providerPsp: reglement === 'PREPAYE_PSP' ? provider : undefined,
+            providerPsp: reglement === 'PREPAYE_PSP' ? 'PAYSTACK' : undefined,
             boutiqueRetraitId:
               mode === 'RETRAIT_BOUTIQUE' ? boutiqueId : undefined,
             zoneLivraisonId: mode === 'LIVRAISON' ? zoneId : undefined,
@@ -310,7 +302,7 @@ export default function CheckoutPage() {
             sandbox?: boolean;
           }>(`/shop/commandes/${commande.id}/payer`, {
             method: 'POST',
-            body: JSON.stringify({ provider }),
+            body: JSON.stringify({ provider: 'PAYSTACK' }),
           });
           authorizationUrl = pay.authorizationUrl;
           sandbox = pay.sandbox === true;
@@ -679,21 +671,6 @@ export default function CheckoutPage() {
                   </button>
                 )}
               </div>
-
-              {reglement === 'PREPAYE_PSP' && (
-                <div className="checkout-pay-simple">
-                  {PAY_METHODS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`checkout-pay-chip ${provider === m.id ? 'is-active' : ''}`}
-                      onClick={() => setProvider(m.id)}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </section>
 
             {!showNote ? (

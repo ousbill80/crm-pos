@@ -28,8 +28,11 @@ export default function ConfirmationPage() {
   const ref = params.get('ref');
   const tokenParam = params.get('token');
   const sandbox = params.get('sandbox') === '1';
+  const paystackRef =
+    params.get('reference') || params.get('trxref') || params.get('ref');
   const lookup = commandeId || ref;
   const sandboxTried = useRef(false);
+  const verifyTried = useRef(false);
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -42,6 +45,17 @@ export default function ConfirmationPage() {
       .then(() => qc.invalidateQueries({ queryKey: ['statut', lookup] }))
       .catch(() => undefined);
   }, [sandbox, lookup, qc]);
+
+  useEffect(() => {
+    if (sandbox || !lookup || !paystackRef || verifyTried.current) return;
+    verifyTried.current = true;
+    void shopFetch(`/shop/commandes/${lookup}/confirmer-paiement`, {
+      method: 'POST',
+      body: JSON.stringify({ reference: paystackRef }),
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ['statut', lookup] }))
+      .catch(() => undefined);
+  }, [sandbox, lookup, paystackRef, qc]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['statut', lookup],

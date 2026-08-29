@@ -182,6 +182,62 @@ export class ShopPspService {
     return result;
   }
 
+  /** Après redirection Paystack (query `reference` / `trxref`). */
+  async confirmerRetourPaystack(
+    commandeIdOrRef: string,
+    referencePsp?: string,
+  ) {
+    const commande = await this.prisma.commandeWeb.findFirst({
+      where: {
+        OR: [{ id: commandeIdOrRef }, { clientOperationId: commandeIdOrRef }],
+      },
+    });
+    if (!commande) throw new NotFoundException('Commande introuvable.');
+    const dejaPayee = new Set([
+      'PAYEE',
+      'PREPARATION',
+      'PRETE',
+      'EXPEDIEE',
+      'LIVREE',
+      'REMISE',
+    ]);
+    if (dejaPayee.has(commande.statut)) {
+      return {
+        id: commande.id,
+        statut: commande.statut,
+        suiviToken: commande.suiviToken,
+      };
+    }
+    if (commande.statut !== 'EN_ATTENTE_PAIEMENT') {
+      throw new BadRequestException('Commande non en attente de paiement.');
+    }
+    const reference = (referencePsp ?? commande.clientOperationId).trim();
+    if (reference !== commande.clientOperationId) {
+      throw new ForbiddenException('Référence de paiement invalide.');
+    }
+    const adapter = this.adapters.get('PAYSTACK');
+    if (!adapter?.verifierTransaction) {
+      throw new ServiceUnavailableException(
+        'Le paiement par carte est temporairement indisponible. Réessayez — aucun débit n’a été effectué.',
+      );
+    }
+    const evenement = await adapter.verifierTransaction(reference);
+    if (!evenement) {
+      throw new BadRequestException(
+        'Le paiement n’est pas encore confirmé. Attendez quelques secondes puis rechargez — aucun débit n’a été effectué si la session a échoué.',
+      );
+    }
+    await this.capturerPaiement('PAYSTACK', evenement);
+    const updated = await this.prisma.commandeWeb.findUnique({
+      where: { id: commande.id },
+    });
+    return {
+      id: commande.id,
+      statut: updated?.statut ?? commande.statut,
+      suiviToken: updated?.suiviToken ?? commande.suiviToken,
+    };
+  }
+
   async confirmerSandbox(commandeIdOrRef: string) {
     if (!this.sandboxActif()) {
       throw new ForbiddenException('Confirmation sandbox désactivée.');

@@ -43,4 +43,5 @@ export interface ShopPspAdapter {
   rembourser?(
     input: RemboursementInput,
   ): Promise<{ referenceProvider?: string }>;
+  verifierTransaction?(reference: string): Promise<PspEvenement | null>;
 }
