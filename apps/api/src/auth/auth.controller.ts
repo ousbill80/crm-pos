@@ -1,5 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -9,6 +17,7 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import type { AuthenticatedUser } from './types';
 import { CreateSensitiveChallengeDto } from './dto/create-sensitive-challenge.dto';
 import { SensitiveActionChallengeService } from './sensitive-action-challenge.service';
+import { TurnstileService } from './turnstile.service';
 
 // Jest force NODE_ENV=test s'il n'est pas déjà défini : les suites e2e
 // enchaînent volontairement plus de tentatives de connexion en 60s que la
@@ -29,6 +38,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly sensitiveActions: SensitiveActionChallengeService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   // Limite resserrée (§6.7) : ralentit le brute-force en complément du
@@ -37,7 +47,8 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto) {
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    await this.turnstile.assertValid(dto.turnstileToken, req.ip);
     return this.authService.login(dto.login, dto.password);
   }
 

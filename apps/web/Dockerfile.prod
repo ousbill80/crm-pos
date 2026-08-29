@@ -16,6 +16,8 @@ COPY . .
 # Same-origin : le navigateur appelle /auth, /ventes… via la passerelle nginx.
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_TURNSTILE_SITE_KEY=
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 RUN pnpm --filter @caisse-crm/shared build
 RUN pnpm --filter web build
 

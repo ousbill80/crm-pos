@@ -69,6 +69,9 @@ services:
       STAFF_BRIEFING_ENABLED: ${STAFF_BRIEFING_ENABLED:-false}
       CRM_PUBLIC_URL: ${CRM_PUBLIC_URL:-https://crm-staging.majorautoparts.shop}
       SEED_ON_START: ${SEED_ON_START:-true}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-crm-staging.majorautoparts.shop,pos-staging.majorautoparts.shop}
+      TURNSTILE_EXPECTED_ACTION: ${TURNSTILE_EXPECTED_ACTION:-login}
       P2P_EVIDENCE_STORAGE_DIR: /tmp/p2p-evidence
       PORT: 3000
     healthcheck:
@@ -95,6 +98,7 @@ services:
       dockerfile: apps/web/Dockerfile.prod
       args:
         VITE_API_URL: ""
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
     depends_on:
       api:

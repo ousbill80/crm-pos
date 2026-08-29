@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import {
@@ -9,6 +9,11 @@ import {
 } from '@caisse-crm/shared';
 import { useAuth } from '../context/AuthContext';
 import { ApiError, messageDepuisApi } from '../lib/api';
+import {
+  TurnstileWidget,
+  resetTurnstile,
+  turnstileSiteKey,
+} from '../components/TurnstileWidget';
 
 /** Mot de passe unique des comptes seed — jamais exposé hors DEV. */
 const MOT_DE_PASSE_DEMO = 'MotDePasse!123';
@@ -23,6 +28,12 @@ function messageDeConnexion(err: unknown): string {
   }
   if (err.status === 429) {
     return 'Trop de tentatives de connexion. Réessayez dans une minute.';
+  }
+  if (err.status === 403) {
+    return messageDepuisApi(
+      err,
+      'Vérification anti-bot requise. Rechargez la page.',
+    );
   }
   const message = messageDepuisApi(err, 'Identifiants invalides.');
   if (message.toLowerCase().includes('verrouill')) {
@@ -41,6 +52,12 @@ export function LoginPage() {
   const [voirMdp, setVoirMdp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRequired = Boolean(turnstileSiteKey());
+
+  const onTurnstileToken = useCallback((token: string | null) => {
+    setTurnstileToken(token);
+  }, []);
 
   const forceSwitch =
     new URLSearchParams(location.search).get('switch') === '1' ||
@@ -62,12 +79,22 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (turnstileRequired && !turnstileToken) {
+      setError('Validez la vérification anti-bot avant de vous connecter.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const next = await login(loginValue, password);
+      const next = await login(
+        loginValue,
+        password,
+        turnstileToken ?? undefined,
+      );
       navigate(homeForRole(next.role), { replace: true });
     } catch (err) {
       setError(messageDeConnexion(err));
+      resetTurnstile();
+      setTurnstileToken(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -113,7 +140,9 @@ export function LoginPage() {
           <header className="login-brand">
             <p className="login-brand-mark">CaissePOS</p>
             <h2>Connexion</h2>
-            <p className="login-brand-sub">Identifiant personnel — actions tracées.</p>
+            <p className="login-brand-sub">
+              Identifiant personnel — actions tracées.
+            </p>
           </header>
 
           <div className="login-fields">
@@ -148,13 +177,17 @@ export function LoginPage() {
                   type="button"
                   className="login-password-toggle"
                   onClick={() => setVoirMdp((v) => !v)}
-                  aria-label={voirMdp ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  aria-label={
+                    voirMdp ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
+                  }
                 >
                   {voirMdp ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
           </div>
+
+          <TurnstileWidget onToken={onTurnstileToken} />
 
           {error && (
             <p className="login-error" role="alert">
@@ -166,7 +199,7 @@ export function LoginPage() {
             type="submit"
             className="btn-primary login-submit"
             data-testid="login-submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (turnstileRequired && !turnstileToken)}
           >
             {isSubmitting ? 'Connexion…' : 'Se connecter'}
           </button>

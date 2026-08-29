@@ -1136,6 +1136,12 @@
   line-height: 1.4;
 }
 
+.login-turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 65px;
+}
+
 .login-card > .login-fields {
   display: flex;
   flex-direction: column;

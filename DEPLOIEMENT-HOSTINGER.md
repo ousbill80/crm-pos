@@ -85,6 +85,18 @@ Network : **WebSockets** = on (trésorerie temps réel).
 
 1. **Security → Bots** : activer **Bot Fight Mode** (Free). Si tu vois **Block AI bots / AI scrapers**, l’activer.
 2. **Security → WAF → Custom rules** : coller `deploy/cloudflare/waf-ai-bots.txt` (action **Block**).
+
+### 1.4 Turnstile — anti-bots sur la connexion CRM / POS
+
+1. Cloudflare Dashboard → **Turnstile** → **Add site**.
+2. Domaines : `crm.majorautoparts.shop`, `pos.majorautoparts.shop` (+ staging si besoin).
+3. Widget type **Managed**.
+4. Copier :
+   - **Site Key** → `VITE_TURNSTILE_SITE_KEY` dans `.env.prod` (rebuild gateway requis)
+   - **Secret Key** → `TURNSTILE_SECRET_KEY` dans `.env.prod` (runtime API)
+5. Redéployer : `./scripts/deploy-prod.sh`
+
+Sans ces variables, le login fonctionne comme avant (local / e2e). Avec les deux clés, le widget s’affiche et l’API refuse les POST `/auth/login` sans jeton valide.
 3. 2ᵉ règle : hostname `crm` / `pos` / `*-staging` + User-Agent `bot|spider|crawler` → **Block** (même fichier, 2ᵉ expression).
 
 Ne pas activer « I’m Under Attack » sur `pos.` / `crm.` (ça casse la caisse).

@@ -24,7 +24,11 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   mustChangePassword: boolean;
-  login: (login: string, password: string) => Promise<AuthUser>;
+  login: (
+    login: string,
+    password: string,
+    turnstileToken?: string,
+  ) => Promise<AuthUser>;
   logout: () => void;
   confirmerMotDePasseChange: () => void;
 }
@@ -62,23 +66,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setMustChangePasswordListener(null);
   }, []);
 
-  const login = useCallback(async (loginValue: string, password: string) => {
-    const { accessToken, mustChangePassword: doitChanger } = await apiFetch<{
-      accessToken: string;
-      mustChangePassword: boolean;
-    }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ login: loginValue, password }),
-    });
-    setToken(accessToken);
-    const next = userFromToken(accessToken);
-    setUser(next);
-    setMustChangePassword(doitChanger);
-    if (!next) {
-      throw new Error('Jeton invalide après connexion.');
-    }
-    return next;
-  }, []);
+  const login = useCallback(
+    async (loginValue: string, password: string, turnstileToken?: string) => {
+      const { accessToken, mustChangePassword: doitChanger } = await apiFetch<{
+        accessToken: string;
+        mustChangePassword: boolean;
+      }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          login: loginValue,
+          password,
+          ...(turnstileToken ? { turnstileToken } : {}),
+        }),
+      });
+      setToken(accessToken);
+      const next = userFromToken(accessToken);
+      setUser(next);
+      setMustChangePassword(doitChanger);
+      if (!next) {
+        throw new Error('Jeton invalide après connexion.');
+      }
+      return next;
+    },
+    [],
+  );
 
   const logout = useCallback(() => {
     clearToken();

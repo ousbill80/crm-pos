@@ -55,6 +55,9 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-caisse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-caisse_crm}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requis}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-crm.majorautoparts.shop,pos.majorautoparts.shop}
+      TURNSTILE_EXPECTED_ACTION: ${TURNSTILE_EXPECTED_ACTION:-login}
       SEED_ON_START: "false"
       # Origines autorisées (mobile Expo, admin externe). Vide = CORS fermé (web same-origin OK).
       CORS_ORIGINS: ${CORS_ORIGINS:-}
@@ -101,6 +104,7 @@ services:
       dockerfile: apps/web/Dockerfile.prod
       args:
         VITE_API_URL: ""
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
     depends_on:
       api:

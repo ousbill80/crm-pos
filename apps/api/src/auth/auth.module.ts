@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { SensitiveActionChallengeService } from './sensitive-action-challenge.service';
+import { TurnstileService } from './turnstile.service';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SensitiveActionChallengeService } from './sensitive-action-challenge.se
   providers: [
     AuthService,
     SensitiveActionChallengeService,
+    TurnstileService,
     JwtStrategy,
     RolesGuard,
   ],
