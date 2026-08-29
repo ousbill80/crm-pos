@@ -1,15 +1,25 @@
 import { RoleLibelle } from '@caisse-crm/shared';
 import {
   astucesShop,
+  chargesAffichees,
   classementBoutiques,
   cleSemaineIso,
+  clotureConforme,
   estDernierJourDuMois,
+  heureAbidjan,
   inactifDepuisHeures,
   jourCleAbidjan,
   messageRelance,
+  parseHeureFinService,
   partCa,
   pointsAttentionVentes,
+  produitsAffiches,
+  serviceTermine,
+  sessionEnRetardCloture,
   shopNecessiteAttention,
+  synthetiserCloture,
+  synthetiserCompteResultat,
+  type SessionClotureVue,
 } from './staff-briefing.engine';
 
 describe('staff-briefing.engine', () => {
@@ -104,6 +114,78 @@ describe('staff-briefing.engine', () => {
       RoleLibelle.RESPONSABLE_SI,
     );
     expect(astuceSi[0]).toMatch(/visibleWeb/i);
+  });
+
+  it('synthétise le compte de résultat SYSCOHADA (charges 6 / produits 7)', () => {
+    const gl = synthetiserCompteResultat([
+      {
+        numero: '613',
+        intitule: 'Loyers',
+        debit: '1000',
+        credit: '0',
+        solde: '1000',
+      },
+      {
+        numero: '701',
+        intitule: 'Ventes',
+        debit: '0',
+        credit: '11000',
+        solde: '-11000',
+      },
+    ]);
+    expect(gl.benefice).toBe(true);
+    expect(gl.resultat).toBe(10000);
+    expect(chargesAffichees(gl)).toBe(1000);
+    expect(produitsAffiches(gl)).toBe(11000);
+    expect(gl.detailCharges[0]?.numero).toBe('613');
+  });
+
+  it('calcule l’heure Abidjan en cycle 0–23', () => {
+    expect(heureAbidjan(new Date('2026-08-28T15:00:00Z'))).toBe(15);
+    expect(heureAbidjan(new Date('2026-08-28T20:05:00Z'))).toBe(20);
+    expect(serviceTermine(new Date('2026-08-28T15:00:00Z'), 20)).toBe(false);
+    expect(serviceTermine(new Date('2026-08-28T20:05:00Z'), 20)).toBe(true);
+    expect(parseHeureFinService(undefined)).toBe(20);
+    expect(parseHeureFinService('')).toBe(20);
+    expect(parseHeureFinService('19')).toBe(19);
+    expect(parseHeureFinService('24')).toBe(20);
+  });
+
+  it('alerte les sessions encore ouvertes après la fin de service', () => {
+    const ouverte: SessionClotureVue = {
+      id: 's1',
+      statut: 'OUVERTE',
+      ouvertureDateHeure: new Date('2026-08-28T08:00:00Z'),
+      clotureDateHeure: null,
+      clotureTemoinId: null,
+      boutiqueNom: 'Yopougon',
+      caisseLibelle: 'T1',
+    };
+    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-28T15:00:00Z'), 20)).toBe(
+      false,
+    );
+    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-28T20:05:00Z'), 20)).toBe(
+      true,
+    );
+    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-29T08:00:00Z'), 20)).toBe(
+      true,
+    );
+    const fermee: SessionClotureVue = {
+      ...ouverte,
+      id: 's2',
+      statut: 'FERMEE',
+      clotureDateHeure: new Date('2026-08-28T19:10:00Z'),
+      clotureTemoinId: 'temoin',
+      boutiqueNom: 'Plateau',
+    };
+    expect(clotureConforme(fermee)).toBe(true);
+    const snap = synthetiserCloture(
+      [ouverte, fermee],
+      new Date('2026-08-28T20:10:00Z'),
+      20,
+    );
+    expect(snap.enRetard.map((s) => s.boutiqueNom)).toEqual(['Yopougon']);
+    expect(snap.parBoutique[0]?.nom).toBe('Plateau');
   });
 
   it('formate le jour Abidjan en YYYY-MM-DD', () => {

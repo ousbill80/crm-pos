@@ -1,4 +1,13 @@
 import { RoleLibelle } from '@caisse-crm/shared';
+import {
+  buildSyscohadaStatements,
+  netSolde,
+  type TrialBalanceRow,
+} from '../accounting-gl/syscohada-statements';
+import {
+  POSTES_CR,
+  posteForAccount,
+} from '../accounting-gl/syscohada-liasse';
 
 export const TZ_BRIEFING = 'Africa/Abidjan';
 
@@ -10,6 +19,7 @@ export const ROLES_BRIEFING_SOIR: RoleLibelle[] = [
 export const ROLES_BRIEFING_EXECUTIF: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
   RoleLibelle.DAF,
+  RoleLibelle.RAF_COMPTABLE,
 ];
 
 export const ROLES_RELANCE_CONNEXION: RoleLibelle[] = [
@@ -20,6 +30,24 @@ export const ROLES_RELANCE_CONNEXION: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.RESPONSABLE_CRM,
 ];
+
+export const ROLES_CLOTURE_CAISSE: RoleLibelle[] = [
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
+  RoleLibelle.RAF_COMPTABLE,
+];
+
+/** Heure locale Abidjan après laquelle une session encore ouverte est hors service. */
+export const HEURE_FIN_SERVICE_DEFAUT = 20;
+
+/** `STAFF_CLOTURE_HEURE` vide ou invalide → 20h, jamais minuit par `Number('') === 0`. */
+export function parseHeureFinService(raw: string | undefined | null): number {
+  const s = raw?.trim() ?? '';
+  if (s === '') return HEURE_FIN_SERVICE_DEFAUT;
+  const n = Number(s);
+  if (Number.isInteger(n) && n >= 0 && n <= 23) return n;
+  return HEURE_FIN_SERVICE_DEFAUT;
+}
 
 export const ROLES_ALERTE_SHOP: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
@@ -33,7 +61,8 @@ export type TypeBriefing =
   | 'HEBDO'
   | 'MOIS'
   | 'RELANCE_CONNEXION'
-  | 'SHOP_INACTIF';
+  | 'SHOP_INACTIF'
+  | 'CLOTURE_CAISSE';
 
 export type BoutiqueCa = {
   nom: string;
@@ -67,6 +96,96 @@ export type SnapshotFinance = {
   litige: { n: number; montant: number };
   versementsEnRetard: number;
 };
+
+export type LigneCompteGl = {
+  numero: string;
+  intitule: string;
+  montant: number;
+};
+
+export type PosteCharge = {
+  libelle: string;
+  montant: number;
+};
+
+/** Compte de résultat SYSCOHADA (classes 6 / 7) + file et dettes fournisseur. */
+export type SnapshotGl = {
+  totalCharges: number;
+  totalProduits: number;
+  resultat: number;
+  benefice: boolean;
+  postesCharges: PosteCharge[];
+  detailCharges: LigneCompteGl[];
+  fileAttente: number;
+  fileErreur: number;
+  facturesFournisseurOuvertes: number;
+  montantFacturesOuvertes: number;
+  lotsPaiementAApprouver: number;
+};
+
+export function synthetiserCompteResultat(
+  rows: TrialBalanceRow[],
+  extras?: Partial<
+    Pick<
+      SnapshotGl,
+      | 'fileAttente'
+      | 'fileErreur'
+      | 'facturesFournisseurOuvertes'
+      | 'montantFacturesOuvertes'
+      | 'lotsPaiementAApprouver'
+    >
+  >,
+): SnapshotGl {
+  const st = buildSyscohadaStatements(rows);
+  const postesMap = new Map<string, PosteCharge>();
+  for (const def of POSTES_CR) {
+    if (def.nature !== 'charge') continue;
+    postesMap.set(def.code, { libelle: def.libelle, montant: 0 });
+  }
+  for (const row of rows) {
+    const poste = posteForAccount(row.numero, POSTES_CR);
+    if (!poste || poste.nature !== 'charge') continue;
+    const cur = postesMap.get(poste.code);
+    if (cur) cur.montant += netSolde(row);
+  }
+  const ligne = (row: {
+    numero: string;
+    intitule: string;
+    solde: string;
+  }): LigneCompteGl => ({
+    numero: row.numero,
+    intitule: row.intitule,
+    montant: Number(row.solde),
+  });
+  const detailCharges = st.compteResultat.charges
+    .map(ligne)
+    .filter((l) => Math.abs(l.montant) >= 0.005)
+    .sort((a, b) => Math.abs(b.montant) - Math.abs(a.montant))
+    .slice(0, 12);
+  return {
+    totalCharges: Number(st.compteResultat.totalCharges),
+    totalProduits: Number(st.compteResultat.totalProduits),
+    resultat: Number(st.compteResultat.resultat),
+    benefice: st.compteResultat.benefice,
+    postesCharges: [...postesMap.values()].filter(
+      (p) => Math.abs(p.montant) >= 0.005,
+    ),
+    detailCharges,
+    fileAttente: extras?.fileAttente ?? 0,
+    fileErreur: extras?.fileErreur ?? 0,
+    facturesFournisseurOuvertes: extras?.facturesFournisseurOuvertes ?? 0,
+    montantFacturesOuvertes: extras?.montantFacturesOuvertes ?? 0,
+    lotsPaiementAApprouver: extras?.lotsPaiementAApprouver ?? 0,
+  };
+}
+
+export function chargesAffichees(gl: SnapshotGl): number {
+  return gl.totalCharges;
+}
+
+export function produitsAffiches(gl: SnapshotGl): number {
+  return -gl.totalProduits;
+}
 
 export type SnapshotShop = {
   shopActif: boolean;
@@ -259,4 +378,101 @@ export function messageRelance(
 
 export function formatFcfa(n: number): string {
   return `${Math.round(n).toLocaleString('fr-FR')} FCFA`;
+}
+
+export type SessionClotureVue = {
+  id: string;
+  statut: 'OUVERTE' | 'FERMEE';
+  ouvertureDateHeure: Date;
+  clotureDateHeure: Date | null;
+  clotureTemoinId: string | null;
+  boutiqueNom: string;
+  caisseLibelle: string;
+};
+
+export type LigneDisciplineCloture = {
+  nom: string;
+  fermeesOk: number;
+  fermeesSansTemoin: number;
+  encoreOuvertes: number;
+};
+
+export type SnapshotCloture = {
+  heureFinService: number;
+  enRetard: SessionClotureVue[];
+  bienFermees: SessionClotureVue[];
+  parBoutique: LigneDisciplineCloture[];
+};
+
+export function heureAbidjan(d: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ_BRIEFING,
+    hour: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const h = Number(parts.find((p) => p.type === 'hour')?.value);
+  return Number.isFinite(h) ? h : 0;
+}
+
+export function serviceTermine(
+  now: Date,
+  heureFin = HEURE_FIN_SERVICE_DEFAUT,
+): boolean {
+  return heureAbidjan(now) >= heureFin;
+}
+
+/** Session encore ouverte après la fin de service, ou ouverte un jour précédent. */
+export function sessionEnRetardCloture(
+  s: SessionClotureVue,
+  now: Date,
+  heureFin = HEURE_FIN_SERVICE_DEFAUT,
+): boolean {
+  if (s.statut !== 'OUVERTE') return false;
+  const jourOuv = jourCleAbidjan(s.ouvertureDateHeure);
+  const jourNow = jourCleAbidjan(now);
+  if (jourOuv < jourNow) return true;
+  return jourOuv === jourNow && serviceTermine(now, heureFin);
+}
+
+export function clotureConforme(s: SessionClotureVue): boolean {
+  return (
+    s.statut === 'FERMEE' &&
+    Boolean(s.clotureTemoinId) &&
+    Boolean(s.clotureDateHeure)
+  );
+}
+
+export function synthetiserCloture(
+  sessions: SessionClotureVue[],
+  now: Date,
+  heureFin = HEURE_FIN_SERVICE_DEFAUT,
+): SnapshotCloture {
+  const enRetard = sessions.filter((s) =>
+    sessionEnRetardCloture(s, now, heureFin),
+  );
+  const bienFermees = sessions.filter((s) => clotureConforme(s));
+  const parMap = new Map<string, LigneDisciplineCloture>();
+  const bump = (nom: string) => {
+    const row = parMap.get(nom) ?? {
+      nom,
+      fermeesOk: 0,
+      fermeesSansTemoin: 0,
+      encoreOuvertes: 0,
+    };
+    parMap.set(nom, row);
+    return row;
+  };
+  for (const s of sessions) {
+    const row = bump(s.boutiqueNom);
+    if (s.statut === 'OUVERTE') row.encoreOuvertes += 1;
+    else if (clotureConforme(s)) row.fermeesOk += 1;
+    else row.fermeesSansTemoin += 1;
+  }
+  const parBoutique = [...parMap.values()].sort(
+    (a, b) =>
+      b.fermeesOk - a.fermeesOk ||
+      a.encoreOuvertes - b.encoreOuvertes ||
+      a.nom.localeCompare(b.nom),
+  );
+  return { heureFinService: heureFin, enRetard, bienFermees, parBoutique };
 }

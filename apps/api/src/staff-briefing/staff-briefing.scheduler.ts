@@ -34,6 +34,12 @@ export class StaffBriefingScheduler {
     await this.safe('shop', () => this.briefing.cycleShopInactif());
   }
 
+  /** Dès 20h Abidjan, puis toutes les 15 min : caisses non clôturées après service. */
+  @Cron('*/15 19-23 * * *', { timeZone: TZ_BRIEFING })
+  async cloture(): Promise<void> {
+    await this.safe('cloture', () => this.briefing.cycleCloture());
+  }
+
   private async safe(nom: string, fn: () => Promise<number>): Promise<void> {
     if (!this.briefing.enabled()) return;
     try {

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
-import { StatutTransaction, TypeTransaction } from '@prisma/client';
+import { Prisma, StatutTransaction, TypeTransaction } from '@prisma/client';
 import { RoleLibelle } from '@caisse-crm/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
@@ -12,6 +12,7 @@ import {
   ROLES_ALERTE_SHOP,
   ROLES_BRIEFING_EXECUTIF,
   ROLES_BRIEFING_SOIR,
+  ROLES_CLOTURE_CAISSE,
   ROLES_RELANCE_CONNEXION,
   debutJourAbidjan,
   estDernierJourDuMois,
@@ -19,8 +20,13 @@ import {
   inactifDepuisHeures,
   jourCleAbidjan,
   cleSemaineIso,
+  parseHeureFinService,
   shopNecessiteAttention,
+  synthetiserCloture,
+  synthetiserCompteResultat,
+  type SnapshotCloture,
   type SnapshotFinance,
+  type SnapshotGl,
   type SnapshotShop,
   type SnapshotStocks,
   type SnapshotVentes,
@@ -47,13 +53,13 @@ export class StaffBriefingService {
 
   async cycleSoir(now = new Date()): Promise<number> {
     const jour = jourCleAbidjan(now);
-    const ventes = await this.snapshotVentes(
-      debutJourAbidjan(now),
-      finJourAbidjan(now),
-      jour,
-    );
+    const [ventes, cloture] = await Promise.all([
+      this.snapshotVentes(debutJourAbidjan(now), finJourAbidjan(now), jour),
+      this.snapshotCloture(now, debutJourAbidjan(now)),
+    ]);
     return this.diffuser('SOIR', ROLES_BRIEFING_SOIR, `SOIR:${jour}`, {
       ventes,
+      cloture,
     });
   }
 
@@ -66,15 +72,16 @@ export class StaffBriefingService {
       fin,
       `semaine ${cleSemaineIso(now)}`,
     );
-    const [stocks, finance] = await Promise.all([
+    const [stocks, finance, gl] = await Promise.all([
       this.snapshotStocks(),
       this.snapshotFinance(debut, fin),
+      this.snapshotGl(debut, fin),
     ]);
     return this.diffuser(
       'HEBDO',
       ROLES_BRIEFING_EXECUTIF,
-      `HEBDO:${cleSemaineIso(now)}`,
-      { ventes, stocks, finance },
+      `ETAT_FIN:HEBDO:${cleSemaineIso(now)}`,
+      { ventes, stocks, finance, gl },
     );
   }
 
@@ -84,14 +91,16 @@ export class StaffBriefingService {
     const mois = jour.slice(0, 7);
     const debut = new Date(`${mois}-01T00:00:00.000Z`);
     const ventes = await this.snapshotVentes(debut, finJourAbidjan(now), mois);
-    const [stocks, finance] = await Promise.all([
+    const [stocks, finance, gl] = await Promise.all([
       this.snapshotStocks(),
       this.snapshotFinance(debut, finJourAbidjan(now)),
+      this.snapshotGl(debut, finJourAbidjan(now)),
     ]);
-    return this.diffuser('MOIS', ROLES_BRIEFING_EXECUTIF, `MOIS:${mois}`, {
+    return this.diffuser('MOIS', ROLES_BRIEFING_EXECUTIF, `ETAT_FIN:MOIS:${mois}`, {
       ventes,
       stocks,
       finance,
+      gl,
     });
   }
 
@@ -119,6 +128,27 @@ export class StaffBriefingService {
       );
     }
     return n;
+  }
+
+  async cycleCloture(now = new Date()): Promise<number> {
+    const snap = await this.snapshotCloture(now);
+    if (snap.enRetard.length === 0) return 0;
+    const jour = jourCleAbidjan(now);
+    const fp = createHash('sha256')
+      .update(
+        snap.enRetard
+          .map((s) => s.id)
+          .sort()
+          .join(','),
+      )
+      .digest('hex')
+      .slice(0, 12);
+    return this.diffuser(
+      'CLOTURE_CAISSE',
+      ROLES_CLOTURE_CAISSE,
+      `CLOTURE:${jour}:${fp}`,
+      { cloture: snap },
+    );
   }
 
   async cycleShopInactif(now = new Date()): Promise<number> {
@@ -176,7 +206,9 @@ export class StaffBriefingService {
       ventes?: SnapshotVentes;
       stocks?: SnapshotStocks;
       finance?: SnapshotFinance;
+      gl?: SnapshotGl;
       shop?: SnapshotShop;
+      cloture?: SnapshotCloture;
     },
   ): Promise<number> {
     const users = await this.destinataires(roles);
@@ -200,7 +232,9 @@ export class StaffBriefingService {
       ventes?: SnapshotVentes;
       stocks?: SnapshotStocks;
       finance?: SnapshotFinance;
+      gl?: SnapshotGl;
       shop?: SnapshotShop;
+      cloture?: SnapshotCloture;
       heuresSansConnexion?: number;
     },
   ): Promise<number> {
@@ -397,6 +431,97 @@ export class StaffBriefingService {
       commandes7j,
       sessions7j,
     };
+  }
+
+  private heureFinService(): number {
+    return parseHeureFinService(this.config.get<string>('STAFF_CLOTURE_HEURE'));
+  }
+
+  private async snapshotCloture(
+    now: Date,
+    depuis = new Date(debutJourAbidjan(now).getTime() - 24 * 3600_000),
+  ): Promise<SnapshotCloture> {
+    const rows = await this.prisma.sessionCaisse.findMany({
+      where: {
+        OR: [
+          { statut: 'OUVERTE' },
+          { clotureDateHeure: { gte: debutJourAbidjan(now) } },
+          { ouvertureDateHeure: { gte: depuis } },
+        ],
+      },
+      select: {
+        id: true,
+        statut: true,
+        ouvertureDateHeure: true,
+        clotureDateHeure: true,
+        clotureTemoinId: true,
+        caisse: {
+          select: {
+            libelle: true,
+            code: true,
+            boutique: { select: { nom: true } },
+          },
+        },
+      },
+    });
+    return synthetiserCloture(
+      rows.map((s) => ({
+        id: s.id,
+        statut: s.statut,
+        ouvertureDateHeure: s.ouvertureDateHeure,
+        clotureDateHeure: s.clotureDateHeure,
+        clotureTemoinId: s.clotureTemoinId,
+        boutiqueNom: s.caisse.boutique?.nom ?? 'Caisse',
+        caisseLibelle: s.caisse.libelle || s.caisse.code || 'Tiroir',
+      })),
+      now,
+      this.heureFinService(),
+    );
+  }
+
+  private async snapshotGl(from: Date, to: Date): Promise<SnapshotGl> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        numero: string;
+        intitule: string;
+        debit: string;
+        credit: string;
+        solde: string;
+      }>
+    >(Prisma.sql`
+      SELECT c.numero, c.intitule,
+             COALESCE(SUM(l.debit), 0)::text AS debit,
+             COALESCE(SUM(l.credit), 0)::text AS credit,
+             COALESCE(SUM(l.debit - l.credit), 0)::text AS solde
+      FROM compte_comptable c
+      LEFT JOIN ligne_ecriture_comptable l ON l."compteId" = c.id
+      LEFT JOIN ecriture_comptable e ON e.id = l."ecritureId"
+        AND e."dateComptable" BETWEEN ${from} AND ${to}
+      GROUP BY c.numero, c.intitule
+      ORDER BY c.numero
+    `);
+    const [file, factures, lots] = await Promise.all([
+      this.prisma.fileEcritureComptable.groupBy({
+        by: ['statut'],
+        _count: { _all: true },
+      }),
+      this.prisma.factureFournisseur.aggregate({
+        where: { statut: { in: ['COMPTABILISEE', 'PARTIELLEMENT_PAYEE'] } },
+        _count: { _all: true },
+        _sum: { montant: true },
+      }),
+      this.prisma.propositionPaiementFournisseur.count({
+        where: { statut: 'PREPAREE' },
+      }),
+    ]);
+    const fileMap = new Map(file.map((g) => [g.statut, g._count._all]));
+    return synthetiserCompteResultat(rows, {
+      fileAttente: fileMap.get('EN_ATTENTE') ?? 0,
+      fileErreur: fileMap.get('ERREUR') ?? 0,
+      facturesFournisseurOuvertes: factures._count._all,
+      montantFacturesOuvertes: Number(factures._sum.montant ?? 0),
+      lotsPaiementAApprouver: lots,
+    });
   }
 
   private async delaiHeures(): Promise<number> {

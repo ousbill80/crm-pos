@@ -66,6 +66,23 @@ describe('Staff briefing Direction (e2e)', () => {
     });
     await prisma.utilisateur.create({
       data: {
+        login: 'brief-raf',
+        passwordHash: hash,
+        nom: 'Diallo',
+        prenom: 'Ibrahim',
+        actif: true,
+        roleId: (
+          await prisma.role.upsert({
+            where: { libelle: 'RAF_COMPTABLE' },
+            update: {},
+            create: { libelle: 'RAF_COMPTABLE', niveauHabilitation: 2 },
+          })
+        ).id,
+        email: 'raf-brief@test.local',
+      },
+    });
+    await prisma.utilisateur.create({
+      data: {
         login: 'brief-caissier-sans-mail',
         passwordHash: hash,
         nom: 'Sans',
@@ -113,6 +130,17 @@ describe('Staff briefing Direction (e2e)', () => {
     expect(relance).toBeTruthy();
   });
 
+  it('envoie l’état exécutif financier hebdo à DG, DAF et RAF uniquement', async () => {
+    const n = await briefing.cycleHebdo(new Date('2026-08-31T07:30:00Z'));
+    expect(n).toBe(3);
+    const rows = await prisma.staffBriefingEnvoi.findMany({
+      where: { type: 'HEBDO' },
+    });
+    expect(rows).toHaveLength(3);
+    const n2 = await briefing.cycleHebdo(new Date('2026-08-31T07:35:00Z'));
+    expect(n2).toBe(0);
+  });
+
   it('n’alerte pas le shop s’il est inactif', async () => {
     const n = await briefing.cycleShopInactif(new Date('2026-08-28T10:00:00Z'));
     expect(n).toBe(0);
@@ -127,5 +155,47 @@ describe('Staff briefing Direction (e2e)', () => {
     });
     const n = await briefing.cycleShopInactif(new Date('2026-08-29T10:00:00Z'));
     expect(n).toBe(2);
+  });
+
+  it('alerte DG, DAF et RAF si une session POS reste ouverte après 20h', async () => {
+    const zone = await prisma.zone.create({
+      data: { nomZone: 'Zone brief' },
+    });
+    const boutique = await prisma.boutique.create({
+      data: {
+        nom: 'Yopougon',
+        adresse: 'Abidjan',
+        code: 'YOP-B',
+        zoneId: zone.id,
+      },
+    });
+    const caisse = await prisma.caisse.create({
+      data: {
+        type: 'TIROIR',
+        boutiqueId: boutique.id,
+        code: 'T1',
+        libelle: 'Tiroir 1',
+        actif: true,
+      },
+    });
+    const caissier = await prisma.utilisateur.findUniqueOrThrow({
+      where: { login: 'brief-caissier-sans-mail' },
+    });
+    await prisma.sessionCaisse.create({
+      data: {
+        caisseId: caisse.id,
+        statut: 'OUVERTE',
+        fondInitial: 0,
+        ouvertureDateHeure: new Date('2026-08-28T08:00:00Z'),
+        ouvertureUtilisateurId: caissier.id,
+        ouvertureTemoinId: caissier.id,
+      },
+    });
+    const avant = await briefing.cycleCloture(new Date('2026-08-28T10:00:00Z'));
+    expect(avant).toBe(0);
+    const n = await briefing.cycleCloture(new Date('2026-08-28T21:10:00Z'));
+    expect(n).toBe(3);
+    const n2 = await briefing.cycleCloture(new Date('2026-08-28T21:25:00Z'));
+    expect(n2).toBe(0);
   });
 });
