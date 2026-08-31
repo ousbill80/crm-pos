@@ -17,6 +17,7 @@ import { compresserImage } from '../lib/compress-image';
 import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
 import { EtiquettesModal } from './EtiquettesModal';
+import { CategorieProduitField } from './CategorieProduitField';
 import {
   insightCouverture,
   insightMargeUnitaire,
@@ -32,16 +33,6 @@ import type {
 } from '../lib/types';
 
 type OngletFiche = 'apercu' | 'identite' | 'stock' | 'ventes' | 'mouvements';
-
-const CATEGORIES_SUGGEREES = [
-  'Protection',
-  'Charge',
-  'Audio',
-  'Câbles',
-  'Accessoires',
-  'Café-Market',
-  'Autre',
-];
 
 const STATUT_LABEL: Record<StatutStock, string> = {
   RUPTURE: 'Rupture',
@@ -214,12 +205,6 @@ function IdentiteForm({
 
   return (
     <form className="client-fiche-form fiche-identite-form" onSubmit={handleSubmit}>
-      <datalist id="categories-suggerees-fiche">
-        {CATEGORIES_SUGGEREES.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
-
       <div className="fiche-photo-field">
         <div className="fiche-photo-preview" aria-hidden>
           {imageUrl ? (
@@ -273,11 +258,10 @@ function IdentiteForm({
       <div className="form-grid-2">
         <div className="form-field">
           <label htmlFor="fiche-categorie">Catégorie</label>
-          <input
+          <CategorieProduitField
             id="fiche-categorie"
-            list="categories-suggerees-fiche"
             value={categorie}
-            onChange={(e) => setCategorie(e.target.value)}
+            onChange={setCategorie}
           />
         </div>
         <div className="form-field">

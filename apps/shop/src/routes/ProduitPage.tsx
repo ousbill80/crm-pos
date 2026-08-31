@@ -121,12 +121,27 @@ export default function ProduitPage() {
     return [...perso, ...cat.filter((p) => !seen.has(p.id))].slice(0, 8);
   }, [personalized.data, related.data, data?.id]);
 
-  const stockOk = data?.stockDisponible == null || data.stockDisponible > 0;
+  const stocksRetrait = data?.stocksRetrait ?? [];
+  const retraitAvecStock = stocksRetrait.filter((b) => b.disponible > 0);
+  const stockRetraitOk =
+    stocksRetrait.length === 0 ||
+    retraitAvecStock.some((b) => b.disponible >= qty);
+  const peutCommander =
+    data?.typeProduit === 'PRESTATION' ||
+    data?.stockDisponible == null ||
+    (data.stockDisponible != null && data.stockDisponible > 0) ||
+    stockRetraitOk;
+  const stockHintRetrait =
+    stocksRetrait.length > 1 && retraitAvecStock.length > 0
+      ? `Retrait : ${retraitAvecStock.map((b) => `${b.nom} (${b.disponible})`).join(' · ')}`
+      : null;
   const maxQty = Math.min(
     20,
     data?.stockDisponible != null && data.stockDisponible > 0
       ? data.stockDisponible
-      : 20,
+      : retraitAvecStock.length
+        ? Math.max(...retraitAvecStock.map((b) => b.disponible))
+        : 20,
   );
 
   const galleryImages = useMemo(() => {
@@ -238,7 +253,7 @@ export default function ProduitPage() {
                   {letter}
                 </span>
               )}
-              {stockOk ? (
+              {peutCommander ? (
                 <span className="pdp-badge ok">En stock</span>
               ) : (
                 <span className="pdp-badge out">Rupture</span>
@@ -295,15 +310,20 @@ export default function ProduitPage() {
               </span>
             </div>
 
-            <p className={`pdp-temu-stock${stockOk ? '' : ' is-out'}`}>
+            <p className={`pdp-temu-stock${peutCommander ? '' : ' is-out'}`}>
               {data.stockDisponible == null
                 ? data.typeProduit === 'PRESTATION'
                   ? 'Prestation sur rendez-vous showroom'
                   : 'Disponibilité sur demande'
                 : data.stockDisponible > 0
-                  ? `Plus que ${data.stockDisponible} en stock showroom`
-                  : 'Temporairement indisponible'}
+                  ? `Plus que ${data.stockDisponible} en stock showroom principal`
+                  : retraitAvecStock.length > 0
+                    ? `Indisponible au showroom principal — retrait possible (${retraitAvecStock[0]!.disponible} à ${retraitAvecStock[0]!.nom})`
+                    : 'Temporairement indisponible'}
             </p>
+            {stockHintRetrait ? (
+              <p className="pdp-temu-stock-hint">{stockHintRetrait}</p>
+            ) : null}
 
             {axes.length > 0 && (
               <div className="pdp-variants" aria-label="Variantes">
@@ -368,7 +388,7 @@ export default function ProduitPage() {
                   type="button"
                   onClick={() => setQty((q) => Math.max(1, q - 1))}
                   aria-label="Diminuer"
-                  disabled={!stockOk}
+                  disabled={!peutCommander}
                 >
                   −
                 </button>
@@ -385,13 +405,13 @@ export default function ProduitPage() {
                       ),
                     )
                   }
-                  disabled={!stockOk}
+                  disabled={!peutCommander}
                 />
                 <button
                   type="button"
                   onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
                   aria-label="Augmenter"
-                  disabled={!stockOk}
+                  disabled={!peutCommander}
                 >
                   +
                 </button>
@@ -399,7 +419,7 @@ export default function ProduitPage() {
               <button
                 type="button"
                 className="btn pdp-atc"
-                disabled={!stockOk || adding}
+                disabled={!peutCommander || adding}
                 onClick={() => void handleAdd(false)}
               >
                 {adding ? 'Ajout…' : 'Ajouter au panier'}
@@ -409,7 +429,7 @@ export default function ProduitPage() {
             <button
               type="button"
               className="btn btn-ghost pdp-buy-now"
-              disabled={!stockOk || adding}
+              disabled={!peutCommander || adding}
               onClick={() => void handleAdd(true)}
             >
               Acheter maintenant

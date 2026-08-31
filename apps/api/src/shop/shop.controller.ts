@@ -26,6 +26,7 @@ import {
   CheckoutShopDto,
   UpdatePanierLignesDto,
 } from './dto/shop-checkout.dto';
+import { DisponibiliteStockShopDto } from './dto/shop-stock.dto';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { randomUUID } from 'node:crypto';
 
@@ -123,6 +124,12 @@ export class ShopController {
   @Get('reglements')
   getReglements() {
     return this.checkoutService.getModesReglement();
+  }
+
+  /** Stock disponible par entrepôt web (retrait boutique ou livraison). */
+  @Post('stock/disponibilite')
+  disponibiliteStock(@Body() dto: DisponibiliteStockShopDto) {
+    return this.checkoutService.disponibiliteLignes(dto);
   }
 
   @Post('evenements')

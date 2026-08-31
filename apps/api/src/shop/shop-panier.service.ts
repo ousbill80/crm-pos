@@ -15,6 +15,7 @@ import {
 import { signerPanierId, verifierPanierToken } from './shop-panier.token';
 import type { PanierLigneDto } from './dto/shop-checkout.dto';
 import { resoudreEntrepotWebId } from './entrepot-web.resolver';
+import { StockService } from '../stocks/stock.service';
 
 @Injectable()
 export class ShopPanierService {
@@ -22,6 +23,7 @@ export class ShopPanierService {
     private readonly prisma: PrismaService,
     private readonly shopBase: ShopBaseService,
     private readonly config: ConfigService,
+    private readonly stockService: StockService,
   ) {}
 
   private panierSecret(): string {
@@ -91,17 +93,20 @@ export class ShopPanierService {
 
     const produits = await this.prisma.produit.findMany({
       where: { id: { in: ids } },
-      select: { id: true, imageUrl: true, slug: true },
+      select: { id: true, imageUrl: true, slug: true, typeProduit: true },
     });
-    const stocks = entrepotId
-      ? await this.prisma.stockQuant.findMany({
-          where: { produitId: { in: ids }, entrepotId },
-          select: { produitId: true, quantite: true },
-        })
-      : [];
-    const stockByProduit = new Map(
-      stocks.map((s) => [s.produitId, Number(s.quantite)]),
-    );
+    const stockByProduit = new Map<string, number>();
+    if (entrepotId) {
+      await Promise.all(
+        produits.map(async (p) => {
+          if (p.typeProduit !== 'ARTICLE') return;
+          stockByProduit.set(
+            p.id,
+            await this.stockService.getDisponible(p.id, entrepotId),
+          );
+        }),
+      );
+    }
     for (const p of produits) {
       map.set(p.id, {
         imageUrl: p.imageUrl,

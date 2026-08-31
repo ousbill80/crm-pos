@@ -288,6 +288,42 @@ export default function CheckoutPage() {
   const sousTotal = panier?.montantArticlesTtc ?? 0;
   const total = sousTotal + fraisLivraison;
   const empty = !cartLoading && (!panier || panier.lignes.length === 0);
+  const produitIds = useMemo(
+    () => panier?.lignes.map((l) => l.produitId) ?? [],
+    [panier?.lignes],
+  );
+
+  const { data: dispoStock } = useQuery({
+    queryKey: ['checkout-stock', mode, boutiqueId, zoneId, produitIds],
+    queryFn: () =>
+      shopFetch<{
+        lignes: Array<{ produitId: string; disponible: number | null }>;
+      }>('/shop/stock/disponibilite', {
+        method: 'POST',
+        body: JSON.stringify({
+          modeFulfillment: mode,
+          ...(mode === 'RETRAIT_BOUTIQUE' ? { boutiqueRetraitId: boutiqueId } : {}),
+          produitIds,
+        }),
+      }),
+    enabled:
+      produitIds.length > 0 &&
+      (mode === 'LIVRAISON' || Boolean(boutiqueId)),
+  });
+
+  const stockIssues = useMemo(() => {
+    if (!panier?.lignes.length || !dispoStock?.lignes.length) return [];
+    return panier.lignes.flatMap((l) => {
+      const row = dispoStock.lignes.find((r) => r.produitId === l.produitId);
+      if (row?.disponible == null) return [];
+      if (row.disponible < l.quantite) {
+        return [
+          `Stock insuffisant pour « ${l.designation} » (disponible : ${row.disponible} à cette boutique).`,
+        ];
+      }
+      return [];
+    });
+  }, [panier?.lignes, dispoStock?.lignes]);
 
   const checkout = useMutation({
     mutationFn: async () => {
@@ -402,6 +438,7 @@ export default function CheckoutPage() {
       }
     }
     if (!panier?.lignes.length) return 'Votre panier est vide.';
+    if (stockIssues.length) return stockIssues[0] ?? null;
     return null;
   }
 
@@ -764,10 +801,19 @@ export default function CheckoutPage() {
               </label>
             )}
 
-            {(fieldError || checkout.isError) && (
-              <p className="checkout-error" role="alert">
-                {fieldError ?? (checkout.error as Error).message}
-              </p>
+            {(fieldError || checkout.isError || stockIssues.length > 0) && (
+              <div className="checkout-alerts" role="alert">
+                {stockIssues.map((msg) => (
+                  <p key={msg} className="checkout-error">
+                    {msg}
+                  </p>
+                ))}
+                {(fieldError || checkout.isError) && (
+                  <p className="checkout-error">
+                    {fieldError ?? (checkout.error as Error).message}
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="checkout-actions">
@@ -777,7 +823,7 @@ export default function CheckoutPage() {
               <button
                 type="submit"
                 className="btn checkout-submit"
-                disabled={checkout.isPending}
+                disabled={checkout.isPending || stockIssues.length > 0}
               >
                 {checkout.isPending
                   ? 'Traitement…'

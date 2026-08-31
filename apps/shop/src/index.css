@@ -812,6 +812,8 @@ body.mobile-menu-open .announce {
   inset: 0;
   z-index: 70;
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   justify-items: end;
   pointer-events: none;
   opacity: 0;
@@ -838,6 +840,9 @@ body.mobile-menu-open .announce {
   position: relative;
   width: min(420px, 100%);
   height: 100%;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   background: #f7f8fa;
   border-left: 1px solid var(--line);
   display: flex;
@@ -853,6 +858,7 @@ body.mobile-menu-open .announce {
 
 .cart-panel {
   background: #fff;
+  min-height: 0;
 }
 
 .drawer-head,
@@ -890,10 +896,19 @@ body.mobile-menu-open .announce {
 }
 
 .drawer-body {
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.75rem 1rem 1.25rem;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cart-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .cart-ship {
@@ -4781,10 +4796,15 @@ textarea:focus {
 /* ——— Checkout (Shopify-like) ——— */
 .checkout-main-wrap {
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
 }
 
 .checkout-shell {
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
+  height: auto;
   background:
     linear-gradient(90deg, #ffffff 0%, #ffffff 54%, #f3f4f6 54%, #f3f4f6 100%);
   color: var(--ink);
@@ -4885,12 +4905,13 @@ textarea:focus {
   grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.85fr);
   max-width: 1100px;
   margin: 0 auto;
-  min-height: calc(100vh - 4.5rem);
+  align-items: start;
 }
 
 .checkout-main-col {
   padding: 1.75rem clamp(1.15rem, 4vw, 3.25rem) 3.5rem;
   background: #fff;
+  min-width: 0;
 }
 
 .checkout-breadcrumb {
@@ -5274,8 +5295,15 @@ textarea:focus {
   position: sticky;
   top: 0;
   align-self: start;
-  max-height: 100vh;
-  overflow: auto;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.checkout-summary-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .checkout-summary-title {
@@ -5285,6 +5313,7 @@ textarea:focus {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   margin: 0 0 1.25rem;
+  flex-shrink: 0;
 }
 
 .checkout-lines {
@@ -5293,6 +5322,27 @@ textarea:focus {
   margin: 0 0 1.25rem;
   display: grid;
   gap: 1rem;
+  max-height: min(45vh, 22rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 0.15rem;
+}
+
+.checkout-alerts {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.checkout-alerts .checkout-error {
+  margin: 0;
+}
+
+.pdp-temu-stock-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-dim);
+  line-height: 1.35;
 }
 
 .checkout-lines li {

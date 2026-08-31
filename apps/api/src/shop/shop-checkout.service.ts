@@ -16,6 +16,7 @@ import {
   transitionCommandeWebAutorisee,
 } from './commande-web-state-machine';
 import type { CheckoutShopDto } from './dto/shop-checkout.dto';
+import type { DisponibiliteStockShopDto } from './dto/shop-stock.dto';
 import {
   ModeFulfillmentCommandeWeb,
   ModeReglementCommandeWeb,
@@ -271,6 +272,61 @@ export class ShopCheckoutService {
       montantTotal: Number(commande.montantTotal),
       suiviToken: commande.suiviToken,
       expireAt: commande.expireAt,
+    };
+  }
+
+  async disponibiliteLignes(dto: DisponibiliteStockShopDto) {
+    const params = await this.shopBase.assertShopActif();
+    let boutiqueRetrait: Awaited<
+      ReturnType<typeof this.prisma.boutique.findFirst>
+    > = null;
+
+    if (dto.modeFulfillment === ModeFulfillmentCommandeWeb.RETRAIT_BOUTIQUE) {
+      if (!dto.boutiqueRetraitId) {
+        throw new BadRequestException('Boutique de retrait requise.');
+      }
+      boutiqueRetrait = await this.prisma.boutique.findFirst({
+        where: {
+          id: dto.boutiqueRetraitId,
+          actif: true,
+          retraitWebActif: true,
+        },
+      });
+      if (!boutiqueRetrait) {
+        throw new BadRequestException('Boutique de retrait invalide.');
+      }
+    }
+
+    const entrepotId = resoudreEntrepotWebId(dto.modeFulfillment, {
+      parametreShop: params,
+      boutiqueRetrait,
+    });
+
+    const produits = await this.prisma.produit.findMany({
+      where: { id: { in: dto.produitIds } },
+      select: { id: true, typeProduit: true },
+    });
+    const typeById = new Map(produits.map((p) => [p.id, p.typeProduit]));
+
+    const lignes = await Promise.all(
+      dto.produitIds.map(async (produitId) => {
+        if (typeById.get(produitId) !== 'ARTICLE') {
+          return { produitId, disponible: null as number | null };
+        }
+        return {
+          produitId,
+          disponible: await this.stockService.getDisponible(
+            produitId,
+            entrepotId,
+          ),
+        };
+      }),
+    );
+
+    return {
+      entrepotId,
+      boutiqueRetraitId: boutiqueRetrait?.id ?? null,
+      lignes,
     };
   }
 

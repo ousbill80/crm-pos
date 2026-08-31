@@ -24,6 +24,8 @@ import {
   type ArticleEtiquetteSelection,
 } from '../components/EtiquettesModal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { CategorieProduitField } from '../components/CategorieProduitField';
+import { useCategoriesProduit } from '../hooks/useCategoriesProduit';
 import {
   FiltreMagasinSiege,
   libellePerimetrePage,
@@ -69,16 +71,6 @@ const ROLES_LECTURE_STRUCTURE: RoleLibelle[] = [
   RoleLibelle.SUPERVISEUR_ZONE,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
   RoleLibelle.CAISSIER_BOUTIQUE,
-];
-
-const CATEGORIES_SUGGEREES = [
-  'Protection',
-  'Charge',
-  'Audio',
-  'Câbles',
-  'Accessoires',
-  'Café-Market',
-  'Autre',
 ];
 
 const STATUT_LABEL: Record<StatutStock, string> = {
@@ -139,14 +131,6 @@ function useSynthese(enabled: boolean) {
   return useQuery({
     queryKey: ['produits-synthese'],
     queryFn: () => apiFetch<ProduitsSyntheseDto>('/produits/synthese'),
-    enabled,
-  });
-}
-
-function useCategories(enabled: boolean) {
-  return useQuery({
-    queryKey: ['produits-categories'],
-    queryFn: () => apiFetch<string[]>('/produits/categories'),
     enabled,
   });
 }
@@ -248,12 +232,11 @@ function NouveauProduitForm({
         placeholder="COQ-IP-SIL"
       />
       <label htmlFor="categorie">Catégorie</label>
-      <input
+      <CategorieProduitField
         id="categorie"
-        list="categories-suggerees"
         value={categorie}
-        onChange={(e) => setCategorie(e.target.value)}
-        placeholder="Protection, Charge, Audio…"
+        onChange={setCategorie}
+        emptyLabel="— Choisir —"
       />
       <label htmlFor="description">Description (optionnel)</label>
       <textarea
@@ -357,7 +340,7 @@ export function ProduitsPage() {
     enabled: peutLire && Boolean(magasin.boutiqueId),
   });
   const synthese = useSynthese(peutLire);
-  const categories = useCategories(peutLire);
+  const categories = useCategoriesProduit(null, peutLire);
   const classement = useClassement(peutLire);
 
   const produitsPerimetre = useMemo(() => {
@@ -467,12 +450,7 @@ export function ProduitsPage() {
     setMargeNegative(false);
   }
 
-  const categoriesOptions = useMemo(() => {
-    const fromApi = categories.data ?? [];
-    return Array.from(new Set([...fromApi, ...CATEGORIES_SUGGEREES])).sort((a, b) =>
-      a.localeCompare(b, 'fr'),
-    );
-  }, [categories.data]);
+  const categoriesOptions = categories.options;
 
   const priorites = synthese.data ? buildPrioritesCatalogue(synthese.data) : [];
 
@@ -482,12 +460,6 @@ export function ProduitsPage() {
 
   return (
     <div>
-      <datalist id="categories-suggerees">
-        {categoriesOptions.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
-
       <PageHeader
         title="Produits"
         subtitle={libellePerimetrePage(user?.role, {

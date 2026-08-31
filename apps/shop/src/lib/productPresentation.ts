@@ -14,6 +14,12 @@ export type ProduitVariante = {
   attributsMap?: AttributsMap;
 };
 
+export type StockRetraitBoutique = {
+  boutiqueId: string;
+  nom: string;
+  disponible: number;
+};
+
 export type ProduitDetail = {
   id: string;
   slug: string | null;
@@ -23,6 +29,7 @@ export type ProduitDetail = {
   categorie: string | null;
   imageUrl?: string | null;
   stockDisponible?: number | null;
+  stocksRetrait?: StockRetraitBoutique[];
   description?: string | null;
   prixUnitaireHt?: number;
   prixUnitaireTtc?: number;

@@ -249,10 +249,50 @@ export class ShopCatalogueService {
 
     const variantes = mappedFamily.filter((p) => p.id !== current.id);
 
+    const stocksRetrait = await this.buildStocksRetrait(
+      current.id,
+      current.typeProduit,
+      params,
+    );
+
     return {
       ...current,
       variantes,
+      stocksRetrait,
     };
+  }
+
+  private async buildStocksRetrait(
+    produitId: string,
+    typeProduit: string,
+    params: Awaited<ReturnType<ShopBaseService['assertShopActif']>>,
+  ) {
+    if (typeProduit !== 'ARTICLE' || !params.retraitActif) return [];
+
+    const boutiques = await this.prisma.boutique.findMany({
+      where: { actif: true, retraitWebActif: true },
+      select: { id: true, nom: true, entrepotWebId: true },
+      orderBy: { nom: 'asc' },
+    });
+
+    const rows: Array<{
+      boutiqueId: string;
+      nom: string;
+      disponible: number;
+    }> = [];
+
+    for (const boutique of boutiques) {
+      const entrepotId =
+        boutique.entrepotWebId ?? params.entrepotWebDefautId ?? null;
+      if (!entrepotId) continue;
+      rows.push({
+        boutiqueId: boutique.id,
+        nom: boutique.nom,
+        disponible: await this.stockService.getDisponible(produitId, entrepotId),
+      });
+    }
+
+    return rows;
   }
 
   async listBoutiquesRetrait() {
