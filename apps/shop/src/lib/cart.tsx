@@ -27,7 +27,11 @@ type CartCtx = {
   closeDrawer: () => void;
   ensurePanier: () => Promise<PanierDto>;
   setQuantite: (produitId: string, quantite: number) => Promise<void>;
-  addProduit: (produitId: string, quantite?: number) => Promise<void>;
+  addProduit: (
+    produitId: string,
+    quantite?: number,
+    opts?: { stockDisponible?: number | null },
+  ) => Promise<void>;
   removeProduit: (produitId: string) => Promise<void>;
   clear: () => Promise<void>;
 };
@@ -148,7 +152,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 
   const addProduit = useCallback(
-    async (produitId: string, quantite = 1) => {
+    async (
+      produitId: string,
+      quantite = 1,
+      opts?: { stockDisponible?: number | null },
+    ) => {
+      if (opts?.stockDisponible != null) {
+        if (opts.stockDisponible <= 0) {
+          throw new Error('Cet article est en rupture de stock.');
+        }
+      }
       await ensurePanier();
       let current: PanierLigne[] = [];
       try {
@@ -172,6 +185,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
         if (reste <= 0) {
           throw new Error(
             `Stock insuffisant (disponible : ${line.stockDisponible}).`,
+          );
+        }
+        addQty = Math.min(quantite, reste);
+      } else if (opts?.stockDisponible != null) {
+        const reste = opts.stockDisponible - existing;
+        if (reste <= 0) {
+          throw new Error(
+            `Stock insuffisant (disponible : ${opts.stockDisponible}).`,
           );
         }
         addQty = Math.min(quantite, reste);

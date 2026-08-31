@@ -82,7 +82,11 @@ export default function PanierPage() {
                     disabled={
                       isMutating || !estCommandable(undefined, p.stockDisponible)
                     }
-                    onClick={() => void addProduit(p.id, 1)}
+                    onClick={() =>
+                      void addProduit(p.id, 1, {
+                        stockDisponible: p.stockDisponible,
+                      })
+                    }
                   >
                     {estCommandable(undefined, p.stockDisponible)
                       ? 'Ajouter au panier'
@@ -273,7 +277,11 @@ export default function PanierPage() {
                   type="button"
                   className="cart-reco-add"
                   disabled={isMutating || !commandable}
-                  onClick={() => void addProduit(p.id, 1)}
+                  onClick={() =>
+                    void addProduit(p.id, 1, {
+                      stockDisponible: p.stockDisponible,
+                    })
+                  }
                 >
                   {commandable ? '+ Ajouter' : 'Rupture'}
                 </button>

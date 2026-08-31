@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { StockService } from '../stocks/stock.service';
+import { ShopStockWebService } from './shop-stock-web.service';
 import { ShopBaseService, mapProduitCatalogue } from './shop-base.service';
 import {
   STATUTS_COMMANDE_REVENUE,
@@ -39,7 +39,7 @@ export class ShopAarrrService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly shopBase: ShopBaseService,
-    private readonly stockService: StockService,
+    private readonly shopStockWeb: ShopStockWebService,
   ) {}
 
   async ingestPublic(
@@ -210,12 +210,18 @@ export class ShopAarrrService {
       mapped: NonNullable<ReturnType<typeof mapProduitCatalogue>>;
     }> = [];
 
+    const retraitEntrepots = params.retraitActif
+      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
+      : [];
+
     for (const p of catalogue) {
       let stockDisponible: number | undefined;
-      if (params.entrepotWebDefautId && p.typeProduit === 'ARTICLE') {
-        stockDisponible = await this.stockService.getDisponible(
+      if (p.typeProduit === 'ARTICLE') {
+        stockDisponible = await this.shopStockWeb.getStockWebDisponible(
           p.id,
-          params.entrepotWebDefautId,
+          p.typeProduit,
+          params,
+          retraitEntrepots,
         );
       }
       const mapped = mapProduitCatalogue(p, paramsPrix, stockDisponible);

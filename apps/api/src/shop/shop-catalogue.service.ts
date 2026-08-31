@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
+import { ShopStockWebService } from './shop-stock-web.service';
 import { ShopBaseService, mapProduitCatalogue } from './shop-base.service';
 import {
   interpretCatalogueQuery,
@@ -20,6 +21,7 @@ export class ShopCatalogueService {
     private readonly prisma: PrismaService,
     private readonly shopBase: ShopBaseService,
     private readonly stockService: StockService,
+    private readonly shopStockWeb: ShopStockWebService,
   ) {}
 
   async listCatalogue(query: {
@@ -32,7 +34,9 @@ export class ShopCatalogueService {
   }) {
     const params = await this.shopBase.assertShopActif();
     const paramsPrix = this.shopBase.toParametresPrix(params);
-    const entrepotId = params.entrepotWebDefautId;
+    const retraitEntrepots = params.retraitActif
+      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
+      : [];
 
     const page = Math.max(1, Math.floor(query.page ?? 1));
     const limit = Math.min(
@@ -84,10 +88,12 @@ export class ShopCatalogueService {
       [];
     for (const p of produits) {
       let stockDisponible: number | undefined;
-      if (entrepotId && p.typeProduit === 'ARTICLE') {
-        stockDisponible = await this.stockService.getDisponible(
+      if (p.typeProduit === 'ARTICLE') {
+        stockDisponible = await this.shopStockWeb.getStockWebDisponible(
           p.id,
-          entrepotId,
+          p.typeProduit,
+          params,
+          retraitEntrepots,
         );
       }
       const mapped = mapProduitCatalogue(p, paramsPrix, stockDisponible);
@@ -203,21 +209,26 @@ export class ShopCatalogueService {
     });
 
     const stockById = new Map<string, number | undefined>();
-    if (params.entrepotWebDefautId) {
-      await Promise.all(
-        family.map(async (p) => {
-          if (p.typeProduit !== 'ARTICLE') {
-            stockById.set(p.id, undefined);
-            return;
-          }
-          const qty = await this.stockService.getDisponible(
+    const retraitEntrepots = params.retraitActif
+      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
+      : [];
+    await Promise.all(
+      family.map(async (p) => {
+        if (p.typeProduit !== 'ARTICLE') {
+          stockById.set(p.id, undefined);
+          return;
+        }
+        stockById.set(
+          p.id,
+          await this.shopStockWeb.getStockWebDisponible(
             p.id,
-            params.entrepotWebDefautId!,
-          );
-          stockById.set(p.id, qty);
-        }),
-      );
-    }
+            p.typeProduit,
+            params,
+            retraitEntrepots,
+          ),
+        );
+      }),
+    );
 
     const mappedFamily = family
       .map((p) => {

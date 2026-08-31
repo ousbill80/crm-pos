@@ -15,7 +15,7 @@ import {
 import { signerPanierId, verifierPanierToken } from './shop-panier.token';
 import type { PanierLigneDto } from './dto/shop-checkout.dto';
 import { resoudreEntrepotWebId } from './entrepot-web.resolver';
-import { StockService } from '../stocks/stock.service';
+import { ShopStockWebService } from './shop-stock-web.service';
 
 @Injectable()
 export class ShopPanierService {
@@ -23,7 +23,7 @@ export class ShopPanierService {
     private readonly prisma: PrismaService,
     private readonly shopBase: ShopBaseService,
     private readonly config: ConfigService,
-    private readonly stockService: StockService,
+    private readonly shopStockWeb: ShopStockWebService,
   ) {}
 
   private panierSecret(): string {
@@ -97,13 +97,20 @@ export class ShopPanierService {
     });
     const stockByProduit = new Map<string, number>();
     if (entrepotId) {
+      const params = await this.shopBase.getParametresShop();
+      const retraitEntrepots = params.retraitActif
+        ? await this.shopStockWeb.listEntrepotsRetraitWeb()
+        : [];
       await Promise.all(
         produits.map(async (p) => {
           if (p.typeProduit !== 'ARTICLE') return;
-          stockByProduit.set(
+          const qty = await this.shopStockWeb.getStockWebDisponible(
             p.id,
-            await this.stockService.getDisponible(p.id, entrepotId),
+            p.typeProduit,
+            params,
+            retraitEntrepots,
           );
+          if (qty != null) stockByProduit.set(p.id, qty);
         }),
       );
     }
@@ -146,14 +153,20 @@ export class ShopPanierService {
       throw new BadRequestException('Entrepôt web par défaut non configuré.');
     }
 
+    const retraitEntrepots = params.retraitActif
+      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
+      : [];
+
     for (const ligne of lignes) {
       const produit = produits.find((p) => p.id === ligne.produitId)!;
       if (produit.typeProduit !== 'ARTICLE') continue;
-      const dispo = await this.stockService.getDisponible(
+      const dispo = await this.shopStockWeb.getStockWebDisponible(
         produit.id,
-        entrepotId,
+        produit.typeProduit,
+        params,
+        retraitEntrepots,
       );
-      if (dispo <= 0) {
+      if (dispo == null || dispo <= 0) {
         throw new BadRequestException(
           `« ${produit.designation} » est en rupture de stock.`,
         );

@@ -140,10 +140,14 @@ export default function ProduitPage() {
     data &&
     data.stockDisponible != null &&
     data.stockDisponible > 0 &&
-    stocksRetrait.length > 1 &&
+    stocksRetrait.length > 0 &&
     retraitAvecStock.length > 0
       ? `Retrait aussi disponible : ${retraitAvecStock.map((b) => `${b.nom} (${b.disponible})`).join(' · ')}`
-      : null;
+      : data &&
+          stocksRetrait.length > 0 &&
+          retraitAvecStock.length === 0
+        ? `Retrait indisponible dans toutes les boutiques`
+        : null;
 
   useEffect(() => {
     if (maxQty > 0 && qty > maxQty) setQty(maxQty);
@@ -172,7 +176,7 @@ export default function ProduitPage() {
     setAdding(true);
     setErr(null);
     try {
-      await addProduit(data.id, qty);
+      await addProduit(data.id, qty, { stockDisponible: data.stockDisponible });
       setAdded(true);
       if (goCheckout) nav('/checkout');
     } catch (e) {
