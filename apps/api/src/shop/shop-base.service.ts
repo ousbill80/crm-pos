@@ -56,6 +56,7 @@ export function mapProduitCatalogue(
     categorie: string | null;
     description: string | null;
     imageUrl: string | null;
+    imagesUrls?: string | null;
     slug: string | null;
     prixWeb: { toString(): string } | null;
     prixUnitaire: { toString(): string };
@@ -86,6 +87,7 @@ export function mapProduitCatalogue(
     categorie: produit.categorie,
     description: produit.description,
     imageUrl: produit.imageUrl,
+    imagesUrls: produit.imagesUrls ?? null,
     slug: produit.slug,
     prixAffiche: prix.prixAffiche,
     prixUnitaireHt: prix.prixUnitaireHt,

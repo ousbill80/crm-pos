@@ -156,17 +156,25 @@ export default function ProduitPage() {
   const galleryImages = useMemo(() => {
     if (!data) return [] as string[];
     const imgs: string[] = [];
-    if (data.imageUrl && !data.imageUrl.startsWith('data:image/svg')) {
-      imgs.push(data.imageUrl);
+    const push = (url: string | null | undefined) => {
+      if (!url || url.startsWith('data:image/svg')) return;
+      if (!imgs.includes(url)) imgs.push(url);
+    };
+    push(data.imageUrl);
+    if (data.imagesUrls) {
+      try {
+        const extra = JSON.parse(data.imagesUrls) as unknown;
+        if (Array.isArray(extra)) {
+          for (const u of extra) {
+            if (typeof u === 'string') push(u);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     }
     for (const v of variantes) {
-      if (
-        v.imageUrl &&
-        !v.imageUrl.startsWith('data:image/svg') &&
-        !imgs.includes(v.imageUrl)
-      ) {
-        imgs.push(v.imageUrl);
-      }
+      push(v.imageUrl);
     }
     return imgs;
   }, [data, variantes]);

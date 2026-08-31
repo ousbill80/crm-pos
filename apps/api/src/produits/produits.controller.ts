@@ -21,6 +21,7 @@ import {
 } from '../caisses/access-scope.constants';
 import { ProduitsService } from './produits.service';
 import { CreateProduitDto } from './dto/create-produit.dto';
+import { CreateVarianteDto } from './dto/create-variante.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
 import { ImprimerEtiquettesDto } from './dto/imprimer-etiquettes.dto';
@@ -140,6 +141,25 @@ export class ProduitsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.produitsService.appliquerImport(dto, user);
+  }
+
+  @Get(':id/famille-web')
+  @Roles(...ROLES_LECTURE_STRUCTURE)
+  getFamilleWeb(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.produitsService.getFamilleWeb(id, user);
+  }
+
+  @Post(':id/variantes')
+  @Roles(...ROLES_CATALOGUE_ECRITURE)
+  createVariante(
+    @Param('id') id: string,
+    @Body() dto: CreateVarianteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.produitsService.createVariante(id, dto, user);
   }
 
   @Get(':id')

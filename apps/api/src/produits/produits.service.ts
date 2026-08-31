@@ -21,6 +21,7 @@ import {
 } from '../boutiques/boutique-scope.util';
 import { toCsv } from '../common/csv.util';
 import { CreateProduitDto } from './dto/create-produit.dto';
+import { CreateVarianteDto } from './dto/create-variante.dto';
 import { UpdateProduitDto } from './dto/update-produit.dto';
 import { ListProduitsQueryDto } from './dto/list-produits-query.dto';
 import { ImprimerEtiquettesDto } from './dto/imprimer-etiquettes.dto';
@@ -46,6 +47,7 @@ import {
   statutStockOf,
   type ProduitEnrichi,
 } from './produits.helpers';
+import { slugifyProduitDesignation } from './produit-slug.util';
 
 const FENETRE_ANALYSE_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_ETIQUETTES_PAR_LOT = 1000;
@@ -75,6 +77,30 @@ export class ProduitsService {
     user: AuthenticatedUser,
   ): Promise<ProduitEnrichi> {
     const stockInitial = dto.stock ?? 0;
+    const visibleWeb = dto.visibleWeb === true;
+    if (visibleWeb && !dto.imageUrl?.trim()) {
+      throw new BadRequestException(
+        'Une photo de couverture est obligatoire pour publier sur le site web.',
+      );
+    }
+    const prixWeb =
+      dto.prixWeb != null
+        ? dto.prixWeb
+        : visibleWeb
+          ? dto.prixUnitaire
+          : null;
+    let slug: string | null = null;
+    if (visibleWeb) {
+      slug = await this.resoudreSlugUnique(
+        dto.slug?.trim() || slugifyProduitDesignation(dto.designation),
+      );
+      if (!slug) {
+        throw new BadRequestException(
+          'Impossible de générer un slug URL pour la boutique en ligne.',
+        );
+      }
+    }
+
     let produit: Produit;
     try {
       produit = await this.prisma.produit.create({
@@ -92,32 +118,27 @@ export class ProduitsService {
           methodeCout: dto.methodeCout ?? 'CMP',
           strategieSortie: dto.strategieSortie ?? 'FIFO',
           attributs: dto.attributs,
+          visibleWeb,
+          slug,
+          prixWeb,
+          imageUrl: dto.imageUrl ?? null,
+          imagesUrls: dto.imagesUrls ?? null,
+          tauxTva: dto.tauxTva ?? null,
         },
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException(
-          `La référence « ${dto.reference} » est déjà attribuée à un autre produit.`,
+          dto.reference
+            ? `La référence « ${dto.reference} » est déjà attribuée à un autre produit.`
+            : 'Ce slug URL est déjà utilisé par un autre produit.',
         );
       }
       throw error;
     }
 
     if (stockInitial > 0) {
-      const entrepot =
-        (await this.prisma.entrepot.findFirst({
-          where: {
-            type: 'PRINCIPAL',
-            actif: true,
-            reseau: false,
-            usage: 'STOCK',
-          },
-          orderBy: { nom: 'asc' },
-        })) ??
-        (await this.prisma.entrepot.findFirst({
-          where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
-          orderBy: { nom: 'asc' },
-        }));
+      const entrepot = await this.resoudreEntrepotStockInitial();
       if (!entrepot) {
         throw new NotFoundException(
           'Aucun entrepôt PRINCIPAL : créez une boutique/entrepôt avant de stocker.',
@@ -141,10 +162,71 @@ export class ProduitsService {
       details: JSON.stringify({
         designation: produit.designation,
         reference: produit.reference,
+        visibleWeb: produit.visibleWeb,
+        slug: produit.slug,
       }),
     });
 
     return this.findOne(produit.id, user);
+  }
+
+  /** Slug unique pour la boutique (suffixe -2, -3… si collision). */
+  private async resoudreSlugUnique(
+    base: string,
+    excludeId?: string,
+  ): Promise<string | null> {
+    const trimmed = base.trim().slice(0, 80);
+    if (!trimmed) return null;
+    let candidate = trimmed;
+    let n = 2;
+    while (
+      await this.prisma.produit.findFirst({
+        where: {
+          slug: candidate,
+          ...(excludeId ? { NOT: { id: excludeId } } : {}),
+        },
+        select: { id: true },
+      })
+    ) {
+      const suffix = `-${n}`;
+      candidate = `${trimmed.slice(0, Math.max(1, 80 - suffix.length))}${suffix}`;
+      n += 1;
+      if (n > 200) return null;
+    }
+    return candidate;
+  }
+
+  /** Entrepôt hub web en priorité, sinon entrepôt PRINCIPAL réseau. */
+  private async resoudreEntrepotStockInitial() {
+    const params = await this.prisma.parametreShop.findFirst({
+      where: { shopActif: true },
+      select: { entrepotWebDefautId: true },
+    });
+    if (params?.entrepotWebDefautId) {
+      const hub = await this.prisma.entrepot.findFirst({
+        where: {
+          id: params.entrepotWebDefautId,
+          actif: true,
+          usage: 'STOCK',
+        },
+      });
+      if (hub) return hub;
+    }
+    return (
+      (await this.prisma.entrepot.findFirst({
+        where: {
+          type: 'PRINCIPAL',
+          actif: true,
+          reseau: false,
+          usage: 'STOCK',
+        },
+        orderBy: { nom: 'asc' },
+      })) ??
+      (await this.prisma.entrepot.findFirst({
+        where: { type: 'PRINCIPAL', actif: true, usage: 'STOCK' },
+        orderBy: { nom: 'asc' },
+      }))
+    );
   }
 
   async findAll(
@@ -573,7 +655,21 @@ export class ProduitsService {
     dto: UpdateProduitDto,
     user: AuthenticatedUser,
   ): Promise<ProduitEnrichi> {
-    await this.findOne(id, user);
+    const existing = await this.findOne(id, user);
+
+    let slug = dto.slug;
+    if (dto.visibleWeb === true) {
+      const base =
+        (typeof dto.slug === 'string' && dto.slug.trim()) ||
+        existing.slug?.trim() ||
+        slugifyProduitDesignation(dto.designation ?? existing.designation);
+      slug = await this.resoudreSlugUnique(base, id);
+      if (!slug) {
+        throw new BadRequestException(
+          'Impossible de générer un slug URL pour la boutique en ligne.',
+        );
+      }
+    }
 
     let produit: Produit;
     try {
@@ -593,16 +689,20 @@ export class ProduitsService {
           methodeCout: dto.methodeCout,
           strategieSortie: dto.strategieSortie,
           imageUrl: dto.imageUrl,
+          imagesUrls: dto.imagesUrls,
           prixWeb: dto.prixWeb,
           visibleWeb: dto.visibleWeb,
-          slug: dto.slug,
+          slug: dto.visibleWeb === false ? dto.slug : slug,
           tauxTva: dto.tauxTva,
+          attributs: dto.attributs,
         },
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException(
-          `La référence « ${dto.reference} » est déjà attribuée à un autre produit.`,
+          dto.reference
+            ? `La référence « ${dto.reference} » est déjà attribuée à un autre produit.`
+            : 'Ce slug URL est déjà utilisé par un autre produit.',
         );
       }
       throw error;
@@ -621,10 +721,146 @@ export class ProduitsService {
             : dto.imageUrl
               ? 'photo-mise-a-jour'
               : null,
+        imagesUrls:
+          dto.imagesUrls === undefined
+            ? undefined
+            : dto.imagesUrls
+              ? 'galerie-mise-a-jour'
+              : null,
       }),
     });
 
     return this.findOne(id, user);
+  }
+
+  /** Famille variantes e-commerce (parent + enfants). */
+  async getFamilleWeb(id: string, user: AuthenticatedUser) {
+    await this.findOne(id, user);
+    const rootId = await this.resoudreFamilleRootId(id);
+    const membres = await this.prisma.produit.findMany({
+      where: { OR: [{ id: rootId }, { parentId: rootId }] },
+      orderBy: [{ parentId: { sort: 'asc', nulls: 'first' } }, { designation: 'asc' }],
+    });
+    return {
+      rootId,
+      membres: membres.map((m) => ({
+        id: m.id,
+        designation: m.designation,
+        reference: m.reference,
+        slug: m.slug,
+        prixWeb: m.prixWeb != null ? money(m.prixWeb) : null,
+        prixUnitaire: money(m.prixUnitaire),
+        visibleWeb: m.visibleWeb,
+        attributs: m.attributs,
+        imageUrl: m.imageUrl,
+        imagesUrls: m.imagesUrls,
+        parentId: m.parentId,
+        actif: m.actif,
+      })),
+    };
+  }
+
+  /** Crée une variante rattachée à la famille du produit courant. */
+  async createVariante(
+    id: string,
+    dto: CreateVarianteDto,
+    user: AuthenticatedUser,
+  ): Promise<ProduitEnrichi> {
+    await this.findOne(id, user);
+    const rootId = await this.resoudreFamilleRootId(id);
+    const root = await this.prisma.produit.findUniqueOrThrow({
+      where: { id: rootId },
+    });
+
+    const visibleWeb = dto.visibleWeb !== false;
+    const prixUnitaire =
+      dto.prixUnitaire ?? Number(root.prixUnitaire);
+    const prixWeb = dto.prixWeb ?? prixUnitaire;
+    const slug = await this.resoudreSlugUnique(
+      dto.slug?.trim() || slugifyProduitDesignation(dto.designation),
+    );
+    if (!slug) {
+      throw new BadRequestException(
+        'Impossible de générer un slug URL pour la variante.',
+      );
+    }
+
+    const stockInitial = dto.stock ?? 0;
+    let produit: Produit;
+    try {
+      produit = await this.prisma.produit.create({
+        data: {
+          designation: dto.designation,
+          reference: dto.reference,
+          categorie: root.categorie,
+          description: root.description,
+          typeProduit: root.typeProduit,
+          prixUnitaire,
+          stock: 0,
+          parentId: rootId,
+          attributs: dto.attributs,
+          visibleWeb,
+          slug,
+          prixWeb,
+          imageUrl: dto.imageUrl ?? null,
+          imagesUrls: dto.imagesUrls ?? null,
+          tauxTva: root.tauxTva,
+          methodeCout: root.methodeCout,
+          strategieSortie: root.strategieSortie,
+        },
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          dto.reference
+            ? `La référence « ${dto.reference} » est déjà attribuée.`
+            : 'Ce slug URL est déjà utilisé.',
+        );
+      }
+      throw error;
+    }
+
+    if (stockInitial > 0 && root.typeProduit === 'ARTICLE') {
+      const entrepot = await this.resoudreEntrepotStockInitial();
+      if (!entrepot) {
+        throw new NotFoundException(
+          'Aucun entrepôt configuré pour le stock initial.',
+        );
+      }
+      await this.stockService.appliquerMouvement({
+        produitId: produit.id,
+        entrepotId: entrepot.id,
+        type: 'AJUSTEMENT',
+        delta: stockInitial,
+        utilisateurId: user.userId,
+        reference: 'STOCK_INITIAL',
+      });
+    }
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'PRODUIT_VARIANTE_CREATED',
+      entite: 'Produit',
+      entiteId: produit.id,
+      details: JSON.stringify({
+        parentRootId: rootId,
+        designation: produit.designation,
+        slug: produit.slug,
+      }),
+    });
+
+    return this.findOne(produit.id, user);
+  }
+
+  private async resoudreFamilleRootId(produitId: string): Promise<string> {
+    const p = await this.prisma.produit.findUnique({
+      where: { id: produitId },
+      select: { id: true, parentId: true },
+    });
+    if (!p) {
+      throw new NotFoundException('Produit introuvable.');
+    }
+    return p.parentId ?? p.id;
   }
 
   // Code interne Code128, distinct des EAN fournisseurs (13 chiffres) — ne

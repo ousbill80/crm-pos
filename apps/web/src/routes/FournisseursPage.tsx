@@ -14,7 +14,8 @@ import { apiFetch, messageDepuisApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
-import { Modal } from '../components/Modal';
+import { EntrepotSelectField } from '../components/EntrepotSelectField';
+import { ProduitSelectField } from '../components/ProduitSelectField';
 import { InfoTooltip } from '../components/InfoTooltip';
 import {
   insightHaussesPrix,
@@ -192,7 +193,6 @@ export function ReceptionStockForm({
 }) {
   const queryClient = useQueryClient();
   const actifs = produits.filter((p) => p.actif);
-  const [rechercheProduit, setRechercheProduit] = useState('');
   const [produitId, setProduitId] = useState(actifs[0]?.id ?? '');
   const [quantite, setQuantite] = useState('1');
   const [prixAchat, setPrixAchat] = useState('');
@@ -204,15 +204,6 @@ export function ReceptionStockForm({
   const { data: entrepots } = useQuery({
     queryKey: ['entrepots'],
     queryFn: () => apiFetch<EntrepotDto[]>('/entrepots'),
-  });
-
-  const produitsFiltres = actifs.filter((p) => {
-    const q = rechercheProduit.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      p.designation.toLowerCase().includes(q) ||
-      (p.reference ?? '').toLowerCase().includes(q)
-    );
   });
 
   const produitSelectionne = actifs.find((p) => p.id === produitId);
@@ -265,43 +256,33 @@ export function ReceptionStockForm({
         Réception de stock <InfoTooltip insight={insightReceptionStock()} />
       </p>
       <div>
-        <label htmlFor="rech-produit">Rechercher un article</label>
-        <input
-          id="rech-produit"
-          type="search"
-          placeholder="Désignation ou SKU…"
-          value={rechercheProduit}
-          onChange={(e) => setRechercheProduit(e.target.value)}
+        <label htmlFor={`produit-${fournisseurId}`}>Produit</label>
+        <ProduitSelectField
+          id={`produit-${fournisseurId}`}
+          value={produitId}
+          onChange={setProduitId}
+          produits={actifs.map((p) => ({
+            id: p.id,
+            designation: `${p.designation}${p.reference ? ` · ${p.reference}` : ''} (stock ${p.stock})`,
+            reference: p.reference,
+            codeBarres: p.codeBarres,
+          }))}
+          required
         />
       </div>
       <div>
-        <label htmlFor={`produit-${fournisseurId}`}>Produit</label>
-        <select
-          id={`produit-${fournisseurId}`}
-          value={produitId}
-          onChange={(e) => setProduitId(e.target.value)}
-        >
-          {produitsFiltres.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.designation}
-              {p.reference ? ` · ${p.reference}` : ''} (stock {p.stock})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
         <label htmlFor={`entrepot-${fournisseurId}`}>Entrepôt de réception</label>
-        <select
+        <EntrepotSelectField
           id={`entrepot-${fournisseurId}`}
           value={entrepotId || entrepots?.find((e) => e.type === 'PRINCIPAL')?.id || ''}
-          onChange={(e) => setEntrepotId(e.target.value)}
-        >
-          {(entrepots ?? []).map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.nom} ({e.code}){e.boutique ? ` — ${e.boutique.nom}` : ''}
-            </option>
-          ))}
-        </select>
+          onChange={setEntrepotId}
+          entrepots={(entrepots ?? []).map((e) => ({
+            id: e.id,
+            label: `${e.nom} (${e.code})${e.boutique ? ` — ${e.boutique.nom}` : ''}`,
+            keywords: `${e.code} ${e.nom} ${e.boutique?.nom ?? ''}`,
+          }))}
+          required
+        />
       </div>
       <div>
         <label htmlFor={`quantite-${fournisseurId}`}>Quantité reçue</label>

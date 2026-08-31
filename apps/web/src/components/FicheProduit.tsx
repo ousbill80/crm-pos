@@ -18,6 +18,7 @@ import { LoadingState } from './LoadingState';
 import { InfoTooltip } from './InfoTooltip';
 import { EtiquettesModal } from './EtiquettesModal';
 import { CategorieProduitField } from './CategorieProduitField';
+import { ProduitDescriptionField } from './ProduitDescriptionField';
 import {
   insightCouverture,
   insightMargeUnitaire,
@@ -274,12 +275,11 @@ function IdentiteForm({
           />
         </div>
       </div>
-      <label htmlFor="fiche-description">Description</label>
-      <textarea
+      <ProduitDescriptionField
         id="fiche-description"
-        rows={3}
         value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        onChange={setDescription}
+        rows={5}
       />
       <div className="form-grid-2">
         <div className="form-field">

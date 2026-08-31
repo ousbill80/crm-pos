@@ -166,12 +166,12 @@ export class ShopPanierService {
         params,
         retraitEntrepots,
       );
-      if (dispo == null || dispo <= 0) {
+      if (dispo != null && dispo <= 0) {
         throw new BadRequestException(
           `« ${produit.designation} » est en rupture de stock.`,
         );
       }
-      if (ligne.quantite > dispo) {
+      if (dispo != null && ligne.quantite > dispo) {
         throw new BadRequestException(
           `Stock insuffisant pour « ${produit.designation} » (disponible : ${dispo}).`,
         );

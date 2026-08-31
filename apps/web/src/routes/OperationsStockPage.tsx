@@ -19,7 +19,8 @@ import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
-import { Modal } from '../components/Modal';
+import { EntrepotSelectField } from '../components/EntrepotSelectField';
+import { ProduitSelectField } from '../components/ProduitSelectField';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { SortHeader } from '../components/SortHeader';
 import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
@@ -1030,25 +1031,31 @@ export function OperationsStockPage() {
           </label>
           <label>
             Source
-            <select value={sourceId} onChange={(ev) => setSourceId(ev.target.value)}>
-              <option value="">—</option>
-              {entrepots.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nom} ({e.code}){e.boutique ? ` — ${e.boutique.nom}` : ''}
-                </option>
-              ))}
-            </select>
+            <EntrepotSelectField
+              id="ops-bon-source"
+              value={sourceId}
+              onChange={setSourceId}
+              entrepots={entrepots.map((e) => ({
+                id: e.id,
+                label: `${e.nom} (${e.code})${e.boutique ? ` — ${e.boutique.nom}` : ''}`,
+                keywords: `${e.code} ${e.nom} ${e.boutique?.nom ?? ''}`,
+              }))}
+              allowEmpty
+            />
           </label>
           <label>
             Destination
-            <select value={destId} onChange={(ev) => setDestId(ev.target.value)}>
-              <option value="">—</option>
-              {entrepots.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.nom} ({e.code}){e.boutique ? ` — ${e.boutique.nom}` : ''}
-                </option>
-              ))}
-            </select>
+            <EntrepotSelectField
+              id="ops-bon-dest"
+              value={destId}
+              onChange={setDestId}
+              entrepots={entrepots.map((e) => ({
+                id: e.id,
+                label: `${e.nom} (${e.code})${e.boutique ? ` — ${e.boutique.nom}` : ''}`,
+                keywords: `${e.code} ${e.nom} ${e.boutique?.nom ?? ''}`,
+              }))}
+              allowEmpty
+            />
           </label>
           <label>
             Produit
@@ -1067,19 +1074,14 @@ export function OperationsStockPage() {
               }}
               placeholder="Scanner code-barres ou choisir ci-dessous"
             />
-            <select
+            <ProduitSelectField
+              id="ops-bon-produit"
               value={produitId}
-              onChange={(ev) => setProduitId(ev.target.value)}
+              onChange={setProduitId}
+              produits={produits}
+              allowEmpty
               required
-            >
-              <option value="">—</option>
-              {produits.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.designation}
-                  {p.codeBarres ? ` · ${p.codeBarres}` : ''}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label>
             Quantité

@@ -7,63 +7,58 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronsUpDown, Plus, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Search } from 'lucide-react';
 
-export type EntityFinderOption =
-  | string
-  | { label: string; keywords?: string };
+export type EntityFinderSelectOption = {
+  value: string;
+  label: string;
+  keywords?: string;
+};
 
-function libelleOption(option: EntityFinderOption): string {
-  return typeof option === 'string' ? option : option.label;
+function normaliser(texte: string): string {
+  return texte
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
 }
 
-function motsClesOption(option: EntityFinderOption): string {
-  if (typeof option === 'string') return option;
-  return `${option.label} ${option.keywords ?? ''}`;
-}
-
-export function EntityFinder({
+export function EntityFinderSelect({
   id,
   value,
   onChange,
-  onSelect,
   options,
   placeholder = 'Rechercher…',
-  allowCreate = true,
-  emptyLabel = 'Aucune correspondance',
-  createLabel,
-  isExisting,
+  allowEmpty = false,
+  emptyLabel = '— Aucun —',
   disabled,
-  autoFocus,
+  required,
   ariaLabel,
+  maxResults = 50,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
-  /** Appelé seulement à la validation (clic / Entrée), pas à chaque frappe. */
-  onSelect?: (value: string, meta: { created: boolean }) => void;
-  options: EntityFinderOption[];
+  options: EntityFinderSelectOption[];
   placeholder?: string;
-  allowCreate?: boolean;
+  allowEmpty?: boolean;
   emptyLabel?: string;
-  createLabel?: (saisie: string) => string;
-  /** Si vrai, on ne propose pas « Créer » (l’entité existe déjà). */
-  isExisting?: (saisie: string) => boolean;
   disabled?: boolean;
-  autoFocus?: boolean;
+  required?: boolean;
   ariaLabel?: string;
+  maxResults?: number;
 }) {
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [ouvert, setOuvert] = useState(false);
-  const [saisie, setSaisie] = useState(value);
+  const [saisie, setSaisie] = useState('');
   const [survol, setSurvol] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
 
-  useEffect(() => {
-    setSaisie(value);
-  }, [value]);
+  const selected = useMemo(
+    () => options.find((o) => o.value === value),
+    [options, value],
+  );
 
   function majRect() {
     const el = wrapRef.current;
@@ -74,45 +69,41 @@ export function EntityFinder({
   function ouvrir() {
     if (disabled) return;
     majRect();
+    setSaisie(selected?.label ?? '');
     setOuvert(true);
     setSurvol(0);
+    window.requestAnimationFrame(() => {
+      inputRef.current?.select();
+    });
   }
 
   function fermer() {
     setOuvert(false);
-    setSaisie(value);
+    setSaisie(selected?.label ?? '');
   }
 
-  const q = saisie.trim();
-  const qNorm = q.toLowerCase();
-  const existants = useMemo(() => {
-    const vus = new Set<string>();
-    const out: string[] = [];
-    for (const o of options) {
-      const t = libelleOption(o).trim();
-      if (!t) continue;
-      const k = t.toLowerCase();
-      if (vus.has(k)) continue;
-      vus.add(k);
-      const hay = motsClesOption(o).toLowerCase();
-      if (qNorm && !hay.includes(qNorm)) continue;
-      out.push(t);
-    }
-    return out.slice(0, 12);
-  }, [options, qNorm]);
-
-  const dejaExact =
-    options.some((o) => libelleOption(o).trim().toLowerCase() === qNorm) ||
-    Boolean(q && isExisting?.(q));
-  const peutCreer = allowCreate && q.length > 0 && !dejaExact;
-  const lignes: Array<{ kind: 'create' | 'option'; label: string }> = [
-    ...existants.map((label) => ({ kind: 'option' as const, label })),
-    ...(peutCreer ? [{ kind: 'create' as const, label: q }] : []),
-  ];
+  const qNorm = normaliser(saisie.trim());
+  const filtres = useMemo(() => {
+    const base = allowEmpty
+      ? [{ value: '', label: emptyLabel, keywords: '' }, ...options]
+      : options;
+    if (!qNorm) return base.slice(0, maxResults);
+    return base
+      .filter((o) => {
+        const hay = normaliser(`${o.label} ${o.keywords ?? ''}`);
+        return hay.includes(qNorm);
+      })
+      .slice(0, maxResults);
+  }, [allowEmpty, emptyLabel, maxResults, options, qNorm]);
 
   useEffect(() => {
-    if (survol >= lignes.length) setSurvol(0);
-  }, [lignes.length, survol]);
+    if (survol >= filtres.length) setSurvol(0);
+  }, [filtres.length, survol]);
+
+  useEffect(() => {
+    if (ouvert) return;
+    setSaisie(selected?.label ?? '');
+  }, [selected?.label, ouvert]);
 
   useEffect(() => {
     if (!ouvert) return;
@@ -134,13 +125,12 @@ export function EntityFinder({
       window.removeEventListener('resize', onScroll);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [ouvert, listId, value]);
+  }, [ouvert, listId, selected?.label]);
 
-  function choisir(label: string, created: boolean) {
-    onChange(created ? '' : label);
-    setSaisie(created ? '' : label);
+  function choisir(opt: EntityFinderSelectOption) {
+    onChange(opt.value);
+    setSaisie(opt.label);
     setOuvert(false);
-    onSelect?.(label, { created });
   }
 
   function onKey(e: KeyboardEvent<HTMLInputElement>) {
@@ -152,7 +142,7 @@ export function EntityFinder({
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (!ouvert) ouvrir();
-      else setSurvol((i) => Math.min(i + 1, Math.max(0, lignes.length - 1)));
+      else setSurvol((i) => Math.min(i + 1, Math.max(0, filtres.length - 1)));
       return;
     }
     if (e.key === 'ArrowUp') {
@@ -162,18 +152,15 @@ export function EntityFinder({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      const ligne = lignes[survol];
-      if (ouvert && ligne) {
-        choisir(ligne.label, ligne.kind === 'create');
-      }
+      const opt = filtres[survol];
+      if (ouvert && opt) choisir(opt);
     }
   }
 
-  const libelleCreer =
-    createLabel ?? ((s: string) => `Créer « ${s} »`);
+  const affiche = ouvert ? saisie : selected?.label ?? '';
 
   return (
-    <div className="entity-finder" ref={wrapRef}>
+    <div className="entity-finder entity-finder-select" ref={wrapRef}>
       <Search size={14} className="entity-finder-icon" aria-hidden />
       <input
         ref={inputRef}
@@ -181,22 +168,21 @@ export function EntityFinder({
         type="text"
         role="combobox"
         autoComplete="off"
-        autoFocus={autoFocus}
         disabled={disabled}
+        required={required && !value}
         placeholder={placeholder}
-        value={saisie}
+        value={affiche}
         aria-expanded={ouvert}
         aria-controls={listId}
         aria-autocomplete="list"
+        aria-label={ariaLabel}
         onChange={(e) => {
           setSaisie(e.target.value);
-          onChange(e.target.value);
           if (!ouvert) ouvrir();
           else majRect();
         }}
         onFocus={ouvrir}
         onKeyDown={onKey}
-        aria-label={ariaLabel ?? 'Rechercher'}
       />
       <button
         type="button"
@@ -226,26 +212,26 @@ export function EntityFinder({
                 width: rect.width,
               }}
             >
-              {lignes.length === 0 ? (
-                <li className="entity-finder-empty">{emptyLabel}</li>
+              {filtres.length === 0 ? (
+                <li className="entity-finder-empty">Aucune correspondance</li>
               ) : (
-                lignes.map((ligne, i) => (
-                  <li key={`${ligne.kind}-${ligne.label}`} role="option" aria-selected={i === survol}>
+                filtres.map((opt, i) => (
+                  <li
+                    key={opt.value || '__empty__'}
+                    role="option"
+                    aria-selected={opt.value === value}
+                  >
                     <button
                       type="button"
-                      className={`entity-finder-item${i === survol ? ' is-active' : ''}${ligne.kind === 'create' ? ' is-create' : ''}`}
+                      className={`entity-finder-item${i === survol ? ' is-active' : ''}${opt.value === value ? ' is-selected' : ''}`}
                       onMouseEnter={() => setSurvol(i)}
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => choisir(ligne.label, ligne.kind === 'create')}
+                      onClick={() => choisir(opt)}
                     >
-                      {ligne.kind === 'create' ? (
-                        <>
-                          <Plus size={14} aria-hidden />
-                          <span>{libelleCreer(ligne.label)}</span>
-                        </>
-                      ) : (
-                        <span>{ligne.label}</span>
-                      )}
+                      <span>{opt.label}</span>
+                      {opt.value === value ? (
+                        <Check size={14} className="entity-finder-check" aria-hidden />
+                      ) : null}
                     </button>
                   </li>
                 ))

@@ -33,6 +33,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       categorie: 'Audio',
       description: null,
       imageUrl: null,
+      imagesUrls: null,
       actif: true,
       typeProduit: 'ARTICLE',
       prixUnitaire: new Prisma.Decimal('1000.00'),

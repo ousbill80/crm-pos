@@ -10,6 +10,7 @@ export type ProduitVariante = {
   prixAffiche: number;
   stockDisponible?: number | null;
   imageUrl?: string | null;
+  imagesUrls?: string | null;
   attributs?: string | null;
   attributsMap?: AttributsMap;
 };
@@ -28,6 +29,7 @@ export type ProduitDetail = {
   prixAffiche: number;
   categorie: string | null;
   imageUrl?: string | null;
+  imagesUrls?: string | null;
   stockDisponible?: number | null;
   stocksRetrait?: StockRetraitBoutique[];
   description?: string | null;

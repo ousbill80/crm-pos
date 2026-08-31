@@ -891,6 +891,234 @@
   gap: 10px;
 }
 
+.nouveau-produit-form .form-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px 14px;
+  margin: 0 0 14px;
+}
+
+.nouveau-produit-form .form-section legend {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0 6px;
+}
+
+.nouveau-produit-form .form-section-web {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
+.checkbox-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.btn-link-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.btn-sm {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.btn-icon-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: none;
+  color: var(--danger, #c0392b);
+  cursor: pointer;
+}
+
+.produit-attributs-field,
+.produit-galerie-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.produit-attributs-head,
+.variantes-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.produit-attributs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-suggest {
+  padding: 3px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.produit-attributs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.produit-attributs-list li {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+}
+
+.produit-galerie-cover {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.produit-galerie-preview {
+  width: 88px;
+  height: 88px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-alt, #f4f6f8);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.produit-galerie-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.produit-galerie-thumbs {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.produit-galerie-thumbs li {
+  position: relative;
+  width: 56px;
+  height: 56px;
+}
+
+.produit-galerie-thumbs img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.produit-galerie-thumbs button {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger, #c0392b);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.variantes-section h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.variante-brouillon-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 10px;
+  background: var(--surface);
+}
+
+.variante-brouillon-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.variante-brouillon-head .label-muted {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12px;
+}
+
+.variante-thumb-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.variante-thumb-preview img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.modal-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+
+.form-hint-warning {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--warning, #b8860b);
+}
+
 .form-field {
   display: flex;
   flex-direction: column;

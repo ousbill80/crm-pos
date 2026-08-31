@@ -425,6 +425,8 @@ model Produit {
   // Photo catalogue (data URL compressée ou URL). Optionnelle — le POS et
   // la fiche affichent les initiales si absente.
   imageUrl                 String?
+  // Galerie boutique : JSON array de URLs (couverture = imageUrl).
+  imagesUrls               String?                     @db.Text
   // Désactivation sans suppression : l'historique des ventes reste intact
   // (cohérent avec le grand livre append-only). Un produit inactif ne peut
   // plus être encaissé et n'alimente plus l'alerte STOCK_BAS.

@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsInt,
   IsIn,
   IsNumber,
@@ -85,4 +86,36 @@ export class CreateProduitDto {
   @IsString()
   @MaxLength(160)
   attributs?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  visibleWeb?: boolean;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(120)
+  slug?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  prixWeb?: number;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(400000)
+  imageUrl?: string;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(2000000)
+  imagesUrls?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  tauxTva?: number;
 }

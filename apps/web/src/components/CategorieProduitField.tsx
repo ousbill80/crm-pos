@@ -1,5 +1,5 @@
-import { useEffect, useId, useState } from 'react';
-import { CATEGORIE_AUTRE } from '../lib/categories-produit';
+import { useId } from 'react';
+import { EntityFinder } from './EntityFinder';
 import { useCategoriesProduit } from '../hooks/useCategoriesProduit';
 
 type Props = {
@@ -21,55 +21,34 @@ export function CategorieProduitField({
 }: Props) {
   const autoId = useId();
   const fieldId = id ?? autoId;
-  const customId = `${fieldId}-custom`;
   const { options, isLoading } = useCategoriesProduit(value);
 
-  const valeurConnue = value === '' || options.includes(value);
-  const [saisieLibre, setSaisieLibre] = useState(!valeurConnue);
+  const finderOptions = allowEmpty ? [emptyLabel, ...options] : options;
 
-  useEffect(() => {
-    setSaisieLibre(!valeurConnue);
-  }, [valeurConnue]);
-
-  const selectValue = saisieLibre ? CATEGORIE_AUTRE : value;
+  function normaliserChoix(v: string) {
+    return v === emptyLabel ? '' : v;
+  }
 
   return (
     <div className="categorie-produit-field">
-      <select
+      <EntityFinder
         id={fieldId}
-        value={selectValue}
+        value={value}
+        onChange={(v) => onChange(normaliserChoix(v))}
+        onSelect={(label) => onChange(normaliserChoix(label))}
+        options={finderOptions}
+        allowCreate
+        placeholder="Rechercher une catégorie…"
+        createLabel={(s) => `Utiliser « ${s} »`}
+        emptyLabel="Aucune catégorie correspondante"
+        isExisting={(saisie) =>
+          options.some(
+            (c) => c.toLowerCase() === saisie.trim().toLowerCase(),
+          )
+        }
         disabled={disabled || isLoading}
-        onChange={(event) => {
-          const choix = event.target.value;
-          if (choix === CATEGORIE_AUTRE) {
-            setSaisieLibre(true);
-            if (options.includes(value)) onChange('');
-            return;
-          }
-          setSaisieLibre(false);
-          onChange(choix);
-        }}
-      >
-        {allowEmpty ? <option value="">{emptyLabel}</option> : null}
-        {options.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-        <option value={CATEGORIE_AUTRE}>Autre (saisir…)</option>
-      </select>
-      {saisieLibre ? (
-        <input
-          id={customId}
-          type="text"
-          className="categorie-produit-custom"
-          value={value}
-          disabled={disabled}
-          placeholder="Nom de la catégorie"
-          onChange={(event) => onChange(event.target.value)}
-          aria-label="Catégorie personnalisée"
-        />
-      ) : null}
+        ariaLabel="Catégorie produit"
+      />
       {isLoading ? (
         <p className="form-hint-muted" aria-live="polite">
           Chargement des catégories…

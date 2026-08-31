@@ -104,4 +104,16 @@ export class UpdateProduitDto {
   @IsNumber()
   @Min(0)
   tauxTva?: number | null;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(160)
+  attributs?: string | null;
+
+  @IsOptional()
+  @Transform(emptyToNull)
+  @IsString()
+  @MaxLength(2000000)
+  imagesUrls?: string | null;
 }

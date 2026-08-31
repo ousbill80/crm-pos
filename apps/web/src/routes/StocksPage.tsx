@@ -34,7 +34,9 @@ import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { Modal } from '../components/Modal';
 import { InfoTooltip } from '../components/InfoTooltip';
-import { SortHeader } from '../components/SortHeader';
+import { EntrepotSelectField } from '../components/EntrepotSelectField';
+import { EntityFinderSelect } from '../components/EntityFinderSelect';
+import { ProduitSelectField } from '../components/ProduitSelectField';
 import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import {
   FiltreMagasinSiege,
@@ -311,7 +313,6 @@ export function StocksPage() {
   const [trSource, setTrSource] = useState('');
   const [trDest, setTrDest] = useState('');
   const [trQty, setTrQty] = useState('');
-  const [trRecherche, setTrRecherche] = useState('');
   const [trErr, setTrErr] = useState<string | null>(null);
 
   function invaliderStocks() {
@@ -505,15 +506,24 @@ export function StocksPage() {
   }, [synthese.data, trProduit, trDest]);
 
   const produitsSelect = useMemo(() => {
-    const byId = new Map<string, string>();
+    const byId = new Map<
+      string,
+      { designation: string; reference?: string | null; codeBarres?: string | null }
+    >();
     for (const p of produits.data ?? []) {
-      byId.set(p.id, p.designation);
+      byId.set(p.id, {
+        designation: p.designation,
+        reference: p.reference,
+        codeBarres: p.codeBarres,
+      });
     }
     for (const l of synthese.data?.lignes ?? []) {
-      byId.set(l.produitId, l.designation);
+      if (!byId.has(l.produitId)) {
+        byId.set(l.produitId, { designation: l.designation });
+      }
     }
-    return Array.from(byId, ([id, designation]) => ({ id, designation })).sort(
-      (a, b) => a.designation.localeCompare(b.designation, 'fr'),
+    return Array.from(byId, ([id, meta]) => ({ id, ...meta })).sort((a, b) =>
+      a.designation.localeCompare(b.designation, 'fr'),
     );
   }, [produits.data, synthese.data?.lignes]);
 
@@ -555,7 +565,6 @@ export function StocksPage() {
         '',
     );
     setTrQty(prefill ? String(prefill.quantite) : '');
-    setTrRecherche('');
     setTrErr(null);
     setModalTransferer(true);
   }
@@ -1171,18 +1180,20 @@ export function StocksPage() {
         </div>
         <div>
           <label htmlFor="filtre-ent">Entrepôt</label>
-          <select
+          <EntityFinderSelect
             id="filtre-ent"
             value={filtreEntrepot}
-            onChange={(e) => setFiltreEntrepot(e.target.value)}
-          >
-            <option value="">Tous</option>
-            {entrepotOptions.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.code} — {e.boutique?.nom ?? e.nom}
-              </option>
-            ))}
-          </select>
+            onChange={setFiltreEntrepot}
+            options={entrepotOptions.map((e) => ({
+              value: e.id,
+              label: `${e.code} — ${e.boutique?.nom ?? e.nom}`,
+              keywords: `${e.code} ${e.nom} ${e.boutique?.nom ?? ''}`,
+            }))}
+            allowEmpty
+            emptyLabel="Tous"
+            placeholder="Filtrer par entrepôt…"
+            ariaLabel="Entrepôt"
+          />
         </div>
         <div>
           <label htmlFor="filtre-statut">Statut</label>
@@ -1203,18 +1214,16 @@ export function StocksPage() {
         {categoriesStock.length > 0 && (
           <div>
             <label htmlFor="filtre-cat">Catégorie</label>
-            <select
+            <EntityFinderSelect
               id="filtre-cat"
               value={filtreCategorie}
-              onChange={(e) => setFiltreCategorie(e.target.value)}
-            >
-              <option value="">Toutes</option>
-              {categoriesStock.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+              onChange={setFiltreCategorie}
+              options={categoriesStock.map((c) => ({ value: c, label: c }))}
+              allowEmpty
+              emptyLabel="Toutes"
+              placeholder="Filtrer par catégorie…"
+              ariaLabel="Catégorie"
+            />
           </div>
         )}
         <div className="stock-toggle">
@@ -1796,31 +1805,21 @@ export function StocksPage() {
               }}
             >
               <label htmlFor="ajp">Produit</label>
-              <select
+              <ProduitSelectField
                 id="ajp"
                 value={ajProduit}
-                onChange={(e) => setAjProduit(e.target.value)}
+                onChange={setAjProduit}
+                produits={produitsSelect}
                 required
-              >
-                {produitsSelect.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.designation}
-                  </option>
-                ))}
-              </select>
+              />
               <label htmlFor="aje">Entrepôt</label>
-              <select
+              <EntrepotSelectField
                 id="aje"
                 value={ajEntrepot}
-                onChange={(e) => setAjEntrepot(e.target.value)}
+                onChange={setAjEntrepot}
+                entrepots={entrepotsSelect}
                 required
-              >
-                {entrepotsSelect.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.label}
-                  </option>
-                ))}
-              </select>
+              />
               {qtyActuelleAjustement !== null && (
                 <p className="lead">
                   Quantité théorique actuelle : <strong>{qtyActuelleAjustement}</strong>
@@ -1876,53 +1875,33 @@ export function StocksPage() {
                 transferer.mutate();
               }}
             >
-              <label htmlFor="tr-rech">Rechercher un article</label>
-              <input
-                id="tr-rech"
-                type="search"
-                placeholder="Désignation ou SKU…"
-                value={trRecherche}
-                onChange={(e) => setTrRecherche(e.target.value)}
-              />
               <label htmlFor="trp">Produit</label>
-              <select
+              <ProduitSelectField
                 id="trp"
                 value={trProduit}
-                onChange={(e) => setTrProduit(e.target.value)}
+                onChange={setTrProduit}
+                produits={produitsSelect}
                 required
-              >
-                {produitsSelect
-                  .filter((p) => {
-                    const q = trRecherche.trim().toLowerCase();
-                    if (!q) return true;
-                    return p.designation.toLowerCase().includes(q);
-                  })
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.designation}
-                    </option>
-                  ))}
-              </select>
+              />
               <div className="form-grid-2">
                 <div className="form-field">
                   <label htmlFor="trs">Source</label>
-                  <select
+                  <EntrepotSelectField
                     id="trs"
                     value={trSource}
-                    onChange={(e) => setTrSource(e.target.value)}
-                    required
-                  >
-                    {entrepotsSelect.map((e) => {
-                      const ligne = synthese.data?.lignes.find((l) => l.produitId === trProduit);
-                      const q = ligne ? qtyAt(ligne, e.id)?.quantite ?? 0 : null;
-                      return (
-                        <option key={e.id} value={e.id}>
-                          {e.label}
-                          {q !== null ? ` · ${q} u.` : ''}
-                        </option>
+                    onChange={setTrSource}
+                    entrepots={entrepotsSelect.map((e) => {
+                      const ligne = synthese.data?.lignes.find(
+                        (l) => l.produitId === trProduit,
                       );
+                      const q = ligne ? (qtyAt(ligne, e.id)?.quantite ?? 0) : null;
+                      return {
+                        id: e.id,
+                        label: `${e.label}${q !== null ? ` · ${q} u.` : ''}`,
+                      };
                     })}
-                  </select>
+                    required
+                  />
                   {qtySourceTransfert !== null && (
                     <p className="lead">
                       Disponible : <strong>{qtySourceTransfert}</strong>
@@ -1931,18 +1910,13 @@ export function StocksPage() {
                 </div>
                 <div className="form-field">
                   <label htmlFor="trd">Destination</label>
-                  <select
+                  <EntrepotSelectField
                     id="trd"
                     value={trDest}
-                    onChange={(e) => setTrDest(e.target.value)}
+                    onChange={setTrDest}
+                    entrepots={entrepotsSelect}
                     required
-                  >
-                    {entrepotsSelect.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {qtyDestTransfert !== null && (
                     <p className="lead">
                       Actuel : <strong>{qtyDestTransfert}</strong>

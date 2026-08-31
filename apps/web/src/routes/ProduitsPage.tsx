@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useQuery,
+} from '@tanstack/react-query';
 import {
   AlertTriangle,
   ChevronRight,
@@ -24,7 +27,8 @@ import {
   type ArticleEtiquetteSelection,
 } from '../components/EtiquettesModal';
 import { InfoTooltip } from '../components/InfoTooltip';
-import { CategorieProduitField } from '../components/CategorieProduitField';
+import { NouveauProduitForm } from '../components/NouveauProduitForm';
+import { EntityFinderSelect } from '../components/EntityFinderSelect';
 import { useCategoriesProduit } from '../hooks/useCategoriesProduit';
 import {
   FiltreMagasinSiege,
@@ -124,6 +128,7 @@ function useProduits(
     queryKey: ['produits', filters],
     queryFn: () => apiFetch<ProduitDto[]>(buildQuery(filters)),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -141,158 +146,6 @@ function useClassement(enabled: boolean) {
     queryFn: () => apiFetch<ProduitClassementDto>('/produits/classement'),
     enabled,
   });
-}
-
-function NouveauProduitForm({
-  designationsExistantes,
-  onSuccess,
-}: {
-  designationsExistantes: string[];
-  onSuccess?: (produit: ProduitDto) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [designation, setDesignation] = useState('');
-  const [reference, setReference] = useState('');
-  const [categorie, setCategorie] = useState('');
-  const [description, setDescription] = useState('');
-  const [typeProduit, setTypeProduit] = useState<'ARTICLE' | 'PRESTATION'>('ARTICLE');
-  const [prixUnitaire, setPrixUnitaire] = useState('');
-  const [stock, setStock] = useState('0');
-  const [seuilReappro, setSeuilReappro] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const doublon = designationsExistantes.some(
-    (d) => d.trim().toLowerCase() === designation.trim().toLowerCase(),
-  );
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      apiFetch<ProduitDto>('/produits', {
-        method: 'POST',
-        body: JSON.stringify({
-          designation,
-          ...(reference.trim() ? { reference: reference.trim() } : {}),
-          ...(categorie.trim() ? { categorie: categorie.trim() } : {}),
-          ...(description.trim() ? { description: description.trim() } : {}),
-          typeProduit,
-          prixUnitaire: Number(prixUnitaire),
-          stock: typeProduit === 'PRESTATION' ? 0 : Number(stock),
-          ...(seuilReappro ? { seuilReappro: Number(seuilReappro) } : {}),
-        }),
-      }),
-    onSuccess: (created) => {
-      setDesignation('');
-      setReference('');
-      setCategorie('');
-      setDescription('');
-      setTypeProduit('ARTICLE');
-      setPrixUnitaire('');
-      setStock('0');
-      setSeuilReappro('');
-      setError(null);
-      void queryClient.invalidateQueries({ queryKey: ['produits'] });
-      void queryClient.invalidateQueries({ queryKey: ['produits-synthese'] });
-      void queryClient.invalidateQueries({ queryKey: ['produits-categories'] });
-      void queryClient.invalidateQueries({ queryKey: ['produits-classement'] });
-      onSuccess?.(created);
-    },
-    onError: (err: unknown) => {
-      const message =
-        err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 409
-          ? 'Cette référence est déjà attribuée à un autre produit.'
-          : 'Échec de la création du produit.';
-      setError(message);
-    },
-  });
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    mutation.mutate();
-  }
-
-  return (
-    <form className="modal-form" onSubmit={handleSubmit}>
-      <label htmlFor="designation">Désignation</label>
-      <input
-        id="designation"
-        value={designation}
-        onChange={(e) => setDesignation(e.target.value)}
-        required
-      />
-      {doublon && (
-        <p className="form-hint-warning">
-          Un produit porte déjà cette désignation. Vérifiez qu’il ne s’agit pas d’un doublon.
-        </p>
-      )}
-      <label htmlFor="reference">Référence / SKU (optionnel, unique)</label>
-      <input
-        id="reference"
-        value={reference}
-        onChange={(e) => setReference(e.target.value)}
-        placeholder="COQ-IP-SIL"
-      />
-      <label htmlFor="categorie">Catégorie</label>
-      <CategorieProduitField
-        id="categorie"
-        value={categorie}
-        onChange={setCategorie}
-        emptyLabel="— Choisir —"
-      />
-      <label htmlFor="description">Description (optionnel)</label>
-      <textarea
-        id="description"
-        rows={2}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-      />
-      <label htmlFor="typeProduit">Type</label>
-      <select
-        id="typeProduit"
-        value={typeProduit}
-        onChange={(e) => setTypeProduit(e.target.value as 'ARTICLE' | 'PRESTATION')}
-      >
-        <option value="ARTICLE">Article (stock géré)</option>
-        <option value="PRESTATION">Prestation (sans stock)</option>
-      </select>
-      <label htmlFor="prixUnitaire">Prix unitaire (FCFA)</label>
-      <input
-        id="prixUnitaire"
-        type="number"
-        min="0.01"
-        step="0.01"
-        value={prixUnitaire}
-        onChange={(e) => setPrixUnitaire(e.target.value)}
-        required
-      />
-      {typeProduit === 'ARTICLE' && (
-        <>
-          <label htmlFor="stock">Stock initial (déposé sur l’entrepôt PRINCIPAL)</label>
-          <input
-            id="stock"
-            type="number"
-            min="0"
-            step="1"
-            value={stock}
-            onChange={(e) => setStock(e.target.value)}
-            required
-          />
-          <label htmlFor="seuilReappro">Seuil de réapprovisionnement (optionnel)</label>
-          <input
-            id="seuilReappro"
-            type="number"
-            min="0"
-            step="1"
-            value={seuilReappro}
-            onChange={(e) => setSeuilReappro(e.target.value)}
-          />
-        </>
-      )}
-      <button type="submit" className="btn-primary" disabled={mutation.isPending}>
-        Créer
-      </button>
-      {error && <p role="alert">{error}</p>}
-    </form>
-  );
 }
 
 export function ProduitsPage() {
@@ -764,73 +617,73 @@ export function ProduitsPage() {
           </div>
         )}
 
-      {isLoading && <LoadingState label="Chargement des produits..." />}
+      {isLoading && !produits && (
+        <LoadingState label="Chargement des produits..." />
+      )}
       {isError && <p role="alert">Erreur lors du chargement des produits.</p>}
+
+      <div className="toolbar">
+        <FiltreMagasinSiege id="prod-filtre-magasin" />
+        <div>
+          <label htmlFor="filtre-produit">Rechercher</label>
+          <input
+            id="filtre-produit"
+            type="search"
+            placeholder="Désignation ou référence…"
+            value={recherche}
+            onChange={(e) => setRecherche(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="filtre-categorie">Catégorie</label>
+          <EntityFinderSelect
+            id="filtre-categorie"
+            value={categorie}
+            onChange={setCategorie}
+            options={categoriesOptions.map((c) => ({ value: c, label: c }))}
+            allowEmpty
+            emptyLabel="Toutes"
+            placeholder="Filtrer par catégorie…"
+            ariaLabel="Catégorie"
+          />
+        </div>
+        <div>
+          <label htmlFor="filtre-statut">Statut stock</label>
+          <select
+            id="filtre-statut"
+            value={statutStock}
+            onChange={(e) => setStatutStock(e.target.value)}
+          >
+            <option value="">Tous</option>
+            <option value="RUPTURE">Rupture</option>
+            <option value="SOUS_SEUIL">Sous seuil</option>
+            <option value="OK">OK</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="filtre-actif">État</label>
+          <select
+            id="filtre-actif"
+            value={actif}
+            onChange={(e) => setActif(e.target.value)}
+          >
+            <option value="true">Actifs</option>
+            <option value="false">Inactifs</option>
+            <option value="">Tous</option>
+          </select>
+        </div>
+        {filtresActifs && (
+          <div>
+            <label htmlFor="reset-filtres">Filtres</label>
+            <button type="button" id="reset-filtres" onClick={resetFiltres}>
+              Réinitialiser
+            </button>
+          </div>
+        )}
+      </div>
 
       {produits && (
         <div>
-            <div className="toolbar">
-              <FiltreMagasinSiege id="prod-filtre-magasin" />
-              <div>
-                <label htmlFor="filtre-produit">Rechercher</label>
-                <input
-                  id="filtre-produit"
-                  type="search"
-                  placeholder="Désignation ou référence…"
-                  value={recherche}
-                  onChange={(e) => setRecherche(e.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="filtre-categorie">Catégorie</label>
-                <select
-                  id="filtre-categorie"
-                  value={categorie}
-                  onChange={(e) => setCategorie(e.target.value)}
-                >
-                  <option value="">Toutes</option>
-                  {categoriesOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="filtre-statut">Statut stock</label>
-                <select
-                  id="filtre-statut"
-                  value={statutStock}
-                  onChange={(e) => setStatutStock(e.target.value)}
-                >
-                  <option value="">Tous</option>
-                  <option value="RUPTURE">Rupture</option>
-                  <option value="SOUS_SEUIL">Sous seuil</option>
-                  <option value="OK">OK</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="filtre-actif">État</label>
-                <select
-                  id="filtre-actif"
-                  value={actif}
-                  onChange={(e) => setActif(e.target.value)}
-                >
-                  <option value="true">Actifs</option>
-                  <option value="false">Inactifs</option>
-                  <option value="">Tous</option>
-                </select>
-              </div>
-              {filtresActifs && (
-                <div>
-                  <label htmlFor="reset-filtres">Filtres</label>
-                  <button type="button" id="reset-filtres" onClick={resetFiltres}>
-                    Réinitialiser
-                  </button>
-                </div>
-              )}
-            </div>
-
             <ListPanel
               title={
                 modeSelectionEtiquettes
@@ -1046,6 +899,8 @@ export function ProduitsPage() {
           open={modalNouveau}
           onClose={() => setModalNouveau(false)}
           title="Nouveau produit"
+          size="xl"
+          description="Catalogue magasin et publication e-commerce (photos, caractéristiques, variantes)."
         >
           <NouveauProduitForm
             designationsExistantes={(produits ?? []).map((p) => p.designation)}
