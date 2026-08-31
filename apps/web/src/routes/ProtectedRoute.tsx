@@ -132,10 +132,43 @@ const APPS: AppDef[] = [
     name: 'Produits',
     color: '#714B67',
     icon: Package,
-    home: '/produits',
+    home: '/produits?view=actifs',
     match: ['/produits'],
     roles: rolesPourApp('produits'),
-    menus: [{ to: '/produits', label: 'Catalogue' }],
+    menus: [
+      {
+        to: '/produits?view=actifs',
+        label: 'Catalogue',
+        children: [
+          { to: '/produits?view=actifs', label: 'Articles actifs' },
+          { to: '/produits?view=tous', label: 'Tous les articles' },
+          { to: '/produits?view=ruptures', label: 'Ruptures de stock' },
+          { to: '/produits?view=sous-seuil', label: 'Sous le seuil' },
+          { to: '/produits?view=inactifs', label: 'Articles inactifs' },
+          { to: '/produits?view=marges', label: 'Marges négatives' },
+        ],
+      },
+      {
+        to: '/produits?action=nouveau',
+        label: 'Actions',
+        children: [
+          {
+            to: '/produits?action=nouveau',
+            label: 'Nouveau produit',
+            roles: [
+              RoleLibelle.RESPONSABLE_SI,
+              RoleLibelle.DIRECTION_GENERALE,
+              RoleLibelle.DAF,
+            ],
+          },
+          {
+            to: '/produits?action=import',
+            label: 'Import CSV',
+            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
+          },
+        ],
+      },
+    ],
   },
   {
     id: 'inventory',

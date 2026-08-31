@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   keepPreviousData,
   useQuery,
@@ -151,10 +151,14 @@ function useClassement(enabled: boolean) {
 export function ProduitsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const magasin = useFiltreMagasinSiege();
   const peutLire = user !== null && ROLES_LECTURE_STRUCTURE.includes(user.role);
   const peutGerer = user !== null && ROLES_CATALOGUE_ECRITURE.includes(user.role);
   const peutImporter = user !== null && ROLES_ADMIN_STRUCTURE.includes(user.role);
+
+  const catalogueView = searchParams.get('view');
+  const catalogueAction = searchParams.get('action');
 
   const [recherche, setRecherche] = useState('');
   const [qDebounced, setQDebounced] = useState('');
@@ -178,6 +182,62 @@ export function ProduitsPage() {
     const timer = window.setTimeout(() => setQDebounced(recherche), 300);
     return () => window.clearTimeout(timer);
   }, [recherche]);
+
+  useEffect(() => {
+    if (catalogueView || catalogueAction) return;
+    setSearchParams({ view: 'actifs' }, { replace: true });
+  }, [catalogueView, catalogueAction, setSearchParams]);
+
+  useEffect(() => {
+    if (!catalogueView) return;
+    switch (catalogueView) {
+      case 'actifs':
+        setActif('true');
+        setStatutStock('');
+        setMargeNegative(false);
+        break;
+      case 'tous':
+        setActif('');
+        setStatutStock('');
+        setMargeNegative(false);
+        break;
+      case 'ruptures':
+        setActif('true');
+        setStatutStock('RUPTURE');
+        setMargeNegative(false);
+        break;
+      case 'sous-seuil':
+        setActif('true');
+        setStatutStock('SOUS_SEUIL');
+        setMargeNegative(false);
+        break;
+      case 'inactifs':
+        setActif('false');
+        setStatutStock('');
+        setMargeNegative(false);
+        break;
+      case 'marges':
+        setActif('true');
+        setStatutStock('');
+        setMargeNegative(true);
+        break;
+      default:
+        break;
+    }
+  }, [catalogueView]);
+
+  useEffect(() => {
+    if (catalogueAction === 'nouveau' && peutGerer) setModalNouveau(true);
+    if (catalogueAction === 'import' && peutImporter) setModalImport(true);
+  }, [catalogueAction, peutGerer, peutImporter]);
+
+  function fermerActionMenu(action: 'nouveau' | 'import') {
+    if (searchParams.get('action') !== action) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('action');
+    if (!next.get('view')) next.set('view', 'actifs');
+    setSearchParams(next, { replace: true });
+  }
 
   const filters = {
     q: qDebounced,
@@ -897,7 +957,10 @@ export function ProduitsPage() {
       {peutGerer && (
         <Modal
           open={modalNouveau}
-          onClose={() => setModalNouveau(false)}
+          onClose={() => {
+            setModalNouveau(false);
+            fermerActionMenu('nouveau');
+          }}
           title="Nouveau produit"
           size="xl"
           description="Catalogue magasin et publication e-commerce (photos, caractéristiques, variantes)."
@@ -906,6 +969,7 @@ export function ProduitsPage() {
             designationsExistantes={(produits ?? []).map((p) => p.designation)}
             onSuccess={(created) => {
               setModalNouveau(false);
+              fermerActionMenu('nouveau');
               navigate(`/produits/${created.id}`);
             }}
           />
@@ -914,7 +978,10 @@ export function ProduitsPage() {
       {peutImporter && (
         <ImportCatalogueModal
           open={modalImport}
-          onClose={() => setModalImport(false)}
+          onClose={() => {
+            setModalImport(false);
+            fermerActionMenu('import');
+          }}
         />
       )}
       {peutGerer && (

@@ -19,7 +19,15 @@ const SEARCH_DEFAULTS: Record<string, string> = {
 };
 
 /** Params that distinguish sibling screens on the same pathname. */
-const MENU_SEARCH_KEYS = ['tab', 'rapport'] as const;
+const MENU_SEARCH_KEYS = [
+  'tab',
+  'rapport',
+  'view',
+  'action',
+  'actif',
+  'statutStock',
+  'margeNegative',
+] as const;
 
 function normalizeSearchValue(key: string, value: string | null): string {
   const aliases = SEARCH_ALIASES[key];

@@ -133,6 +133,23 @@ describe('locationMatchesMenu', () => {
 });
 
 describe('menuOrChildActive', () => {
+  it('active une vue catalogue Produits via ?view=', () => {
+    expect(
+      locationMatchesMenu('/produits?view=ruptures', {
+        pathname: '/produits',
+        search: '?view=ruptures',
+      }),
+    ).toBe(true);
+    expect(
+      locationMatchesMenu('/produits?view=actifs', {
+        pathname: '/produits',
+        search: '?view=ruptures',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('menuOrChildActive', () => {
   it('marque le groupe parent quand un enfant est ouvert', () => {
     expect(
       menuOrChildActive(parametres, {
