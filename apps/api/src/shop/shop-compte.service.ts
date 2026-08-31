@@ -44,6 +44,13 @@ export class ShopCompteService {
     );
   }
 
+  private shopPublicUrl(): string {
+    return (
+      this.config.get<string>('SHOP_PUBLIC_URL')?.trim() ||
+      'https://www.majorautoparts.shop'
+    ).replace(/\/$/, '');
+  }
+
   async inscription(dto: InscriptionCompteDto) {
     const email = dto.email.trim().toLowerCase();
     const existing = await this.findCompteByEmail(email);
@@ -87,6 +94,17 @@ export class ShopCompteService {
       }
     } catch {
       // Funnel non bloquant
+    }
+    try {
+      const base = this.shopPublicUrl();
+      await this.email.envoyer(email, 'bienvenue_compte', {
+        prenom: dto.prenom.trim(),
+        compteUrl: `${base}/compte`,
+        catalogueUrl: `${base}/catalogue`,
+        codeParrainage,
+      });
+    } catch {
+      // E-mail de bienvenue non bloquant
     }
     return this.tokens(compte.id, compte.email);
   }
@@ -132,6 +150,7 @@ export class ShopCompteService {
       });
       await this.email.envoyer(email, 'mot_de_passe_oublie', {
         temporaryPassword: temp,
+        compteUrl: `${this.shopPublicUrl()}/compte`,
       });
     }
     return { ok: true };
