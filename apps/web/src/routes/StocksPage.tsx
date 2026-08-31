@@ -37,6 +37,7 @@ import { InfoTooltip } from '../components/InfoTooltip';
 import { EntrepotSelectField } from '../components/EntrepotSelectField';
 import { EntityFinderSelect } from '../components/EntityFinderSelect';
 import { ProduitSelectField } from '../components/ProduitSelectField';
+import { SortHeader } from '../components/SortHeader';
 import { sortRows, toggleSort, type SortState } from '../lib/table-sort';
 import {
   FiltreMagasinSiege,

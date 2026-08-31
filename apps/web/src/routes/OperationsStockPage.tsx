@@ -19,6 +19,7 @@ import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, EmptyState, ListPanel } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
+import { Modal } from '../components/Modal';
 import { EntrepotSelectField } from '../components/EntrepotSelectField';
 import { ProduitSelectField } from '../components/ProduitSelectField';
 import { InfoTooltip } from '../components/InfoTooltip';
