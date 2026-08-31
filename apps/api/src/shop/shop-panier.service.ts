@@ -139,6 +139,32 @@ export class ShopPanierService {
       throw new BadRequestException('Un ou plusieurs produits sont invalides.');
     }
 
+    const entrepotId = resoudreEntrepotWebId('LIVRAISON', {
+      parametreShop: params,
+    });
+    if (!entrepotId) {
+      throw new BadRequestException('Entrepôt web par défaut non configuré.');
+    }
+
+    for (const ligne of lignes) {
+      const produit = produits.find((p) => p.id === ligne.produitId)!;
+      if (produit.typeProduit !== 'ARTICLE') continue;
+      const dispo = await this.stockService.getDisponible(
+        produit.id,
+        entrepotId,
+      );
+      if (dispo <= 0) {
+        throw new BadRequestException(
+          `« ${produit.designation} » est en rupture de stock.`,
+        );
+      }
+      if (ligne.quantite > dispo) {
+        throw new BadRequestException(
+          `Stock insuffisant pour « ${produit.designation} » (disponible : ${dispo}).`,
+        );
+      }
+    }
+
     const lignesData: Prisma.LigneCommandeWebCreateManyInput[] = [];
     let montantArticlesHt = 0;
     let montantTva = 0;
@@ -193,9 +219,7 @@ export class ShopPanierService {
           montantTva,
           montantArticlesTtc,
           montantTotal: montantArticlesTtc,
-          entrepotId: resoudreEntrepotWebId('LIVRAISON', {
-            parametreShop: params,
-          }),
+          entrepotId,
         },
       }),
     ]);

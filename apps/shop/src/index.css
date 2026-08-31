@@ -2115,6 +2115,19 @@ body.mobile-menu-open .announce {
   position: relative;
 }
 
+.product-badge.out {
+  background: #64748b;
+}
+
+.product.is-rupture .product-media {
+  opacity: 0.72;
+}
+
+.product-social-out {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .product-badge {
   position: absolute;
   top: 0.55rem;

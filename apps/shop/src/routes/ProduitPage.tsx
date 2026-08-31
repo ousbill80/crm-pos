@@ -20,6 +20,10 @@ import {
   typeSpecificHighlights,
   type ProduitDetail,
 } from '../lib/productPresentation';
+import {
+  libelleStock,
+  quantiteMaxStock,
+} from '../lib/stock';
 
 type RecoItem = {
   id: string;
@@ -35,7 +39,7 @@ type RecoItem = {
 export default function ProduitPage() {
   const { slug } = useParams();
   const nav = useNavigate();
-  const { addProduit } = useCart();
+  const { addProduit, panier } = useCart();
   const [qty, setQty] = useState(1);
   const [galleryIdx, setGalleryIdx] = useState(0);
   const [tab, setTab] = useState<'desc' | 'specs' | 'livraison' | 'garantie'>(
@@ -121,28 +125,29 @@ export default function ProduitPage() {
     return [...perso, ...cat.filter((p) => !seen.has(p.id))].slice(0, 8);
   }, [personalized.data, related.data, data?.id]);
 
+  const qtyInCart = useMemo(
+    () =>
+      panier?.lignes.find((l) => l.produitId === data?.id)?.quantite ?? 0,
+    [panier, data?.id],
+  );
+  const maxQty = data
+    ? quantiteMaxStock(data.stockDisponible, data.typeProduit, qtyInCart)
+    : 0;
+  const peutCommander = maxQty > 0;
   const stocksRetrait = data?.stocksRetrait ?? [];
   const retraitAvecStock = stocksRetrait.filter((b) => b.disponible > 0);
-  const stockRetraitOk =
-    stocksRetrait.length === 0 ||
-    retraitAvecStock.some((b) => b.disponible >= qty);
-  const peutCommander =
-    data?.typeProduit === 'PRESTATION' ||
-    data?.stockDisponible == null ||
-    (data.stockDisponible != null && data.stockDisponible > 0) ||
-    stockRetraitOk;
   const stockHintRetrait =
-    stocksRetrait.length > 1 && retraitAvecStock.length > 0
-      ? `Retrait : ${retraitAvecStock.map((b) => `${b.nom} (${b.disponible})`).join(' · ')}`
+    data &&
+    data.stockDisponible != null &&
+    data.stockDisponible > 0 &&
+    stocksRetrait.length > 1 &&
+    retraitAvecStock.length > 0
+      ? `Retrait aussi disponible : ${retraitAvecStock.map((b) => `${b.nom} (${b.disponible})`).join(' · ')}`
       : null;
-  const maxQty = Math.min(
-    20,
-    data?.stockDisponible != null && data.stockDisponible > 0
-      ? data.stockDisponible
-      : retraitAvecStock.length
-        ? Math.max(...retraitAvecStock.map((b) => b.disponible))
-        : 20,
-  );
+
+  useEffect(() => {
+    if (maxQty > 0 && qty > maxQty) setQty(maxQty);
+  }, [maxQty, qty]);
 
   const galleryImages = useMemo(() => {
     if (!data) return [] as string[];
@@ -255,8 +260,10 @@ export default function ProduitPage() {
               )}
               {peutCommander ? (
                 <span className="pdp-badge ok">En stock</span>
-              ) : (
+              ) : data.stockDisponible === 0 ? (
                 <span className="pdp-badge out">Rupture</span>
+              ) : (
+                <span className="pdp-badge out">Stock épuisé</span>
               )}
               {data.typeProduit === 'PRESTATION' && (
                 <span className="pdp-badge svc">Service</span>
@@ -311,15 +318,10 @@ export default function ProduitPage() {
             </div>
 
             <p className={`pdp-temu-stock${peutCommander ? '' : ' is-out'}`}>
-              {data.stockDisponible == null
-                ? data.typeProduit === 'PRESTATION'
-                  ? 'Prestation sur rendez-vous showroom'
-                  : 'Disponibilité sur demande'
-                : data.stockDisponible > 0
-                  ? `Plus que ${data.stockDisponible} en stock showroom principal`
-                  : retraitAvecStock.length > 0
-                    ? `Indisponible au showroom principal — retrait possible (${retraitAvecStock[0]!.disponible} à ${retraitAvecStock[0]!.nom})`
-                    : 'Temporairement indisponible'}
+              {libelleStock(data.typeProduit, data.stockDisponible)}
+              {qtyInCart > 0 && maxQty > 0
+                ? ` · ${qtyInCart} déjà au panier (max ${maxQty + qtyInCart})`
+                : null}
             </p>
             {stockHintRetrait ? (
               <p className="pdp-temu-stock-hint">{stockHintRetrait}</p>
@@ -411,7 +413,7 @@ export default function ProduitPage() {
                   type="button"
                   onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
                   aria-label="Augmenter"
-                  disabled={!peutCommander}
+                  disabled={!peutCommander || qty >= maxQty}
                 >
                   +
                 </button>
@@ -422,7 +424,13 @@ export default function ProduitPage() {
                 disabled={!peutCommander || adding}
                 onClick={() => void handleAdd(false)}
               >
-                {adding ? 'Ajout…' : 'Ajouter au panier'}
+                {adding
+                  ? 'Ajout…'
+                  : peutCommander
+                    ? 'Ajouter au panier'
+                    : data.stockDisponible === 0
+                      ? 'Rupture de stock'
+                      : 'Stock épuisé'}
               </button>
             </div>
 

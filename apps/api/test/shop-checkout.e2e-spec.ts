@@ -231,4 +231,33 @@ describe('Shop checkout (e2e)', () => {
       })
       .expect(400);
   });
+
+  it('panier : quantité > stock hub → 400', async () => {
+    const create = await request(app.getHttpServer())
+      .post('/shop/panier')
+      .expect(201);
+    const cookie = extractCookie(create);
+    await request(app.getHttpServer())
+      .patch('/shop/panier/lignes')
+      .set('Cookie', cookie)
+      .send({ lignes: [{ produitId, quantite: 100 }] })
+      .expect(400);
+  });
+
+  it('panier : quantité = stock hub → 200', async () => {
+    const create = await request(app.getHttpServer())
+      .post('/shop/panier')
+      .expect(201);
+    const cookie = extractCookie(create);
+    const res = await request(app.getHttpServer())
+      .patch('/shop/panier/lignes')
+      .set('Cookie', cookie)
+      .send({ lignes: [{ produitId, quantite: 5 }] })
+      .expect(200);
+    const panier = body<{ lignes: Array<{ quantite: number; stockDisponible: number }> }>(
+      res,
+    );
+    expect(panier.lignes[0].quantite).toBe(5);
+    expect(panier.lignes[0].stockDisponible).toBe(5);
+  });
 });

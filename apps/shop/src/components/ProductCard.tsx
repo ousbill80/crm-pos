@@ -62,15 +62,18 @@ export function ProductCard({
   dense?: boolean;
   badge?: string;
 }) {
-  const shown = badge ?? p.badge;
+  const shown = badge ?? p.badge ?? (p.stockDisponible === 0 ? 'Rupture' : null);
+  const rupture = p.stockDisponible === 0;
   return (
     <Link
       to={p.slug ? `/produit/${p.slug}` : '/catalogue'}
-      className={`product${dense ? ' product-dense' : ''}`}
+      className={`product${dense ? ' product-dense' : ''}${rupture ? ' is-rupture' : ''}`}
       style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
     >
       <div className="product-media-wrap">
-        {shown && <span className="product-badge">{shown}</span>}
+        {shown && (
+          <span className={`product-badge${rupture ? ' out' : ''}`}>{shown}</span>
+        )}
         <ProductMedia
           designation={p.designation}
           imageUrl={p.imageUrl}
@@ -95,6 +98,8 @@ export function ProductCard({
               ? `${(p.unitesVendues30j ?? 0) > 0 ? ' · ' : ''}Plus que ${p.stockDisponible}`
               : null}
           </span>
+        ) : p.stockDisponible === 0 ? (
+          <span className="product-social product-social-out">Rupture de stock</span>
         ) : null}
       </div>
     </Link>

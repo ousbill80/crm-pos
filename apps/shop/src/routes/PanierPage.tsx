@@ -8,6 +8,7 @@ import {
 } from '../lib/api';
 import { PANIER_SEUIL_AVANTAGE } from '../lib/brand';
 import { useCart } from '../lib/cart';
+import { estCommandable } from '../lib/stock';
 import { ProductCard, ProductMedia } from '../components/ProductCard';
 
 export default function PanierPage() {
@@ -78,10 +79,14 @@ export default function PanierPage() {
                     type="button"
                     className="btn btn-ghost"
                     style={{ width: '100%', marginTop: '0.5rem' }}
-                    disabled={isMutating}
+                    disabled={
+                      isMutating || !estCommandable(undefined, p.stockDisponible)
+                    }
                     onClick={() => void addProduit(p.id, 1)}
                   >
-                    Ajouter au panier
+                    {estCommandable(undefined, p.stockDisponible)
+                      ? 'Ajouter au panier'
+                      : 'Rupture'}
                   </button>
                 </div>
               ))}
@@ -244,7 +249,9 @@ export default function PanierPage() {
         <section className="panier-page-recos">
           <h2>Complétez votre panier</h2>
           <div className="cart-recos-rail panier-page-rail">
-            {suggestions.map((p) => (
+            {suggestions.map((p) => {
+              const commandable = estCommandable(undefined, p.stockDisponible);
+              return (
               <div key={p.id} className="cart-reco">
                 <Link
                   to={p.slug ? `/produit/${p.slug}` : '/catalogue'}
@@ -265,13 +272,14 @@ export default function PanierPage() {
                 <button
                   type="button"
                   className="cart-reco-add"
-                  disabled={isMutating}
+                  disabled={isMutating || !commandable}
                   onClick={() => void addProduit(p.id, 1)}
                 >
-                  + Ajouter
+                  {commandable ? '+ Ajouter' : 'Rupture'}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

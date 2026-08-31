@@ -94,25 +94,33 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const current =
         (qc.getQueryData(['panier']) as PanierDto | undefined)?.lignes ??
         (await shopFetch<PanierDto>('/shop/panier')).lignes;
+      const line = current.find((l) => l.produitId === produitId);
+      let q = quantite;
+      if (q > 0 && line?.stockDisponible != null) {
+        if (line.stockDisponible <= 0) {
+          throw new Error('« ' + line.designation + ' » est en rupture de stock.');
+        }
+        q = Math.min(q, line.stockDisponible);
+      }
       const map = new Map(current.map((l) => [l.produitId, l.quantite]));
-      if (quantite <= 0) map.delete(produitId);
-      else map.set(produitId, quantite);
-      const lignes = [...map.entries()].map(([id, q]) => ({
+      if (q <= 0) map.delete(produitId);
+      else map.set(produitId, q);
+      const lignes = [...map.entries()].map(([id, qty]) => ({
         produitId: id,
-        quantite: q,
+        quantite: qty,
       }));
 
       const prev = qc.getQueryData<PanierDto>(['panier']);
       if (prev) {
         const optimisticLignes =
-          quantite <= 0
+          q <= 0
             ? prev.lignes.filter((l) => l.produitId !== produitId)
             : prev.lignes.map((l) =>
                 l.produitId === produitId
                   ? {
                       ...l,
-                      quantite,
-                      montantLigne: l.prixUnitaireTtc * quantite,
+                      quantite: q,
+                      montantLigne: l.prixUnitaireTtc * q,
                     }
                   : l,
               );
@@ -129,9 +137,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      await mutateLignes.mutateAsync(lignes);
+      try {
+        await mutateLignes.mutateAsync(lignes);
+      } catch (e) {
+        invalidate();
+        throw e;
+      }
     },
-    [ensurePanier, mutateLignes, qc],
+    [ensurePanier, invalidate, mutateLignes, qc],
   );
 
   const addProduit = useCallback(
@@ -146,18 +159,41 @@ export function CartProvider({ children }: { children: ReactNode }) {
         current = [];
       }
       const map = new Map(current.map((l) => [l.produitId, l.quantite]));
-      map.set(produitId, (map.get(produitId) ?? 0) + quantite);
+      const existing = map.get(produitId) ?? 0;
+      const line = current.find((l) => l.produitId === produitId);
+      let addQty = quantite;
+      if (line?.stockDisponible != null) {
+        if (line.stockDisponible <= 0) {
+          throw new Error(
+            '« ' + line.designation + ' » est en rupture de stock.',
+          );
+        }
+        const reste = line.stockDisponible - existing;
+        if (reste <= 0) {
+          throw new Error(
+            `Stock insuffisant (disponible : ${line.stockDisponible}).`,
+          );
+        }
+        addQty = Math.min(quantite, reste);
+      }
+      map.set(produitId, existing + addQty);
       const lignes = [...map.entries()].map(([id, q]) => ({
         produitId: id,
         quantite: q,
       }));
-      setLastAddedId(produitId);
-      setDrawerOpen(true);
-      trackShopEvent('ADD_CART', { produitId });
-      rememberInterest({ produitId, weight: 4 });
-      await mutateLignes.mutateAsync(lignes);
+
+      try {
+        await mutateLignes.mutateAsync(lignes);
+        setLastAddedId(produitId);
+        setDrawerOpen(true);
+        trackShopEvent('ADD_CART', { produitId });
+        rememberInterest({ produitId, weight: 4 });
+      } catch (e) {
+        invalidate();
+        throw e;
+      }
     },
-    [ensurePanier, mutateLignes, qc],
+    [ensurePanier, invalidate, mutateLignes, qc],
   );
 
   const removeProduit = useCallback(

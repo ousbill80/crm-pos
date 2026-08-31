@@ -9,6 +9,7 @@ import {
 import { PANIER_SEUIL_AVANTAGE } from '../lib/brand';
 import { getShopSessionId } from '../lib/aarrr';
 import { useCart } from '../lib/cart';
+import { estCommandable } from '../lib/stock';
 import { ProductMedia } from './ProductCard';
 
 function ligneMontant(l: PanierLigne, mode?: string) {
@@ -77,7 +78,7 @@ function CartLine({
     stock != null && stock > 0 && stock <= 3
       ? `Plus que ${stock}`
       : stock === 0
-        ? 'Stock limité'
+        ? 'Rupture de stock'
         : null;
   const unit = mode === 'HT' ? l.prixUnitaireHt : l.prixUnitaireTtc;
   const media = (
@@ -167,6 +168,7 @@ function CartRecos({
           prixAffiche: number;
           imageUrl?: string | null;
           badge?: string;
+          stockDisponible?: number | null;
         }>;
         profil?: { message: string; personnalise: boolean };
       }>(
@@ -201,7 +203,9 @@ function CartRecos({
         <p className="cart-recos-hint">{data.profil.message}</p>
       )}
       <div className="cart-recos-rail">
-        {items.map((p) => (
+        {items.map((p) => {
+          const commandable = estCommandable(undefined, p.stockDisponible);
+          return (
           <div key={p.id} className="cart-reco">
             <Link
               to={p.slug ? `/produit/${p.slug}` : '/catalogue'}
@@ -224,13 +228,14 @@ function CartRecos({
             <button
               type="button"
               className="cart-reco-add"
-              disabled={isMutating}
+              disabled={isMutating || !commandable}
               onClick={() => void addProduit(p.id, 1)}
             >
-              + Ajouter
+              {commandable ? '+ Ajouter' : 'Rupture'}
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
