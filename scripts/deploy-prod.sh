@@ -4,6 +4,8 @@ set -euo pipefail
 # Déploie la production (CRM + shop). Jamais appelé par la CI automatique.
 # Usage (sur le VPS, après validation staging) :
 #   ./scripts/deploy-prod.sh
+# Boutique seule (plus rapide) :
+#   ./scripts/deploy-shop-prod.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"

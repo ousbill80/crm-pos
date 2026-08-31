@@ -328,7 +328,7 @@ Une seule API Nest (monolithe) pour CRM + boutique — autorisé uniquement en s
 cd /opt/apps/caisse-crm
 cp .env.staging.example .env.staging
 nano .env.staging   # secrets DISTINCTS de la prod ; PAYSTACK sk_test_ uniquement
-chmod +x scripts/deploy-staging.sh scripts/deploy-prod.sh
+chmod +x scripts/deploy-staging.sh scripts/deploy-prod.sh scripts/deploy-shop-prod.sh
 ./scripts/deploy-staging.sh
 ```
 
@@ -436,6 +436,9 @@ cd /opt/apps/caisse-crm && git pull && ./scripts/deploy-staging.sh
 
 # Mise à jour prod (après tests staging)
 cd /opt/apps/caisse-crm && git pull && ./scripts/deploy-prod.sh
+
+# Mise à jour boutique prod seule (changements shop / api shop)
+cd /opt/apps/caisse-crm && git pull && ./scripts/deploy-shop-prod.sh
 
 # RAM / CPU
 docker stats
