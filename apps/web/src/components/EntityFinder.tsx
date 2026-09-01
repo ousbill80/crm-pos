@@ -137,8 +137,8 @@ export function EntityFinder({
   }, [ouvert, listId, value]);
 
   function choisir(label: string, created: boolean) {
-    onChange(created ? '' : label);
-    setSaisie(created ? '' : label);
+    onChange(label);
+    setSaisie(label);
     setOuvert(false);
     onSelect?.(label, { created });
   }

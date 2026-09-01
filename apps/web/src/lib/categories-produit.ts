@@ -7,6 +7,11 @@ export const CATEGORIES_PRODUIT_CANON = [
   'Housses',
   'Électronique',
   'Mécanique',
+  'Freinage',
+  'Suspension & Direction',
+  'Lubrifiants & Entretien',
+  'Pièces détachées / Filtration',
+  'Batteries & Électricité',
   'Accessoires Premium',
 ] as const;
 

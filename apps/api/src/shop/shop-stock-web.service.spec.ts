@@ -22,12 +22,9 @@ describe('ShopStockWebService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (prisma.boutique.findMany as jest.Mock).mockResolvedValue([
-      { entrepotWebId: 'boutique-ext' },
-    ]);
   });
 
-  it('retourne min(hub, max retrait) quand retrait actif', async () => {
+  it('retourne le stock hub (retrait exposé à part)', async () => {
     stockService.getDisponible.mockImplementation(async (_id, entrepotId) => {
       if (entrepotId === 'hub-1') return 20;
       if (entrepotId === 'boutique-ext') return 0;
@@ -36,10 +33,10 @@ describe('ShopStockWebService', () => {
 
     await expect(
       service.getStockWebDisponible('p1', 'ARTICLE', params),
-    ).resolves.toBe(0);
+    ).resolves.toBe(20);
   });
 
-  it('retourne le hub seul quand retrait inactif', async () => {
+  it('retourne le hub même quand retrait inactif', async () => {
     stockService.getDisponible.mockResolvedValue(12);
 
     await expect(
@@ -48,15 +45,10 @@ describe('ShopStockWebService', () => {
         retraitActif: false,
       }),
     ).resolves.toBe(12);
-    expect(prisma.boutique.findMany).not.toHaveBeenCalled();
   });
 
-  it('hub 0 reste 0 même si boutique a du stock', async () => {
-    stockService.getDisponible.mockImplementation(async (_id, entrepotId) => {
-      if (entrepotId === 'hub-1') return 0;
-      if (entrepotId === 'boutique-ext') return 5;
-      return 0;
-    });
+  it('hub 0 reste 0', async () => {
+    stockService.getDisponible.mockResolvedValue(0);
 
     await expect(
       service.getStockWebDisponible('p1', 'ARTICLE', params),

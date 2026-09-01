@@ -1,5 +1,4 @@
 import { useId } from 'react';
-import { EntityFinder } from './EntityFinder';
 import { useCategoriesProduit } from '../hooks/useCategoriesProduit';
 
 type Props = {
@@ -21,34 +20,34 @@ export function CategorieProduitField({
 }: Props) {
   const autoId = useId();
   const fieldId = id ?? autoId;
+  const listId = `${fieldId}-suggestions`;
   const { options, isLoading } = useCategoriesProduit(value);
 
-  const finderOptions = allowEmpty ? [emptyLabel, ...options] : options;
-
-  function normaliserChoix(v: string) {
-    return v === emptyLabel ? '' : v;
-  }
+  const suggestions = allowEmpty
+    ? options.filter((c) => c !== emptyLabel && c !== '— Choisir —')
+    : options;
 
   return (
     <div className="categorie-produit-field">
-      <EntityFinder
+      <input
         id={fieldId}
+        type="text"
+        list={listId}
         value={value}
-        onChange={(v) => onChange(normaliserChoix(v))}
-        onSelect={(label) => onChange(normaliserChoix(label))}
-        options={finderOptions}
-        allowCreate
-        placeholder="Rechercher une catégorie…"
-        createLabel={(s) => `Utiliser « ${s} »`}
-        emptyLabel="Aucune catégorie correspondante"
-        isExisting={(saisie) =>
-          options.some(
-            (c) => c.toLowerCase() === saisie.trim().toLowerCase(),
-          )
-        }
+        onChange={(e) => onChange(e.target.value)}
         disabled={disabled || isLoading}
-        ariaLabel="Catégorie produit"
+        placeholder="Ex. Suspension & Direction, Freinage…"
+        autoComplete="off"
+        aria-label="Catégorie produit"
       />
+      <datalist id={listId}>
+        {suggestions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <p className="form-hint-muted">
+        Saisie libre ou choix dans les suggestions — visible sur le site e-commerce.
+      </p>
       {isLoading ? (
         <p className="form-hint-muted" aria-live="polite">
           Chargement des catégories…

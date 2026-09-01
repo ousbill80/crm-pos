@@ -60,7 +60,7 @@ export function NouveauProduitForm({ designationsExistantes, onSuccess }: Props)
   const [prixUnitaire, setPrixUnitaire] = useState('');
   const [stock, setStock] = useState('0');
   const [seuilReappro, setSeuilReappro] = useState('');
-  const [visibleWeb, setVisibleWeb] = useState(false);
+  const [visibleWeb, setVisibleWeb] = useState(true);
   const [slug, setSlug] = useState('');
   const [slugManuel, setSlugManuel] = useState(false);
   const [prixWeb, setPrixWeb] = useState('');
@@ -235,7 +235,7 @@ export function NouveauProduitForm({ designationsExistantes, onSuccess }: Props)
         )}
         <div className="form-grid-2">
           <div className="form-field">
-            <label htmlFor={`${formId}-categorie`}>Catégorie</label>
+            <label htmlFor={`${formId}-categorie`}>Catégorie (magasin & site web)</label>
             <CategorieProduitField
               id={`${formId}-categorie`}
               value={categorie}

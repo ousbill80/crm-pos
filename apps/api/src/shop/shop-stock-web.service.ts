@@ -9,9 +9,8 @@ type ShopStockParams = Pick<
 >;
 
 /**
- * Stock web commandable : entrepôt hub, plafonné par le max des boutiques retrait
- * quand le retrait est actif (min hub, max retrait).
- * Évite d'ajouter au panier un article disponible au hub mais en rupture en boutique.
+ * Stock web commandable : entrepôt hub (livraison / préparation commande).
+ * La disponibilité retrait par boutique est exposée séparément (stocksRetrait).
  */
 @Injectable()
 export class ShopStockWebService {
@@ -48,18 +47,6 @@ export class ShopStockWebService {
       params.entrepotWebDefautId,
     );
 
-    if (!params.retraitActif) return hub;
-
-    const retraitIds =
-      retraitEntrepotIds ?? (await this.listEntrepotsRetraitWeb());
-    if (!retraitIds.length) return hub;
-
-    let maxRetrait = 0;
-    for (const entrepotId of retraitIds) {
-      const d = await this.stockService.getDisponible(produitId, entrepotId);
-      maxRetrait = Math.max(maxRetrait, d);
-    }
-
-    return Math.min(hub, maxRetrait);
+    return hub;
   }
 }

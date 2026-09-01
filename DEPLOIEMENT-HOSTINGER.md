@@ -256,8 +256,12 @@ nano .env.shop
 ```
 
 ```env
+# Base partagée avec le CRM (même catalogue que le backoffice)
+DATABASE_URL=postgresql://caisse:<mot_de_passe_.env.prod>@caisse-crm-prod-db-1:5432/caisse_crm?schema=public
+CRM_DOCKER_NETWORK=caisse-crm-prod_backend
+
 POSTGRES_USER=caisse
-POSTGRES_PASSWORD=<autre secret fort>
+POSTGRES_PASSWORD=<autre secret fort — dev local-db uniquement>
 POSTGRES_DB=caisse_crm
 
 JWT_SECRET_SHOP=<openssl rand -hex 32>
@@ -283,7 +287,10 @@ TLS_ENABLED=0
 TLS_CERTS_DIR=./deploy/certs-shop
 ```
 
-> **Note KVM 2** : shop et CRM ont chacun leur Postgres dans les compose actuels (isolation Option A). Surveille la RAM (`htop` / `docker stats`). Consolidation DB plus tard possible si besoin.
+> **Base partagée (recommandé)** : la boutique lit le **même PostgreSQL** que le CRM
+> (`DATABASE_URL` → conteneur `caisse-crm-prod-db-1`). Sur le VPS :
+> `./scripts/shop-link-crm-db.sh` puis `./scripts/deploy-shop-prod.sh`.
+> Sans cela, les produits publiés dans le CRM n’apparaissent pas sur le site.
 
 ---
 
@@ -295,8 +302,9 @@ cd /opt/apps/caisse-crm
 # CRM + API + Postgres
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
-# Boutique + api-shop + Postgres shop
-docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
+# Boutique + api-shop (base CRM partagée — pas de Postgres shop séparé)
+./scripts/shop-link-crm-db.sh
+./scripts/deploy-shop-prod.sh
 
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.shop -f docker-compose.shop.yml ps

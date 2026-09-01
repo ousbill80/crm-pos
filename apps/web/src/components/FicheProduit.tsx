@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
   Camera,
+  ExternalLink,
+  Globe,
   IdCard,
   LayoutDashboard,
   Package,
@@ -25,6 +27,7 @@ import {
   insightStatutProduit,
   insightSuggestionReappro,
 } from '../lib/insights/produits';
+import { evaluerPublicationWeb } from '../lib/shop-produit';
 import type {
   MouvementStockDto,
   ProduitAnalyseDto,
@@ -183,6 +186,7 @@ function IdentiteForm({
       void queryClient.invalidateQueries({ queryKey: ['produits-synthese'] });
       void queryClient.invalidateQueries({ queryKey: ['produits-categories'] });
       void queryClient.invalidateQueries({ queryKey: ['produits-classement'] });
+      void queryClient.invalidateQueries({ queryKey: ['produits', produit.id, 'analyse'] });
       onDone();
     },
     onError: (err) =>
@@ -954,6 +958,83 @@ function RepartitionStockCard({
   );
 }
 
+function HeroActionsWeb({
+  produit,
+  produitId,
+  peutGerer,
+  onConfigurer,
+}: {
+  produit: ProduitDto;
+  produitId: string;
+  peutGerer: boolean;
+  onConfigurer: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const web = evaluerPublicationWeb(produit);
+  const [err, setErr] = useState<string | null>(null);
+
+  const publier = useMutation({
+    mutationFn: () =>
+      apiFetch<ProduitDto>(`/produits/${produitId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          visibleWeb: true,
+          prixWeb:
+            produit.prixWeb != null && Number(produit.prixWeb) > 0
+              ? Number(produit.prixWeb)
+              : Number(produit.prixUnitaire),
+        }),
+      }),
+    onSuccess: () => {
+      setErr(null);
+      void queryClient.invalidateQueries({ queryKey: ['produits'] });
+      void queryClient.invalidateQueries({ queryKey: ['produits', produitId, 'analyse'] });
+      void queryClient.invalidateQueries({ queryKey: ['produits-synthese'] });
+    },
+    onError: (e) => setErr(messageDepuisApi(e, 'Publication sur le site impossible.')),
+  });
+
+  if (web.visibleSurSite && web.url) {
+    return (
+      <a
+        className="btn-secondary"
+        href={web.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <ExternalLink size={14} /> Voir sur le site web
+      </a>
+    );
+  }
+
+  if (!peutGerer) return null;
+
+  return (
+    <div className="fiche-hero-web-actions">
+      {web.publiableRapide ? (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={publier.isPending}
+          onClick={() => publier.mutate()}
+        >
+          <Globe size={14} />{' '}
+          {publier.isPending ? 'Publication…' : 'Publier sur le site web'}
+        </button>
+      ) : (
+        <button type="button" className="btn-secondary" onClick={onConfigurer}>
+          <Globe size={14} /> Configurer la boutique en ligne
+        </button>
+      )}
+      {err ? (
+        <p className="form-error" role="alert">
+          {err}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function FicheProduit({
   produitId,
   peutGerer,
@@ -1013,6 +1094,7 @@ export function FicheProduit({
   const { produit, repartitionStock, performance30j, suggestionReappro, stockPrevu } = data;
   const nbVentes = ventesQ.data?.length ?? 0;
   const nbMvts = mvtsQ.data?.length ?? 0;
+  const publicationWeb = evaluerPublicationWeb(produit);
 
   const tabs: Array<{
     id: OngletFiche;
@@ -1092,6 +1174,11 @@ export function FicheProduit({
             {Number(produit.coutMoyenPondere) <= 0 && (
               <span className="badge badge-warning">CMP à 0 — pas encore de réception</span>
             )}
+            {publicationWeb.visibleSurSite ? (
+              <span className="badge badge-ok">En ligne sur majorautoparts.shop</span>
+            ) : (
+              <span className="badge badge-neutral">Hors boutique en ligne</span>
+            )}
           </div>
           <div className="client-workspace-meta">
             <span>
@@ -1108,18 +1195,29 @@ export function FicheProduit({
               <strong>CMP</strong> {formatFcfa(produit.coutMoyenPondere)}
             </span>
           </div>
-          {peutGerer ? (
+          {peutGerer || publicationWeb.visibleSurSite ? (
             <div className="client-workspace-hero-actions">
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => {
-                  setQteEtiquette(1);
-                  setModalEtiquettes(true);
+              <HeroActionsWeb
+                produit={produit}
+                produitId={produit.id}
+                peutGerer={peutGerer}
+                onConfigurer={() => {
+                  setOnglet('identite');
+                  setEdition(true);
                 }}
-              >
-                <Tag size={14} /> Imprimer l’étiquette
-              </button>
+              />
+              {peutGerer ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    setQteEtiquette(1);
+                    setModalEtiquettes(true);
+                  }}
+                >
+                  <Tag size={14} /> Imprimer l’étiquette
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1250,6 +1348,12 @@ export function FicheProduit({
                     {peutGerer ? ' Cliquez Modifier pour enrichir la fiche.' : ''}
                   </p>
                 )}
+                {!publicationWeb.visibleSurSite && publicationWeb.manques.length > 0 && (
+                  <p className="fiche-completude fiche-completude-web">
+                    Boutique en ligne : {publicationWeb.manques.join(', ')}.
+                    {peutGerer ? ' Utilisez Modifier ou « Publier sur le site web ».' : ''}
+                  </p>
+                )}
                 <div className="fiche-identite-grid">
                   <div className="fiche-photo-preview fiche-photo-preview-lg" aria-hidden>
                     {produit.imageUrl ? (
@@ -1312,6 +1416,45 @@ export function FicheProduit({
                         <dt>Unité</dt>
                         <dd>{produit.uniteMesure ?? 'UN'}</dd>
                       </div>
+                      <div>
+                        <dt>Boutique en ligne</dt>
+                        <dd>
+                          {publicationWeb.visibleSurSite ? (
+                            <>
+                              Visible —{' '}
+                              {publicationWeb.url ? (
+                                <a
+                                  href={publicationWeb.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  voir la fiche produit
+                                </a>
+                              ) : (
+                                'slug configuré'
+                              )}
+                            </>
+                          ) : produit.visibleWeb ? (
+                            'Visible coché — informations incomplètes pour le catalogue'
+                          ) : (
+                            'Non publié'
+                          )}
+                        </dd>
+                      </div>
+                      {produit.slug ? (
+                        <div>
+                          <dt>Slug URL</dt>
+                          <dd>
+                            <code>{produit.slug}</code>
+                          </dd>
+                        </div>
+                      ) : null}
+                      {produit.prixWeb != null ? (
+                        <div>
+                          <dt>Prix web</dt>
+                          <dd className="money">{formatFcfa(produit.prixWeb)}</dd>
+                        </div>
+                      ) : null}
                     </dl>
                   </div>
                 </div>

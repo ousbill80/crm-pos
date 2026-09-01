@@ -2,7 +2,14 @@ name: caisse-crm-shop
 
 # Stack shop (DMZ) — api-shop + gateway boutique. Option A PLAN-E-COMMERCE.
 #
+# Production : api-shop lit la **même base PostgreSQL** que le CRM interne
+# (PLAN-E-COMMERCE §1). Définir DATABASE_URL vers caisse-crm-prod-db-1 dans
+# .env.shop — pas de Postgres shop séparé.
+#
 #   docker compose --env-file .env.shop -f docker-compose.shop.yml up -d --build
+#
+# Dev isolé (Postgres local shop) :
+#   docker compose --env-file .env.shop -f docker-compose.shop.yml --profile local-db up -d --build
 #
 # Project name must stay caisse-crm-shop (stacks Hostinger déjà en place).
 # Ports bindés sur 127.0.0.1 par défaut (Caddy). Ne pas mettre SHOP_BIND=0.0.0.0
@@ -16,6 +23,7 @@ x-log: &default-log
 
 services:
   db:
+    profiles: ["local-db"]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -47,9 +55,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+        required: false
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-caisse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-caisse_crm}?schema=public
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL requis — base CRM partagée (voir .env.shop.example)}
       JWT_SECRET_SHOP: ${JWT_SECRET_SHOP:?JWT_SECRET_SHOP requis}
       SHOP_PANIER_SECRET: ${SHOP_PANIER_SECRET:?SHOP_PANIER_SECRET requis}
       CORS_ORIGINS: ${SHOP_CORS_ORIGINS:-}
@@ -82,6 +91,7 @@ services:
     networks:
       - shop-backend
       - shop-egress
+      - crm-backend
 
   gateway-shop:
     build:
@@ -112,6 +122,9 @@ networks:
     internal: true
   shop-egress:
   shop-frontend:
+  crm-backend:
+    external: true
+    name: ${CRM_DOCKER_NETWORK:-caisse-crm-prod_backend}
 
 volumes:
   caisse_crm_pgdata_shop:

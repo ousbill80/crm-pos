@@ -1,21 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { shopFetch } from '../lib/api';
-import { CATEGORIES, MARQUES } from '../lib/brand';
+import { MARQUES } from '../lib/brand';
+import {
+  fusionnerRayonsCatalogue,
+  toneCategorie,
+} from '../lib/catalogue-categories';
 import { ProductCard, type ProductCardItem } from '../components/ProductCard';
 import { CategoryIcon } from '../components/CategoryIcon';
-
-const CAT_TONE: Record<string, string> = {
-  tuning: 'tone-a',
-  jantes: 'tone-b',
-  phares: 'tone-c',
-  eclairage: 'tone-d',
-  housses: 'tone-e',
-  electronique: 'tone-f',
-  mecanique: 'tone-g',
-  accessoires: 'tone-h',
-};
 
 const CAT_BANNER: Record<string, string> = {
   tuning: '/banners/banner-tuning.jpg',
@@ -26,6 +19,8 @@ const CAT_BANNER: Record<string, string> = {
   electronique: '/banners/banner-electronique.jpg',
   mecanique: '/banners/banner-mecanique.jpg',
   accessoires: '/banners/banner-tuning.jpg',
+  freinage: '/banners/banner-mecanique.jpg',
+  suspension: '/banners/banner-mecanique.jpg',
 };
 
 const PAGE_SIZE = 24;
@@ -34,6 +29,7 @@ type Tri = 'designation' | 'prix_asc' | 'prix_desc';
 
 interface CatalogueResponse {
   items: ProductCardItem[];
+  categories?: string[];
   interpreted?: {
     marque: string | null;
     tokens: string[];
@@ -97,7 +93,6 @@ export default function CataloguePage() {
     setSearchDraft(recherche ?? '');
   }, [recherche]);
 
-  const activeCat = CATEGORIES.find((c) => c.label === categorie);
   const qs = new URLSearchParams();
   if (categorie) qs.set('categorie', categorie);
   if (recherche) qs.set('recherche', recherche);
@@ -113,6 +108,13 @@ export default function CataloguePage() {
   });
 
   const items = data?.items ?? [];
+  const rayons = useMemo(
+    () => fusionnerRayonsCatalogue(data?.categories ?? []),
+    [data?.categories],
+  );
+  const activeCat = categorie
+    ? rayons.find((c) => c.label === categorie)
+    : undefined;
   const interpreted = data?.interpreted;
   const activeMarque = interpreted?.marque ?? marqueParam ?? null;
   const pagination = data?.pagination;
@@ -250,8 +252,9 @@ export default function CataloguePage() {
           </span>
           <strong>Tout</strong>
         </Link>
-        {CATEGORIES.map((c) => {
+        {rayons.map((c) => {
           const active = categorie === c.label;
+          const tone = toneCategorie(c.slug);
           return (
             <Link
               key={c.slug}
@@ -264,9 +267,7 @@ export default function CataloguePage() {
               className={`catalogue-cat-orb${active ? ' is-active' : ''}`}
               aria-current={active ? 'page' : undefined}
             >
-              <span
-                className={`home-cat-orb-icon ${CAT_TONE[c.slug] ?? 'tone-a'}`}
-              >
+              <span className={`home-cat-orb-icon ${tone}`}>
                 <CategoryIcon slug={c.slug} size={20} />
               </span>
               <strong>{c.label.split(' ')[0]}</strong>

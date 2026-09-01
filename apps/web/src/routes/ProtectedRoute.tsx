@@ -148,26 +148,6 @@ const APPS: AppDef[] = [
           { to: '/produits?view=marges', label: 'Marges négatives' },
         ],
       },
-      {
-        to: '/produits?action=nouveau',
-        label: 'Actions',
-        children: [
-          {
-            to: '/produits?action=nouveau',
-            label: 'Nouveau produit',
-            roles: [
-              RoleLibelle.RESPONSABLE_SI,
-              RoleLibelle.DIRECTION_GENERALE,
-              RoleLibelle.DAF,
-            ],
-          },
-          {
-            to: '/produits?action=import',
-            label: 'Import CSV',
-            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
-          },
-        ],
-      },
     ],
   },
   {

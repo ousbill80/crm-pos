@@ -37,7 +37,6 @@ import {
   useFiltreMagasinSiege,
 } from '../components/FiltreMagasinSiege';
 import {
-  buildPrioritesCatalogue,
   insightCatalogueActif,
   insightDormant,
   insightMargeUnitaire,
@@ -365,8 +364,6 @@ export function ProduitsPage() {
 
   const categoriesOptions = categories.options;
 
-  const priorites = synthese.data ? buildPrioritesCatalogue(synthese.data) : [];
-
   if (!peutLire) {
     return <p>Vous n’avez pas accès au catalogue produit.</p>;
   }
@@ -564,35 +561,6 @@ export function ProduitsPage() {
             <div className="kpi-hint">Marge unitaire négative</div>
           </article>
         </div>
-      )}
-
-      {priorites.length > 0 && (
-        <section className="dash-priorites">
-          <h2>Priorités catalogue</h2>
-          <div className="dash-priorites-grid">
-            {priorites.map((p) => (
-              <article
-                key={p.id}
-                className={`dash-priorite dash-priorite-${p.severity}`}
-              >
-                <div>
-                  <h3>{p.title}</h3>
-                  <p>{p.detail}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatutStock(p.filtre.statutStock ?? '');
-                      setActif(p.filtre.actif ?? 'true');
-                      setMargeNegative(Boolean(p.filtre.margeNegative));
-                    }}
-                  >
-                    Filtrer
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
       )}
 
       {classement.data &&

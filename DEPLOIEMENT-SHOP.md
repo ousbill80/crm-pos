@@ -22,8 +22,16 @@ Boutique : `http://127.0.0.1:8080` (bind localhost par défaut).
 
 - `api-shop` : NestJS `main.shop.js` — routes `/shop/*` uniquement (user non-root)
 - `gateway-shop` : SPA `apps/shop` + proxy nginx vers `api-shop`
-- `db` : PostgreSQL (réseau interne shop-backend)
+- **PostgreSQL partagé avec le CRM** (`DATABASE_URL` → `caisse-crm-prod-db-1`) — pas de base shop séparée en prod
+- Postgres local (`--profile local-db`) : dev isolé uniquement
 - Ports publics : uniquement via Caddy ; `SHOP_BIND=127.0.0.1`
+
+### Lier la base CRM (prod)
+
+```bash
+./scripts/shop-link-crm-db.sh
+./scripts/deploy-shop-prod.sh
+```
 
 ## Checklist go-live
 
