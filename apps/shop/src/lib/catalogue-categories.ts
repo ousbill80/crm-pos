@@ -11,7 +11,9 @@ const CAT_TONES = [
   'tone-h',
 ] as const;
 
-const SLUG_BY_LABEL = new Map(CATEGORIES.map((c) => [c.label, c.slug]));
+const SLUG_BY_LABEL: Map<string, string> = new Map(
+  CATEGORIES.map((c) => [c.label, c.slug]),
+);
 
 export function slugifyCategorie(label: string): string {
   const known = SLUG_BY_LABEL.get(label);
