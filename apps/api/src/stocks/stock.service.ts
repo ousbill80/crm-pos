@@ -74,7 +74,7 @@ export class StockService {
     return aggs._sum.quantite ?? 0;
   }
 
-  /** Réservations e-commerce actives (non expirées). */
+  /** Réservations e-commerce actives : TTL panier, ou commande confirmée encore en cours. */
   async getQuantiteReserveeWeb(
     produitId: string,
     entrepotId: string,
@@ -87,8 +87,24 @@ export class StockService {
       where: {
         produitId,
         entrepotId,
-        expireAt: { gt: now },
         ...(exceptHoldId ? { holdId: { not: exceptHoldId } } : {}),
+        OR: [
+          { expireAt: { gt: now } },
+          {
+            commande: {
+              statut: {
+                in: [
+                  'EN_ATTENTE_PAIEMENT',
+                  'PAYEE',
+                  'PREPARATION',
+                  'PRETE',
+                  'EXPEDIEE',
+                  'LITIGE',
+                ],
+              },
+            },
+          },
+        ],
       },
       _sum: { quantite: true },
     });

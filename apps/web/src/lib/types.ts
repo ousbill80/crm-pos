@@ -806,6 +806,9 @@ export interface BoutiqueDto {
   zoneId: string;
   code: string | null;
   actif: boolean;
+  retraitWebActif?: boolean;
+  entrepotWebId?: string | null;
+  delaiRetraitHeures?: number | null;
 }
 
 export interface EntrepotDto {

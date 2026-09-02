@@ -27,10 +27,11 @@ export const ROLES_RESEAU_STRUCTURE: RoleLibelle[] = [
 ];
 
 // Rôles habilités à créer/modifier la structure organisationnelle
-// (zones/boutiques) : Responsable SI ou Direction Générale uniquement.
+// (zones/boutiques) : SI, Direction Générale et DAF (pilotage réseau).
 export const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 // Rôle à périmètre zone.
@@ -82,6 +83,7 @@ export const ROLES_LECTURE_CAISSES: RoleLibelle[] = [
 export const ROLES_INVENTAIRE_COMPTAGE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
   RoleLibelle.CAISSIER_BOUTIQUE,
 ];
@@ -129,6 +131,8 @@ export const ROLES_RECEPTION_STOCK: RoleLibelle[] = [
 /** Préparation d'une demande/commande : Achats, sans pouvoir l'approuver. */
 export const ROLES_SAISIE_COMMANDE_ACHAT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.ACHATS,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
@@ -142,11 +146,16 @@ export const ROLES_APPROBATION_COMMANDE_ACHAT: RoleLibelle[] = [
 /** Suivi production, transport et douane : fonction logistique dédiée. */
 export const ROLES_LOGISTIQUE_IMPORT: RoleLibelle[] = [
   RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_SI,
 ];
 
 /** Planning : le besoin est préparé par Achats ou initié dans sa boutique. */
 export const ROLES_DEMANDE_ACHAT_ECRITURE: RoleLibelle[] = [
   RoleLibelle.ACHATS,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 
@@ -156,8 +165,13 @@ export const ROLES_APPROBATION_DEMANDE_ACHAT: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
 ];
 
-/** Consultation et saisie comparative des offres : fonction Achats dédiée. */
-export const ROLES_SOURCING_ACHAT: RoleLibelle[] = [RoleLibelle.ACHATS];
+/** Consultation et saisie comparative des offres : Achats + DAF / SI / DG. */
+export const ROLES_SOURCING_ACHAT: RoleLibelle[] = [
+  RoleLibelle.ACHATS,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_SI,
+];
 
 /**
  * Groupe de gestion conservé pour compatibilité des imports existants.
@@ -185,19 +199,28 @@ export const ROLES_CONTROLE_QUALITE_RECEPTION: RoleLibelle[] = [
   RoleLibelle.DAF,
 ];
 
-/** P2P strict : fait quantitatif uniquement par Logistique/Transit/Douane. */
+/** P2P : fait quantitatif — Logistique + DAF / SI / DG. */
 export const ROLES_RECEPTION_P2P_QUANTITATIVE: RoleLibelle[] = [
   RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_SI,
 ];
 
-/** P2P strict : décision qualité, putaway et retours par Qualité/Stocks. */
+/** P2P : décision qualité, putaway et retours — Qualité + DAF / SI / DG. */
 export const ROLES_QUALITE_P2P_STOCK: RoleLibelle[] = [
   RoleLibelle.QUALITE_STOCKS,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_SI,
 ];
 
 /** Coûts réels transport/douane à allouer avant mise en stock. */
 export const ROLES_ALLOCATION_COUT_RECEPTION: RoleLibelle[] = [
   RoleLibelle.LOGISTIQUE_TRANSIT_DOUANE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.RESPONSABLE_SI,
 ];
 
 /** Reliquat annulé seulement avec approbation financière auditée. */
@@ -206,20 +229,24 @@ export const ROLES_CLOTURE_COURTE_ACHAT: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
 ];
 
-/** Saisie des factures fournisseur par la fonction comptable. */
+/** Saisie des factures fournisseur : RAF + DAF / SI / DG. */
 export const ROLES_SAISIE_FACTURE_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
+  RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.RAF_COMPTABLE,
 ];
 
-/** Comptabilisation après contrôle : RAF/Comptable sous supervision DAF. */
+/** Comptabilisation après contrôle : RAF + DAF. */
 export const ROLES_COMPTABILISATION_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.RAF_COMPTABLE,
+  RoleLibelle.DAF,
 ];
 
-/** Rapprochement et comptabilisation P2P conforme : RAF uniquement. */
+/** Rapprochement et comptabilisation P2P conforme : RAF + DAF. */
 export const ROLES_RAPPROCHEMENT_FACTURE_P2P: RoleLibelle[] = [
   RoleLibelle.RAF_COMPTABLE,
+  RoleLibelle.DAF,
 ];
 
 /** Dérogation explicite à un litige P2P : séparation RAF vs DAF/DG. */
@@ -243,17 +270,19 @@ export const ROLES_PAIEMENT_FOURNISSEUR: RoleLibelle[] = [
   RoleLibelle.CAISSIER_CENTRAL,
 ];
 
-/** Préparation et comptabilisation : RAF uniquement. */
+/** Préparation et comptabilisation : RAF + DAF. */
 export const ROLES_P2P_COMPTABILITE_ECRITURE: RoleLibelle[] = [
   RoleLibelle.RAF_COMPTABLE,
+  RoleLibelle.DAF,
 ];
 
 /** Approbation niveau 2 des propositions de paiement : DAF uniquement. */
 export const ROLES_P2P_PAIEMENT_APPROBATION: RoleLibelle[] = [RoleLibelle.DAF];
 
-/** Approbation au-dessus du seuil exceptionnel : Direction générale uniquement. */
+/** Approbation au-dessus du seuil exceptionnel : DG + DAF. */
 export const ROLES_P2P_PAIEMENT_EXCEPTION: RoleLibelle[] = [
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 /** Exécution bancaire/mobile DAF ; caisse centrale limitée en service au central cash. */
@@ -280,6 +309,7 @@ export const ROLES_P2P_IMMO_DOTATION: RoleLibelle[] = [
 export const ROLES_BON_STOCK_PILOTE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 /**
@@ -297,6 +327,7 @@ export const ROLES_REPARTITION_STOCK: RoleLibelle[] = [
 export const ROLES_BON_STOCK_FAIT: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
   RoleLibelle.RESPONSABLE_BOUTIQUE,
 ];
 

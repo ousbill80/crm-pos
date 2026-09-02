@@ -116,12 +116,20 @@ const APPS: AppDef[] = [
           {
             to: '/ventes/parametres-shop',
             label: 'Paramètres shop',
-            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
+            roles: [
+              RoleLibelle.RESPONSABLE_SI,
+              RoleLibelle.DIRECTION_GENERALE,
+              RoleLibelle.DAF,
+            ],
           },
           {
             to: '/ventes/zones-livraison',
             label: 'Zones livraison',
-            roles: [RoleLibelle.RESPONSABLE_SI, RoleLibelle.DIRECTION_GENERALE],
+            roles: [
+              RoleLibelle.RESPONSABLE_SI,
+              RoleLibelle.DIRECTION_GENERALE,
+              RoleLibelle.DAF,
+            ],
           },
         ],
       },

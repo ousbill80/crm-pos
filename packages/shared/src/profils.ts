@@ -173,11 +173,11 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
       finance: FINANCE,
       treasury: TRESORERIE_COMPLET,
       dashboard: DASHBOARD,
-      settings: CONFIG_CONTROLE,
+      settings: CONFIG_COMPLET,
     },
     resume:
-      'Pôle financier réseau : achats (fiches, commandes, réceptions, factures, paiements), résultat, stocks valorisés, trésorerie, validation niveau 2.',
-    interdit: 'N’encaisse pas en boutique. Ne configure pas le SI (zones, magasins, catalogue).',
+      'Pôle financier et opérationnel réseau : structure (magasins, entrepôts), catalogue, achats, stocks, trésorerie, validation niveau 2.',
+    interdit: 'N’encaisse pas en boutique (séparation des tâches §6.4 — caisse auxiliaire).',
   },
   ACHATS: {
     role: RoleLibelle.ACHATS,

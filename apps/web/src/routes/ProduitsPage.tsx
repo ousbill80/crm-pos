@@ -57,6 +57,7 @@ import type {
 const ROLES_ADMIN_STRUCTURE: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 const ROLES_CATALOGUE_ECRITURE: RoleLibelle[] = [

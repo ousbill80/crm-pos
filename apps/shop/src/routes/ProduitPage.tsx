@@ -320,13 +320,7 @@ export default function ProduitPage() {
 
             <div className="pdp-temu-price">
               <strong>{formatFcfa(data.prixAffiche)}</strong>
-              <span>
-                {data.modeAffichage === 'TTC' ? 'TTC' : 'HT'}
-                {data.prixUnitaireHt != null &&
-                  data.prixUnitaireTtc != null &&
-                  data.modeAffichage !== 'TTC' &&
-                  ` · TTC ${formatFcfa(data.prixUnitaireTtc)}`}
-              </span>
+              <span>{data.modeAffichage === 'TTC' ? 'TTC' : 'HT'}</span>
             </div>
 
             <p className={`pdp-temu-stock${peutCommander ? '' : ' is-out'}`}>

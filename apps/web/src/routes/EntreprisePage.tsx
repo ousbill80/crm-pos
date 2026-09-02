@@ -44,6 +44,7 @@ import type {
 const ROLES_ADMIN: RoleLibelle[] = [
   RoleLibelle.RESPONSABLE_SI,
   RoleLibelle.DIRECTION_GENERALE,
+  RoleLibelle.DAF,
 ];
 
 const ROLES_LECTURE: RoleLibelle[] = [
@@ -459,6 +460,9 @@ export function EntreprisePage() {
       adresse: string;
       code: string;
       actif: boolean;
+      retraitWebActif: boolean;
+      entrepotWebId: string | null;
+      delaiRetraitHeures: number | null;
     }) =>
       apiFetch<BoutiqueDto>(`/boutiques/${payload.id}`, {
         method: 'PATCH',
@@ -467,6 +471,9 @@ export function EntreprisePage() {
           adresse: payload.adresse.trim(),
           code: payload.code.trim() || undefined,
           actif: payload.actif,
+          retraitWebActif: payload.retraitWebActif,
+          entrepotWebId: payload.entrepotWebId,
+          delaiRetraitHeures: payload.delaiRetraitHeures,
         }),
       }),
     onSuccess: () => {
@@ -2490,6 +2497,9 @@ export function EntreprisePage() {
                     adresse: boutiqueEditee.adresse,
                     code: boutiqueEditee.code ?? '',
                     actif: boutiqueEditee.actif,
+                    retraitWebActif: Boolean(boutiqueEditee.retraitWebActif),
+                    entrepotWebId: boutiqueEditee.entrepotWebId ?? null,
+                    delaiRetraitHeures: boutiqueEditee.delaiRetraitHeures ?? null,
                   });
                 }}
               >
@@ -2696,6 +2706,73 @@ export function EntreprisePage() {
                     />
                     Magasin actif
                   </label>
+                )}
+                {peutAdmin && (
+                  <>
+                    <label className="cfg-check-inline">
+                      <input
+                        type="checkbox"
+                        data-testid="boutique-edit-retrait-web"
+                        checked={Boolean(boutiqueEditee.retraitWebActif)}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          const principal =
+                            entrepotsList.find(
+                              (en) =>
+                                en.boutiqueId === boutiqueEditee.id &&
+                                en.type === 'PRINCIPAL' &&
+                                en.actif,
+                            ) ?? null;
+                          setBoutiqueEditee({
+                            ...boutiqueEditee,
+                            retraitWebActif: on,
+                            entrepotWebId: on
+                              ? boutiqueEditee.entrepotWebId ??
+                                principal?.id ??
+                                null
+                              : boutiqueEditee.entrepotWebId,
+                          });
+                        }}
+                      />
+                      Retrait click &amp; collect (site web)
+                    </label>
+                    {boutiqueEditee.retraitWebActif ? (
+                      <div>
+                        <label htmlFor="edit-entrepot-web">
+                          Entrepôt stock web (retrait)
+                        </label>
+                        <select
+                          id="edit-entrepot-web"
+                          value={boutiqueEditee.entrepotWebId ?? ''}
+                          onChange={(e) =>
+                            setBoutiqueEditee({
+                              ...boutiqueEditee,
+                              entrepotWebId: e.target.value || null,
+                            })
+                          }
+                          required
+                        >
+                          <option value="">— Choisir —</option>
+                          {entrepotsList
+                            .filter(
+                              (en) =>
+                                en.boutiqueId === boutiqueEditee.id &&
+                                en.actif &&
+                                en.usage !== 'CLIENT' &&
+                                en.usage !== 'FOURNISSEUR',
+                            )
+                            .map((en) => (
+                              <option key={en.id} value={en.id}>
+                                {en.nom} ({en.code})
+                              </option>
+                            ))}
+                        </select>
+                        <p className="form-hint-muted">
+                          Sans entrepôt, la boutique n’apparaît pas au checkout.
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 )}
                 <div className="cfg-form-actions">
                   <button

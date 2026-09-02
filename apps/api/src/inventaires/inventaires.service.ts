@@ -262,7 +262,9 @@ export class InventairesService {
       );
     }
     const admin =
-      user.role === 'RESPONSABLE_SI' || user.role === 'DIRECTION_GENERALE';
+      user.role === 'RESPONSABLE_SI' ||
+      user.role === 'DIRECTION_GENERALE' ||
+      user.role === 'DAF';
     if (session.initiateurId !== user.userId && !admin) {
       throw new ForbiddenException(
         'Seul l’initiateur ou le SI / DG peut annuler.',
