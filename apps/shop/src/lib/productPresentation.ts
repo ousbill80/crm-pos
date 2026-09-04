@@ -18,6 +18,7 @@ export type ProduitVariante = {
 export type StockRetraitBoutique = {
   boutiqueId: string;
   nom: string;
+  adresse?: string;
   disponible: number;
 };
 
@@ -35,6 +36,8 @@ export type ProduitDetail = {
   description?: string | null;
   prixUnitaireHt?: number;
   prixUnitaireTtc?: number;
+  tauxTva?: number;
+  montantTva?: number;
   modeAffichage?: string;
   typeProduit?: string;
   attributs?: string | null;

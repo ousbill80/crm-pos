@@ -54,4 +54,38 @@ describe('ShopStockWebService', () => {
       service.getStockWebDisponible('p1', 'ARTICLE', params),
     ).resolves.toBe(0);
   });
+
+  it('liste le PRINCIPAL si entrepotWebId est absent', async () => {
+    prisma.boutique.findMany.mockResolvedValue([
+      {
+        id: 'b1',
+        nom: 'Boutique Senteurs',
+        adresse: 'Cocody',
+        delaiRetraitHeures: 24,
+        entrepotWebId: null,
+        entrepots: [{ id: 'principal-1' }],
+      },
+      {
+        id: 'b2',
+        nom: 'Sans stock',
+        adresse: 'Treichville',
+        delaiRetraitHeures: null,
+        entrepotWebId: null,
+        entrepots: [],
+      },
+    ]);
+
+    await expect(service.listBoutiquesRetraitAvecEntrepot()).resolves.toEqual([
+      {
+        boutiqueId: 'b1',
+        nom: 'Boutique Senteurs',
+        adresse: 'Cocody',
+        delaiRetraitHeures: 24,
+        entrepotId: 'principal-1',
+      },
+    ]);
+    await expect(service.listEntrepotsRetraitWeb()).resolves.toEqual([
+      'principal-1',
+    ]);
+  });
 });

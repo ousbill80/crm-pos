@@ -280,26 +280,23 @@ export class ShopCatalogueService {
   ) {
     if (typeProduit !== 'ARTICLE' || !params.retraitActif) return [];
 
-    const boutiques = await this.prisma.boutique.findMany({
-      where: { actif: true, retraitWebActif: true },
-      select: { id: true, nom: true, entrepotWebId: true },
-      orderBy: { nom: 'asc' },
-    });
-
+    const boutiques = await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
     const rows: Array<{
       boutiqueId: string;
       nom: string;
+      adresse: string;
       disponible: number;
     }> = [];
 
     for (const boutique of boutiques) {
-      const entrepotId =
-        boutique.entrepotWebId ?? params.entrepotWebDefautId ?? null;
-      if (!entrepotId) continue;
       rows.push({
-        boutiqueId: boutique.id,
+        boutiqueId: boutique.boutiqueId,
         nom: boutique.nom,
-        disponible: await this.stockService.getDisponible(produitId, entrepotId),
+        adresse: boutique.adresse,
+        disponible: await this.stockService.getDisponible(
+          produitId,
+          boutique.entrepotId,
+        ),
       });
     }
 
@@ -309,16 +306,13 @@ export class ShopCatalogueService {
   async listBoutiquesRetrait() {
     const params = await this.shopBase.assertShopActif();
     if (!params.retraitActif) return [];
-    return this.prisma.boutique.findMany({
-      where: { actif: true, retraitWebActif: true },
-      select: {
-        id: true,
-        nom: true,
-        adresse: true,
-        delaiRetraitHeures: true,
-      },
-      orderBy: { nom: 'asc' },
-    });
+    const boutiques = await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
+    return boutiques.map((b) => ({
+      id: b.boutiqueId,
+      nom: b.nom,
+      adresse: b.adresse,
+      delaiRetraitHeures: b.delaiRetraitHeures,
+    }));
   }
 
   async listZonesLivraison() {

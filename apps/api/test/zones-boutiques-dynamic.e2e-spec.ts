@@ -142,7 +142,13 @@ describe('Ajout boutique/zone à chaud, sans redémarrage (e2e, §6.7)', () => {
         nombreTiroirs: 1,
       })
       .expect(201);
-    const body = response.body as { id: string; nom: string; zoneId: string };
+    const body = response.body as {
+      id: string;
+      nom: string;
+      zoneId: string;
+      retraitWebActif: boolean;
+      entrepotWebId: string | null;
+    };
     expect(body.zoneId).toBe(zoneId);
     boutiqueId = body.id;
 
@@ -150,6 +156,8 @@ describe('Ajout boutique/zone à chaud, sans redémarrage (e2e, §6.7)', () => {
       where: { boutiqueId_code: { boutiqueId, code: 'PRINCIPAL' } },
     });
     expect(entrepot).not.toBeNull();
+    expect(body.retraitWebActif).toBe(true);
+    expect(body.entrepotWebId).toBe(entrepot!.id);
 
     const magasin = await env.prisma.caisse.findFirst({
       where: { boutiqueId, type: 'MAGASIN' },

@@ -8,6 +8,14 @@ type ShopStockParams = Pick<
   'entrepotWebDefautId' | 'retraitActif'
 >;
 
+export type BoutiqueRetraitWeb = {
+  boutiqueId: string;
+  nom: string;
+  adresse: string;
+  delaiRetraitHeures: number | null;
+  entrepotId: string;
+};
+
 /**
  * Stock web commandable : entrepôt hub (livraison / préparation commande).
  * La disponibilité retrait par boutique est exposée séparément (stocksRetrait).
@@ -19,18 +27,46 @@ export class ShopStockWebService {
     private readonly stockService: StockService,
   ) {}
 
-  async listEntrepotsRetraitWeb(): Promise<string[]> {
+  /**
+   * Boutiques click & collect : stock lu sur l’entrepôt web dédié, sinon
+   * le PRINCIPAL du magasin — pas le hub réseau (sinon toutes les boutiques
+   * affichent le même stock et une boutique nouvellement créée reste invisible).
+   */
+  async listBoutiquesRetraitAvecEntrepot(): Promise<BoutiqueRetraitWeb[]> {
     const boutiques = await this.prisma.boutique.findMany({
-      where: {
-        actif: true,
-        retraitWebActif: true,
-        entrepotWebId: { not: null },
+      where: { actif: true, retraitWebActif: true },
+      select: {
+        id: true,
+        nom: true,
+        adresse: true,
+        delaiRetraitHeures: true,
+        entrepotWebId: true,
+        entrepots: {
+          where: { code: 'PRINCIPAL', actif: true },
+          select: { id: true },
+          take: 1,
+        },
       },
-      select: { entrepotWebId: true },
+      orderBy: { nom: 'asc' },
     });
     return boutiques
-      .map((b) => b.entrepotWebId)
-      .filter((id): id is string => Boolean(id));
+      .map((b) => {
+        const entrepotId = b.entrepotWebId ?? b.entrepots[0]?.id ?? null;
+        if (!entrepotId) return null;
+        return {
+          boutiqueId: b.id,
+          nom: b.nom,
+          adresse: b.adresse,
+          delaiRetraitHeures: b.delaiRetraitHeures,
+          entrepotId,
+        };
+      })
+      .filter((b): b is BoutiqueRetraitWeb => b != null);
+  }
+
+  async listEntrepotsRetraitWeb(): Promise<string[]> {
+    const rows = await this.listBoutiquesRetraitAvecEntrepot();
+    return [...new Set(rows.map((b) => b.entrepotId))];
   }
 
   async getStockWebDisponible(

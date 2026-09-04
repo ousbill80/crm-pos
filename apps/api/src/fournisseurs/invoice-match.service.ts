@@ -356,6 +356,124 @@ export class InvoiceMatchService {
     }
   }
 
+  /**
+   * Rapprochement 3 voies d’un brouillon créé depuis des réceptions
+   * (parcours simple Achats). Compare BC · réception · facture.
+   */
+  async rapprocherDepuisReceptions(id: string, user: AuthenticatedUser) {
+    const invoice = await this.prisma.factureFournisseur.findUnique({
+      where: { id },
+      include: {
+        lignes: {
+          include: {
+            reception: {
+              include: {
+                commande: { select: { fournisseurId: true, devise: true } },
+                ligneCommande: {
+                  include: {
+                    commande: { select: { fournisseurId: true, devise: true } },
+                    tauxFiscalAchat: { select: { code: true } },
+                  },
+                },
+              },
+            },
+            ligneCommande: {
+              include: {
+                commande: { select: { fournisseurId: true, devise: true } },
+                tauxFiscalAchat: { select: { code: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!invoice) {
+      throw new NotFoundException('Facture fournisseur introuvable.');
+    }
+    if (invoice.statut !== 'BROUILLON') {
+      throw new BadRequestException(
+        'Seule une facture en brouillon peut être rapprochée.',
+      );
+    }
+    if (invoice.statutRapprochement !== 'A_RAPPROCHER') {
+      throw new BadRequestException(
+        `Rapprochement déjà effectué (${invoice.statutRapprochement}).`,
+      );
+    }
+    if (invoice.lignes.length === 0) {
+      throw new BadRequestException(
+        'Impossible de rapprocher une facture sans ligne.',
+      );
+    }
+
+    const discrepancies: InvoiceDiscrepancy[] = [];
+    for (const line of invoice.lignes) {
+      const orderLine =
+        line.ligneCommande ?? line.reception?.ligneCommande ?? null;
+      const commande =
+        orderLine?.commande ?? line.reception?.commande ?? null;
+      if (!orderLine || !commande) {
+        continue;
+      }
+      discrepancies.push(
+        ...this.calculator.match([
+          {
+            lineId: line.id,
+            orderSupplierId: commande.fournisseurId,
+            invoiceSupplierId: invoice.fournisseurId,
+            orderCurrency: commande.devise,
+            invoiceCurrency: invoice.devise ?? 'XOF',
+            orderedQuantity: orderLine.quantite,
+            acceptedQuantity: line.reception?.quantite ?? line.quantite,
+            invoicedQuantity: line.quantite,
+            orderUnitPrice: orderLine.prixUnitaire,
+            invoiceUnitPrice: line.prixUnitaire,
+            orderTaxCode:
+              orderLine.codeTaxeSnapshot ??
+              orderLine.tauxFiscalAchat?.code ??
+              null,
+            invoiceTaxCode: line.codeTaxeSnapshot ?? null,
+            orderTaxRate: orderLine.tauxTaxeSnapshot,
+            invoiceTaxRate: line.tauxTaxeSnapshot,
+          },
+        ]),
+      );
+    }
+
+    const statutRapprochement = discrepancies.length
+      ? 'LITIGE'
+      : 'RAPPROCHEE';
+    await this.prisma.$transaction(async (tx) => {
+      if (discrepancies.length) {
+        await tx.litigeRapprochementFacture.createMany({
+          data: discrepancies.map((item) => ({
+            factureId: invoice.id,
+            ligneId: item.lineId,
+            dimension: item.dimension,
+            attendu: item.attendu,
+            constate: item.constate,
+            bloquant: true,
+          })),
+        });
+      }
+      await tx.factureFournisseur.update({
+        where: { id: invoice.id },
+        data: {
+          statutRapprochement,
+          totalHt: invoice.totalHt ?? invoice.montant,
+          totalTtc: invoice.totalTtc ?? invoice.montant,
+          netAPayer: invoice.netAPayer ?? invoice.montant,
+        },
+      });
+      await this.auditTx(tx, user.userId, 'FACTURE_P2P_RAPPROCHEE', invoice.id, {
+        parcours: 'receptions',
+        discrepancies: discrepancies.map((item) => item.dimension),
+        statutRapprochement,
+      });
+    });
+    return statutRapprochement;
+  }
+
   async post(id: string, dto: InvoiceOperationDto, user: AuthenticatedUser) {
     const invoice = await this.load(id);
     if (invoice.operationComptabilisationId === dto.clientOperationId) {

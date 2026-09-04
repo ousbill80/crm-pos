@@ -21,6 +21,7 @@ export interface PrixShopResolu {
   visible: boolean;
   prixUnitaireHt: number;
   tauxTva: number;
+  montantTva: number;
   prixUnitaireTtc: number;
   prixAffiche: number;
   modeAffichage: ModeAffichagePrixShopType;
@@ -53,6 +54,7 @@ export function resoudrePrixProduitShop(
   const tauxTva = produit.tauxTva ?? params.tauxTvaDefaut;
   const prixUnitaireHt = round2(baseHt);
   const prixUnitaireTtc = calculerTtc(prixUnitaireHt, tauxTva);
+  const montantTva = round2(prixUnitaireTtc - prixUnitaireHt);
   const prixAffiche =
     params.modeAffichagePrix === ModeAffichagePrixShop.TTC
       ? prixUnitaireTtc
@@ -62,6 +64,7 @@ export function resoudrePrixProduitShop(
     visible: true,
     prixUnitaireHt,
     tauxTva,
+    montantTva,
     prixUnitaireTtc,
     prixAffiche,
     modeAffichage: params.modeAffichagePrix,

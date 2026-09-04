@@ -90,6 +90,16 @@ export class FacturesFournisseurController {
     return this.factures.detail(id);
   }
 
+  @Post(':id/rapprocher')
+  @Roles(...ROLES_RAPPROCHEMENT_FACTURE_P2P)
+  async rapprocher(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.invoiceMatch.rapprocherDepuisReceptions(id, user);
+    return this.factures.detail(id);
+  }
+
   @Post(':id/comptabiliser')
   @Roles(...ROLES_COMPTABILISATION_FOURNISSEUR)
   async comptabiliser(

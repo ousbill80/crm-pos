@@ -37,8 +37,18 @@ async function provisionnerPoste(
   tx: Tx,
   boutique: { id: string; nom: string },
   nombreTiroirs: number,
-): Promise<{ entrepot: boolean; magasin: boolean; tiroirs: string[] }> {
-  const created = { entrepot: false, magasin: false, tiroirs: [] as string[] };
+): Promise<{
+  entrepot: boolean;
+  magasin: boolean;
+  tiroirs: string[];
+  entrepotPrincipalId: string | null;
+}> {
+  const created = {
+    entrepot: false,
+    magasin: false,
+    tiroirs: [] as string[],
+    entrepotPrincipalId: null as string | null,
+  };
   const n = Math.min(TIROIRS_MAX, Math.max(TIROIRS_DEFAUT, nombreTiroirs));
 
   const principal = await tx.entrepot.findUnique({
@@ -47,7 +57,7 @@ async function provisionnerPoste(
     },
   });
   if (!principal) {
-    await tx.entrepot.create({
+    const nouvelEntrepot = await tx.entrepot.create({
       data: {
         nom: `Principal — ${boutique.nom}`,
         code: 'PRINCIPAL',
@@ -56,6 +66,9 @@ async function provisionnerPoste(
       },
     });
     created.entrepot = true;
+    created.entrepotPrincipalId = nouvelEntrepot.id;
+  } else {
+    created.entrepotPrincipalId = principal.id;
   }
 
   const magasin = await tx.caisse.findFirst({
@@ -119,8 +132,16 @@ export class BoutiquesService {
       const created = await tx.boutique.create({
         data: { nom: dto.nom, adresse: dto.adresse, zoneId: dto.zoneId },
       });
-      await provisionnerPoste(tx, created, nombreTiroirs);
-      return created;
+      const poste = await provisionnerPoste(tx, created, nombreTiroirs);
+      // §6.7 : une boutique créée est immédiatement sélectionnable au
+      // click & collect, sans reparamétrage (entrepôt PRINCIPAL = stock web).
+      return tx.boutique.update({
+        where: { id: created.id },
+        data: {
+          retraitWebActif: true,
+          entrepotWebId: poste.entrepotPrincipalId,
+        },
+      });
     });
 
     await this.audit.record({

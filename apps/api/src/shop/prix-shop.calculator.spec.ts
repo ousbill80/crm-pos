@@ -73,6 +73,8 @@ describe('prix-shop.calculator', () => {
     );
     expect(prix?.prixUnitaireHt).toBe(1200);
     expect(prix?.prixAffiche).toBe(1200);
+    expect(prix?.tauxTva).toBe(18);
+    expect(prix?.montantTva).toBe(calculerTtc(1200, 18) - 1200);
   });
 
   it('fallback prix magasin si prixWeb absent', () => {
@@ -116,6 +118,7 @@ describe('prix-shop.calculator', () => {
       paramsTtc,
     );
     expect(prix?.prixAffiche).toBe(calculerTtc(1000, 18));
+    expect(prix?.montantTva).toBe(calculerTtc(1000, 18) - 1000);
   });
 
   it('calcule une ligne commande avec TVA', () => {

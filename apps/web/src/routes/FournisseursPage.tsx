@@ -151,6 +151,11 @@ function FicheFournisseurFields({
           value={form.email}
           onChange={(e) => set('email', e.target.value)}
         />
+        <p className="form-hint-muted">
+          Coordonnée de contact uniquement — aucun e-mail n’est envoyé à la
+          création du fournisseur. Le bon de commande se télécharge en PDF
+          depuis la fiche commande.
+        </p>
       </div>
       <div>
         <label htmlFor="fourn-adresse">Adresse</label>

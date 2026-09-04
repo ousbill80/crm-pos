@@ -420,6 +420,24 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
       true,
     );
     expect(lignesFacture.every((l) => Boolean(l.dateReception))).toBe(true);
+    expect(
+      (ficheFacture.body as { statutRapprochement?: string }).statutRapprochement,
+    ).toBe('A_RAPPROCHER');
+
+    await request(app.getHttpServer())
+      .post(`/achats/factures/${factureId}/rapprocher`)
+      .set(auth(tokens.respsi))
+      .expect(403);
+
+    const rapprochee = await request(app.getHttpServer())
+      .post(`/achats/factures/${factureId}/rapprocher`)
+      .set(auth(tokens.daf))
+      .expect(201);
+    // Écart prix 950 vs 900 sur la 2ᵉ réception → litige 3 voies, pas de
+    // comptabilisation silencieuse.
+    expect(
+      (rapprochee.body as { statutRapprochement: string }).statutRapprochement,
+    ).toBe('LITIGE');
 
     await request(app.getHttpServer())
       .post('/achats/factures')

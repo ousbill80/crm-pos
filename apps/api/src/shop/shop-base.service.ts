@@ -92,6 +92,8 @@ export function mapProduitCatalogue(
     prixAffiche: prix.prixAffiche,
     prixUnitaireHt: prix.prixUnitaireHt,
     prixUnitaireTtc: prix.prixUnitaireTtc,
+    tauxTva: prix.tauxTva,
+    montantTva: prix.montantTva,
     modeAffichage: prix.modeAffichage,
     stockDisponible: stockDisponible ?? null,
     typeProduit: produit.typeProduit ?? 'ARTICLE',

@@ -24,6 +24,11 @@ import {
   libelleStock,
   quantiteMaxStock,
 } from '../lib/stock';
+import { formatTauxTva, montantTvaUnitaire } from '../lib/prix';
+import {
+  readBoutiqueRetraitId,
+  writeBoutiqueRetraitId,
+} from '../lib/boutiqueRetrait';
 
 type RecoItem = {
   id: string;
@@ -48,6 +53,9 @@ export default function ProduitPage() {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [boutiqueRetraitId, setBoutiqueRetraitId] = useState(
+    readBoutiqueRetraitId,
+  );
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['produit', slug],
@@ -136,18 +144,18 @@ export default function ProduitPage() {
   const peutCommander = maxQty > 0;
   const stocksRetrait = data?.stocksRetrait ?? [];
   const retraitAvecStock = stocksRetrait.filter((b) => b.disponible > 0);
-  const stockHintRetrait =
-    data &&
-    data.stockDisponible != null &&
-    data.stockDisponible > 0 &&
-    stocksRetrait.length > 0 &&
-    retraitAvecStock.length > 0
-      ? `Retrait aussi disponible : ${retraitAvecStock.map((b) => `${b.nom} (${b.disponible})`).join(' · ')}`
-      : data &&
-          stocksRetrait.length > 0 &&
-          retraitAvecStock.length === 0
-        ? `Retrait indisponible dans toutes les boutiques`
-        : null;
+  const boutiqueRetraitChoisie =
+    stocksRetrait.find((b) => b.boutiqueId === boutiqueRetraitId) ??
+    retraitAvecStock[0] ??
+    stocksRetrait[0] ??
+    null;
+
+  useEffect(() => {
+    if (!boutiqueRetraitChoisie) return;
+    if (boutiqueRetraitChoisie.boutiqueId === boutiqueRetraitId) return;
+    setBoutiqueRetraitId(boutiqueRetraitChoisie.boutiqueId);
+    writeBoutiqueRetraitId(boutiqueRetraitChoisie.boutiqueId);
+  }, [boutiqueRetraitChoisie, boutiqueRetraitId]);
 
   useEffect(() => {
     if (maxQty > 0 && qty > maxQty) setQty(maxQty);
@@ -322,6 +330,33 @@ export default function ProduitPage() {
               <strong>{formatFcfa(data.prixAffiche)}</strong>
               <span>{data.modeAffichage === 'TTC' ? 'TTC' : 'HT'}</span>
             </div>
+            {(() => {
+              const ht = data.prixUnitaireHt;
+              const ttc = data.prixUnitaireTtc;
+              const tva = montantTvaUnitaire({
+                prixUnitaireHt: ht,
+                prixUnitaireTtc: ttc,
+                montantTva: data.montantTva,
+              });
+              const taux = formatTauxTva(data.tauxTva);
+              if (ht == null || ttc == null || tva <= 0) return null;
+              return (
+                <dl className="pdp-price-tax" aria-label="Détail TVA">
+                  <div>
+                    <dt>Prix HT</dt>
+                    <dd>{formatFcfa(ht)}</dd>
+                  </div>
+                  <div>
+                    <dt>TVA{taux ? ` ${taux}` : ''}</dt>
+                    <dd>{formatFcfa(tva)}</dd>
+                  </div>
+                  <div>
+                    <dt>Prix TTC</dt>
+                    <dd>{formatFcfa(ttc)}</dd>
+                  </div>
+                </dl>
+              );
+            })()}
 
             <p className={`pdp-temu-stock${peutCommander ? '' : ' is-out'}`}>
               {libelleStock(data.typeProduit, data.stockDisponible)}
@@ -329,8 +364,44 @@ export default function ProduitPage() {
                 ? ` · ${qtyInCart} déjà au panier (max ${maxQty + qtyInCart})`
                 : null}
             </p>
-            {stockHintRetrait ? (
-              <p className="pdp-temu-stock-hint">{stockHintRetrait}</p>
+            {stocksRetrait.length > 0 ? (
+              <div className="pdp-retrait">
+                <label htmlFor="pdp-boutique-retrait">
+                  Boutique de retrait
+                </label>
+                <select
+                  id="pdp-boutique-retrait"
+                  value={boutiqueRetraitChoisie?.boutiqueId ?? ''}
+                  onChange={(e) => {
+                    setBoutiqueRetraitId(e.target.value);
+                    writeBoutiqueRetraitId(e.target.value);
+                  }}
+                >
+                  {stocksRetrait.map((b) => (
+                    <option key={b.boutiqueId} value={b.boutiqueId}>
+                      {b.nom}
+                      {b.disponible > 0
+                        ? ` — ${b.disponible} en stock`
+                        : ' — rupture'}
+                    </option>
+                  ))}
+                </select>
+                {boutiqueRetraitChoisie ? (
+                  <p
+                    className={`pdp-temu-stock-hint${
+                      boutiqueRetraitChoisie.disponible > 0 ? '' : ' is-out'
+                    }`}
+                  >
+                    {boutiqueRetraitChoisie.disponible > 0
+                      ? `Retrait disponible à ${boutiqueRetraitChoisie.nom}${
+                          boutiqueRetraitChoisie.adresse
+                            ? ` — ${boutiqueRetraitChoisie.adresse}`
+                            : ''
+                        }`
+                      : `Rupture à ${boutiqueRetraitChoisie.nom}. Choisissez une autre boutique ou la livraison.`}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             {axes.length > 0 && (

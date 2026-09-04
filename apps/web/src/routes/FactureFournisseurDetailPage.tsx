@@ -44,6 +44,7 @@ export function FactureFournisseurDetailPage() {
   const queryClient = useQueryClient();
   const peutLire = hasP2pRole(user?.role, 'lectureAchats');
   const peutFacturer = hasP2pRole(user?.role, 'comptabiliteEcriture');
+  const peutRapprocher = hasP2pRole(user?.role, 'rapprochement');
   const peutPayer =
     hasP2pRole(user?.role, 'comptabiliteEcriture') ||
     hasP2pRole(user?.role, 'paiementApprobation') ||
@@ -81,6 +82,17 @@ export function FactureFournisseurDetailPage() {
     navigate('/finance/comptabilite');
   }
 
+  const rapprocher = useMutation({
+    mutationFn: () =>
+      apiFetch<FactureFournisseurDto>(`/achats/factures/${factureId}/rapprocher`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      setFormErr(null);
+      invalider();
+    },
+    onError: (e) => setFormErr(messageDepuisApi(e, 'Rapprochement refusé.')),
+  });
   const comptabiliser = useMutation({
     mutationFn: (challengeId: string) =>
       apiFetch<FactureFournisseurDto>(`/achats/factures/${factureId}/comptabiliser`, {
@@ -143,6 +155,10 @@ export function FactureFournisseurDetailPage() {
   const estP2p = Boolean(f.clientOperationId);
   const rapprochementOk =
     f.statutRapprochement === 'RAPPROCHEE' || f.statutRapprochement === 'EXCEPTEE';
+  const aRapprocher = f.statutRapprochement === 'A_RAPPROCHER';
+  const enLitige = f.statutRapprochement === 'LITIGE';
+  const peutLancerRapprochement =
+    peutRapprocher && f.statut === 'BROUILLON' && aRapprocher;
   const peutComptabiliser =
     peutFacturer && f.statut === 'BROUILLON' && rapprochementOk;
   const encours =
@@ -203,6 +219,19 @@ export function FactureFournisseurDetailPage() {
           <Link to={`/fournisseurs/${f.fournisseurId}`} className="stock-row-link">
             Fiche fournisseur
           </Link>
+          {peutLancerRapprochement && (
+            <button
+              type="button"
+              className="btn-primary"
+              data-testid="facture-rapprocher"
+              disabled={rapprocher.isPending}
+              onClick={() => rapprocher.mutate()}
+            >
+              {rapprocher.isPending
+                ? 'Rapprochement…'
+                : 'Lancer le rapprochement 3 voies'}
+            </button>
+          )}
           {peutComptabiliser && (
             <>
               <button type="button" className="btn-primary" onClick={() => setModalComptabilisation(true)}>
@@ -281,6 +310,47 @@ export function FactureFournisseurDetailPage() {
       </header>
 
       {formErr && <p role="alert">{formErr}</p>}
+
+      {f.statut === 'BROUILLON' && (
+        <aside className="facture-next-steps" aria-label="Prochaines étapes">
+          <h2>Pour valider et payer cette facture</h2>
+          <ol>
+            <li className={aRapprocher ? 'is-current' : 'is-done'}>
+              <strong>1. Rapprochement 3 voies</strong>
+              {aRapprocher ? (
+                <span>
+                  Comparer bon de commande, réception et facture.
+                  {peutLancerRapprochement
+                    ? ' Cliquez sur « Lancer le rapprochement 3 voies ».'
+                    : ' Connectez-vous avec un compte RAF ou DAF (pas Responsable SI).'}
+                </span>
+              ) : enLitige ? (
+                <span>
+                  Écart détecté. La DAF ou la Direction Générale doit accorder
+                  une exception avant comptabilisation.
+                </span>
+              ) : (
+                <span>Rapprochement conforme.</span>
+              )}
+            </li>
+            <li className={rapprochementOk ? 'is-current' : undefined}>
+              <strong>2. Comptabiliser (RAF / DAF)</strong>
+              <span>
+                Inscription au grand livre SYSCOHADA — bouton en haut de page
+                une fois le rapprochement fait. Ré-authentification obligatoire.
+              </span>
+            </li>
+            <li>
+              <strong>3. Règlement (DAF / Caissier Central)</strong>
+              <span>
+                Après comptabilisation, préparez le paiement depuis{' '}
+                <Link to="/finance/comptabilite">Comptabilité</Link>
+                {' '}— jamais depuis une caisse boutique.
+              </span>
+            </li>
+          </ol>
+        </aside>
+      )}
 
       <nav className="client-workspace-tabs" aria-label="Sections facture fournisseur">
         {tabs.map((tab) => (
@@ -464,13 +534,40 @@ export function FactureFournisseurDetailPage() {
                 </button>
               </p>
             )}
+            {peutLancerRapprochement && (
+              <p className="table-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={rapprocher.isPending}
+                  onClick={() => rapprocher.mutate()}
+                >
+                  {rapprocher.isPending
+                    ? 'Rapprochement…'
+                    : 'Lancer le rapprochement 3 voies'}
+                </button>
+              </p>
+            )}
+            {peutComptabiliser && (
+              <p className="table-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setModalComptabilisation(true)}
+                >
+                  Comptabiliser (SYSCOHADA)
+                </button>
+              </p>
+            )}
             {f.paiements.length === 0 ? (
               <p className="lead">
                 Aucun règlement.{' '}
                 {encours
                   ? 'DAF / Caissier Central enregistrent le paiement sur le grand livre Achats.'
                   : f.statut === 'BROUILLON'
-                    ? 'Comptabiliser la facture avant de payer.'
+                    ? aRapprocher
+                      ? 'Lancez d’abord le rapprochement 3 voies (RAF / DAF), puis comptabilisez, ensuite seulement le règlement.'
+                      : 'Comptabiliser la facture (RAF / DAF, onglet Vue d’ensemble) avant de payer.'
                     : null}
               </p>
             ) : (
