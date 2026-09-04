@@ -34,6 +34,8 @@ type CartCtx = {
   ) => Promise<void>;
   removeProduit: (produitId: string) => Promise<void>;
   clear: () => Promise<void>;
+  /** Vide le cache dès qu’une commande est passée (le cookie panier est déjà renouvelé). */
+  viderApresCommande: () => void;
 };
 
 const CartContext = createContext<CartCtx | null>(null);
@@ -52,7 +54,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const { data: panier, isLoading } = useQuery({
     queryKey: ['panier'],
-    queryFn: () => shopFetch<PanierDto>('/shop/panier'),
+    queryFn: async () => {
+      try {
+        return await shopFetch<PanierDto>('/shop/panier');
+      } catch {
+        return shopFetch<PanierDto>('/shop/panier', { method: 'POST' });
+      }
+    },
     retry: false,
   });
 
@@ -227,6 +235,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     await mutateLignes.mutateAsync([]);
   }, [ensurePanier, mutateLignes]);
 
+  const viderApresCommande = useCallback(() => {
+    setDrawerOpen(false);
+    const prev = qc.getQueryData<PanierDto>(['panier']);
+    qc.setQueryData<PanierDto>(['panier'], {
+      id: prev?.id ?? '',
+      lignes: [],
+      montantArticlesHt: 0,
+      montantTva: 0,
+      montantArticlesTtc: 0,
+      montantTotal: 0,
+      modeAffichage: prev?.modeAffichage ?? 'TTC',
+      ttlMinutes: prev?.ttlMinutes ?? 30,
+      articleCount: 0,
+    });
+    void qc.invalidateQueries({ queryKey: ['panier'] });
+  }, [qc]);
+
   const count = useMemo(
     () =>
       panier?.articleCount ??
@@ -250,6 +275,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addProduit,
       removeProduit,
       clear,
+      viderApresCommande,
     }),
     [
       panier,
@@ -263,6 +289,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addProduit,
       removeProduit,
       clear,
+      viderApresCommande,
     ],
   );
 

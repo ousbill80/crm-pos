@@ -138,7 +138,8 @@ function clearPendingPay() {
 
 export default function CheckoutPage() {
   const nav = useNavigate();
-  const { panier, isLoading: cartLoading, ensurePanier } = useCart();
+  const { panier, isLoading: cartLoading, ensurePanier, viderApresCommande } =
+    useCart();
   const session = readShopSession();
   const isLoggedIn = Boolean(session.token);
 
@@ -409,6 +410,7 @@ export default function CheckoutPage() {
       return commande;
     },
     onSuccess: (res) => {
+      viderApresCommande();
       if ('authorizationUrl' in res && res.authorizationUrl) {
         window.location.href = res.authorizationUrl;
         return;

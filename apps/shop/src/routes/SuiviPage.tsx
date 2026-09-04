@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatFcfa, shopFetch } from '../lib/api';
 import { ProductMedia } from '../components/ProductCard';
 import {
@@ -52,6 +53,8 @@ const IN_PROGRESS = new Set([
 
 export default function SuiviPage() {
   const { token } = useParams();
+  const qc = useQueryClient();
+  const panierSynced = useRef(false);
   const { data, isLoading, isError } = useQuery({
     queryKey: ['suivi', token],
     queryFn: () => shopFetch<SuiviPayload>(`/shop/suivi/${token}`),
@@ -61,6 +64,12 @@ export default function SuiviPage() {
       return s && IN_PROGRESS.has(s) ? 4000 : false;
     },
   });
+
+  useEffect(() => {
+    if (panierSynced.current) return;
+    panierSynced.current = true;
+    void qc.invalidateQueries({ queryKey: ['panier'] });
+  }, [qc]);
 
   const payer = useMutation({
     mutationFn: async () => {

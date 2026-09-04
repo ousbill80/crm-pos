@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatFcfa, shopFetch } from '../lib/api';
 import { labelStatut } from '../lib/commandeLabels';
+import { useCart } from '../lib/cart';
 
 type StatutPayload = {
   id: string;
@@ -33,6 +34,11 @@ export default function ConfirmationPage() {
   const lookup = commandeId || ref;
   const sandboxTried = useRef(false);
   const qc = useQueryClient();
+  const { viderApresCommande } = useCart();
+
+  useEffect(() => {
+    viderApresCommande();
+  }, [viderApresCommande]);
 
   useEffect(() => {
     if (!sandbox || !lookup || sandboxTried.current) return;
