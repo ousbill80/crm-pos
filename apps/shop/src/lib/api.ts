@@ -79,6 +79,7 @@ export interface CatalogueItem {
   designation: string;
   reference?: string | null;
   prixAffiche: number;
+  prixUnitaireTtc?: number;
   categorie: string | null;
   imageUrl?: string | null;
   stockDisponible?: number | null;

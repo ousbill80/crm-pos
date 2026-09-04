@@ -1,3 +1,14 @@
+/** Prix vitrine : TTC sans mention fiscale. La TVA s’affiche à la commande. */
+export function prixVitrine(p: {
+  prixUnitaireTtc?: number | null;
+  prixAffiche?: number | null;
+}): number {
+  if (p.prixUnitaireTtc != null && Number.isFinite(p.prixUnitaireTtc)) {
+    return p.prixUnitaireTtc;
+  }
+  return p.prixAffiche ?? 0;
+}
+
 export function montantTvaUnitaire(opts: {
   prixUnitaireHt?: number | null;
   prixUnitaireTtc?: number | null;

@@ -110,7 +110,55 @@ const COLOR_HEX: Record<string, string> = {
   yellow: '#e0b84a',
   carbone: '#2a2d33',
   chrome: '#d8dde6',
+  beige: '#d8c4a4',
+  ivoire: '#efe6d4',
+  creme: '#efe6d4',
+  nude: '#d4b59a',
+  neutre: '#cbb8a0',
+  neutres: '#cbb8a0',
+  sable: '#c8b089',
+  lin: '#d7cbb6',
+  bois: '#8a6234',
+  chene: '#8a6234',
+  rose: '#e8a0b0',
+  pink: '#e8a0b0',
+  vert: '#3d8b5c',
+  green: '#3d8b5c',
+  orange: '#e67e22',
+  violet: '#7b4db0',
+  purple: '#7b4db0',
+  marron: '#6b3e26',
+  brun: '#6b3e26',
+  brown: '#6b3e26',
+  transparent: '#e8eef4',
 };
+
+function foldColorKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function hashSwatch(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return `hsl(${h % 360} 32% 62%)`;
+}
+
+/** Pastille couleur pour le sélecteur vitrine (jamais null). */
+export function colorSwatch(value: string): string {
+  const key = foldColorKey(value);
+  if (COLOR_HEX[key]) return COLOR_HEX[key];
+  const sorted = Object.entries(COLOR_HEX).sort((a, b) => b[0].length - a[0].length);
+  for (const [name, hex] of sorted) {
+    if (key.includes(name)) return hex;
+  }
+  return hashSwatch(key);
+}
 
 export function categoryFamily(categorie: string | null | undefined): string {
   const c = (categorie ?? '').toLowerCase();
@@ -159,11 +207,6 @@ export function enrichAttributsFromDesignation(
     }
   }
   return out;
-}
-
-export function colorSwatch(value: string): string | null {
-  const key = value.trim().toLowerCase();
-  return COLOR_HEX[key] ?? null;
 }
 
 export function buildVariantAxes(

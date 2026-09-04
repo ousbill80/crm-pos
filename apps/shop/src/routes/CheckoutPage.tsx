@@ -61,13 +61,11 @@ function OrderSummary({
   panier,
   mode,
   fraisLivraison,
-  sousTotal,
   total,
 }: {
   panier: NonNullable<ReturnType<typeof useCart>['panier']>;
   mode: Mode;
   fraisLivraison: number;
-  sousTotal: number;
   total: number;
 }) {
   return (
@@ -90,9 +88,15 @@ function OrderSummary({
       </ul>
       <dl className="checkout-totals">
         <div>
-          <dt>Sous-total</dt>
-          <dd>{formatFcfa(sousTotal)}</dd>
+          <dt>Articles HT</dt>
+          <dd>{formatFcfa(panier.montantArticlesHt)}</dd>
         </div>
+        {panier.montantTva > 0 ? (
+          <div>
+            <dt>TVA</dt>
+            <dd>{formatFcfa(panier.montantTva)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Livraison</dt>
           <dd>{mode === 'RETRAIT_BOUTIQUE' ? 'Gratuit' : formatFcfa(fraisLivraison)}</dd>
@@ -480,7 +484,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const summaryProps = { panier, mode, fraisLivraison, sousTotal, total };
+  const summaryProps = { panier, mode, fraisLivraison, total };
   const selectedBoutique = boutiquesRetrait.find((b) => b.id === boutiqueId);
 
   return (

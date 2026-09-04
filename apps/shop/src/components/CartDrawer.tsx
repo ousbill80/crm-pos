@@ -11,10 +11,10 @@ import { getShopSessionId } from '../lib/aarrr';
 import { useCart } from '../lib/cart';
 import { estCommandable } from '../lib/stock';
 import { ProductMedia } from './ProductCard';
+import { prixVitrine } from '../lib/prix';
 
-function ligneMontant(l: PanierLigne, mode?: string) {
-  const unit = mode === 'HT' ? l.prixUnitaireHt : l.prixUnitaireTtc;
-  return unit * l.quantite;
+function ligneMontant(l: PanierLigne) {
+  return l.prixUnitaireTtc * l.quantite;
 }
 
 function ShippingBar({ sousTotal }: { sousTotal: number }) {
@@ -58,7 +58,6 @@ function ShippingBar({ sousTotal }: { sousTotal: number }) {
 
 function CartLine({
   l,
-  mode,
   highlight,
   busy,
   onQty,
@@ -66,7 +65,6 @@ function CartLine({
   onNavigate,
 }: {
   l: PanierLigne;
-  mode?: string;
   highlight?: boolean;
   busy?: boolean;
   onQty: (q: number) => void;
@@ -80,7 +78,7 @@ function CartLine({
       : stock === 0
         ? 'Rupture de stock'
         : null;
-  const unit = mode === 'HT' ? l.prixUnitaireHt : l.prixUnitaireTtc;
+  const unit = l.prixUnitaireTtc;
   const media = (
     <div className="cart-line-media">
       <ProductMedia designation={l.designation} imageUrl={l.imageUrl} />
@@ -111,7 +109,7 @@ function CartLine({
         )}
         {l.reference && <span className="cart-line-ref">{l.reference}</span>}
         <div className="cart-line-price-row">
-          <strong>{formatFcfa(ligneMontant(l, mode))}</strong>
+          <strong>{formatFcfa(ligneMontant(l))}</strong>
           <span className="muted">{formatFcfa(unit)} / u</span>
         </div>
         {low && <span className="cart-line-stock">{low}</span>}
@@ -166,6 +164,7 @@ function CartRecos({
           slug: string | null;
           designation: string;
           prixAffiche: number;
+          prixUnitaireTtc?: number;
           imageUrl?: string | null;
           badge?: string;
           stockDisponible?: number | null;
@@ -224,7 +223,7 @@ function CartRecos({
             >
               {p.designation}
             </Link>
-            <strong>{formatFcfa(p.prixAffiche)}</strong>
+            <strong>{formatFcfa(prixVitrine(p))}</strong>
             <button
               type="button"
               className="cart-reco-add"
@@ -271,10 +270,7 @@ export function CartDrawer() {
   }, [drawerOpen, closeDrawer]);
 
   const lignes = panier?.lignes ?? [];
-  const sousTotal =
-    panier?.modeAffichage === 'HT'
-      ? (panier?.montantArticlesHt ?? 0)
-      : (panier?.montantArticlesTtc ?? panier?.montantTotal ?? 0);
+  const sousTotal = panier?.montantArticlesTtc ?? panier?.montantTotal ?? 0;
   const excludeIds = useMemo(
     () => new Set(lignes.map((l) => l.produitId)),
     [lignes],
@@ -347,7 +343,6 @@ export function CartDrawer() {
               <CartLine
                 key={l.produitId}
                 l={l}
-                mode={panier?.modeAffichage}
                 highlight={l.produitId === lastAddedId}
                 busy={isMutating}
                 onQty={(q) => void setQuantite(l.produitId, q)}

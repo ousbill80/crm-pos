@@ -25,10 +25,7 @@ export default function PanierPage() {
   } = useCart();
 
   const lignes = panier?.lignes ?? [];
-  const sousTotal =
-    panier?.modeAffichage === 'HT'
-      ? (panier?.montantArticlesHt ?? 0)
-      : (panier?.montantArticlesTtc ?? panier?.montantTotal ?? 0);
+  const sousTotal = panier?.montantArticlesTtc ?? panier?.montantTotal ?? 0;
   const seuil = PANIER_SEUIL_AVANTAGE;
   const pct = Math.min(100, Math.round((sousTotal / seuil) * 100));
   const restant = Math.max(0, seuil - sousTotal);
@@ -149,10 +146,7 @@ export default function PanierPage() {
       <div className="panier-page-grid">
         <div className="panier-page-lines">
           {lignes.map((l) => {
-            const unit =
-              panier?.modeAffichage === 'HT'
-                ? l.prixUnitaireHt
-                : l.prixUnitaireTtc;
+            const unit = l.prixUnitaireTtc;
             const line = unit * l.quantite;
             return (
               <article

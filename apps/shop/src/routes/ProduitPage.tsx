@@ -24,7 +24,7 @@ import {
   libelleStock,
   quantiteMaxStock,
 } from '../lib/stock';
-import { formatTauxTva, montantTvaUnitaire } from '../lib/prix';
+import { prixVitrine } from '../lib/prix';
 import {
   readBoutiqueRetraitId,
   writeBoutiqueRetraitId,
@@ -71,7 +71,7 @@ export default function ProduitPage() {
             description: data.description,
             categorie: data.categorie,
             slug: data.slug,
-            prixAffiche: data.prixAffiche,
+            prixAffiche: prixVitrine(data),
             imageUrl: data.imageUrl,
             stockDisponible: data.stockDisponible,
           })
@@ -327,36 +327,8 @@ export default function ProduitPage() {
             )}
 
             <div className="pdp-temu-price">
-              <strong>{formatFcfa(data.prixAffiche)}</strong>
-              <span>{data.modeAffichage === 'TTC' ? 'TTC' : 'HT'}</span>
+              <strong>{formatFcfa(prixVitrine(data))}</strong>
             </div>
-            {(() => {
-              const ht = data.prixUnitaireHt;
-              const ttc = data.prixUnitaireTtc;
-              const tva = montantTvaUnitaire({
-                prixUnitaireHt: ht,
-                prixUnitaireTtc: ttc,
-                montantTva: data.montantTva,
-              });
-              const taux = formatTauxTva(data.tauxTva);
-              if (ht == null || ttc == null || tva <= 0) return null;
-              return (
-                <dl className="pdp-price-tax" aria-label="Détail TVA">
-                  <div>
-                    <dt>Prix HT</dt>
-                    <dd>{formatFcfa(ht)}</dd>
-                  </div>
-                  <div>
-                    <dt>TVA{taux ? ` ${taux}` : ''}</dt>
-                    <dd>{formatFcfa(tva)}</dd>
-                  </div>
-                  <div>
-                    <dt>Prix TTC</dt>
-                    <dd>{formatFcfa(ttc)}</dd>
-                  </div>
-                </dl>
-              );
-            })()}
 
             <p className={`pdp-temu-stock${peutCommander ? '' : ' is-out'}`}>
               {libelleStock(data.typeProduit, data.stockDisponible)}
@@ -406,53 +378,57 @@ export default function ProduitPage() {
 
             {axes.length > 0 && (
               <div className="pdp-variants" aria-label="Variantes">
-                {axes.map((axis) => (
-                  <div key={axis.key} className="pdp-variant-axis">
-                    <div className="pdp-variant-label">
-                      <span>{axis.label}</span>
-                      <strong>
-                        {axis.options.find((o) => o.selected)?.value ?? '—'}
-                      </strong>
+                {axes.map((axis) => {
+                  const selected =
+                    axis.options.find((o) => o.selected)?.value ?? '';
+                  return (
+                    <div key={axis.key} className="pdp-variant-axis">
+                      <div className="pdp-variant-label">
+                        <span>{axis.label}</span>
+                        {axis.kind === 'swatch' && selected ? (
+                          <strong>{selected}</strong>
+                        ) : null}
+                      </div>
+                      <div
+                        className={`pdp-variant-options kind-${axis.kind}`}
+                        role="listbox"
+                        aria-label={axis.label}
+                      >
+                        {axis.options.map((opt) => {
+                          const swatch =
+                            axis.kind === 'swatch'
+                              ? colorSwatch(opt.value)
+                              : null;
+                          return (
+                            <button
+                              key={`${axis.key}-${opt.value}`}
+                              type="button"
+                              role="option"
+                              aria-selected={opt.selected}
+                              disabled={!opt.available && !opt.selected}
+                              className={`pdp-variant-opt${opt.selected ? ' selected' : ''}${!opt.available ? ' unavailable' : ''}`}
+                              title={opt.value}
+                              onClick={() => selectVariant(axis.key, opt.value)}
+                              style={
+                                swatch
+                                  ? ({
+                                      '--swatch': swatch,
+                                    } as CSSProperties)
+                                  : undefined
+                              }
+                            >
+                              {swatch ? (
+                                <i className="pdp-swatch" aria-hidden />
+                              ) : (
+                                opt.value
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div
-                      className={`pdp-variant-options kind-${axis.kind}`}
-                      role="listbox"
-                      aria-label={axis.label}
-                    >
-                      {axis.options.map((opt) => {
-                        const swatch =
-                          axis.kind === 'swatch'
-                            ? colorSwatch(opt.value)
-                            : null;
-                        return (
-                          <button
-                            key={`${axis.key}-${opt.value}`}
-                            type="button"
-                            role="option"
-                            aria-selected={opt.selected}
-                            disabled={!opt.available && !opt.selected}
-                            className={`pdp-variant-opt${opt.selected ? ' selected' : ''}${!opt.available ? ' unavailable' : ''}`}
-                            title={opt.value}
-                            onClick={() => selectVariant(axis.key, opt.value)}
-                            style={
-                              swatch
-                                ? ({
-                                    '--swatch': swatch,
-                                  } as CSSProperties)
-                                : undefined
-                            }
-                          >
-                            {axis.kind === 'swatch' && swatch ? (
-                              <i className="pdp-swatch" aria-hidden />
-                            ) : (
-                              opt.value
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

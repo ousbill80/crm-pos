@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
 import { formatFcfa } from '../lib/api';
+import { prixVitrine } from '../lib/prix';
 
 export type ProductCardItem = {
   id: string;
   slug: string | null;
   designation: string;
   prixAffiche: number;
+  prixUnitaireTtc?: number;
   categorie: string | null;
   imageUrl?: string | null;
   stockDisponible?: number | null;
@@ -83,7 +85,7 @@ export function ProductCard({
       <div className="product-body">
         {p.categorie && <span className="meta">{p.categorie}</span>}
         <h3>{p.designation}</h3>
-        <span className="price">{formatFcfa(p.prixAffiche)}</span>
+        <span className="price">{formatFcfa(prixVitrine(p))}</span>
         {(p.unitesVendues30j ?? 0) > 0 ||
         (p.stockDisponible != null &&
           p.stockDisponible > 0 &&

@@ -19,6 +19,8 @@ type SuiviPayload = {
   modeFulfillment: string;
   modeReglement: string;
   providerPsp?: string | null;
+  montantArticlesHt: number;
+  montantTva: number;
   montantArticlesTtc: number;
   fraisLivraison: number;
   montantTotal: number;
@@ -229,9 +231,15 @@ export default function SuiviPage() {
         </ul>
         <dl className="suivi-totals">
           <div>
-            <dt>Articles</dt>
-            <dd>{formatFcfa(data.montantArticlesTtc)}</dd>
+            <dt>Articles HT</dt>
+            <dd>{formatFcfa(data.montantArticlesHt)}</dd>
           </div>
+          {data.montantTva > 0 ? (
+            <div>
+              <dt>TVA</dt>
+              <dd>{formatFcfa(data.montantTva)}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Livraison</dt>
             <dd>

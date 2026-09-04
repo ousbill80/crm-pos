@@ -399,6 +399,8 @@ export class ShopCheckoutService {
       modeFulfillment: commande.modeFulfillment,
       modeReglement: commande.modeReglement,
       providerPsp: commande.providerPsp,
+      montantArticlesHt: Number(commande.montantArticlesHt),
+      montantTva: Number(commande.montantTva),
       montantArticlesTtc: Number(commande.montantArticlesTtc),
       fraisLivraison: Number(commande.fraisLivraison),
       montantTotal: Number(commande.montantTotal),
