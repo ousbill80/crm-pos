@@ -359,7 +359,7 @@ export default function CheckoutPage() {
             clientOperationId: crypto.randomUUID(),
             modeFulfillment: mode,
             modeReglement: reglement,
-            providerPsp: reglement === 'PREPAYE_PSP' ? 'PAYSTACK' : undefined,
+            providerPsp: reglement === 'PREPAYE_PSP' ? 'WAVE' : undefined,
             boutiqueRetraitId:
               mode === 'RETRAIT_BOUTIQUE' ? boutiqueId : undefined,
             zoneLivraisonId: mode === 'LIVRAISON' ? zoneId : undefined,
@@ -392,7 +392,7 @@ export default function CheckoutPage() {
             sandbox?: boolean;
           }>(`/shop/commandes/${commande.id}/payer`, {
             method: 'POST',
-            body: JSON.stringify({ provider: 'PAYSTACK' }),
+            body: JSON.stringify({ provider: 'WAVE' }),
           });
           authorizationUrl = pay.authorizationUrl;
           sandbox = pay.sandbox === true;

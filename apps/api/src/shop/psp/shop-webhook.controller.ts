@@ -32,16 +32,16 @@ export class ShopWebhookController {
 
   @Post('commandes/:id/payer')
   payer(@Param('id') id: string, @Body() dto: PayerCommandeDto) {
-    return this.psp.initierPaiement(id, dto.provider ?? 'PAYSTACK');
+    return this.psp.initierPaiement(id, dto.provider ?? 'WAVE');
   }
 
-  /** Retour Paystack (callback) : vérifie la transaction côté API. */
+  /** Retour PSP (callback / success_url) : vérifie la transaction côté API. */
   @Post('commandes/:id/confirmer-paiement')
   confirmerPaiement(
     @Param('id') id: string,
     @Body() dto: ConfirmerPaiementDto,
   ) {
-    return this.psp.confirmerRetourPaystack(id, dto.reference);
+    return this.psp.confirmerRetourPsp(id, dto.reference);
   }
 
   /** Local / staging : simule un webhook de succès (jamais en production). */

@@ -163,8 +163,16 @@ describe('Shop OM/Wave webhooks (e2e)', () => {
     expect(updated?.statut).toBe('PREPARATION');
   });
 
-  it('webhook Wave → PREPARATION', async () => {
-    const opId = '77777777-7777-4777-8777-777777777777';
+  function signWave(body: object): { payload: string; header: string } {
+    const payload = JSON.stringify(body);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const sig = createHmac('sha256', 'wave-test-secret')
+      .update(timestamp + payload)
+      .digest('hex');
+    return { payload, header: `t=${timestamp},v1=${sig}` };
+  }
+
+  async function checkoutWave(opId: string) {
     const create = await request(app.getHttpServer())
       .post('/shop/panier')
       .expect(201);
@@ -173,35 +181,42 @@ describe('Shop OM/Wave webhooks (e2e)', () => {
       .patch('/shop/panier/lignes')
       .set('Cookie', cookie)
       .send({ lignes: [{ produitId, quantite: 1 }] });
-    const cmd = (
-      await request(app.getHttpServer())
-        .post('/shop/checkout')
-        .set('Cookie', cookie)
-        .send({
-          clientOperationId: opId,
-          modeFulfillment: 'LIVRAISON',
-          modeReglement: 'PREPAYE_PSP',
-          providerPsp: 'WAVE',
-          zoneLivraisonId: zoneId,
-          adresseLivraison: { ville: 'X', ligne1: 'Rue' },
-          emailInvite: 'wave@test.local',
-        })
-        .expect(201)
-    ).body as { id: string; montantTotal: string };
+    const res = await request(app.getHttpServer())
+      .post('/shop/checkout')
+      .set('Cookie', cookie)
+      .send({
+        clientOperationId: opId,
+        modeFulfillment: 'LIVRAISON',
+        modeReglement: 'PREPAYE_PSP',
+        providerPsp: 'WAVE',
+        zoneLivraisonId: zoneId,
+        adresseLivraison: { ville: 'X', ligne1: 'Rue' },
+        emailInvite: 'wave@test.local',
+      })
+      .expect(201);
+    return res.body as { id: string; montantTotal: string };
+  }
 
-    const body = {
+  it('webhook Wave → PREPARATION', async () => {
+    const opId = '77777777-7777-4777-8777-777777777777';
+    const cmd = await checkoutWave(opId);
+
+    const event = {
+      id: 'EV_1',
       type: 'checkout.session.completed',
-      reference: opId,
-      amount: Math.round(Number(cmd.montantTotal)),
-      id: 'wave-1',
+      data: {
+        id: 'cos-wave-1',
+        amount: Math.round(Number(cmd.montantTotal)).toString(),
+        currency: 'XOF',
+        payment_status: 'succeeded',
+        checkout_status: 'complete',
+        client_reference: opId,
+      },
     };
-    const payload = JSON.stringify(body);
-    const sig = createHmac('sha256', 'wave-test-secret')
-      .update(payload)
-      .digest('hex');
+    const { payload, header } = signWave(event);
     await request(app.getHttpServer())
       .post('/shop/webhooks/wave')
-      .set('x-wave-signature', sig)
+      .set('wave-signature', header)
       .set('Content-Type', 'application/json')
       .send(payload)
       .expect(201);
@@ -209,5 +224,34 @@ describe('Shop OM/Wave webhooks (e2e)', () => {
       where: { id: cmd.id },
     });
     expect(updated?.statut).toBe('PREPARATION');
+  });
+
+  it('webhook Wave montant incorrect → commande non payée', async () => {
+    const opId = '88888888-8888-4888-8888-888888888888';
+    const cmd = await checkoutWave(opId);
+
+    const event = {
+      id: 'EV_2',
+      type: 'checkout.session.completed',
+      data: {
+        id: 'cos-wave-2',
+        amount: '1',
+        currency: 'XOF',
+        payment_status: 'succeeded',
+        checkout_status: 'complete',
+        client_reference: opId,
+      },
+    };
+    const { payload, header } = signWave(event);
+    await request(app.getHttpServer())
+      .post('/shop/webhooks/wave')
+      .set('wave-signature', header)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(201);
+    const updated = await env.prisma.commandeWeb.findUnique({
+      where: { id: cmd.id },
+    });
+    expect(updated?.statut).toBe('EN_ATTENTE_PAIEMENT');
   });
 });

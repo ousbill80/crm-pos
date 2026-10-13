@@ -68,6 +68,7 @@ export class ShopPspService {
       paystackSecret: this.config.get<string>('PAYSTACK_SECRET_KEY'),
       orangeMoneyEnabled: this.config.get<string>('ORANGE_MONEY_ENABLED'),
       waveEnabled: this.config.get<string>('WAVE_ENABLED'),
+      waveApiKey: this.config.get<string>('WAVE_API_KEY'),
     });
   }
 
@@ -182,11 +183,8 @@ export class ShopPspService {
     return result;
   }
 
-  /** Après redirection Paystack (query `reference` / `trxref`). */
-  async confirmerRetourPaystack(
-    commandeIdOrRef: string,
-    referencePsp?: string,
-  ) {
+  /** Après redirection PSP (callback_url / success_url) : query `reference` / `trxref` / `ref`. */
+  async confirmerRetourPsp(commandeIdOrRef: string, referencePsp?: string) {
     const commande = await this.prisma.commandeWeb.findFirst({
       where: {
         OR: [{ id: commandeIdOrRef }, { clientOperationId: commandeIdOrRef }],
@@ -215,11 +213,10 @@ export class ShopPspService {
     if (reference !== commande.clientOperationId) {
       throw new ForbiddenException('Référence de paiement invalide.');
     }
-    const adapter = this.adapters.get('PAYSTACK');
+    const provider = commande.providerPsp ?? 'PAYSTACK';
+    const adapter = this.adapters.get(provider);
     if (!adapter?.verifierTransaction) {
-      throw new ServiceUnavailableException(
-        'Le paiement par carte est temporairement indisponible. Réessayez — aucun débit n’a été effectué.',
-      );
+      throw new ServiceUnavailableException(messagePspIndisponible(provider));
     }
     const evenement = await adapter.verifierTransaction(reference);
     if (!evenement) {
@@ -227,7 +224,7 @@ export class ShopPspService {
         'Le paiement n’est pas encore confirmé. Attendez quelques secondes puis rechargez — aucun débit n’a été effectué si la session a échoué.',
       );
     }
-    await this.capturerPaiement('PAYSTACK', evenement);
+    await this.capturerPaiement(provider, evenement);
     const updated = await this.prisma.commandeWeb.findUnique({
       where: { id: commande.id },
     });

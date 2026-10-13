@@ -19,6 +19,7 @@ export function pspProviderConfigure(
     paystackSecret?: string | null;
     orangeMoneyEnabled?: string | null;
     waveEnabled?: string | null;
+    waveApiKey?: string | null;
   },
 ): boolean {
   if (provider === 'PAYSTACK') {
@@ -27,7 +28,7 @@ export function pspProviderConfigure(
   if (provider === 'ORANGE_MONEY') {
     return env.orangeMoneyEnabled === '1';
   }
-  return env.waveEnabled === '1';
+  return env.waveEnabled === '1' && Boolean(env.waveApiKey?.trim());
 }
 
 export function urlConfirmationSandbox(opts: {

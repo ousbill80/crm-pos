@@ -33,6 +33,15 @@ describe('shop-psp sandbox', () => {
       pspProviderConfigure('ORANGE_MONEY', { orangeMoneyEnabled: '1' }),
     ).toBe(true);
     expect(pspProviderConfigure('WAVE', { waveEnabled: '0' })).toBe(false);
+    expect(
+      pspProviderConfigure('WAVE', {
+        waveEnabled: '1',
+        waveApiKey: 'wave_sn_test',
+      }),
+    ).toBe(true);
+    expect(
+      pspProviderConfigure('WAVE', { waveEnabled: '1', waveApiKey: '' }),
+    ).toBe(false);
   });
 
   it('construit l’URL de confirmation sandbox', () => {
