@@ -4,6 +4,7 @@ apps/web/dev-dist/
 apps/shop/dev-dist/
 apps/mobile/dist-p2p-*/
 build/
+*.tsbuildinfo
 .env
 .env.local
 .env.prod
