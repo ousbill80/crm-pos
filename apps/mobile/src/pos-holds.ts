@@ -14,6 +14,7 @@ export interface LignePanierHold {
   stock: number;
   quantite: number;
   remise: number;
+  avecPose?: boolean;
 }
 
 export type MotifAttente =

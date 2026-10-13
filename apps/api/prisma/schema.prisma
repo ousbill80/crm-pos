@@ -108,6 +108,7 @@ model Boutique {
   entrepotWebId       String?
   delaiRetraitHeures  Int?
   commandesWebRetrait CommandeWeb[]   @relation("CommandeRetraitBoutique")
+  ordresPose          OrdreDePose[]
 
   @@map("boutique")
 }
@@ -251,6 +252,7 @@ model Utilisateur {
   challengesActionSensible   ChallengeActionSensible[]
   filesEcritureComptable     FileEcritureComptable[]   @relation("FileEcritureAuteur")
   immobilisationsCreees      Immobilisation[]          @relation("ImmobilisationAuteur")
+  ordresPoseTechnicien       OrdreDePose[]             @relation("TechnicienOrdrePose")
 
   @@map("utilisateur")
 }
@@ -435,6 +437,11 @@ model Produit {
   // (§6.3.1 « produits ou prestations... gestion de stock simplifiée si
   // nécessaire ») : une PRESTATION n'a pas de décrément/contrôle de stock.
   typeProduit              TypeProduit                 @default(ARTICLE)
+  // Extension validée par l'utilisateur (hors MCD §6.5 d'origine) : article
+  // avec option de pose/installation réalisée par une équipe atelier
+  // distincte de la caisse. Déclenche l'alerte caissière au panier et la
+  // création d'un OrdreDePose si la ligne de vente confirme avecPose=true.
+  necessitePose            Boolean                     @default(false)
   prixUnitaire             Decimal                     @db.Decimal(14, 2)
   // Canal e-commerce (PLAN-E-COMMERCE §3) — grille web distincte du POS.
   prixWeb                  Decimal?                    @db.Decimal(14, 2)
@@ -489,6 +496,7 @@ model Produit {
   lignesCommandeWeb        LigneCommandeWeb[]
   reservationsWeb          ReservationWeb[]
   funnelEvents             ShopFunnelEvent[]
+  lignesPose               LignePose[]
 
   @@index([categorie])
   @@index([actif])
@@ -2461,6 +2469,9 @@ model Vente {
   paiements          PaiementVente[]
   devisOrigine       DevisClient?
   conversionCommande ConversionCommandeVente?
+  // Extension pose/installation (hors MCD §6.5 d'origine, validée par
+  // l'utilisateur) : créé seulement si au moins une ligne a avecPose=true.
+  ordreDePose        OrdreDePose?
 
   @@map("vente")
 }
@@ -2537,9 +2548,70 @@ model LigneVente {
   // grand livre). Nullable : les ventes antérieures à l'introduction de ce
   // suivi n'ont pas de coût connu — on ne fabrique pas de valeur a posteriori.
   coutUnitaire Decimal?      @db.Decimal(14, 2)
+  // Confirmé par la caissière à l'ajout au panier si Produit.necessitePose
+  // est vrai — ne peut être vrai que si le produit porte ce flag (contrôle
+  // serveur dans ventes.service.ts).
+  avecPose     Boolean       @default(false)
   retours      RetourVente[]
+  ligneDePose  LignePose?
 
   @@map("ligne_vente")
+}
+
+// ---------------------------------------------------------------------------
+// Pose / installation atelier (extension validée par l'utilisateur, hors MCD
+// §6.5 d'origine) — reçu atelier distinct + suivi par scan QR mobile.
+// Machine à états dédiée, même principe que TransactionStateMachineService :
+// toute transition passe par OrdrePoseStateMachineService, journalisée dans
+// JournalAudit, jamais d'échec silencieux.
+//   EN_ATTENTE -> EN_COURS -> TERMINEE
+//                          -> ANNULEE
+// ---------------------------------------------------------------------------
+enum StatutOrdrePose {
+  EN_ATTENTE
+  EN_COURS
+  TERMINEE
+  ANNULEE
+}
+
+model OrdreDePose {
+  id              String          @id @default(uuid())
+  vente           Vente           @relation(fields: [venteId], references: [id])
+  venteId         String          @unique
+  boutique        Boutique        @relation(fields: [boutiqueId], references: [id])
+  boutiqueId      String
+  statut          StatutOrdrePose @default(EN_ATTENTE)
+  // Jeton opaque encodé dans le QR imprimé sur le reçu atelier — vérifié à
+  // chaque scan, jamais réutilisé pour un autre ordre.
+  qrToken         String          @unique
+  // Le technicien qui scanne devient l'exécutant (pas de pré-assignation à
+  // la création) ; le même technicien démarre et termine (v1, pas de
+  // réassignation).
+  technicien      Utilisateur?    @relation("TechnicienOrdrePose", fields: [technicienId], references: [id])
+  technicienId    String?
+  dateCreation    DateTime        @default(now())
+  dateDebut       DateTime?
+  dateFin         DateTime?
+  motifAnnulation String?
+  lignes          LignePose[]
+
+  @@index([boutiqueId, statut])
+  @@map("ordre_de_pose")
+}
+
+// Dénormalisé (produitId/quantite) pour un affichage atelier direct sans
+// recharger toute la vente — pas de prix (le reçu atelier n'en affiche pas).
+model LignePose {
+  id            String      @id @default(uuid())
+  ordreDePose   OrdreDePose @relation(fields: [ordreDePoseId], references: [id], onDelete: Cascade)
+  ordreDePoseId String
+  ligneVente    LigneVente  @relation(fields: [ligneVenteId], references: [id])
+  ligneVenteId  String      @unique
+  produit       Produit     @relation(fields: [produitId], references: [id])
+  produitId     String
+  quantite      Int
+
+  @@map("ligne_pose")
 }
 
 // Retour/avoir : limité à une vente de la session de caisse en cours

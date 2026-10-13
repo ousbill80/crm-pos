@@ -222,6 +222,95 @@ export function buildTicketCaisseHtml(params: {
 }
 
 /**
+ * HTML reçu atelier (~72 mm) — extension pose/installation validée par
+ * l'utilisateur, hors §6.5 d'origine. Jamais de prix ni de moyen de
+ * paiement : seulement les articles à poser + le QR scanné par le
+ * technicien pour démarrer/terminer l'OrdreDePose.
+ */
+export function buildTicketAtelierHtml(params: {
+  ticket: TicketVenteData;
+  boutiqueNom?: string | null;
+  clientLabel?: string | null;
+}): string {
+  const { ticket, boutiqueNom, clientLabel } = params;
+  const ordreDePose = ticket.ordreDePose;
+  const lignesPose = ticket.lignes.filter((l) => l.avecPose);
+  const idCourt = ticket.id.slice(0, 8).toUpperCase();
+  const date = new Date(ticket.dateVente).toLocaleString('fr-FR');
+
+  const lignesHtml = lignesPose
+    .map(
+      (l) => `
+      <tr>
+        <td class="nom">${esc(l.produit.designation)}</td>
+        <td class="num">× ${l.quantite}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const qrHtml = ordreDePose?.qrCodeBase64
+    ? `<img class="qr" src="data:image/png;base64,${ordreDePose.qrCodeBase64}" alt="QR ordre de pose" />`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Reçu atelier ${esc(idCourt)}</title>
+  <style>
+    @page { size: 72mm auto; margin: 2mm; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: "Courier New", Courier, ui-monospace, monospace;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .ticket { width: 72mm; max-width: 100%; margin: 0 auto; padding: 4mm 3mm 8mm; }
+    .center { text-align: center; }
+    .badge {
+      text-align: center;
+      font-weight: 800;
+      border: 2px solid #000;
+      padding: 4px;
+      margin-bottom: 6px;
+    }
+    .shop { font-weight: 700; margin-top: 2px; text-align: center; }
+    .rule { border: none; border-top: 1px dashed #000; margin: 8px 0; }
+    .meta { font-size: 11px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; }
+    td { vertical-align: top; padding: 3px 0; }
+    td.num { text-align: right; white-space: nowrap; font-weight: 700; }
+    .nom { font-weight: 700; }
+    .qr { display: block; margin: 10px auto 4px; width: 42mm; height: 42mm; }
+    .qr-label { text-align: center; font-size: 10px; }
+    @media screen {
+      body { background: #e8e8e8; padding: 16px; }
+      .ticket { background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+    }
+  </style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="badge">REÇU ATELIER — POSE / INSTALLATION</div>
+    ${boutiqueNom ? `<div class="shop">${esc(boutiqueNom)}</div>` : ''}
+    <div class="center meta">TICKET ${esc(idCourt)}</div>
+    <div class="center meta">${esc(date)}</div>
+    ${clientLabel ? `<div class="center meta">Client : ${esc(clientLabel)}</div>` : ''}
+    <hr class="rule" />
+    <table>${lignesHtml}</table>
+    <hr class="rule" />
+    ${qrHtml}
+    <div class="qr-label">À scanner par le technicien pour démarrer la pose</div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * Impression ticket caisse : document HTML thermique.
  * Web : fenêtre d'impression dédiée. Natif (Android/iOS) : dialogue
  * d'impression OS natif via `expo-print`, à partir du même HTML.
@@ -233,8 +322,22 @@ export async function imprimerTicketCaisse(params: {
   clientLabel?: string | null;
   societe?: SocieteTicket | null;
 }): Promise<void> {
-  const html = buildTicketCaisseHtml(params);
+  await imprimerHtmlThermique(buildTicketCaisseHtml(params));
+}
 
+/**
+ * Impression du reçu atelier (pose/installation) — même mécanique
+ * d'impression thermique que le ticket caisse, document HTML distinct.
+ */
+export async function imprimerTicketAtelier(params: {
+  ticket: TicketVenteData;
+  boutiqueNom?: string | null;
+  clientLabel?: string | null;
+}): Promise<void> {
+  await imprimerHtmlThermique(buildTicketAtelierHtml(params));
+}
+
+async function imprimerHtmlThermique(html: string): Promise<void> {
   if (Platform.OS !== 'web') {
     try {
       await Print.printAsync({ html });

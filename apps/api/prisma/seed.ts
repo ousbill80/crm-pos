@@ -804,6 +804,7 @@ const ROLES = [
   { libelle: 'RESPONSABLE_BOUTIQUE', niveauHabilitation: 3 },
   { libelle: 'CAISSIER_BOUTIQUE', niveauHabilitation: 4 },
   { libelle: 'CONVOYEUR', niveauHabilitation: 4 },
+  { libelle: 'TECHNICIEN_POSE', niveauHabilitation: 4 },
   { libelle: 'RESPONSABLE_SI', niveauHabilitation: 1 },
   { libelle: 'RESPONSABLE_CRM', niveauHabilitation: 1 },
 ] as const;
@@ -1213,6 +1214,13 @@ async function main() {
     prenom: 'Ibrahima',
   });
   await ensureUser({
+    login: 'demo-pose',
+    roleLibelle: 'TECHNICIEN_POSE',
+    boutiqueId: boutiqueExt.boutique.id,
+    nom: 'Traoré',
+    prenom: 'Lassina',
+  });
+  await ensureUser({
     login: 'demo-dg',
     roleLibelle: 'DIRECTION_GENERALE',
     boutiqueId: null,
@@ -1325,6 +1333,9 @@ async function main() {
     // catalogue reste sans code pour exercer la génération automatique
     // Code128 à l'impression d'étiquettes (apps/api/src/produits/produits.service.ts).
     codeBarres?: string;
+    // Extension pose/installation (validée par l'utilisateur, hors MCD §6.5
+    // d'origine) : articles démo réalistes avec un service de pose en magasin.
+    necessitePose?: boolean;
   }> = [
     {
       designation: 'Coque silicone iPhone',
@@ -1380,6 +1391,7 @@ async function main() {
       boutiques: 150,
       seuilReappro: 30,
       actif: true,
+      necessitePose: true,
     },
     {
       designation: 'Câble USB-C 1m',
@@ -1512,6 +1524,7 @@ async function main() {
       boutiques: 0,
       seuilReappro: 4,
       actif: true,
+      necessitePose: true,
     },
     {
       designation: 'Coque iPhone 11 (ancien)',
@@ -1561,6 +1574,7 @@ async function main() {
           actif: article.actif,
           codeBarres: article.codeBarres,
           imageUrl,
+          necessitePose: article.necessitePose ?? false,
         },
       });
     } else {
@@ -1574,6 +1588,7 @@ async function main() {
           coutMoyenPondere: article.coutMoyenPondere,
           seuilReappro: article.seuilReappro,
           actif: article.actif,
+          necessitePose: article.necessitePose ?? false,
           codeBarres: article.codeBarres ?? produit.codeBarres,
           imageUrl: produit.imageUrl?.startsWith('data:')
             ? produit.imageUrl

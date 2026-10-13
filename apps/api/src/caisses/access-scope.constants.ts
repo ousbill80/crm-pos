@@ -345,3 +345,26 @@ export const ROLES_CONTROLE_COHERENCE: RoleLibelle[] = [
   RoleLibelle.DAF,
   RoleLibelle.DIRECTION_GENERALE,
 ];
+
+/**
+ * Pose/installation atelier (extension validée par l'utilisateur, hors MCD
+ * §6.5 d'origine). Démarrer/terminer un OrdreDePose : seul le technicien qui
+ * scanne le QR en devient l'exécutant — aucun autre rôle ne peut agir ici,
+ * y compris le caissier qui a encaissé la vente.
+ */
+export const ROLES_POSE_TECHNIQUE: RoleLibelle[] = [
+  RoleLibelle.TECHNICIEN_POSE,
+];
+
+/** Annulation d'un OrdreDePose : encadrement boutique/réseau, pas le technicien. */
+export const ROLES_POSE_ANNULATION: RoleLibelle[] = [
+  RoleLibelle.RESPONSABLE_BOUTIQUE,
+  RoleLibelle.DAF,
+  RoleLibelle.DIRECTION_GENERALE,
+];
+
+/** Lecture d'un OrdreDePose : périmètre caisses existant + le technicien lui-même. */
+export const ROLES_POSE_LECTURE: RoleLibelle[] = [
+  ...ROLES_LECTURE_CAISSES,
+  RoleLibelle.TECHNICIEN_POSE,
+];

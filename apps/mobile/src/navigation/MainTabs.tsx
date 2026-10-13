@@ -11,6 +11,7 @@ import { GlassTabBackground, glassTabStyles } from './GlassTabBar';
 import { InventaireStack } from './InventaireStack';
 import { PosStack } from './PosStack';
 import { P2pStack } from './P2pStack';
+import { PoseStack } from './PoseStack';
 import type { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -47,6 +48,11 @@ const TAB_META: Record<
     label: 'Achats',
     icon: 'cart-outline',
     iconOn: 'cart',
+  },
+  Pose: {
+    label: 'Pose',
+    icon: 'construct-outline',
+    iconOn: 'construct',
   },
 };
 
@@ -143,6 +149,9 @@ export function MainTabs() {
       ) : null}
       {tabs.includes('P2p') ? (
         <Tab.Screen name="P2p" component={P2pStack} />
+      ) : null}
+      {tabs.includes('Pose') ? (
+        <Tab.Screen name="Pose" component={PoseStack} />
       ) : null}
     </Tab.Navigator>
   );

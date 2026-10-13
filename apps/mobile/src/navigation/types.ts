@@ -56,12 +56,18 @@ export type P2pStackParamList = {
   AccountingAi: undefined;
 };
 
+/** Stack sous l’onglet Pose (technicien atelier — scan QR reçu pose). */
+export type PoseStackParamList = {
+  PoseScan: undefined;
+};
+
 export type MainTabParamList = {
   Caisse: NavigatorScreenParams<PosStackParamList>;
   Circuit: NavigatorScreenParams<CircuitStackParamList>;
   Caisses: NavigatorScreenParams<CaissesStackParamList>;
   Inventaire: NavigatorScreenParams<InventaireStackParamList>;
   P2p: NavigatorScreenParams<P2pStackParamList>;
+  Pose: NavigatorScreenParams<PoseStackParamList>;
 };
 
 export type RootStackParamList = {

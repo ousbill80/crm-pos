@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -35,6 +36,14 @@ class LigneVenteInputDto {
   @IsNumber()
   @Min(0)
   remise?: number;
+
+  // Confirmé par la caissière à l'ajout au panier si Produit.necessitePose
+  // est vrai (extension validée par l'utilisateur, hors §6.5 d'origine) —
+  // contrôle serveur dans VentesService.encaisserVente : ne peut être vrai
+  // que si le produit porte ce flag.
+  @IsOptional()
+  @IsBoolean()
+  avecPose?: boolean;
 }
 
 // Encaissement d'une vente (§6.3.2). montantTotal n'est jamais fourni par le

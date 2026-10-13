@@ -20,6 +20,10 @@ export interface LignePanier {
   quantite: number;
   remise: number;
   imageUrl?: string | null;
+  // Confirmé par la caissière à l'ajout au panier si Produit.necessitePose
+  // est vrai (extension pose/installation validée par l'utilisateur, hors
+  // §6.5 d'origine) — contrôle serveur dans VentesService.encaisserVente.
+  avecPose?: boolean;
 }
 
 export interface PartPaiement {

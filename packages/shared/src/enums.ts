@@ -65,6 +65,9 @@ export const RoleLibelle = {
   CONVOYEUR: "CONVOYEUR",
   RESPONSABLE_SI: "RESPONSABLE_SI",
   RESPONSABLE_CRM: "RESPONSABLE_CRM",
+  // Pose/installation atelier (extension validée par l'utilisateur, hors MCD
+  // §6.5 d'origine) : seul rôle habilité à démarrer/terminer un OrdreDePose.
+  TECHNICIEN_POSE: "TECHNICIEN_POSE",
 } as const;
 export type RoleLibelle = (typeof RoleLibelle)[keyof typeof RoleLibelle];
 
@@ -184,6 +187,35 @@ export const StatutSessionCaisse = {
 } as const;
 export type StatutSessionCaisse =
   (typeof StatutSessionCaisse)[keyof typeof StatutSessionCaisse];
+
+// ---------------------------------------------------------------------------
+// Pose / installation atelier (extension validée par l'utilisateur, hors MCD
+// §6.5 d'origine) : reçu atelier distinct (sans prix) + suivi par scan QR
+// mobile, pour les articles vendus avec option de pose (Produit.necessitePose
+// + LigneVente.avecPose). Même principe que TRANSITIONS_AUTORISEES : la
+// machine à états est un objet de domaine unique (OrdrePoseStateMachineService),
+// jamais dupliquée, jamais d'échec silencieux.
+//   EN_ATTENTE -> EN_COURS -> TERMINEE
+//                          -> ANNULEE
+// ---------------------------------------------------------------------------
+export const StatutOrdrePose = {
+  EN_ATTENTE: "EN_ATTENTE",
+  EN_COURS: "EN_COURS",
+  TERMINEE: "TERMINEE",
+  ANNULEE: "ANNULEE",
+} as const;
+export type StatutOrdrePose =
+  (typeof StatutOrdrePose)[keyof typeof StatutOrdrePose];
+
+export const TRANSITIONS_ORDRE_POSE: Record<
+  StatutOrdrePose,
+  StatutOrdrePose[]
+> = {
+  EN_ATTENTE: [StatutOrdrePose.EN_COURS, StatutOrdrePose.ANNULEE],
+  EN_COURS: [StatutOrdrePose.TERMINEE, StatutOrdrePose.ANNULEE],
+  TERMINEE: [],
+  ANNULEE: [],
+};
 
 // ---------------------------------------------------------------------------
 // Achats — cycle commande → réception → facture → paiement.

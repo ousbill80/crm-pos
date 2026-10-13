@@ -132,6 +132,7 @@ interface Produit {
   imageUrl?: string | null;
   actif?: boolean;
   stock?: number;
+  necessitePose?: boolean;
 }
 
 interface Temoin {
@@ -599,26 +600,47 @@ export function PosScreen({ navigation, route }: Props) {
         ? Math.min(demande, stockDisponibleLocal(p, dejaAuPanier) ?? 0)
         : demande;
     if (ajout <= 0) return;
-    setPanier((prev) => {
-      const exist = prev.find((l) => l.produitId === p.id);
-      if (exist) {
-        return prev.map((l) =>
-          l.produitId === p.id ? { ...l, quantite: l.quantite + ajout } : l,
-        );
-      }
-      return [
-        ...prev,
-        {
-          produitId: p.id,
-          designation: p.designation,
-          prixUnitaire: p.prixUnitaire,
-          quantite: ajout,
-          remise: 0,
-          imageUrl: p.imageUrl ?? null,
-        },
-      ];
-    });
-    setRechercheProduit('');
+
+    const ajouterAuPanier = (avecPose?: boolean) => {
+      setPanier((prev) => {
+        const exist = prev.find((l) => l.produitId === p.id);
+        if (exist) {
+          return prev.map((l) =>
+            l.produitId === p.id ? { ...l, quantite: l.quantite + ajout } : l,
+          );
+        }
+        return [
+          ...prev,
+          {
+            produitId: p.id,
+            designation: p.designation,
+            prixUnitaire: p.prixUnitaire,
+            quantite: ajout,
+            remise: 0,
+            imageUrl: p.imageUrl ?? null,
+            avecPose,
+          },
+        ];
+      });
+      setRechercheProduit('');
+    };
+
+    // Confirmation pose/installation (extension validée par l'utilisateur,
+    // hors §6.5 d'origine) — demandée uniquement au premier ajout de la
+    // ligne : un même article peut être vendu avec ou sans pose.
+    if (p.necessitePose && !dejaAuPanier) {
+      Alert.alert(
+        'Pose / installation',
+        `Le client souhaite-t-il la pose de « ${p.designation} » ?`,
+        [
+          { text: 'Non', onPress: () => ajouterAuPanier(false) },
+          { text: 'Oui', onPress: () => ajouterAuPanier(true) },
+        ],
+      );
+      return;
+    }
+
+    ajouterAuPanier();
   }
 
   function retirer(produitId: string, tout = false) {
@@ -771,6 +793,7 @@ export function PosScreen({ navigation, route }: Props) {
           quantite,
           remise: ligne.remise,
           imageUrl: p.imageUrl ?? null,
+          avecPose: ligne.avecPose,
         });
       }
       if (restaure.length === 0) {
@@ -825,6 +848,7 @@ export function PosScreen({ navigation, route }: Props) {
         stock: typeof p?.stock === 'number' ? (p.stock as number) : l.quantite,
         quantite: l.quantite,
         remise: l.remise,
+        avecPose: l.avecPose,
       };
     });
     const hold: CommandeEnAttente = {
@@ -1067,6 +1091,7 @@ export function PosScreen({ navigation, route }: Props) {
       produitId: l.produitId,
       quantite: l.quantite,
       ...(l.remise > 0 ? { remise: l.remise } : {}),
+      ...(l.avecPose ? { avecPose: true } : {}),
     }));
     const paiements = paiementsDepuisParts(parts);
     const clientOperationId = newClientOperationId();
@@ -1098,9 +1123,15 @@ export function PosScreen({ navigation, route }: Props) {
           quantite: number;
           prixUnitaire: string;
           remise: string;
+          avecPose?: boolean;
           produit: { designation: string };
         }>;
         paiements?: Array<{ modePaiement: string; montant: string }>;
+        ordreDePose?: {
+          id: string;
+          statut: string;
+          qrCodeBase64: string;
+        } | null;
       }>(`/ventes/sessions/${session.id}/ventes`, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -1112,6 +1143,7 @@ export function PosScreen({ navigation, route }: Props) {
         modePaiement: vente.modePaiement,
         lignes: vente.lignes,
         paiements: vente.paiements,
+        ordreDePose: vente.ordreDePose ?? null,
         ...(aEspeces && especeOk
           ? { montantRecu: recuNum, monnaie: Math.max(0, monnaie) }
           : {}),

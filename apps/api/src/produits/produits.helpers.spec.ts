@@ -53,6 +53,7 @@ describe('produits.helpers — indicateurs catalogue §6.3.2', () => {
       methodeCout: 'CMP',
       coutStandard: new Prisma.Decimal(0),
       strategieSortie: 'FIFO',
+      necessitePose: false,
     });
     expect(enrichi.margeUnitaire).toBe('600.00');
     expect(enrichi.tauxMarge).toBe('60.0');

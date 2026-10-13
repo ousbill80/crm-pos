@@ -11,6 +11,7 @@ import { ENSEIGNE, ModePaiement } from '@caisse-crm/shared';
 import { apiFetch } from '../api';
 import { formatFcfa } from '../circuit/actions';
 import {
+  imprimerTicketAtelier,
   imprimerTicketCaisse,
   type SocieteTicket,
 } from '../lib/ticket-caisse-print';
@@ -22,12 +23,19 @@ export interface LigneTicketVente {
   quantite: number;
   prixUnitaire: string | number;
   remise?: string | number;
+  avecPose?: boolean;
   produit: { designation: string };
 }
 
 export interface PaiementTicket {
   modePaiement: string;
   montant: string | number;
+}
+
+export interface OrdreDePoseTicket {
+  id: string;
+  statut: string;
+  qrCodeBase64: string;
 }
 
 export interface TicketVenteData {
@@ -41,6 +49,8 @@ export interface TicketVenteData {
   /** Affiché si espèces (UI — non stocké API). */
   montantRecu?: number;
   monnaie?: number;
+  /** Présent si au moins une ligne nécessite la pose/installation — reçu atelier associé. */
+  ordreDePose?: OrdreDePoseTicket | null;
 }
 
 function labelMode(mode: string): string {
@@ -67,6 +77,9 @@ export function PosTicketRecu({
 }) {
   const [societe, setSociete] = useState<SocieteTicket | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [printErrorAtelier, setPrintErrorAtelier] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +117,25 @@ export function PosTicketRecu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
+  useEffect(() => {
+    if (!autoPrint || !ticket.ordreDePose) return;
+    // Enchaîné après le ticket client (délai supérieur) — deux impressions
+    // thermiques distinctes, jamais simultanées.
+    const t = setTimeout(() => {
+      void imprimerTicketAtelier({ ticket, boutiqueNom, clientLabel }).catch(
+        (err) => {
+          setPrintErrorAtelier(
+            err instanceof Error
+              ? err.message
+              : 'Impression du reçu atelier impossible.',
+          );
+        },
+      );
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id]);
+
   const parts =
     ticket.paiements && ticket.paiements.length > 0
       ? ticket.paiements
@@ -127,6 +159,19 @@ export function PosTicketRecu({
     } catch (err) {
       setPrintError(
         err instanceof Error ? err.message : 'Impression du ticket impossible.',
+      );
+    }
+  }
+
+  async function printNowAtelier() {
+    setPrintErrorAtelier(null);
+    try {
+      await imprimerTicketAtelier({ ticket, boutiqueNom, clientLabel });
+    } catch (err) {
+      setPrintErrorAtelier(
+        err instanceof Error
+          ? err.message
+          : 'Impression du reçu atelier impossible.',
       );
     }
   }
@@ -237,6 +282,16 @@ export function PosTicketRecu({
       <Pressable style={ui.btn} onPress={() => void printNow()}>
         <Text style={ui.btnText}>Imprimer le ticket caisse</Text>
       </Pressable>
+      {ticket.ordreDePose ? (
+        <>
+          {printErrorAtelier ? (
+            <Text style={ui.error}>{printErrorAtelier}</Text>
+          ) : null}
+          <Pressable style={ui.btnGhost} onPress={() => void printNowAtelier()}>
+            <Text style={ui.btnGhostText}>Imprimer le reçu atelier</Text>
+          </Pressable>
+        </>
+      ) : null}
       <Pressable style={ui.btnGhost} onPress={onNouvelleCommande}>
         <Text style={ui.btnGhostText}>Nouvelle commande</Text>
       </Pressable>

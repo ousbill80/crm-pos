@@ -30,11 +30,23 @@ export function accesAppMobile(role: RoleLibelle): boolean {
   return (
     accesTresorerieMobile(role) ||
     accesInventaireMobile(role) ||
-    hasP2pMobileAccess(role)
+    hasP2pMobileAccess(role) ||
+    accesPoseMobile(role)
   );
 }
 
-export type OngletMobile = 'Caisse' | 'Circuit' | 'Caisses' | 'Inventaire' | 'P2p';
+export type OngletMobile =
+  | 'Caisse'
+  | 'Circuit'
+  | 'Caisses'
+  | 'Inventaire'
+  | 'P2p'
+  | 'Pose';
+
+/** Technicien pose — aucun autre module (dashboard seul côté web, §4). */
+export function accesPoseMobile(role: RoleLibelle): boolean {
+  return role === RoleLibelle.TECHNICIEN_POSE;
+}
 
 export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
   const tabs: OngletMobile[] = [];
@@ -47,6 +59,7 @@ export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
   }
   if (accesInventaireMobile(role)) tabs.push('Inventaire');
   if (hasP2pMobileAccess(role)) tabs.push('P2p');
+  if (accesPoseMobile(role)) tabs.push('Pose');
   return tabs;
 }
 
@@ -54,6 +67,7 @@ export function accueilOnglet(role: RoleLibelle): OngletMobile {
   if (peutEncaisserPos(role)) return 'Caisse';
   if (accesTresorerieMobile(role)) return 'Circuit';
   if (hasP2pMobileAccess(role)) return 'P2p';
+  if (accesPoseMobile(role)) return 'Pose';
   return 'Inventaire';
 }
 

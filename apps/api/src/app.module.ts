@@ -33,6 +33,7 @@ import { CommandesWebModule } from './commandes-web/commandes-web.module';
 import { AccountingAiModule } from './accounting-ai/accounting-ai.module';
 import { ImmobilisationsModule } from './immobilisations/immobilisations.module';
 import { StaffBriefingModule } from './staff-briefing/staff-briefing.module';
+import { OrdresPoseModule } from './ordres-pose/ordres-pose.module';
 
 const apiRateLimitConfigure = Number(
   process.env.API_RATE_LIMIT_PER_MINUTE ?? 600,
@@ -82,6 +83,7 @@ const API_RATE_LIMIT_PER_MINUTE =
     AccountingAiModule,
     ImmobilisationsModule,
     StaffBriefingModule,
+    OrdresPoseModule,
   ],
   controllers: [AppController],
   providers: [

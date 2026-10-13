@@ -407,6 +407,20 @@ export const PROFILS: Record<RoleLibelle, ProfilMetier> = {
     resume: 'Module CRM complet : fiches, segmentation, fidélité, campagnes (§6.6).',
     interdit: 'Pas d’accès caisse, stocks, finance, configuration SI.',
   },
+  TECHNICIEN_POSE: {
+    role: RoleLibelle.TECHNICIEN_POSE,
+    libelle: 'Technicien pose',
+    famille: FAMILLE_PROFIL.BOUTIQUE,
+    perimetre: 'BOUTIQUE',
+    boutiqueRequise: true,
+    validationCircuit: false,
+    accueil: '/dashboard',
+    apps: {
+      dashboard: DASHBOARD,
+    },
+    resume: 'Atelier : scanne le QR du reçu pose pour démarrer puis terminer l’installation (app mobile).',
+    interdit: 'N’a accès à aucun module caisse, vente, stock ou configuration — seulement au scan de pose.',
+  },
 };
 
 export const LISTE_PROFILS: ProfilMetier[] = [
@@ -424,6 +438,7 @@ export const LISTE_PROFILS: ProfilMetier[] = [
   PROFILS.CONVOYEUR,
   PROFILS.RESPONSABLE_SI,
   PROFILS.RESPONSABLE_CRM,
+  PROFILS.TECHNICIEN_POSE,
 ];
 
 export const ROLES_BOUTIQUE_REQUISE: RoleLibelle[] = LISTE_PROFILS.filter(

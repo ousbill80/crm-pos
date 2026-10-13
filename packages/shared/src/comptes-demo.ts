@@ -106,6 +106,12 @@ export const COMPTES_DEMO: Record<RoleLibelle, CompteDemo> = {
     libelleCourt: 'CRM',
     hint: 'Clients · campagnes (§6.6)',
   },
+  TECHNICIEN_POSE: {
+    login: 'demo-pose',
+    role: RoleLibelle.TECHNICIEN_POSE,
+    libelleCourt: 'Pose',
+    hint: 'Atelier · scan QR pour démarrer/terminer une pose',
+  },
 };
 
 export const LISTE_COMPTES_DEMO: CompteDemo[] = LISTE_PROFILS.map((p) => COMPTES_DEMO[p.role]);

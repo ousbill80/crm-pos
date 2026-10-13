@@ -31,6 +31,7 @@ import {
 import { TransactionsService } from '../transactions/transactions.service';
 import { FideliteService } from '../crm/fidelite/fidelite.service';
 import { SalesGlService } from '../accounting-gl/sales-gl.service';
+import { OrdresPoseService } from '../ordres-pose/ordres-pose.service';
 import { CreateSessionCaisseDto } from './dto/create-session-caisse.dto';
 import { ClotureSessionCaisseDto } from './dto/cloture-session-caisse.dto';
 import { CreateVenteDto } from './dto/create-vente.dto';
@@ -67,6 +68,7 @@ export class VentesService {
     private readonly stockService: StockService,
     private readonly fideliteService: FideliteService,
     private readonly salesGl: SalesGlService,
+    private readonly ordresPoseService: OrdresPoseService,
   ) {}
 
   async ouvrirSession(
@@ -255,8 +257,13 @@ export class VentesService {
       );
 
     let vente: Vente;
+    let ordreDePoseCreated: {
+      id: string;
+      statut: string;
+      qrToken: string;
+    } | null = null;
     try {
-      vente = await this.prisma.$transaction(async (tx) => {
+      const resultat = await this.prisma.$transaction(async (tx) => {
         let montantTotal = new Prisma.Decimal(0);
         const lignesData: {
           produitId: string;
@@ -264,6 +271,7 @@ export class VentesService {
           prixUnitaire: Prisma.Decimal;
           remise: Prisma.Decimal;
           coutUnitaire: Prisma.Decimal;
+          avecPose: boolean;
         }[] = [];
 
         for (const ligne of dto.lignes) {
@@ -278,6 +286,15 @@ export class VentesService {
           if (!produit.actif) {
             throw new BadRequestException(
               `Le produit « ${produit.designation} » est inactif et ne peut plus être encaissé.`,
+            );
+          }
+          // Extension pose/installation (hors MCD §6.5 d'origine, validée
+          // par l'utilisateur) : avecPose ne peut être confirmé par la
+          // caissière que si l'article porte réellement l'option (pas de
+          // saisie libre) — contrôle serveur, jamais seulement côté UI.
+          if (ligne.avecPose && !produit.necessitePose) {
+            throw new BadRequestException(
+              `Le produit « ${produit.designation} » ne propose pas l'option pose/installation.`,
             );
           }
           const estPrestation = produit.typeProduit === 'PRESTATION';
@@ -331,6 +348,7 @@ export class VentesService {
             prixUnitaire,
             remise,
             coutUnitaire: new Prisma.Decimal(produit.coutMoyenPondere),
+            avecPose: ligne.avecPose ?? false,
           });
         }
 
@@ -386,8 +404,37 @@ export class VentesService {
             where: { id: dto.holdId, sessionCaisseId: session.id },
           });
         }
-        return created;
+
+        // Reçu atelier (extension pose/installation hors MCD §6.5 d'origine,
+        // validée par l'utilisateur) : créé seulement si au moins une ligne
+        // confirme avecPose=true, dans la même transaction que la vente.
+        const lignesAvecPose = created.lignes.filter((l) => l.avecPose);
+        let ordreDePose: {
+          id: string;
+          statut: string;
+          qrToken: string;
+        } | null = null;
+        if (lignesAvecPose.length > 0) {
+          const cree = await this.ordresPoseService.creerDepuisVente(tx, {
+            venteId: created.id,
+            boutiqueId: session.caisse.boutiqueId!,
+            lignes: lignesAvecPose.map((l) => ({
+              id: l.id,
+              produitId: l.produitId,
+              quantite: l.quantite,
+            })),
+          });
+          ordreDePose = {
+            id: cree.id,
+            statut: cree.statut,
+            qrToken: cree.qrToken,
+          };
+        }
+
+        return { vente: created, ordreDePose };
       });
+      vente = resultat.vente;
+      ordreDePoseCreated = resultat.ordreDePose;
     } catch (error) {
       if (this.estConflitIdempotence(error) && dto.clientOperationId) {
         const existante = await this.chargerParClientOperationId(
@@ -442,6 +489,20 @@ export class VentesService {
     });
 
     await this.salesGl.tryPostVente(vente.id, utilisateur.userId);
+
+    if (ordreDePoseCreated) {
+      const qrCodeBase64 = await this.ordresPoseService.genererQrPngBase64(
+        ordreDePoseCreated.id,
+        ordreDePoseCreated.qrToken,
+      );
+      Object.assign(vente, {
+        ordreDePose: {
+          id: ordreDePoseCreated.id,
+          statut: ordreDePoseCreated.statut,
+          qrCodeBase64,
+        },
+      });
+    }
 
     return vente;
   }
@@ -1147,10 +1208,25 @@ export class VentesService {
   }
 
   private async chargerParClientOperationId(clientOperationId: string) {
-    return this.prisma.vente.findUnique({
+    const vente = await this.prisma.vente.findUnique({
       where: { clientOperationId },
-      include: { lignes: { include: { produit: true } }, paiements: true },
+      include: {
+        lignes: { include: { produit: true } },
+        paiements: true,
+        ordreDePose: { include: { lignes: true } },
+      },
     });
+    // Rejeu idempotent (§6.7) : si une resynchro hors-ligne renvoie une
+    // vente déjà créée avec OrdreDePose, le reçu atelier doit rester
+    // reproductible — on régénère le QR plutôt que de le stocker en base.
+    if (vente?.ordreDePose) {
+      const qrCodeBase64 = await this.ordresPoseService.genererQrPngBase64(
+        vente.ordreDePose.id,
+        vente.ordreDePose.qrToken,
+      );
+      Object.assign(vente.ordreDePose, { qrCodeBase64 });
+    }
+    return vente;
   }
 
   private estConflitIdempotence(error: unknown): boolean {
