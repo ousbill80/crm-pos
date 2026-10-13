@@ -15,4 +15,7 @@ export interface JwtPayload {
   login: string;
   role: RoleLibelle;
   boutiqueId: string | null;
+  // Ajouté automatiquement par jsonwebtoken à la signature (secondes epoch).
+  // Utilisé par JwtStrategy pour comparer à Utilisateur.sessionsRevoqueesAvant.
+  iat?: number;
 }

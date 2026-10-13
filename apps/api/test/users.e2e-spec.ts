@@ -233,4 +233,90 @@ describe('Utilisateurs (e2e)', () => {
     });
     expect(enBase.mustChangePassword).toBe(true);
   });
+
+  describe('révocation immédiate de session (audit sécurité, §6.7)', () => {
+    it('désactiver un compte invalide instantanément son token déjà émis', async () => {
+      const id = await creerUtilisateur(
+        'revoc_desactivation',
+        'CAISSIER_BOUTIQUE',
+        boutiqueId,
+        4,
+      );
+      const token = await login('revoc_desactivation');
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/users/${id}`)
+        .set('Authorization', `Bearer ${tokens.si}`)
+        .send({ actif: false })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+    });
+
+    it('changer le rôle d’un compte invalide instantanément son token déjà émis', async () => {
+      await env.prisma.role.upsert({
+        where: { libelle: 'RESPONSABLE_BOUTIQUE' },
+        update: {},
+        create: { libelle: 'RESPONSABLE_BOUTIQUE', niveauHabilitation: 5 },
+      });
+
+      const id = await creerUtilisateur(
+        'revoc_changement_role',
+        'CAISSIER_BOUTIQUE',
+        boutiqueId,
+        4,
+      );
+      const token = await login('revoc_changement_role');
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/users/${id}`)
+        .set('Authorization', `Bearer ${tokens.si}`)
+        .send({ role: 'RESPONSABLE_BOUTIQUE' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+    });
+
+    it('réinitialiser le mot de passe par un admin invalide instantanément le token déjà émis', async () => {
+      const id = await creerUtilisateur(
+        'revoc_reset_mdp',
+        'CAISSIER_BOUTIQUE',
+        boutiqueId,
+        4,
+      );
+      const token = await login('revoc_reset_mdp');
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/users/${id}/reset-password`)
+        .set('Authorization', `Bearer ${tokens.si}`)
+        .send({})
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .get('/produits')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+    });
+  });
 });

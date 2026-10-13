@@ -181,6 +181,13 @@ export class UsersService {
 
     const roleId = dto.role ? await this.resolveRoleId(dto.role) : undefined;
 
+    // Désactivation ou changement de rôle = changement d'habilitation qui
+    // doit prendre effet immédiatement, pas à l'expiration naturelle du JWT
+    // (24h, cf. sessionsRevoqueesAvant dans schema.prisma et JwtStrategy).
+    const requiertRevocation =
+      dto.actif === false ||
+      (dto.role !== undefined && dto.role !== existant.role.libelle);
+
     const utilisateur = await this.prisma.utilisateur.update({
       where: { id },
       data: {
@@ -189,6 +196,7 @@ export class UsersService {
         ...(roleId ? { roleId } : {}),
         ...(dto.boutiqueId !== undefined ? { boutiqueId: dto.boutiqueId } : {}),
         ...(dto.actif !== undefined ? { actif: dto.actif } : {}),
+        ...(requiertRevocation ? { sessionsRevoqueesAvant: new Date() } : {}),
       },
       select: SELECT_UTILISATEUR,
     });
@@ -226,6 +234,10 @@ export class UsersService {
         mustChangePassword: true,
         failedLoginAttempts: 0,
         lockedUntil: null,
+        // Un reset de mot de passe par un admin doit couper immédiatement
+        // tout JWT émis avant (sinon le compte compromis reste utilisable
+        // jusqu'à expiration naturelle du token).
+        sessionsRevoqueesAvant: new Date(),
       },
     });
 

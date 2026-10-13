@@ -202,6 +202,12 @@ model Utilisateur {
   mustChangePassword  Boolean   @default(false)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  // Révocation de session (audit sécurité) : JWT stateless à 24h (cf.
+  // auth.module.ts) — ce champ permet de couper immédiatement les JWT émis
+  // avant cette date (désactivation, changement de rôle, reset de mot de
+  // passe par un admin), sans attendre l'expiration naturelle. Comparé à
+  // payload.iat dans JwtStrategy.
+  sessionsRevoqueesAvant DateTime?
 
   transactionsInitiees    TransactionCaisse[]    @relation("Initiateur")
   receptionsValidees      ReceptionValidation[]  @relation("Validateur")
