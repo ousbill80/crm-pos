@@ -1,0 +1,1 @@
+ALTER TABLE "vente" ADD COLUMN "origineHorsLigne" BOOLEAN NOT NULL DEFAULT false;

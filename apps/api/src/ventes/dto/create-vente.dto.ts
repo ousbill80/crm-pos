@@ -87,4 +87,12 @@ export class CreateVenteDto {
   @MinLength(8)
   @MaxLength(64)
   clientOperationId?: string;
+
+  // Vente POS saisie hors-ligne, resynchronisée après coup (§6.7). Accepté
+  // par confiance côté caisse (même niveau que clientOperationId) : tolère
+  // un stock devenu insuffisant pendant la déconnexion — voir
+  // VentesService.encaisserVente (alerte ECART_STOCK + audit dédié).
+  @IsOptional()
+  @IsBoolean()
+  syncHorsLigne?: boolean;
 }

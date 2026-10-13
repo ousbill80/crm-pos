@@ -1354,6 +1354,117 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       expect(stock?.quantite).toBe(-2);
     });
 
+    describe('Vente hors-ligne resynchronisée (§6.7) — tolérance stock négatif', () => {
+      it('accepte (201) une vente syncHorsLigne en rupture sans dérogation, stock négatif, origineHorsLigne=true, audit dédié', async () => {
+        const produit = await env.prisma.produit.create({
+          data: {
+            designation: 'Article hors-ligne rupture',
+            prixUnitaire: '150.00',
+            stock: 1,
+          },
+        });
+        await env.prisma.stockQuant.create({
+          data: { produitId: produit.id, entrepotId, quantite: 1 },
+        });
+
+        // Sans syncHorsLigne ni dérogation : refusée (non-régression).
+        await request(app.getHttpServer())
+          .post(`/ventes/sessions/${sessionId}/ventes`)
+          .set(auth(tokens.caissierB1))
+          .send({
+            lignes: [{ produitId: produit.id, quantite: 3 }],
+            modePaiement: 'CARTE',
+          })
+          .expect(400);
+
+        const response = await request(app.getHttpServer())
+          .post(`/ventes/sessions/${sessionId}/ventes`)
+          .set(auth(tokens.caissierB1))
+          .send({
+            lignes: [{ produitId: produit.id, quantite: 3 }],
+            modePaiement: 'CARTE',
+            syncHorsLigne: true,
+          })
+          .expect(201);
+
+        const body = response.body as VenteDto & { origineHorsLigne: boolean };
+        expect(body.origineHorsLigne).toBe(true);
+
+        const vente = await env.prisma.vente.findUnique({
+          where: { id: body.id },
+        });
+        expect(vente?.origineHorsLigne).toBe(true);
+
+        const stock = await env.prisma.stockQuant.findUnique({
+          where: {
+            produitId_entrepotId: { produitId: produit.id, entrepotId },
+          },
+        });
+        expect(stock?.quantite).toBe(-2);
+
+        const audit = await env.prisma.journalAudit.findFirst({
+          where: {
+            action: 'VENTE_SYNC_HORS_LIGNE_STOCK_NEGATIF',
+            entite: 'Vente',
+            entiteId: body.id,
+          },
+        });
+        expect(audit).not.toBeNull();
+        const details = JSON.parse(audit!.details ?? '{}') as {
+          lignes: {
+            produitId: string;
+            entrepotId: string;
+            quantiteApres: number;
+          }[];
+        };
+        expect(details.lignes).toEqual([
+          { produitId: produit.id, entrepotId, quantiteApres: -2 },
+        ]);
+      });
+
+      it('n’enregistre PAS l’audit stock négatif si syncHorsLigne=true mais le stock reste suffisant', async () => {
+        const produit = await env.prisma.produit.create({
+          data: {
+            designation: 'Article hors-ligne stock suffisant',
+            prixUnitaire: '150.00',
+            stock: 10,
+          },
+        });
+        await env.prisma.stockQuant.create({
+          data: { produitId: produit.id, entrepotId, quantite: 10 },
+        });
+
+        const response = await request(app.getHttpServer())
+          .post(`/ventes/sessions/${sessionId}/ventes`)
+          .set(auth(tokens.caissierB1))
+          .send({
+            lignes: [{ produitId: produit.id, quantite: 2 }],
+            modePaiement: 'CARTE',
+            syncHorsLigne: true,
+          })
+          .expect(201);
+
+        const body = response.body as VenteDto & { origineHorsLigne: boolean };
+        expect(body.origineHorsLigne).toBe(true);
+
+        const stock = await env.prisma.stockQuant.findUnique({
+          where: {
+            produitId_entrepotId: { produitId: produit.id, entrepotId },
+          },
+        });
+        expect(stock?.quantite).toBe(8);
+
+        const audit = await env.prisma.journalAudit.findFirst({
+          where: {
+            action: 'VENTE_SYNC_HORS_LIGNE_STOCK_NEGATIF',
+            entite: 'Vente',
+            entiteId: body.id,
+          },
+        });
+        expect(audit).toBeNull();
+      });
+    });
+
     it('refuse la clôture tant qu’une réservation existe', async () => {
       const holdId = 'b2b2b2b2-c3c3-4d4d-a5a5-f6f6f6f6f6f6';
       await request(app.getHttpServer())

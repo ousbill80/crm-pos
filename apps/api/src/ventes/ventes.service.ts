@@ -262,6 +262,14 @@ export class VentesService {
       statut: string;
       qrToken: string;
     } | null = null;
+    // Vente hors-ligne resynchronisée (§6.7) ayant fait passer un StockQuant
+    // sous zéro — journalisé en audit dédié après la transaction, voir
+    // VENTE_SYNC_HORS_LIGNE_STOCK_NEGATIF plus bas.
+    const lignesEcartStockNegatif: {
+      produitId: string;
+      entrepotId: string;
+      quantiteApres: number;
+    }[] = [];
     try {
       const resultat = await this.prisma.$transaction(async (tx) => {
         let montantTotal = new Prisma.Decimal(0);
@@ -305,7 +313,11 @@ export class VentesService {
               dto.holdId,
               tx,
             );
-            if (dispo < ligne.quantite && !motifs.has('STOCK_INSUFFISANT')) {
+            if (
+              dispo < ligne.quantite &&
+              !motifs.has('STOCK_INSUFFISANT') &&
+              !dto.syncHorsLigne
+            ) {
               throw new BadRequestException({
                 code: 'STOCK_INSUFFISANT',
                 message: `Stock insuffisant pour le produit "${produit.designation}" (disponible : ${dispo}, demandé : ${ligne.quantite}).`,
@@ -328,17 +340,25 @@ export class VentesService {
           }
 
           if (!estPrestation) {
-            await this.stockService.appliquerMouvement(
+            const mouvement = await this.stockService.appliquerMouvement(
               {
                 produitId: produit.id,
                 entrepotId: entrepotIdPos,
                 type: 'VENTE',
                 delta: -ligne.quantite,
                 utilisateurId: utilisateur.userId,
-                autoriserNegatif: motifs.has('STOCK_INSUFFISANT'),
+                autoriserNegatif:
+                  motifs.has('STOCK_INSUFFISANT') || Boolean(dto.syncHorsLigne),
               },
               tx,
             );
+            if (dto.syncHorsLigne && mouvement.stockApres < 0) {
+              lignesEcartStockNegatif.push({
+                produitId: produit.id,
+                entrepotId: entrepotIdPos,
+                quantiteApres: mouvement.stockApres,
+              });
+            }
           }
 
           montantTotal = montantTotal.plus(montantLigne.minus(remise));
@@ -387,6 +407,7 @@ export class VentesService {
             remiseFidelite,
             clientId: dto.clientId,
             clientOperationId: dto.clientOperationId,
+            origineHorsLigne: dto.syncHorsLigne ?? false,
             lignes: { create: lignesData },
             paiements: { create: paiements },
           },
@@ -461,6 +482,18 @@ export class VentesService {
           chefId: chef.id,
           chefLogin: chef.login,
           motifs: dto.derogation.motifs,
+        }),
+      });
+    }
+
+    if (dto.syncHorsLigne && lignesEcartStockNegatif.length > 0) {
+      await this.audit.record({
+        utilisateurId: utilisateur.userId,
+        action: 'VENTE_SYNC_HORS_LIGNE_STOCK_NEGATIF',
+        entite: 'Vente',
+        entiteId: vente.id,
+        details: JSON.stringify({
+          lignes: lignesEcartStockNegatif,
         }),
       });
     }

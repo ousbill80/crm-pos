@@ -2470,6 +2470,11 @@ model Vente {
   clientId           String?
   // Idempotence hors-ligne (§6.7) : UUID généré côté caisse, unique si renseigné.
   clientOperationId  String?                  @unique
+  // Vente POS saisie hors-ligne et resynchronisée (§6.7 mode hors-ligne) :
+  // tolère un stock devenu insuffisant pendant la déconnexion — déclenche
+  // une alerte ECART_STOCK pour régularisation a posteriori par le contrôle
+  // interne, jamais d'invalidation rétroactive de la vente déjà encaissée.
+  origineHorsLigne   Boolean                  @default(false)
   lignes             LigneVente[]
   retours            RetourVente[]
   paiements          PaiementVente[]
