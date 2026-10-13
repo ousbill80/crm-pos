@@ -13,6 +13,7 @@ import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { VentesQuotidiennesQueryDto } from './dto/ventes-quotidiennes-query.dto';
 import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
 import { ExportComptableQueryDto } from './dto/export-comptable-query.dto';
+import { ClotureJournaliereQueryDto } from './dto/cloture-journaliere-query.dto';
 import {
   dessinerDafPdf,
   dessinerDashboardPdf,
@@ -126,6 +127,16 @@ export class ReportingController {
       (doc) => dessinerDashboardPdf(doc, data, societe),
       'Tableau de bord · §6.3.4',
     );
+  }
+
+  /** Clôture journalière consolidée DAF (§6.3.4) — lecture seule, réseau. */
+  @Get('cloture-journaliere')
+  @Roles(...ROLES_RESEAU_TRESORERIE)
+  getClotureJournaliere(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ClotureJournaliereQueryDto,
+  ) {
+    return this.reportingService.getClotureJournaliere(user, query);
   }
 
   /** Rapprochement 3 voies (§5.2) — contrôle interne. */

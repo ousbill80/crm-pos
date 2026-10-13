@@ -25,6 +25,7 @@ import { StockService } from '../stocks/stock.service';
 import { toCsv } from '../common/csv.util';
 import { ControleCoherenceQueryDto } from './dto/controle-coherence-query.dto';
 import { ExportComptableQueryDto } from './dto/export-comptable-query.dto';
+import { ClotureJournaliereQueryDto } from './dto/cloture-journaliere-query.dto';
 
 export interface PeriodeFiltre {
   dateFrom?: string;
@@ -219,6 +220,41 @@ export interface ControleCoherenceDto {
     ventesVsBordereaux: string;
     bordereauxVsReceptions: string;
     signale: boolean;
+  };
+}
+
+// Clôture journalière consolidée DAF (§6.3.4) — lecture seule, agrégée par
+// boutique + total réseau, pour une journée donnée (pas de nouvel état de
+// validation/signature : décision utilisateur, cf. plan validé).
+export interface VersementsJourDto {
+  initiesNombre: number;
+  initiesMontant: string;
+  receptionnesNombre: number;
+  receptionnesMontant: string;
+  validesNombre: number;
+  validesMontant: string;
+}
+
+export interface ClotureJournaliereBoutiqueDto {
+  boutiqueId: string;
+  nomBoutique: string;
+  soldeOuverture: string;
+  soldeFermeture: string;
+  ventes: string;
+  versements: VersementsJourDto;
+  ecarts: { nombreLitiges: number; montantEcartsAbsolus: string };
+}
+
+export interface ClotureJournaliereDto {
+  date: string;
+  genereAt: string;
+  parBoutique: ClotureJournaliereBoutiqueDto[];
+  reseau: {
+    soldeOuverture: string;
+    soldeFermeture: string;
+    ventes: string;
+    versements: VersementsJourDto;
+    ecarts: { nombreLitiges: number; montantEcartsAbsolus: string };
   };
 }
 
@@ -922,6 +958,216 @@ export class ReportingService {
         signale:
           ecartVentesBordereaux.abs().greaterThan(TOLERANCE_ECART) ||
           ecartBordereauxReceptions.abs().greaterThan(TOLERANCE_ECART),
+      },
+    };
+  }
+
+  // Clôture journalière consolidée DAF (§6.3.4) — réseau entier, lecture
+  // seule. Réutilise CaisseBalanceService.calculerSolde (bornée par date)
+  // pour les soldes d'ouverture/fermeture, et la logique de rapprochement
+  // de getControleCoherence pour les versements/écarts du jour.
+  async getClotureJournaliere(
+    user: AuthenticatedUser,
+    query: ClotureJournaliereQueryDto,
+  ): Promise<ClotureJournaliereDto> {
+    if (!ROLES_RESEAU_TRESORERIE.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité à la clôture journalière (§6.3.4).`,
+      );
+    }
+
+    const debutJour = new Date(query.date);
+    const finJour = new Date(debutJour.getTime() + 24 * 60 * 60 * 1000 - 1);
+    const finJourPrecedent = new Date(debutJour.getTime() - 1);
+    const periodeJour = { gte: debutJour, lte: finJour };
+
+    const caisses = await this.prisma.caisse.findMany({
+      where: { type: TypeCaisse.MAGASIN },
+      include: { boutique: { select: { id: true, nom: true } } },
+    });
+
+    const caissesParBoutique = new Map<
+      string,
+      { nom: string; caisseIds: string[] }
+    >();
+    for (const c of caisses) {
+      if (!c.boutiqueId || !c.boutique) continue;
+      const entry = caissesParBoutique.get(c.boutiqueId);
+      if (entry) {
+        entry.caisseIds.push(c.id);
+      } else {
+        caissesParBoutique.set(c.boutiqueId, {
+          nom: c.boutique.nom,
+          caisseIds: [c.id],
+        });
+      }
+    }
+
+    const parBoutique = await Promise.all(
+      [...caissesParBoutique.entries()].map(
+        ([boutiqueId, { nom, caisseIds }]) =>
+          this.clotureJourPourCaisses(boutiqueId, nom, caisseIds, {
+            periodeJour,
+            finJour,
+            finJourPrecedent,
+          }),
+      ),
+    );
+    parBoutique.sort((a, b) => a.nomBoutique.localeCompare(b.nomBoutique));
+
+    const toutesCaisseIds = caisses.map((c) => c.id);
+    const reseauBrut = await this.clotureJourPourCaisses(
+      'RESEAU',
+      'Réseau',
+      toutesCaisseIds,
+      { periodeJour, finJour, finJourPrecedent },
+    );
+
+    return {
+      date: query.date,
+      genereAt: new Date().toISOString(),
+      parBoutique,
+      reseau: {
+        soldeOuverture: reseauBrut.soldeOuverture,
+        soldeFermeture: reseauBrut.soldeFermeture,
+        ventes: reseauBrut.ventes,
+        versements: reseauBrut.versements,
+        ecarts: reseauBrut.ecarts,
+      },
+    };
+  }
+
+  private async clotureJourPourCaisses(
+    boutiqueId: string,
+    nomBoutique: string,
+    caisseIds: string[],
+    bornes: {
+      periodeJour: Prisma.DateTimeFilter;
+      finJour: Date;
+      finJourPrecedent: Date;
+    },
+  ): Promise<ClotureJournaliereBoutiqueDto> {
+    if (caisseIds.length === 0) {
+      return {
+        boutiqueId,
+        nomBoutique,
+        soldeOuverture: '0.00',
+        soldeFermeture: '0.00',
+        ventes: '0.00',
+        versements: {
+          initiesNombre: 0,
+          initiesMontant: '0.00',
+          receptionnesNombre: 0,
+          receptionnesMontant: '0.00',
+          validesNombre: 0,
+          validesMontant: '0.00',
+        },
+        ecarts: { nombreLitiges: 0, montantEcartsAbsolus: '0.00' },
+      };
+    }
+
+    const [
+      soldesOuverture,
+      soldesFermeture,
+      ventesAgg,
+      versementsGroup,
+      litiges,
+    ] = await Promise.all([
+      Promise.all(
+        caisseIds.map((id) =>
+          this.caisseBalanceService.calculerSolde(id, bornes.finJourPrecedent),
+        ),
+      ),
+      Promise.all(
+        caisseIds.map((id) =>
+          this.caisseBalanceService.calculerSolde(id, bornes.finJour),
+        ),
+      ),
+      this.prisma.vente.aggregate({
+        where: { caisseId: { in: caisseIds }, dateVente: bornes.periodeJour },
+        _sum: { montantTotal: true },
+      }),
+      this.prisma.transactionCaisse.groupBy({
+        by: ['statut'],
+        where: {
+          caisseId: { in: caisseIds },
+          type: TypeTransaction.SORTIE_FONDS,
+          dateHeure: bornes.periodeJour,
+        },
+        _count: { _all: true },
+        _sum: { montant: true },
+      }),
+      this.prisma.transactionCaisse.findMany({
+        where: {
+          caisseId: { in: caisseIds },
+          type: TypeTransaction.SORTIE_FONDS,
+          statut: StatutTransaction.LITIGE,
+          dateHeure: bornes.periodeJour,
+        },
+        select: {
+          bordereau: { select: { reception: { select: { ecart: true } } } },
+        },
+      }),
+    ]);
+
+    const soldeOuverture = soldesOuverture.reduce(
+      (acc, s) => acc.plus(s),
+      zero(),
+    );
+    const soldeFermeture = soldesFermeture.reduce(
+      (acc, s) => acc.plus(s),
+      zero(),
+    );
+
+    const receptionnesStatuts: StatutTransaction[] = [
+      StatutTransaction.RECEPTIONNEE,
+      StatutTransaction.VALIDEE,
+      StatutTransaction.LITIGE,
+    ];
+    let initiesNombre = 0;
+    let initiesMontant = zero();
+    let receptionnesNombre = 0;
+    let receptionnesMontant = zero();
+    let validesNombre = 0;
+    let validesMontant = zero();
+    for (const g of versementsGroup) {
+      const nombre = g._count._all;
+      const montant = g._sum.montant ?? zero();
+      initiesNombre += nombre;
+      initiesMontant = initiesMontant.plus(montant);
+      if (receptionnesStatuts.includes(g.statut)) {
+        receptionnesNombre += nombre;
+        receptionnesMontant = receptionnesMontant.plus(montant);
+      }
+      if (g.statut === StatutTransaction.VALIDEE) {
+        validesNombre += nombre;
+        validesMontant = validesMontant.plus(montant);
+      }
+    }
+
+    let montantEcarts = zero();
+    for (const t of litiges) {
+      const ecart = t.bordereau?.reception?.ecart;
+      if (ecart) montantEcarts = montantEcarts.plus(ecart.abs());
+    }
+
+    return {
+      boutiqueId,
+      nomBoutique,
+      soldeOuverture: money(soldeOuverture),
+      soldeFermeture: money(soldeFermeture),
+      ventes: money(ventesAgg._sum.montantTotal ?? zero()),
+      versements: {
+        initiesNombre,
+        initiesMontant: money(initiesMontant),
+        receptionnesNombre,
+        receptionnesMontant: money(receptionnesMontant),
+        validesNombre,
+        validesMontant: money(validesMontant),
+      },
+      ecarts: {
+        nombreLitiges: litiges.length,
+        montantEcartsAbsolus: money(montantEcarts),
       },
     };
   }

@@ -22,13 +22,17 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CaisseBalanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculerSolde(caisseId: string): Promise<Prisma.Decimal> {
+  // `asOf` borne le grand livre aux écritures VALIDEE antérieures ou égales
+  // à cette date (clôture journalière §6.3.4) ; omis, le solde courant.
+  async calculerSolde(caisseId: string, asOf?: Date): Promise<Prisma.Decimal> {
     const caisse = await this.prisma.caisse.findUnique({
       where: { id: caisseId },
     });
     if (!caisse) {
       throw new NotFoundException(`Caisse ${caisseId} introuvable.`);
     }
+
+    const borneDate = asOf ? { dateHeure: { lte: asOf } } : {};
 
     const [ventes, sorties, transfertsSortants, transfertsEntrants] =
       await Promise.all([
@@ -37,6 +41,7 @@ export class CaisseBalanceService {
             caisseId,
             type: TypeTransaction.VENTE,
             statut: StatutTransaction.VALIDEE,
+            ...borneDate,
           },
           _sum: { montant: true },
         }),
@@ -45,6 +50,7 @@ export class CaisseBalanceService {
             caisseId,
             type: TypeTransaction.SORTIE_FONDS,
             statut: StatutTransaction.VALIDEE,
+            ...borneDate,
           },
           _sum: { montant: true },
         }),
@@ -54,6 +60,7 @@ export class CaisseBalanceService {
             type: TypeTransaction.TRANSFERT_INTERNE,
             statut: StatutTransaction.VALIDEE,
             transactionSourceId: null,
+            ...borneDate,
           },
           _sum: { montant: true },
         }),
@@ -63,6 +70,7 @@ export class CaisseBalanceService {
             type: TypeTransaction.TRANSFERT_INTERNE,
             statut: StatutTransaction.VALIDEE,
             NOT: { transactionSourceId: null },
+            ...borneDate,
           },
           _sum: { montant: true },
         }),
