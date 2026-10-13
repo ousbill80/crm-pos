@@ -23,6 +23,7 @@ import { StatutCommandeWeb } from '@caisse-crm/shared';
 import { ConfigService } from '@nestjs/config';
 import type { ProviderPspShop } from '@caisse-crm/shared';
 import { ShopOrderLifecycleService } from '../shop-order-lifecycle.service';
+import { ShopPspPayoutService } from './shop-psp-payout.service';
 import {
   messagePspIndisponible,
   pspProviderConfigure,
@@ -40,6 +41,7 @@ export class ShopPspService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly lifecycle: ShopOrderLifecycleService,
+    private readonly payoutService: ShopPspPayoutService,
     paystack: PaystackAdapter,
     orangeMoney: OrangeMoneyAdapter,
     wave: WaveAdapter,
@@ -451,6 +453,12 @@ export class ShopPspService {
         entite: 'CommandeWeb',
         entiteId: commande.id,
         details: `${provider} ${ev.webhookEventId}`,
+      });
+    }
+
+    if (provider === 'WAVE') {
+      await this.payoutService.declencherPayout(commande).catch((err) => {
+        this.logger.error(`Reversement Wave ${commande.id}: ${String(err)}`);
       });
     }
 

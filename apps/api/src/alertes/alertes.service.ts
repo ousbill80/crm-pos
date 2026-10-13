@@ -36,7 +36,8 @@ export type TypeAlerte =
   | 'LITIGE_EN_RETARD'
   | 'POINT_JOUR_NON_VERSE'
   | 'RECEPTION_DAF_EN_ATTENTE'
-  | 'ECART_STOCK';
+  | 'ECART_STOCK'
+  | 'PAYOUT_WAVE_ECHEC';
 
 export interface AlerteDto {
   type: TypeAlerte;
@@ -74,7 +75,10 @@ export class AlertesService {
     const acces = ROLES_RESEAU_TRESORERIE.includes(user.role)
       ? await this.alertesAccesRefusesReseau()
       : [];
-    const alertes = await this.collecter(caisseFilter, acces);
+    const payoutsWave = ROLES_RESEAU_TRESORERIE.includes(user.role)
+      ? await this.alertesPayoutWaveEchec()
+      : [];
+    const alertes = await this.collecter(caisseFilter, acces, payoutsWave);
     if (inclureAcquittees) {
       return alertes;
     }
@@ -142,12 +146,14 @@ export class AlertesService {
   // requête utilisateur.
   async listerReseau(): Promise<AlerteDto[]> {
     const acces = await this.alertesAccesRefusesReseau();
-    return this.collecter(undefined, acces);
+    const payoutsWave = await this.alertesPayoutWaveEchec();
+    return this.collecter(undefined, acces, payoutsWave);
   }
 
   private async collecter(
     caisseFilter: Prisma.CaisseWhereInput | undefined,
     acces: AlerteDto[],
+    payoutsWave: AlerteDto[] = [],
   ): Promise<AlerteDto[]> {
     const societe = await this.prisma.societe.findFirst({
       select: {
@@ -206,6 +212,7 @@ export class AlertesService {
       ...pointsNonVerses,
       ...receptionsDaf,
       ...ecartsStock,
+      ...payoutsWave,
     ].sort(
       (a, b) =>
         new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime(),
@@ -636,6 +643,32 @@ export class AlertesService {
         quantite: q.quantite,
         boutiqueId: q.entrepot.boutiqueId,
         boutiqueNom: q.entrepot.boutique.nom,
+      },
+    }));
+  }
+
+  // Reversement Wave en échec (plan PSP Wave) : argent dû à Major Auto Parts
+  // non transmis — réseau entier, pas de scoping boutique (CommandeWeb est
+  // une entité e-commerce sans rattachement boutique/zone).
+  private async alertesPayoutWaveEchec(): Promise<AlerteDto[]> {
+    const echecs = await this.prisma.payoutWave.findMany({
+      where: { statut: 'ECHEC' },
+      include: { commande: { select: { clientOperationId: true } } },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
+    });
+
+    return echecs.map((p) => ({
+      type: 'PAYOUT_WAVE_ECHEC' as const,
+      severite: 'CRITICAL' as const,
+      message: `Reversement Wave non abouti — commande ${p.commande.clientOperationId}, ${p.montantNet.toFixed(0)} FCFA, erreur ${p.erreurCode ?? 'inconnue'}`,
+      dateHeure: p.updatedAt.toISOString(),
+      entite: 'PayoutWave',
+      entiteId: p.id,
+      details: {
+        montant: p.montantNet.toFixed(2),
+        erreurCode: p.erreurCode,
+        commandeWebId: p.commandeWebId,
       },
     }));
   }

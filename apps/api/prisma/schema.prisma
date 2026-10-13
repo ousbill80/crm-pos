@@ -2972,6 +2972,13 @@ enum StatutPaiementCommandeWeb {
   REMBOURSE
 }
 
+enum StatutPayoutWave {
+  EN_ATTENTE
+  EN_COURS
+  REUSSI
+  ECHEC
+}
+
 model ParametreShop {
   id                        String                @id @default(uuid())
   societe                   Societe               @relation(fields: [societeId], references: [id])
@@ -2991,6 +2998,10 @@ model ParametreShop {
   paiementLivraisonActif    Boolean               @default(true)
   modesPaiementRetrait      ModePaiement[]        @default([ESPECES])
   modesPaiementLivraison    ModePaiement[]        @default([ESPECES])
+  waveCommissionPourcent    Decimal               @default(1.5) @db.Decimal(5, 2)
+  waveBeneficiaireMobile    String?
+  waveBeneficiaireNom       String?
+  waveBeneficiaireTesteAt   DateTime?
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
 
@@ -3123,6 +3134,7 @@ model CommandeWeb {
   conversionVente      ConversionCommandeVente?
   avis                 AvisCommandeWeb?
   funnelEvents         ShopFunnelEvent[]
+  payoutWave           PayoutWave?
 
   @@index([statut])
   @@index([compteClientId])
@@ -3183,6 +3195,31 @@ model PaiementCommandeWeb {
   @@unique([provider, webhookEventId])
   @@index([commandeWebId])
   @@map("paiement_commande_web")
+}
+
+// Reversement automatique Wave : l'encaissement client atterrit sur le
+// compte Wave de l'intégrateur (ZenAPI) ; cette ligne trace le virement net
+// (moins commission) vers le compte Wave Business de Major Auto Parts.
+model PayoutWave {
+  id                  String           @id @default(uuid())
+  commande            CommandeWeb      @relation(fields: [commandeWebId], references: [id])
+  commandeWebId       String           @unique
+  montantBrut         Decimal          @db.Decimal(14, 2)
+  commissionPourcent  Decimal          @db.Decimal(5, 2)
+  commissionMontant   Decimal          @db.Decimal(14, 2)
+  montantNet          Decimal          @db.Decimal(14, 2)
+  mobileBeneficiaire  String
+  statut              StatutPayoutWave @default(EN_ATTENTE)
+  referenceProvider   String?
+  idempotencyKey      String           @unique
+  tentatives          Int              @default(0)
+  erreurCode          String?
+  erreurMessage       String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([statut])
+  @@map("payout_wave")
 }
 
 model ConversionCommandeVente {

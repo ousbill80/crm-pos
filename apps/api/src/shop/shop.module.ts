@@ -11,6 +11,8 @@ import { PaystackAdapter } from './psp/paystack.adapter';
 import { OrangeMoneyAdapter } from './psp/orange-money.adapter';
 import { WaveAdapter } from './psp/wave.adapter';
 import { ShopPspService } from './psp/shop-psp.service';
+import { ShopPspPayoutService } from './psp/shop-psp-payout.service';
+import { ShopPayoutWaveScheduler } from './psp/shop-payout-wave.scheduler';
 import { ShopWebhookController } from './psp/shop-webhook.controller';
 import { ShopCompteService } from './shop-compte.service';
 import { ShopCompteController } from './shop-compte.controller';
@@ -39,6 +41,8 @@ import { JwtModule } from '@nestjs/jwt';
     OrangeMoneyAdapter,
     WaveAdapter,
     ShopPspService,
+    ShopPspPayoutService,
+    ShopPayoutWaveScheduler,
     ShopCompteService,
     ShopEmailService,
     ShopOrderLifecycleService,
@@ -58,6 +62,7 @@ import { JwtModule } from '@nestjs/jwt';
     ShopAvisService,
     ShopAarrrService,
     ShopStockWebService,
+    WaveAdapter,
   ],
 })
 export class ShopModule {}

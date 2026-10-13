@@ -203,4 +203,96 @@ export class WaveAdapter implements ShopPspAdapter {
     }
     return { referenceProvider: input.referenceProvider };
   }
+
+  /**
+   * Reversement (payout) vers le compte Wave Business bénéficiaire.
+   * Pas de webhook Wave pour les payouts : le statut terminal s’obtient en
+   * sondant `verifierPayout`.
+   */
+  async payout(input: {
+    mobile: string;
+    montantNet: number;
+    idempotencyKey: string;
+    clientReference: string;
+    nom?: string;
+  }): Promise<{
+    id: string;
+    status: 'processing' | 'succeeded' | 'failed';
+    erreurCode?: string;
+  }> {
+    const apiKey = this.apiKey();
+    if (!apiKey) {
+      throw new ServiceUnavailableException(
+        'Wave n’est pas activé (WAVE_API_KEY absent) — reversement impossible.',
+      );
+    }
+    const res = await fetch(`${WAVE_API_BASE}/v1/payout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': input.idempotencyKey,
+      },
+      body: JSON.stringify({
+        currency: 'XOF',
+        mobile: input.mobile,
+        receive_amount: Math.round(input.montantNet).toString(),
+        client_reference: input.clientReference,
+        payment_reason: 'Major Auto Parts'.slice(0, 40),
+        ...(input.nom ? { name: input.nom } : {}),
+      }),
+    });
+    const body = (await res.json()) as {
+      id?: string;
+      status?: 'processing' | 'succeeded' | 'failed';
+      payout_error?: { code?: string };
+      message?: string;
+    };
+    if (!res.ok || !body.id || !body.status) {
+      this.logger.error(`Wave payout failed: ${body.message ?? res.status}`);
+      throw new Error('Échec de la requête de reversement Wave.');
+    }
+    return {
+      id: body.id,
+      status: body.status,
+      ...(body.payout_error?.code
+        ? { erreurCode: body.payout_error.code }
+        : {}),
+    };
+  }
+
+  async verifierPayout(id: string): Promise<{
+    status: 'processing' | 'succeeded' | 'failed';
+    erreurCode?: string;
+  }> {
+    const apiKey = this.apiKey();
+    if (!apiKey) {
+      throw new ServiceUnavailableException(
+        'Wave n’est pas activé (WAVE_API_KEY absent) — vérification impossible.',
+      );
+    }
+    const res = await fetch(
+      `${WAVE_API_BASE}/v1/payout/${encodeURIComponent(id)}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      },
+    );
+    const body = (await res.json()) as {
+      status?: 'processing' | 'succeeded' | 'failed';
+      payout_error?: { code?: string };
+      message?: string;
+    };
+    if (!res.ok || !body.status) {
+      this.logger.error(
+        `Wave payout status failed: ${body.message ?? res.status}`,
+      );
+      throw new Error('Échec de la vérification du reversement Wave.');
+    }
+    return {
+      status: body.status,
+      ...(body.payout_error?.code
+        ? { erreurCode: body.payout_error.code }
+        : {}),
+    };
+  }
 }

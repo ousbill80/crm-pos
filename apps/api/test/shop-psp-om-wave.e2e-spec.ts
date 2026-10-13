@@ -254,4 +254,55 @@ describe('Shop OM/Wave webhooks (e2e)', () => {
     });
     expect(updated?.statut).toBe('EN_ATTENTE_PAIEMENT');
   });
+
+  it('crée une ligne PayoutWave (montant net correct) après capture Wave réussie — bénéficiaire configuré', async () => {
+    await env.prisma.parametreShop.updateMany({
+      data: { waveBeneficiaireMobile: '+2250700000000' },
+    });
+    await env.prisma.stockQuant.updateMany({
+      where: { produitId, entrepotId },
+      data: { quantite: 10 },
+    });
+
+    const opId = '99999999-9999-4999-8999-999999999999';
+    const cmd = await checkoutWave(opId);
+
+    const event = {
+      id: 'EV_3',
+      type: 'checkout.session.completed',
+      data: {
+        id: 'cos-wave-3',
+        amount: Math.round(Number(cmd.montantTotal)).toString(),
+        currency: 'XOF',
+        payment_status: 'succeeded',
+        checkout_status: 'complete',
+        client_reference: opId,
+      },
+    };
+    const { payload, header } = signWave(event);
+    await request(app.getHttpServer())
+      .post('/shop/webhooks/wave')
+      .set('wave-signature', header)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(201);
+
+    const updated = await env.prisma.commandeWeb.findUnique({
+      where: { id: cmd.id },
+    });
+    expect(updated?.statut).toBe('PREPARATION');
+
+    // WAVE_API_KEY reste neutralisé en e2e (jest-e2e.setup.ts) : le payout ne
+    // doit jamais faire remonter d'exception qui romprait la capture déjà
+    // actée — la ligne existe quand même, avec le montant net calculé.
+    const payout = await env.prisma.payoutWave.findUnique({
+      where: { commandeWebId: cmd.id },
+    });
+    expect(payout).toBeDefined();
+    const montantBrut = Math.round(Number(cmd.montantTotal));
+    const montantNetAttendu = Math.round(montantBrut * (1 - 1.5 / 100));
+    expect(Number(payout?.montantNet)).toBe(montantNetAttendu);
+    expect(payout?.mobileBeneficiaire).toBe('+2250700000000');
+    expect(payout?.statut).toBe('ECHEC');
+  });
 });
