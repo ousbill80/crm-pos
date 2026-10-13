@@ -14,6 +14,19 @@ import {
   ROLE_SUPERVISEUR_ZONE,
 } from '../caisses/access-scope.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveCorsMode } from '../http-security';
+
+// Même politique CORS que l'API REST (CORS_ORIGINS, cf. http-security.ts) :
+// évalué au chargement du module (les options du décorateur sont figées
+// avant le bootstrap Nest), donc CORS_ORIGINS doit être une vraie variable
+// d'environnement de process (pas seulement .env, chargé plus tard par
+// ConfigModule) — cohérent avec le déploiement conteneurisé en production.
+function resolveWsCorsOrigin(): boolean | string[] {
+  const mode = resolveCorsMode(process.env.CORS_ORIGINS, process.env.NODE_ENV);
+  if (mode.kind === 'origins') return mode.origins;
+  if (mode.kind === 'closed') return false;
+  return true;
+}
 
 export const TRANSACTION_STATUT_EVENT = 'transaction.statut';
 export const ALERTE_NOUVELLE_EVENT = 'alerte.nouvelle';
@@ -42,7 +55,7 @@ export interface AlerteRealtimePayload {
 // Diffusion temps réel des changements de statut (§5.2) : rooms
 // `reseau`, `zone:{id}`, `boutique:{id}` selon le périmètre §6.2.
 @WebSocketGateway({
-  cors: { origin: true },
+  cors: { origin: resolveWsCorsOrigin() },
   namespace: '/tresorerie',
 })
 export class TransactionsGateway implements OnGatewayConnection {

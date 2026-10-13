@@ -204,6 +204,6 @@ export class AuthService {
   }
 
   static async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, 10);
+    return bcrypt.hash(password, 12);
   }
 }

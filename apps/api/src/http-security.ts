@@ -17,7 +17,10 @@ export function applyHttpSecurity(app: NestExpressApplication): void {
   );
 }
 
-export type CorsMode = { kind: 'origins'; origins: string[] } | { kind: 'closed' } | { kind: 'dev-open' };
+export type CorsMode =
+  | { kind: 'origins'; origins: string[] }
+  | { kind: 'closed' }
+  | { kind: 'dev-open' };
 
 export function resolveCorsMode(
   rawOrigins: string | undefined,

@@ -62,7 +62,10 @@ export class TurnstileService {
     );
   }
 
-  async assertValid(token: string | undefined, remoteIp?: string): Promise<void> {
+  async assertValid(
+    token: string | undefined,
+    remoteIp?: string,
+  ): Promise<void> {
     const secret = this.secret();
     if (!secret) {
       return;

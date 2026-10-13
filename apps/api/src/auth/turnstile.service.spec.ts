@@ -28,18 +28,21 @@ describe('TurnstileService', () => {
       TURNSTILE_SECRET_KEY: 'test-secret',
       TURNSTILE_HOSTNAMES: 'crm.example.com',
     });
-    await expect(svc.assertValid('')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.assertValid('')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('accepte un token validé (success + action + hostname)', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        success: true,
-        action: 'login',
-        hostname: 'crm.majorautoparts.shop',
-      }),
-    }) as unknown as typeof fetch;
+      json: () =>
+        Promise.resolve({
+          success: true,
+          action: 'login',
+          hostname: 'crm.majorautoparts.shop',
+        }),
+    });
 
     const svc = service({
       TURNSTILE_SECRET_KEY: 'test-secret',
@@ -51,12 +54,13 @@ describe('TurnstileService', () => {
   it('rejette si action ou hostname ne matchent pas', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({
-        success: true,
-        action: 'signup',
-        hostname: 'crm.majorautoparts.shop',
-      }),
-    }) as unknown as typeof fetch;
+      json: () =>
+        Promise.resolve({
+          success: true,
+          action: 'signup',
+          hostname: 'crm.majorautoparts.shop',
+        }),
+    });
 
     const svc = service({
       TURNSTILE_SECRET_KEY: 'test-secret',
