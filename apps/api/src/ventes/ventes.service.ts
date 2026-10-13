@@ -174,6 +174,11 @@ export class VentesService {
           return existante;
         }
       }
+      if (this.estConflitSessionOuverte(error)) {
+        throw new ConflictException(
+          'Conflit de concurrence : une session a déjà été ouverte sur ce tiroir au même instant par une autre requête.',
+        );
+      }
       throw error;
     }
 
@@ -873,7 +878,10 @@ export class VentesService {
       // fond compté − fond initial = espèces nettes à verser. INITIEE
       // seulement — réception DAF / Caissier central, jamais la boutique.
       const pointJournee = fondCompte.minus(fondInitial);
-      if (statutTransfert === StatutTransaction.VALIDEE && pointJournee.greaterThan(0)) {
+      if (
+        statutTransfert === StatutTransaction.VALIDEE &&
+        pointJournee.greaterThan(0)
+      ) {
         const sortie = await this.transactionsService.initier(
           {
             caisseId: magasin.id,
@@ -1149,6 +1157,20 @@ export class VentesService {
     return (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
+    );
+  }
+
+  // Index unique partiel session_caisse_ouverte_unique (hors schema.prisma,
+  // cf. migration 20261013120000) : non déclaré comme @unique côté modèle
+  // car Prisma ne supporte pas les index partiels dans le schema. Prisma
+  // retrouve tout de même le nom de champ ["caisseId"] à partir des colonnes
+  // de l'index — aucune autre contrainte unique ne porte sur ce seul champ.
+  private estConflitSessionOuverte(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      Array.isArray(error.meta?.target) &&
+      (error.meta.target as string[]).includes('caisseId')
     );
   }
 

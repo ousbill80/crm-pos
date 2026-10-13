@@ -173,4 +173,40 @@ describe('Audit (e2e)', () => {
       body.data.every((entree) => entree.utilisateurId === utilisateurAuditId),
     ).toBe(true);
   });
+
+  describe('Append-only au niveau DB (§6.7 — "même côté admin")', () => {
+    it('bloque un UPDATE direct en base, même en contournant totalement l’API (trigger PostgreSQL, migration 20261013120100)', async () => {
+      const entree = await env.prisma.journalAudit.findFirst({
+        where: { utilisateurId: utilisateurAuditId },
+      });
+      expect(entree).not.toBeNull();
+
+      await expect(
+        env.prisma
+          .$executeRaw`UPDATE journal_audit SET action = 'HACKED' WHERE id = ${entree!.id}`,
+      ).rejects.toThrow(/append-only/);
+
+      const inchangee = await env.prisma.journalAudit.findUnique({
+        where: { id: entree!.id },
+      });
+      expect(inchangee?.action).toBe(entree!.action);
+    });
+
+    it('bloque un DELETE direct en base, même en contournant totalement l’API', async () => {
+      const entree = await env.prisma.journalAudit.findFirst({
+        where: { utilisateurId: utilisateurAuditId },
+      });
+      expect(entree).not.toBeNull();
+
+      await expect(
+        env.prisma
+          .$executeRaw`DELETE FROM journal_audit WHERE id = ${entree!.id}`,
+      ).rejects.toThrow(/append-only/);
+
+      const toujoursPresente = await env.prisma.journalAudit.findUnique({
+        where: { id: entree!.id },
+      });
+      expect(toujoursPresente).not.toBeNull();
+    });
+  });
 });

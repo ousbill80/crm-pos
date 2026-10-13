@@ -398,6 +398,39 @@ describe('Ventes / POS boutique — §6.3.2, §5.1, §6.4 (e2e)', () => {
       );
     });
 
+    it('verrou DB (audit sécurité) : deux ouvertures concurrentes sur le même tiroir ne laissent qu’une session OUVERTE', async () => {
+      // Le contrôle applicatif ci-dessus (findFirst avant create) laisse une
+      // fenêtre de race condition entre deux requêtes simultanées. Ce test
+      // envoie vraiment les deux requêtes en parallèle (Promise.all) pour
+      // vérifier que c'est bien l'index unique partiel PostgreSQL
+      // (session_caisse_ouverte_unique, migration 20261013120000) qui
+      // tranche, pas seulement la vérification applicative.
+      const caisseConcurrence = await env.prisma.caisse.create({
+        data: {
+          type: TypeCaisse.TIROIR,
+          boutiqueId: boutique1Id,
+          code: 'T02',
+          libelle: 'Tiroir concurrence',
+          actif: true,
+          ordreAffichage: 2,
+        },
+      });
+
+      // fondInitial à 0 : évite tout transfert interne magasin → tiroir qui
+      // fausserait les assertions de solde des tests de clôture suivants.
+      const [r1, r2] = await Promise.all([
+        ouvrirSession(tokens.caissierB1, caisseConcurrence.id, 0, 'resp-b1'),
+        ouvrirSession(tokens.caissierB1, caisseConcurrence.id, 0, 'resp-b1'),
+      ]);
+
+      expect([r1.status, r2.status].sort()).toEqual([201, 409]);
+
+      const sessionsOuvertes = await env.prisma.sessionCaisse.count({
+        where: { caisseId: caisseConcurrence.id, statut: 'OUVERTE' },
+      });
+      expect(sessionsOuvertes).toBe(1);
+    });
+
     // ---------------------------------------------------------------------
     // Encaissement de ventes (§6.3.2) sur la session ouverte de boutique1.
     // ---------------------------------------------------------------------

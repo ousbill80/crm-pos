@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { SensitiveActionChallengeService } from './sensitive-action-challenge.service';
 import { TurnstileService } from './turnstile.service';
+import { resolveJwtSecret } from './jwt-secret.util';
 
 @Module({
   imports: [
@@ -16,10 +17,10 @@ import { TurnstileService } from './turnstile.service';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const secret = config.get<string>('JWT_SECRET');
-        if (!secret) {
-          throw new Error('JWT_SECRET doit être défini (voir apps/api/.env)');
-        }
+        const secret = resolveJwtSecret(
+          config.get<string>('JWT_SECRET'),
+          config.get<string>('NODE_ENV'),
+        );
         // Aligné sur la fenêtre d'autonomie POS hors ligne de 24 h (§6.7).
         // Une durée différente recréerait une session locale impossible à
         // synchroniser à la reconnexion.
