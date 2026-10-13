@@ -333,6 +333,411 @@ describe('P2P receipt-stock (e2e PostgreSQL)', () => {
       .expect(409);
   });
 
+  describe('decideQuality - couverture additionnelle des règles de décision qualité', () => {
+    let auxProductAId: string;
+    let auxProductBId: string;
+    let auxReceiptId: string;
+    let auxReceptionLineAId: string;
+    let auxReceptionLineBId: string;
+    let selfControlReceiptId: string;
+    let selfControlReceptionLineId: string;
+
+    beforeAll(async () => {
+      const supplier = await env.prisma.fournisseur.create({
+        data: { nom: 'Supplier décision qualité' },
+      });
+
+      // Fixture dédiée au test d'auto-contrôle : le rôle DAF figure à la fois
+      // dans ROLES_RECEPTION_P2P_QUANTITATIVE et ROLES_QUALITE_P2P_STOCK
+      // (access-scope.constants.ts). C'est le SEUL rôle qui permet d'atteindre
+      // la vérification applicative receipt-stock.service.ts l.269-273 : avec
+      // un rôle qui n'a accès qu'à un seul des deux endpoints (ex.
+      // LOGISTIQUE_TRANSIT_DOUANE), c'est RolesGuard (403 générique "Rôle non
+      // habilité") qui intercepte la requête avant même d'atteindre le
+      // service, ce qui ne prouverait pas la règle métier d'auto-contrôle.
+      const selfControlProduct = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit auto-contrôle',
+          prixUnitaire: 100,
+          coutMoyenPondere: 40,
+        },
+      });
+      const selfControlOrder = await env.prisma.commandeAchat.create({
+        data: {
+          numero: `PO-AUTOCONTROLE-${crypto.randomUUID()}`,
+          fournisseurId: supplier.id,
+          statut: 'APPROUVEE',
+          dateApprobation: new Date(),
+          initiateurId: users['receipt-achats'],
+          approbateurId: users['receipt-daf'],
+          lignes: {
+            create: {
+              produitId: selfControlProduct.id,
+              quantite: 5,
+              prixUnitaire: 90,
+            },
+          },
+        },
+        include: { lignes: true },
+      });
+      const selfControlReceipt = await request(app.getHttpServer())
+        .post('/achats/receptions')
+        .set(auth(tokens['receipt-daf']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          commandeId: selfControlOrder.id,
+          emplacementQuarantaineId: quarantineId,
+          lignes: [
+            {
+              ligneCommandeId: selfControlOrder.lignes[0].id,
+              quantiteRecue: 5,
+            },
+          ],
+        })
+        .expect(201);
+      selfControlReceiptId = (selfControlReceipt.body as { id: string }).id;
+      selfControlReceptionLineId = (
+        await env.prisma.ligneReceptionAchat.findFirstOrThrow({
+          where: { receptionId: selfControlReceiptId },
+        })
+      ).id;
+      const productA = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit qualité A',
+          prixUnitaire: 150,
+          coutMoyenPondere: 40,
+        },
+      });
+      const productB = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit qualité B',
+          prixUnitaire: 150,
+          coutMoyenPondere: 40,
+        },
+      });
+      auxProductAId = productA.id;
+      auxProductBId = productB.id;
+
+      const order = await env.prisma.commandeAchat.create({
+        data: {
+          numero: `PO-QUALITE-${crypto.randomUUID()}`,
+          fournisseurId: supplier.id,
+          statut: 'APPROUVEE',
+          dateApprobation: new Date(),
+          initiateurId: users['receipt-achats'],
+          approbateurId: users['receipt-daf'],
+          lignes: {
+            create: [
+              { produitId: auxProductAId, quantite: 10, prixUnitaire: 90 },
+              { produitId: auxProductBId, quantite: 10, prixUnitaire: 90 },
+            ],
+          },
+        },
+        include: { lignes: true },
+      });
+      const lineA = order.lignes.find(
+        (line) => line.produitId === auxProductAId,
+      )!;
+      const lineB = order.lignes.find(
+        (line) => line.produitId === auxProductBId,
+      )!;
+
+      const receipt = await request(app.getHttpServer())
+        .post('/achats/receptions')
+        .set(auth(tokens['receipt-log']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          commandeId: order.id,
+          emplacementQuarantaineId: quarantineId,
+          lignes: [
+            { ligneCommandeId: lineA.id, quantiteRecue: 10 },
+            { ligneCommandeId: lineB.id, quantiteRecue: 10 },
+          ],
+        })
+        .expect(201);
+      auxReceiptId = (receipt.body as { id: string }).id;
+      const receptionLines = await env.prisma.ligneReceptionAchat.findMany({
+        where: { receptionId: auxReceiptId },
+      });
+      auxReceptionLineAId = receptionLines.find(
+        (line) => line.produitId === auxProductAId,
+      )!.id;
+      auxReceptionLineBId = receptionLines.find(
+        (line) => line.produitId === auxProductBId,
+      )!.id;
+    });
+
+    it('interdit l’auto-contrôle qualité par le réceptionnaire quantitatif (ForbiddenException)', async () => {
+      // Le code (receipt-stock.service.ts l.269-273) compare receipt.receptionnaireId
+      // à user.userId AVANT toute validation de DTO : le même utilisateur qui a
+      // réceptionné ne peut jamais décider lui-même de la qualité. On utilise
+      // ici le rôle DAF (seul rôle présent dans ROLES_RECEPTION_P2P_QUANTITATIVE
+      // ET ROLES_QUALITE_P2P_STOCK) pour que la requête franchisse bien
+      // RolesGuard et atteigne la vérification applicative, au lieu d'être
+      // interceptée en amont par un rejet RBAC générique.
+      const response = await request(app.getHttpServer())
+        .post(`/achats/receptions/${selfControlReceiptId}/qualite`)
+        .set(auth(tokens['receipt-daf']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: selfControlReceptionLineId,
+              quantiteAcceptee: 5,
+              quantiteRejetee: 0,
+            },
+          ],
+        })
+        .expect(403);
+      expect((response.body as { message: string }).message).toContain(
+        'réceptionnaire quantitatif',
+      );
+    });
+
+    it('exige un motif de rejet dès que quantiteRejetee > 0 (BadRequestException)', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/achats/receptions/${auxReceiptId}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: auxReceptionLineAId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+            {
+              ligneReceptionId: auxReceptionLineBId,
+              quantiteAcceptee: 8,
+              quantiteRejetee: 2,
+            },
+          ],
+        })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain('motif');
+    });
+
+    it('exige que la décision qualité couvre toutes les lignes reçues (BadRequestException)', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/achats/receptions/${auxReceiptId}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: auxReceptionLineAId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+          ],
+        })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain(
+        'toutes les lignes',
+      );
+    });
+
+    it('exige que acceptée + rejetée égale la quantité reçue pour chaque ligne (BadRequestException)', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/achats/receptions/${auxReceiptId}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: auxReceptionLineAId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+            {
+              ligneReceptionId: auxReceptionLineBId,
+              quantiteAcceptee: 5,
+              quantiteRejetee: 3,
+            },
+          ],
+        })
+        .expect(400);
+      expect((response.body as { message: string }).message).toContain(
+        'quantité reçue',
+      );
+    });
+
+    it('refuse de redécider la qualité d’une réception déjà QUALITE_VALIDEE', async () => {
+      const decided = await request(app.getHttpServer())
+        .post(`/achats/receptions/${auxReceiptId}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: auxReceptionLineAId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+            {
+              ligneReceptionId: auxReceptionLineBId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+          ],
+        })
+        .expect(201);
+      expect(decided.body).toHaveProperty('id');
+
+      // Divergence constatée par rapport à l'énoncé : le code place la garde
+      // "une décision qualité existe déjà" (ConflictException, l.274-278) AVANT
+      // l'appel à machine.assertTransition (l.279-282). Comme une décision
+      // qualité est systématiquement créée dès que le statut dépasse
+      // QUANTITATIVE, cette garde de rejeu intercepte toujours la 2e tentative
+      // en premier : la state machine ne peut jamais être atteinte dans ce
+      // scénario via l'API. Le test vérifie donc le comportement RÉEL (409
+      // ConflictException, message "décision qualité existe déjà"), qui
+      // réalise la même garantie métier (transition interdite une fois
+      // qualifiée) mais par un mécanisme différent de celui décrit dans la
+      // consigne.
+      const retried = await request(app.getHttpServer())
+        .post(`/achats/receptions/${auxReceiptId}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: auxReceptionLineAId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+            {
+              ligneReceptionId: auxReceptionLineBId,
+              quantiteAcceptee: 10,
+              quantiteRejetee: 0,
+            },
+          ],
+        })
+        .expect(409);
+      expect((retried.body as { message: string }).message).toContain(
+        'décision qualité existe déjà',
+      );
+    });
+
+    it('rejet total d’une ligne (quantiteAcceptee=0) : aucun mouvement de stock au putaway et CMP inchangé', async () => {
+      const supplier = await env.prisma.fournisseur.create({
+        data: { nom: 'Supplier rejet-total' },
+      });
+      const productAccepted = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit accepté intégralement',
+          prixUnitaire: 120,
+          coutMoyenPondere: 30,
+        },
+      });
+      const productRejected = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit rejeté intégralement',
+          prixUnitaire: 80,
+          coutMoyenPondere: 40,
+        },
+      });
+      const order = await env.prisma.commandeAchat.create({
+        data: {
+          numero: `PO-REJET-${crypto.randomUUID()}`,
+          fournisseurId: supplier.id,
+          statut: 'APPROUVEE',
+          dateApprobation: new Date(),
+          initiateurId: users['receipt-achats'],
+          approbateurId: users['receipt-daf'],
+          lignes: {
+            create: [
+              { produitId: productAccepted.id, quantite: 5, prixUnitaire: 60 },
+              { produitId: productRejected.id, quantite: 5, prixUnitaire: 40 },
+            ],
+          },
+        },
+        include: { lignes: true },
+      });
+      const lineAccepted = order.lignes.find(
+        (line) => line.produitId === productAccepted.id,
+      )!;
+      const lineRejected = order.lignes.find(
+        (line) => line.produitId === productRejected.id,
+      )!;
+
+      const receipt = await request(app.getHttpServer())
+        .post('/achats/receptions')
+        .set(auth(tokens['receipt-log']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          commandeId: order.id,
+          emplacementQuarantaineId: quarantineId,
+          lignes: [
+            { ligneCommandeId: lineAccepted.id, quantiteRecue: 5 },
+            { ligneCommandeId: lineRejected.id, quantiteRecue: 5 },
+          ],
+        })
+        .expect(201);
+      const receiptId2 = (receipt.body as { id: string }).id;
+      const receptionLines = await env.prisma.ligneReceptionAchat.findMany({
+        where: { receptionId: receiptId2 },
+      });
+      const receptionLineAccepted = receptionLines.find(
+        (line) => line.produitId === productAccepted.id,
+      )!;
+      const receptionLineRejected = receptionLines.find(
+        (line) => line.produitId === productRejected.id,
+      )!;
+
+      const decision = await request(app.getHttpServer())
+        .post(`/achats/receptions/${receiptId2}/qualite`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            {
+              ligneReceptionId: receptionLineAccepted.id,
+              quantiteAcceptee: 5,
+              quantiteRejetee: 0,
+            },
+            {
+              ligneReceptionId: receptionLineRejected.id,
+              quantiteAcceptee: 0,
+              quantiteRejetee: 5,
+              motifRejet: 'Non conforme au cahier des charges',
+            },
+          ],
+        })
+        .expect(201);
+      const qualityLineAccepted = (
+        decision.body as { lignes: Array<{ id: string; produitId: string }> }
+      ).lignes.find((line) => line.produitId === productAccepted.id)!;
+
+      // Seule la ligne acceptée (quantiteAcceptee > 0) est éligible au putaway
+      // (receipt-stock.service.ts l.458-465) : la ligne totalement rejetée est
+      // exclue du tableau `accepted` et ne peut donc pas être envoyée au putaway.
+      await request(app.getHttpServer())
+        .post(`/achats/receptions/${receiptId2}/putaway`)
+        .set(auth(tokens['receipt-quality']))
+        .send({
+          clientOperationId: crypto.randomUUID(),
+          lignes: [
+            { ligneQualiteId: qualityLineAccepted.id, destinationId: stockId },
+          ],
+        })
+        .expect(201);
+
+      expect(
+        await env.prisma.mouvementStock.count({
+          where: { produitId: productRejected.id },
+        }),
+      ).toBe(0);
+      expect(
+        (
+          await env.prisma.produit.findUniqueOrThrow({
+            where: { id: productRejected.id },
+          })
+        ).coutMoyenPondere.toFixed(2),
+      ).toBe('40.00');
+    });
+  });
+
   it('alloue les coûts, crédite une seule fois les acceptés et met à jour le CMP', async () => {
     await request(app.getHttpServer())
       .post(`/achats/receptions/${receiptId}/couts`)
@@ -380,7 +785,12 @@ describe('P2P receipt-stock (e2e PostgreSQL)', () => {
     ).toBe('86.00');
     expect(
       await env.prisma.mouvementStock.count({
-        where: { reference: { startsWith: 'P2P-PUTAWAY:' } },
+        where: {
+          reference: {
+            startsWith: 'P2P-PUTAWAY:',
+            endsWith: `:${qualityLineId}`,
+          },
+        },
       }),
     ).toBe(1);
     const putaway = await env.prisma.miseEnStockAchat.findFirstOrThrow({
