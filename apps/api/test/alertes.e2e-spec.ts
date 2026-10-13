@@ -25,8 +25,10 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
   let app: INestApplication<App>;
 
   let boutique1Id: string;
+  let boutique2Id: string;
   let caisseBoutique1Id: string;
   let caissierB1Id: string;
+  let entrepotB1Id: string;
 
   const tokens: Record<string, string> = {};
 
@@ -77,6 +79,27 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     });
     caisseBoutique1Id = caisse1.id;
 
+    const entrepotB1 = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Entrepôt B1',
+        code: 'ENT-ALERTE-B1',
+        boutiqueId: boutique1Id,
+      },
+    });
+    entrepotB1Id = entrepotB1.id;
+
+    const boutique2 = await env.prisma.boutique.create({
+      data: { nom: 'Boutique 2', adresse: 'Adresse 2', zoneId: zoneA.id },
+    });
+    boutique2Id = boutique2.id;
+    await env.prisma.entrepot.create({
+      data: {
+        nom: 'Entrepôt B2',
+        code: 'ENT-ALERTE-B2',
+        boutiqueId: boutique2Id,
+      },
+    });
+
     caissierB1Id = await creerUtilisateur(
       'alerte-caissier-b1',
       'CAISSIER_BOUTIQUE',
@@ -85,6 +108,18 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     );
     await creerUtilisateur('alerte-central', 'CAISSIER_CENTRAL', null, 1);
     await creerUtilisateur('alerte-crm', 'RESPONSABLE_CRM', null, 1);
+    await creerUtilisateur(
+      'alerte-resp-b1',
+      'RESPONSABLE_BOUTIQUE',
+      boutique1Id,
+      3,
+    );
+    await creerUtilisateur(
+      'alerte-resp-b2',
+      'RESPONSABLE_BOUTIQUE',
+      boutique2Id,
+      3,
+    );
 
     // Litige = écart de caisse
     const litige = await env.prisma.transactionCaisse.create({
@@ -163,6 +198,8 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     tokens.caissierB1 = await login('alerte-caissier-b1');
     tokens.central = await login('alerte-central');
     tokens.crm = await login('alerte-crm');
+    tokens.respB1 = await login('alerte-resp-b1');
+    tokens.respB2 = await login('alerte-resp-b2');
   }, 120_000);
 
   afterAll(async () => {
@@ -468,5 +505,71 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     expect(alerte).toBeDefined();
     expect(alerte?.message).toContain('3500');
     expect(alerte?.message).toContain('Boutique 1');
+  });
+
+  describe('ECART_STOCK — écart de stock (§6.7, vente hors-ligne resynchronisée)', () => {
+    it('signale un StockQuant négatif, scopé à la boutique, et disparaît une fois régularisé', async () => {
+      const produit = await env.prisma.produit.create({
+        data: {
+          designation: 'Produit écart de stock',
+          prixUnitaire: '500.00',
+          stock: -3,
+        },
+      });
+      const quant = await env.prisma.stockQuant.create({
+        data: { produitId: produit.id, entrepotId: entrepotB1Id, quantite: -3 },
+      });
+
+      const central = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      const alerteCentral = (central.body as AlerteDto[]).find(
+        (a) => a.type === 'ECART_STOCK' && a.entiteId === quant.id,
+      );
+      expect(alerteCentral).toBeDefined();
+      expect(alerteCentral?.severite).toBe('CRITICAL');
+      expect(alerteCentral?.message).toContain('Produit écart de stock');
+      expect(alerteCentral?.message).toContain('ENT-ALERTE-B1');
+
+      // Visible du Responsable boutique concerné (boutique 1)...
+      const respB1 = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.respB1}`)
+        .expect(200);
+      expect(
+        (respB1.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_STOCK' && a.entiteId === quant.id,
+        ),
+      ).toBe(true);
+
+      // ... mais pas du Responsable d'une autre boutique (scoping §4/§6.2).
+      const respB2 = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.respB2}`)
+        .expect(200);
+      expect(
+        (respB2.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_STOCK' && a.entiteId === quant.id,
+        ),
+      ).toBe(false);
+
+      // Régularisation par le contrôle interne : stock ramené à 0 → l'alerte
+      // disparaît d'elle-même (snapshot calculé, pas de table persistée).
+      await env.prisma.stockQuant.update({
+        where: { id: quant.id },
+        data: { quantite: 0 },
+      });
+
+      const apresRegularisation = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      expect(
+        (apresRegularisation.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_STOCK' && a.entiteId === quant.id,
+        ),
+      ).toBe(false);
+    });
   });
 });

@@ -92,6 +92,16 @@ export class AlertesSchedulerService {
           );
         }
         break;
+      case 'ECART_STOCK':
+        await this.notifierRoles(alerte, [RoleLibelle.CONTROLEUR_INTERNE]);
+        if (boutiqueId) {
+          await this.notifierRoles(
+            alerte,
+            [RoleLibelle.RESPONSABLE_BOUTIQUE],
+            boutiqueId,
+          );
+        }
+        break;
       case 'VERSEMENT_EN_RETARD':
         await this.notifierRoles(alerte, [
           RoleLibelle.DAF,

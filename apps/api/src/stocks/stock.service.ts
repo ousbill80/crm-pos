@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -183,8 +184,37 @@ export class StockService {
     if (tx) {
       return this.appliquerMouvementTx(tx, input);
     }
-    return this.prisma.$transaction((inner) =>
-      this.appliquerMouvementTx(inner, input),
+    // Sous isolation Serializable, Postgres fait coexister le verrou
+    // pessimiste (lockProduit, FOR UPDATE) avec son propre contrôle de
+    // sérialisation : une transaction bloquée sur le verrou qui se débloque
+    // après qu'une autre a déjà committé une modification de la même ligne
+    // est avortée avec SQLSTATE 40001 (« could not serialize access due to
+    // concurrent update ») plutôt que de silencieusement relire la valeur à
+    // jour — c'est le comportement documenté de Postgres pour SERIALIZABLE,
+    // pas un bug. Le client doit alors rejouer la transaction (recommandation
+    // officielle Postgres) : chaque nouvelle tentative relit l'état réel du
+    // stock et réapplique la règle anti-négatif, donc le nombre final de
+    // succès/échecs métier reste correct — seul l'ordre d'arrivée varie.
+    // Sans cette boucle, une rafale de mouvements concurrents sur le même
+    // produit se solderait par une cascade de 409 au lieu du partage
+    // succès/échec attendu par la règle métier (stock insuffisant).
+    const MAX_TENTATIVES = 10;
+    for (let tentative = 1; tentative <= MAX_TENTATIVES; tentative += 1) {
+      try {
+        return await this.prisma.$transaction(
+          (inner) => this.appliquerMouvementTx(inner, input),
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (this.estConflitSerialisation(error) && tentative < MAX_TENTATIVES) {
+          continue;
+        }
+        throw this.concurrencyError(error);
+      }
+    }
+    /* istanbul ignore next -- la boucle retourne ou lève systématiquement */
+    throw new ConflictException(
+      'Conflit concurrent sur le stock ; réessayez l’opération.',
     );
   }
 
@@ -284,6 +314,41 @@ export class StockService {
     return quant?.quantite ?? 0;
   }
 
+  // Verrou pessimiste ligne produit : sérialise tous les mouvements
+  // concurrents touchant ce produit (quel que soit l'entrepôt), pour que la
+  // lecture de StockQuant.quantite juste après soit toujours à jour.
+  private async lockProduit(tx: Tx, produitId: string): Promise<void> {
+    await tx.$queryRawUnsafe(
+      'SELECT "id" FROM "produit" WHERE "id" = $1 FOR UPDATE',
+      produitId,
+    );
+  }
+
+  // Même pattern que ReceiptStockService.concurrencyError : une transaction
+  // Serializable qui échoue sur conflit de sérialisation devient un 409
+  // explicite, jamais un échec silencieux. P2034 est le code Prisma pour les
+  // conflits détectés sur les requêtes structurées ; le verrou FOR UPDATE de
+  // lockProduit() passe par $queryRawUnsafe, dont les échecs de
+  // sérialisation Postgres (SQLSTATE 40001) remontent sous P2010 (« Raw
+  // query failed ») avec le code Postgres dans error.meta.code — les deux
+  // formes doivent être traitées comme le même conflit concurrent.
+  private estConflitSerialisation(error: unknown): boolean {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const meta = error.meta as { code?: string } | undefined;
+      return error.code === 'P2034' || meta?.code === '40001';
+    }
+    return false;
+  }
+
+  private concurrencyError(error: unknown): unknown {
+    if (this.estConflitSerialisation(error)) {
+      return new ConflictException(
+        'Conflit concurrent sur le stock ; réessayez l’opération.',
+      );
+    }
+    return error;
+  }
+
   private async appliquerMouvementTx(
     tx: Tx,
     input: AppliquerMouvementInput,
@@ -294,6 +359,14 @@ export class StockService {
     if (!produit) {
       throw new NotFoundException(`Produit ${input.produitId} introuvable.`);
     }
+    // Verrou pessimiste (§ race condition stock) : empêche deux mouvements
+    // concurrents sur le même produit de lire le même `actuel` avant qu'aucun
+    // n'écrive — sans ce verrou, le garde-fou anti-négatif ci-dessous peut
+    // être contourné et des écritures peuvent être perdues (upsert sans
+    // verrou = dernière écriture gagne). Point d'entrée unique de tous les
+    // appelants (ventes, retours, réceptions, transferts, ajustements,
+    // inventaires) : le verrou protège donc tous les types de mouvement.
+    await this.lockProduit(tx, input.produitId);
     const entrepot = await tx.entrepot.findUnique({
       where: { id: input.entrepotId },
     });

@@ -33,7 +33,8 @@ export type TypeAlerte =
   | 'SEUIL_CAISSE_DEPASSE'
   | 'LITIGE_EN_RETARD'
   | 'POINT_JOUR_NON_VERSE'
-  | 'RECEPTION_DAF_EN_ATTENTE';
+  | 'RECEPTION_DAF_EN_ATTENTE'
+  | 'ECART_STOCK';
 
 export interface AlerteDto {
   type: TypeAlerte;
@@ -102,6 +103,7 @@ export class AlertesService {
       litigesRetard,
       pointsNonVerses,
       receptionsDaf,
+      ecartsStock,
     ] = await Promise.all([
       this.alertesEcarts(caisseFilter),
       this.alertesRetards(caisseFilter, delaiVersementHeures),
@@ -116,6 +118,7 @@ export class AlertesService {
       ),
       this.alertesPointJourNonVerse(caisseFilter, delaiVersementHeures),
       this.alertesReceptionDaf(caisseFilter),
+      this.alertesEcartStock(caisseFilter),
     ]);
 
     return [
@@ -127,6 +130,7 @@ export class AlertesService {
       ...litigesRetard,
       ...pointsNonVerses,
       ...receptionsDaf,
+      ...ecartsStock,
     ].sort(
       (a, b) =>
         new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime(),
@@ -490,5 +494,66 @@ export class AlertesService {
         },
       };
     });
+  }
+
+  // caisseFilter est calculé sur Caisse (boutiqueId / boutique.zoneId) —
+  // Entrepot porte exactement le même couple de champs (boutiqueId direct +
+  // relation boutique), donc le même filtre s'applique tel quel.
+  private toEntrepotFilter(
+    caisseFilter: Prisma.CaisseWhereInput | undefined,
+  ): Prisma.EntrepotWhereInput | undefined {
+    if (!caisseFilter) {
+      return undefined;
+    }
+    if ('boutiqueId' in caisseFilter && caisseFilter.boutiqueId) {
+      return { boutiqueId: caisseFilter.boutiqueId as string };
+    }
+    if ('boutique' in caisseFilter && caisseFilter.boutique) {
+      return { boutique: caisseFilter.boutique as Prisma.BoutiqueWhereInput };
+    }
+    return undefined;
+  }
+
+  // Écart de stock : StockQuant.quantite < 0 constaté (typiquement après
+  // resynchronisation d'une vente hors-ligne en rupture, §6.7). Même
+  // principe que alertesStockBas — snapshot calculé sur l'état courant, pas
+  // de table d'alerte persistée : disparaît dès que le stock est
+  // régularisé par le contrôle interne.
+  private async alertesEcartStock(
+    caisseFilter: Prisma.CaisseWhereInput | undefined,
+  ): Promise<AlerteDto[]> {
+    const entrepotFilter = this.toEntrepotFilter(caisseFilter);
+    const quants = await this.prisma.stockQuant.findMany({
+      where: {
+        quantite: { lt: 0 },
+        ...(entrepotFilter ? { entrepot: entrepotFilter } : {}),
+      },
+      include: {
+        produit: { select: { designation: true } },
+        entrepot: {
+          select: {
+            code: true,
+            boutiqueId: true,
+            boutique: { select: { nom: true } },
+          },
+        },
+      },
+    });
+
+    return quants.map((q) => ({
+      type: 'ECART_STOCK' as const,
+      severite: 'CRITICAL' as const,
+      message: `Écart de stock : solde négatif constaté — ${q.produit.designation} sur ${q.entrepot.code} (${q.quantite})`,
+      dateHeure: new Date().toISOString(),
+      entite: 'StockQuant',
+      entiteId: q.id,
+      details: {
+        produitId: q.produitId,
+        entrepotId: q.entrepotId,
+        quantite: q.quantite,
+        boutiqueId: q.entrepot.boutiqueId,
+        boutiqueNom: q.entrepot.boutique.nom,
+      },
+    }));
   }
 }
