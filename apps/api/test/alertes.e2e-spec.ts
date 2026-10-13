@@ -4,7 +4,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcrypt';
-import { StatutSessionCaisse, StatutTransaction, TypeCaisse, TypeTransaction } from '@prisma/client';
+import {
+  StatutSessionCaisse,
+  StatutTransaction,
+  TypeCaisse,
+  TypeTransaction,
+} from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
@@ -29,6 +34,7 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
   let caisseBoutique1Id: string;
   let caissierB1Id: string;
   let entrepotB1Id: string;
+  let litigeId: string;
 
   const tokens: Record<string, string> = {};
 
@@ -131,6 +137,7 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
         initiateurId: caissierB1Id,
       },
     });
+    litigeId = litige.id;
     const bordereau = await env.prisma.bordereauVersement.create({
       data: {
         transactionId: litige.id,
@@ -570,6 +577,73 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
           (a) => a.type === 'ECART_STOCK' && a.entiteId === quant.id,
         ),
       ).toBe(false);
+    });
+  });
+
+  describe('Acquittement des alertes (§6.7) — propre à chaque utilisateur', () => {
+    it('refuse RESPONSABLE_CRM sur POST /alertes/acquittements → 403', async () => {
+      await request(app.getHttpServer())
+        .post('/alertes/acquittements')
+        .set('Authorization', `Bearer ${tokens.crm}`)
+        .send({ type: 'ECART_CAISSE', entiteId: litigeId })
+        .expect(403);
+    });
+
+    it("masque l'alerte acquittée pour l'utilisateur qui l'a acquittée, journalise, et la laisse visible pour un autre utilisateur", async () => {
+      await request(app.getHttpServer())
+        .post('/alertes/acquittements')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .send({ type: 'ECART_CAISSE', entiteId: litigeId })
+        .expect(201);
+
+      const audit = await env.prisma.journalAudit.findFirst({
+        where: { action: 'ALERTE_ACQUITTEE', entiteId: litigeId },
+        orderBy: { dateHeure: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+
+      const central = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      expect(
+        (central.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_CAISSE' && a.entiteId === litigeId,
+        ),
+      ).toBe(false);
+
+      const caissierB1 = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.caissierB1}`)
+        .expect(200);
+      expect(
+        (caissierB1.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_CAISSE' && a.entiteId === litigeId,
+        ),
+      ).toBe(true);
+    });
+
+    it('réaffiche une alerte acquittée via ?inclureAcquittees=true, et un second acquittement est sans effet (upsert idempotent)', async () => {
+      await request(app.getHttpServer())
+        .post('/alertes/acquittements')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .send({ type: 'ECART_CAISSE', entiteId: litigeId })
+        .expect(201);
+
+      const count = await env.prisma.alerteAcquittement.count({
+        where: { type: 'ECART_CAISSE', entiteId: litigeId },
+      });
+      expect(count).toBe(1);
+
+      const avecAcquittees = await request(app.getHttpServer())
+        .get('/alertes?inclureAcquittees=true')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      expect(
+        (avecAcquittees.body as AlerteDto[]).some(
+          (a) => a.type === 'ECART_CAISSE' && a.entiteId === litigeId,
+        ),
+      ).toBe(true);
     });
   });
 });

@@ -216,6 +216,7 @@ model Utilisateur {
   receptionsValidees      ReceptionValidation[]  @relation("Validateur")
   regularisationsValidees RegularisationLitige[] @relation("ValidateurRegularisation")
   entreesAudit            JournalAudit[]
+  alertesAcquittees       AlerteAcquittement[]
 
   sessionsOuvertes           SessionCaisse[]                  @relation("OuvertureSession")
   sessionsTemoinOuverture    SessionCaisse[]                  @relation("OuvertureTemoin")
@@ -3425,6 +3426,22 @@ model AlerteNotifiee {
   dateEnvoi DateTime @default(now())
 
   @@map("alerte_notifiee")
+}
+
+// Acquittement d'alerte par utilisateur (§6.7) : append-only, une ligne par
+// prise de connaissance. Contrairement à AlerteNotifiee (dédoublonnage du
+// scheduler, réseau entier), ceci est propre à chaque utilisateur — deux
+// utilisateurs peuvent acquitter la même alerte indépendamment.
+model AlerteAcquittement {
+  id            String      @id @default(uuid())
+  type          String
+  entiteId      String
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  utilisateurId String
+  dateHeure     DateTime    @default(now())
+
+  @@unique([type, entiteId, utilisateurId])
+  @@map("alerte_acquittement")
 }
 
 model StaffBriefingEnvoi {

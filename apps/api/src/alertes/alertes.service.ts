@@ -19,6 +19,8 @@ import {
 } from '../caisses/access-scope.constants';
 import { CaisseBalanceService } from '../caisses/caisse-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import type { AcquitterAlerteDto } from './dto/acquitter-alerte.dto';
 
 // Alertes automatiques — §6.7 :
 // écart de caisse, versement non transmis sous 24 h, accès non autorisé,
@@ -54,9 +56,13 @@ export class AlertesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly caisseBalanceService: CaisseBalanceService,
+    private readonly audit: AuditService,
   ) {}
 
-  async lister(user: AuthenticatedUser): Promise<AlerteDto[]> {
+  async lister(
+    user: AuthenticatedUser,
+    inclureAcquittees = false,
+  ): Promise<AlerteDto[]> {
     if (!ROLES_LECTURE_CAISSES.includes(user.role)) {
       throw new ForbiddenException(
         `Rôle "${user.role}" non habilité à consulter les alertes trésorerie.`,
@@ -67,7 +73,67 @@ export class AlertesService {
     const acces = ROLES_RESEAU_TRESORERIE.includes(user.role)
       ? await this.alertesAccesRefusesReseau()
       : [];
-    return this.collecter(caisseFilter, acces);
+    const alertes = await this.collecter(caisseFilter, acces);
+    if (inclureAcquittees) {
+      return alertes;
+    }
+    return this.filtrerAcquittees(alertes, user.userId);
+  }
+
+  // Acquittement (§6.7) : propre à chaque utilisateur — contrairement à
+  // AlerteNotifiee qui dédoublonne les notifications du scheduler pour tout
+  // le réseau, deux utilisateurs peuvent acquitter la même alerte sans
+  // s'affecter l'un l'autre.
+  async acquitter(
+    user: AuthenticatedUser,
+    dto: AcquitterAlerteDto,
+  ): Promise<void> {
+    if (!ROLES_LECTURE_CAISSES.includes(user.role)) {
+      throw new ForbiddenException(
+        `Rôle "${user.role}" non habilité à acquitter les alertes trésorerie.`,
+      );
+    }
+
+    await this.prisma.alerteAcquittement.upsert({
+      where: {
+        type_entiteId_utilisateurId: {
+          type: dto.type,
+          entiteId: dto.entiteId,
+          utilisateurId: user.userId,
+        },
+      },
+      update: {},
+      create: {
+        type: dto.type,
+        entiteId: dto.entiteId,
+        utilisateurId: user.userId,
+      },
+    });
+
+    await this.audit.record({
+      utilisateurId: user.userId,
+      action: 'ALERTE_ACQUITTEE',
+      entite: dto.type,
+      entiteId: dto.entiteId,
+    });
+  }
+
+  private async filtrerAcquittees(
+    alertes: AlerteDto[],
+    utilisateurId: string,
+  ): Promise<AlerteDto[]> {
+    if (alertes.length === 0) {
+      return alertes;
+    }
+    const acquittements = await this.prisma.alerteAcquittement.findMany({
+      where: {
+        utilisateurId,
+        OR: alertes.map((a) => ({ type: a.type, entiteId: a.entiteId })),
+      },
+      select: { type: true, entiteId: true },
+    });
+    const cles = new Set(acquittements.map((a) => `${a.type}:${a.entiteId}`));
+    return alertes.filter((a) => !cles.has(`${a.type}:${a.entiteId}`));
   }
 
   // Usage interne uniquement (scheduler de notifications, §6.7) : vue
