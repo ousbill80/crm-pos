@@ -49,6 +49,7 @@ export interface AlerteDto {
 }
 
 const DELAI_VERSEMENT_HEURES_DEFAUT = 24;
+const DELAI_VERSEMENT_HEURES_ESCALADE_DG_DEFAUT = 48;
 const DELAI_REGULARISATION_LITIGE_HEURES_DEFAUT = 48;
 
 @Injectable()
@@ -151,12 +152,16 @@ export class AlertesService {
     const societe = await this.prisma.societe.findFirst({
       select: {
         delaiVersementHeures: true,
+        delaiVersementHeuresEscaladeDg: true,
         seuilVersementAnticipe: true,
         delaiRegularisationLitigeHeures: true,
       },
     });
     const delaiVersementHeures =
       societe?.delaiVersementHeures ?? DELAI_VERSEMENT_HEURES_DEFAUT;
+    const delaiVersementHeuresEscaladeDg =
+      societe?.delaiVersementHeuresEscaladeDg ??
+      DELAI_VERSEMENT_HEURES_ESCALADE_DG_DEFAUT;
     const delaiRegularisationLitigeHeures =
       societe?.delaiRegularisationLitigeHeures ??
       DELAI_REGULARISATION_LITIGE_HEURES_DEFAUT;
@@ -172,7 +177,11 @@ export class AlertesService {
       ecartsStock,
     ] = await Promise.all([
       this.alertesEcarts(caisseFilter),
-      this.alertesRetards(caisseFilter, delaiVersementHeures),
+      this.alertesRetards(
+        caisseFilter,
+        delaiVersementHeures,
+        delaiVersementHeuresEscaladeDg,
+      ),
       this.alertesStockBas(),
       this.alertesSeuilCaisse(
         caisseFilter,
@@ -269,6 +278,7 @@ export class AlertesService {
   private async alertesRetards(
     caisseFilter: Prisma.CaisseWhereInput | undefined,
     delaiVersementHeures: number,
+    delaiVersementHeuresEscaladeDg: number,
   ): Promise<AlerteDto[]> {
     const seuil = new Date(Date.now() - delaiVersementHeures * 60 * 60 * 1000);
     const retards = await this.prisma.transactionCaisse.findMany({
@@ -292,9 +302,16 @@ export class AlertesService {
       const ageH = Math.floor(
         (Date.now() - t.dateHeure.getTime()) / (60 * 60 * 1000),
       );
+      // Escalade (§6.7) : au-delà du second seuil, la sévérité passe à
+      // CRITICAL pour déclencher en plus une notification à la Direction
+      // Générale (alertes-scheduler.service.ts) — sans bloquer le workflow.
+      const severite =
+        ageH >= delaiVersementHeuresEscaladeDg
+          ? ('CRITICAL' as const)
+          : ('WARNING' as const);
       return {
         type: 'VERSEMENT_EN_RETARD' as const,
-        severite: 'WARNING' as const,
+        severite,
         message: `Versement non transmis dans le délai (${delaiVersementHeures} h) — ${boutique}, statut ${t.statut}, âgé de ${ageH} h`,
         dateHeure: t.dateHeure.toISOString(),
         entite: 'TransactionCaisse',

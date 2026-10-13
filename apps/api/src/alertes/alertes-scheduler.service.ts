@@ -65,7 +65,10 @@ export class AlertesSchedulerService {
       const jour = new Date().toISOString().slice(0, 10);
       return `${alerte.type}:${alerte.entiteId}:${jour}`;
     }
-    return `${alerte.type}:${alerte.entiteId}`;
+    // Inclut la sévérité : sans cela, la notification WARNING initiale d'un
+    // VERSEMENT_EN_RETARD consommerait la clé et l'escalade CRITICAL vers la
+    // Direction Générale ne se déclencherait jamais (§6.7 escalade).
+    return `${alerte.type}:${alerte.entiteId}:${alerte.severite}`;
   }
 
   private async diffuser(alerte: AlerteDto): Promise<void> {
@@ -113,6 +116,11 @@ export class AlertesSchedulerService {
             [RoleLibelle.RESPONSABLE_BOUTIQUE, RoleLibelle.CAISSIER_BOUTIQUE],
             boutiqueId,
           );
+        }
+        // Escalade (§6.7) : retard devenu critique (second seuil) →
+        // notification à la Direction Générale, réseau entier.
+        if (alerte.severite === 'CRITICAL') {
+          await this.notifierRoles(alerte, [RoleLibelle.DIRECTION_GENERALE]);
         }
         break;
       case 'POINT_JOUR_NON_VERSE':

@@ -153,7 +153,7 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       },
     });
 
-    const cleUnique = `ECART_CAISSE:${litige.id}`;
+    const cleUnique = `ECART_CAISSE:${litige.id}:CRITICAL`;
 
     await scheduler.cycle();
     const apresPremierCycle = await env.prisma.alerteNotifiee.findMany({
@@ -209,7 +209,7 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
 
     await scheduler.cycle();
     const point = await env.prisma.alerteNotifiee.findUnique({
-      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}` },
+      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}:CRITICAL` },
     });
     expect(point).not.toBeNull();
     const digests = await env.prisma.alerteNotifiee.findMany({
@@ -219,7 +219,7 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
 
     await scheduler.cycle();
     const point2 = await env.prisma.alerteNotifiee.findMany({
-      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}` },
+      where: { cleUnique: `POINT_JOUR_NON_VERSE:${session.id}:CRITICAL` },
     });
     expect(point2).toHaveLength(1);
     const digests2 = await env.prisma.alerteNotifiee.findMany({
@@ -242,14 +242,89 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
 
     await scheduler.cycle();
     const notif = await env.prisma.alerteNotifiee.findUnique({
-      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}` },
+      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}:WARNING` },
     });
     expect(notif).not.toBeNull();
 
     await scheduler.cycle();
     const notif2 = await env.prisma.alerteNotifiee.findMany({
-      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}` },
+      where: { cleUnique: `RECEPTION_DAF_EN_ATTENTE:${tx.id}:WARNING` },
     });
     expect(notif2).toHaveLength(1);
+  });
+
+  it('escalade (§6.7) : un versement en retard devenu CRITICAL (second seuil) notifie la Direction Générale en plus du DAF, sans perdre la notification WARNING initiale', async () => {
+    process.env.EMAIL_PROVIDER = 'mock';
+    await creerUtilisateur(
+      'sched-dg',
+      'DIRECTION_GENERALE',
+      null,
+      1,
+      'dg@example.test',
+    );
+
+    let societe = await env.prisma.societe.findFirst();
+    if (!societe) {
+      societe = await env.prisma.societe.create({
+        data: { raisonSociale: 'Test Société', adresse: 'Adresse' },
+      });
+    }
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { delaiVersementHeures: 6, delaiVersementHeuresEscaladeDg: 12 },
+    });
+
+    // Retard de 10h : au-delà du 1er seuil (6h), pas encore du 2nd (12h) →
+    // WARNING, pas de notification DG.
+    const transaction = await env.prisma.transactionCaisse.create({
+      data: {
+        type: TypeTransaction.SORTIE_FONDS,
+        montant: 400,
+        statut: StatutTransaction.INITIEE,
+        caisseId: caisseBoutique1Id,
+        initiateurId: caissierB1Id,
+        dateHeure: new Date(Date.now() - 10 * 60 * 60 * 1000),
+      },
+    });
+
+    await scheduler.cycle();
+    const warning = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `VERSEMENT_EN_RETARD:${transaction.id}:WARNING` },
+    });
+    expect(warning).not.toBeNull();
+    const critiqueAvant = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `VERSEMENT_EN_RETARD:${transaction.id}:CRITICAL` },
+    });
+    expect(critiqueAvant).toBeNull();
+
+    // Le même versement franchit le 2nd seuil (12h) : passe CRITICAL, la
+    // notification WARNING déjà envoyée reste en base (append-only), et une
+    // notification CRITICAL supplémentaire (incluant la DG) est créée.
+    await env.prisma.transactionCaisse.update({
+      where: { id: transaction.id },
+      data: { dateHeure: new Date(Date.now() - 13 * 60 * 60 * 1000) },
+    });
+
+    await scheduler.cycle();
+    const critiqueApres = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `VERSEMENT_EN_RETARD:${transaction.id}:CRITICAL` },
+    });
+    expect(critiqueApres).not.toBeNull();
+    const warningToujoursLa = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `VERSEMENT_EN_RETARD:${transaction.id}:WARNING` },
+    });
+    expect(warningToujoursLa).not.toBeNull();
+
+    // Un second cycle au même état CRITICAL ne duplique pas la notification.
+    await scheduler.cycle();
+    const critiques = await env.prisma.alerteNotifiee.findMany({
+      where: { cleUnique: `VERSEMENT_EN_RETARD:${transaction.id}:CRITICAL` },
+    });
+    expect(critiques).toHaveLength(1);
+
+    await env.prisma.societe.update({
+      where: { id: societe.id },
+      data: { delaiVersementHeures: 24, delaiVersementHeuresEscaladeDg: 48 },
+    });
   });
 });

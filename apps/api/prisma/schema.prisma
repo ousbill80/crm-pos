@@ -34,6 +34,11 @@ model Societe {
   // alerte et est compté en retard dans le reporting DAF (§6.3.5 « gestion
   // des seuils : montants de versement, délais »).
   delaiVersementHeures            Int                              @default(24)
+  // Second seuil (heures), au-delà de delaiVersementHeures : un versement
+  // toujours non transmis passe de WARNING à CRITICAL et déclenche en plus
+  // une notification à la Direction Générale (§6.7 escalade), sans bloquer
+  // le workflow (décision validée : notification uniquement).
+  delaiVersementHeuresEscaladeDg  Int                              @default(48)
   // Seuils CRM paramétrables (§6.6) — défauts = première itération documentée.
   seuilFideliteArgent             Int                              @default(500)
   seuilFideliteOr                 Int                              @default(2000)
