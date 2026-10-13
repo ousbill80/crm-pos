@@ -580,6 +580,57 @@ describe('Alertes automatiques — §6.7 (e2e)', () => {
     });
   });
 
+  describe('PAYOUT_WAVE_ECHEC — reversement Wave en échec (réseau entier)', () => {
+    it('signale un PayoutWave ECHEC au CAISSIER_CENTRAL, pas au RESPONSABLE_BOUTIQUE', async () => {
+      const commande = await env.prisma.commandeWeb.create({
+        data: {
+          clientOperationId: 'alerte-wave-op-1',
+          statut: 'PREPARATION',
+          modeFulfillment: 'LIVRAISON',
+          modeReglement: 'PREPAYE_PSP',
+          providerPsp: 'WAVE',
+          entrepotId: entrepotB1Id,
+          montantTotal: 3200,
+        },
+      });
+      const payout = await env.prisma.payoutWave.create({
+        data: {
+          commandeWebId: commande.id,
+          montantBrut: 3200,
+          commissionPourcent: 1.5,
+          commissionMontant: 48,
+          montantNet: 3152,
+          mobileBeneficiaire: '+2250700000000',
+          statut: 'ECHEC',
+          erreurCode: 'recipient-account-blocked',
+          idempotencyKey: 'wave-payout:alerte-wave-op-1',
+        },
+      });
+
+      const central = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.central}`)
+        .expect(200);
+      const alerte = (central.body as AlerteDto[]).find(
+        (a) => a.type === 'PAYOUT_WAVE_ECHEC' && a.entiteId === payout.id,
+      );
+      expect(alerte).toBeDefined();
+      expect(alerte?.severite).toBe('CRITICAL');
+      expect(alerte?.message).toContain('alerte-wave-op-1');
+      expect(alerte?.message).toContain('recipient-account-blocked');
+
+      const respB1 = await request(app.getHttpServer())
+        .get('/alertes')
+        .set('Authorization', `Bearer ${tokens.respB1}`)
+        .expect(200);
+      expect(
+        (respB1.body as AlerteDto[]).some(
+          (a) => a.type === 'PAYOUT_WAVE_ECHEC' && a.entiteId === payout.id,
+        ),
+      ).toBe(false);
+    });
+  });
+
   describe('Acquittement des alertes (§6.7) — propre à chaque utilisateur', () => {
     it('refuse RESPONSABLE_CRM sur POST /alertes/acquittements → 403', async () => {
       await request(app.getHttpServer())

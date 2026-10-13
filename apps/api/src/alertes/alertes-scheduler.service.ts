@@ -148,6 +148,13 @@ export class AlertesSchedulerService {
           RoleLibelle.CONTROLEUR_INTERNE,
         ]);
         break;
+      case 'PAYOUT_WAVE_ECHEC':
+        await this.notifierRoles(alerte, [
+          RoleLibelle.DAF,
+          RoleLibelle.CAISSIER_CENTRAL,
+          RoleLibelle.DIRECTION_GENERALE,
+        ]);
+        break;
       default:
         break;
     }
