@@ -39,6 +39,9 @@ model Societe {
   seuilFideliteOr                 Int                              @default(2000)
   seuilSegmentRegulier            Int                              @default(5)
   seuilSegmentVip                 Int                              @default(15)
+  // Inactivité (§6.6 ciblage campagnes) : au-delà de ce nombre de mois sans
+  // achat, un client est considéré inactif (champ calculé estInactif).
+  seuilInactiviteMois             Int                              @default(6)
   // Avantages fidélité (§6.6 « avantages associés ») : remise % appliquée
   // automatiquement à l'encaissement pour un client aux paliers Argent/Or.
   // Défaut 0 = désactivé — le cahier ne chiffre pas ces avantages, c'est à
@@ -2681,19 +2684,23 @@ model Client {
   dateNaissance         String?
   segment               SegmentClient @default(NOUVEAU)
   consentementMarketing Boolean       @default(false)
+  // Récence/montant cumulé (§6.6 ciblage campagnes) — additif, ne modifie
+  // pas le calcul de segment VIP/REGULIER/NOUVEAU (basé sur nombreVentes).
+  derniereDateAchat     DateTime?
+  montantTotalAchats    Decimal       @default(0) @db.Decimal(14, 2)
   // Magasin d’accueil (création) — pas une propriété exclusive : la fiche
   // reste unique réseau (§6.6). Sert à la liste d’exploitation magasin.
   boutiqueOrigine       Boutique?     @relation(fields: [boutiqueOrigineId], references: [id], onDelete: SetNull)
   boutiqueOrigineId     String?
 
-  ventes       Vente[]
-  fidelite     Fidelite?
-  interactions InteractionCrm[]
-  devis        DevisClient[]
-  factures     FactureClient[]
-  compteClient CompteClient?
-  adresses     AdresseClient[]
-  commandesWeb CommandeWeb[]
+  ventes         Vente[]
+  fidelite       Fidelite?
+  interactions   InteractionCrm[]
+  devis          DevisClient[]
+  factures       FactureClient[]
+  compteClient   CompteClient?
+  adresses       AdresseClient[]
+  commandesWeb   CommandeWeb[]
   lignesEcriture LigneEcritureComptable[]
 
   @@index([boutiqueOrigineId])
@@ -2744,6 +2751,9 @@ model CampagneCrm {
   message        String
   segment        SegmentClient?
   niveauFidelite NiveauFidelite?
+  // Ciblage additif (§6.6 relance) : clients sans achat depuis N mois.
+  // Cumulable avec segment/niveauFidelite (ET logique).
+  inactifDepuisMois Int?
   canal          CanalInteraction
   dateCreation   DateTime         @default(now())
   dateEnvoi      DateTime?

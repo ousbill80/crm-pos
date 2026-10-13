@@ -1,9 +1,11 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
+  Min,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -41,4 +43,12 @@ export class ListClientsQueryDto {
   @MinLength(2)
   @MaxLength(80)
   q?: string;
+
+  // Inactivité (§6.6 ciblage campagnes) : clients sans achat depuis N mois
+  // (ou n'ayant jamais acheté est exclu — ce n'est pas une cible de relance).
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  inactifDepuisMois?: number;
 }

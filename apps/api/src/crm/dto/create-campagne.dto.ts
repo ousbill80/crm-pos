@@ -1,4 +1,12 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 import {
   CanalInteraction,
   NiveauFidelite,
@@ -27,4 +35,12 @@ export class CreateCampagneDto {
 
   @IsEnum(CanalInteraction)
   canal: CanalInteraction;
+
+  // Inactivité (§6.6 ciblage relance) : clients sans achat depuis N mois,
+  // cumulable (ET) avec segment/niveauFidelite.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  inactifDepuisMois?: number;
 }

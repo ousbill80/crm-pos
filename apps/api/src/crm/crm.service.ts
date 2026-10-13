@@ -20,6 +20,18 @@ import { SEUILS_CRM_DEFAUT, type SeuilsCrm } from './crm-thresholds.constants';
 
 type ClientPublic = Client;
 
+// Inactivité (§6.6 ciblage campagnes) : jamais acheté => pas inactif, c'est
+// « nouveau », pas une cible de relance ; additif, n'affecte pas `segment`.
+function calculerEstInactif(
+  derniereDateAchat: Date | null,
+  seuilMois: number,
+): boolean {
+  if (!derniereDateAchat) return false;
+  const seuil = new Date(derniereDateAchat);
+  seuil.setMonth(seuil.getMonth() + seuilMois);
+  return seuil.getTime() <= Date.now();
+}
+
 // Fiche unique réseau (§6.6) : findOne / historique restent réseau.
 // Liste d’exploitation magasin pour les rôles boutique ; `q` = recherche
 // réseau (POS, téléphone / nom) sans recréer une fiche.
@@ -113,11 +125,25 @@ export class ClientsService {
       ];
     }
 
-    return this.prisma.client.findMany({
+    if (query.inactifDepuisMois !== undefined) {
+      const borne = new Date();
+      borne.setMonth(borne.getMonth() - query.inactifDepuisMois);
+      where.derniereDateAchat = { lte: borne };
+    }
+
+    const clients = await this.prisma.client.findMany({
       where,
       include: { fidelite: true },
       orderBy: [{ nom: 'asc' }, { prenom: 'asc' }],
     });
+    const seuils = await lireSeuilsCrm(this.prisma);
+    return clients.map((client) => ({
+      ...client,
+      estInactif: calculerEstInactif(
+        client.derniereDateAchat,
+        seuils.seuilInactiviteMois,
+      ),
+    }));
   }
 
   async findOne(id: string) {
@@ -128,7 +154,14 @@ export class ClientsService {
     if (!client) {
       throw new NotFoundException(`Client "${id}" introuvable.`);
     }
-    return client;
+    const seuils = await lireSeuilsCrm(this.prisma);
+    return {
+      ...client,
+      estInactif: calculerEstInactif(
+        client.derniereDateAchat,
+        seuils.seuilInactiviteMois,
+      ),
+    };
   }
 
   async update(
@@ -404,6 +437,9 @@ export class ClientsService {
         ...(dto.avantageFideliteOrPct !== undefined
           ? { avantageFideliteOrPct: dto.avantageFideliteOrPct }
           : {}),
+        ...(dto.seuilInactiviteMois !== undefined
+          ? { seuilInactiviteMois: dto.seuilInactiviteMois }
+          : {}),
       },
     });
     const seuils = await lireSeuilsCrm(this.prisma);
@@ -412,7 +448,7 @@ export class ClientsService {
       action: 'CRM_SEUILS_UPDATED',
       entite: 'Societe',
       entiteId: societe.id,
-      details: `Argent ${seuils.seuilFideliteArgent} / Or ${seuils.seuilFideliteOr} · Régulier ${seuils.seuilSegmentRegulier} / VIP ${seuils.seuilSegmentVip}`,
+      details: `Argent ${seuils.seuilFideliteArgent} / Or ${seuils.seuilFideliteOr} · Régulier ${seuils.seuilSegmentRegulier} / VIP ${seuils.seuilSegmentVip} · Inactivité ${seuils.seuilInactiviteMois}m`,
     });
     return seuils;
   }

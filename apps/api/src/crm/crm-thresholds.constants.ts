@@ -6,6 +6,7 @@ export const SEUIL_FIDELITE_ARGENT = 500;
 export const SEUIL_FIDELITE_OR = 2000;
 export const SEUIL_SEGMENT_REGULIER_NB_VENTES = 5;
 export const SEUIL_SEGMENT_VIP_NB_VENTES = 15;
+export const SEUIL_INACTIVITE_MOIS = 6;
 
 /**
  * Crédit auto à l’encaissement POS (client rattaché).
@@ -31,6 +32,7 @@ export type SeuilsCrm = {
   seuilSegmentVip: number;
   avantageFideliteArgentPct: number;
   avantageFideliteOrPct: number;
+  seuilInactiviteMois: number;
 };
 
 export const SEUILS_CRM_DEFAUT: SeuilsCrm = {
@@ -40,4 +42,5 @@ export const SEUILS_CRM_DEFAUT: SeuilsCrm = {
   seuilSegmentVip: SEUIL_SEGMENT_VIP_NB_VENTES,
   avantageFideliteArgentPct: 0,
   avantageFideliteOrPct: 0,
+  seuilInactiviteMois: SEUIL_INACTIVITE_MOIS,
 };

@@ -41,4 +41,11 @@ export class UpdateCrmParametresDto {
   @Min(0)
   @Max(100)
   avantageFideliteOrPct?: number;
+
+  // Inactivité (§6.6 ciblage campagnes) : mois sans achat avant estInactif.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  seuilInactiviteMois?: number;
 }

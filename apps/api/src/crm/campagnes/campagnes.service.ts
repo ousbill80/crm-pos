@@ -39,6 +39,7 @@ export class CampagnesService {
         message: dto.message,
         segment: dto.segment,
         niveauFidelite: dto.niveauFidelite,
+        inactifDepuisMois: dto.inactifDepuisMois,
         canal: dto.canal,
         createdById: utilisateurId,
       },
@@ -51,7 +52,11 @@ export class CampagnesService {
       entiteId: campagne.id,
       details: `Campagne "${campagne.nom}" (canal ${campagne.canal}${
         campagne.segment ? `, segment ${campagne.segment}` : ''
-      }${campagne.niveauFidelite ? `, palier ${campagne.niveauFidelite}` : ''})`,
+      }${campagne.niveauFidelite ? `, palier ${campagne.niveauFidelite}` : ''}${
+        campagne.inactifDepuisMois
+          ? `, inactif depuis ${campagne.inactifDepuisMois} mois`
+          : ''
+      })`,
     });
 
     return campagne;
@@ -76,6 +81,14 @@ export class CampagnesService {
   async contacts(id: string): Promise<ContactCible[]> {
     const campagne = await this.findOne(id);
 
+    let borneInactivite: Date | undefined;
+    if (campagne.inactifDepuisMois) {
+      borneInactivite = new Date();
+      borneInactivite.setMonth(
+        borneInactivite.getMonth() - campagne.inactifDepuisMois,
+      );
+    }
+
     // §6.6 : uniquement les clients avec consentement marketing et un
     // contact renseigné — la campagne sert l’export pour envoi manuel.
     const clients = await this.prisma.client.findMany({
@@ -86,6 +99,9 @@ export class CampagnesService {
         ...(campagne.segment ? { segment: campagne.segment } : {}),
         ...(campagne.niveauFidelite
           ? { fidelite: { niveau: campagne.niveauFidelite } }
+          : {}),
+        ...(borneInactivite
+          ? { derniereDateAchat: { lte: borneInactivite } }
           : {}),
       },
       include: { fidelite: true },

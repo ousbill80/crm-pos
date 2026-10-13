@@ -12,6 +12,7 @@ export async function lireSeuilsCrm(
       seuilSegmentVip: true,
       avantageFideliteArgentPct: true,
       avantageFideliteOrPct: true,
+      seuilInactiviteMois: true,
     },
   });
   if (!societe) return { ...SEUILS_CRM_DEFAUT };
@@ -22,5 +23,6 @@ export async function lireSeuilsCrm(
     seuilSegmentVip: societe.seuilSegmentVip,
     avantageFideliteArgentPct: societe.avantageFideliteArgentPct,
     avantageFideliteOrPct: societe.avantageFideliteOrPct,
+    seuilInactiviteMois: societe.seuilInactiviteMois,
   };
 }

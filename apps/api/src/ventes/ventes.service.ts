@@ -426,6 +426,18 @@ export class VentesService {
           });
         }
 
+        // Récence/montant cumulé (§6.6 ciblage campagnes) — additif, ne
+        // modifie pas le calcul de segment VIP/REGULIER/NOUVEAU.
+        if (dto.clientId) {
+          await tx.client.update({
+            where: { id: dto.clientId },
+            data: {
+              derniereDateAchat: created.dateVente,
+              montantTotalAchats: { increment: montantTotal },
+            },
+          });
+        }
+
         // Reçu atelier (extension pose/installation hors MCD §6.5 d'origine,
         // validée par l'utilisateur) : créé seulement si au moins une ligne
         // confirme avecPose=true, dans la même transaction que la vente.
@@ -640,6 +652,15 @@ export class VentesService {
           },
           tx,
         );
+
+        // Montant cumulé (§6.6) — la récence (derniereDateAchat) n'est pas
+        // revue à la baisse par un retour, seul le cumul est ajusté.
+        if (ligneVente.vente.clientId) {
+          await tx.client.update({
+            where: { id: ligneVente.vente.clientId },
+            data: { montantTotalAchats: { decrement: montantRembourse } },
+          });
+        }
 
         return created;
       });
