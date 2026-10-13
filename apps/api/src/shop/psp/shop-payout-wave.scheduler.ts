@@ -37,7 +37,10 @@ export class ShopPayoutWaveScheduler {
   }): Promise<void> {
     if (!payout.referenceProvider) return;
 
-    let result: { status: 'processing' | 'succeeded' | 'failed'; erreurCode?: string };
+    let result: {
+      status: 'processing' | 'succeeded' | 'failed';
+      erreurCode?: string;
+    };
     try {
       result = await this.waveAdapter.verifierPayout(payout.referenceProvider);
     } catch (error) {

@@ -30,7 +30,7 @@ export function parseAttributsMap(
 
   const pairs = text.split(/\s*[|;,/]\s*/).filter(Boolean);
   const out: Record<string, string> = {};
-  let plainParts: string[] = [];
+  const plainParts: string[] = [];
   for (const part of pairs) {
     const m = part.match(/^([^:=]+)[:=](.+)$/);
     if (m) {
@@ -56,5 +56,7 @@ export function serializeAttributsMap(
     ([, v]) => v != null && String(v).trim() !== '',
   );
   if (!entries.length) return null;
-  return entries.map(([k, v]) => `${k.trim()}: ${String(v).trim()}`).join(' | ');
+  return entries
+    .map(([k, v]) => `${k.trim()}: ${String(v).trim()}`)
+    .join(' | ');
 }

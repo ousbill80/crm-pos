@@ -92,13 +92,7 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       'controleur@example.test',
     );
 
-    await creerUtilisateur(
-      'sched-daf',
-      'DAF',
-      null,
-      1,
-      'daf@example.test',
-    );
+    await creerUtilisateur('sched-daf', 'DAF', null, 1, 'daf@example.test');
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],

@@ -21,9 +21,7 @@ export type ShopFunnelActionClient =
   (typeof SHOP_FUNNEL_ACTIONS_CLIENT)[number];
 export type ShopFunnelActionServeur =
   (typeof SHOP_FUNNEL_ACTIONS_SERVEUR)[number];
-export type ShopFunnelAction =
-  | ShopFunnelActionClient
-  | ShopFunnelActionServeur;
+export type ShopFunnelAction = ShopFunnelActionClient | ShopFunnelActionServeur;
 
 export const SHOP_FUNNEL_ETAPES = [
   'ACQUISITION',
@@ -172,10 +170,7 @@ export function affiniteCategoriePourProduit(
 ): number {
   if (!categorie || !profil.categories.length) return 0;
   const fold = (s: string) =>
-    s
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '')
-      .toLowerCase();
+    s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const target = fold(categorie);
   let best = 0;
   const maxPoids = profil.categories[0]?.poids ?? 1;
@@ -192,9 +187,7 @@ export function affiniteCategoriePourProduit(
 export function scoreDecouverte(s: ProduitSignal): number {
   const velocity = s.ventes24h * 4 + s.ventes7j * 2 + s.ventes30j;
   const scarcity =
-    s.stockDisponible != null &&
-    s.stockDisponible > 0 &&
-    s.stockDisponible <= 3
+    s.stockDisponible != null && s.stockDisponible > 0 && s.stockDisponible <= 3
       ? 1.5
       : 0;
   const personal =
@@ -261,8 +254,7 @@ export function rangerFeed<T extends { id: string; signal: ProduitSignal }>(
       byId(a, b),
   );
   const pourVous = [...items].sort(
-    (a, b) =>
-      scorePourVous(b.signal) - scorePourVous(a.signal) || byId(a, b),
+    (a, b) => scorePourVous(b.signal) - scorePourVous(a.signal) || byId(a, b),
   );
   const tendances = [...items].sort(
     (a, b) =>
@@ -277,10 +269,7 @@ export function rangerFeed<T extends { id: string; signal: ProduitSignal }>(
   };
 }
 
-export function tauxPourcent(
-  numerateur: number,
-  denominateur: number,
-): number {
+export function tauxPourcent(numerateur: number, denominateur: number): number {
   if (denominateur <= 0) return 0;
   return Math.round((numerateur / denominateur) * 10_000) / 100;
 }
@@ -317,18 +306,13 @@ export function syntheseAarrr(c: CompteursAarrr) {
       ajoutsPanier: c.ajoutsPanier,
       inscriptions: c.inscriptions,
       checkouts: c.checkouts,
-      tauxActivation: tauxPourcent(
-        c.sessionsActivation,
-        c.sessionsAcquisition,
-      ),
+      tauxActivation: tauxPourcent(c.sessionsActivation, c.sessionsAcquisition),
     },
     revenue: {
       commandes: c.commandesPayees,
       caTtc: c.caTtc,
       panierMoyen:
-        c.commandesPayees > 0
-          ? Math.round(c.caTtc / c.commandesPayees)
-          : 0,
+        c.commandesPayees > 0 ? Math.round(c.caTtc / c.commandesPayees) : 0,
       tauxConversion: tauxPourcent(c.commandesPayees, c.sessionsAcquisition),
     },
     retention: {
@@ -339,10 +323,7 @@ export function syntheseAarrr(c: CompteursAarrr) {
     referral: {
       partages: c.partages,
       inscriptionsParrainees: c.inscriptionsParrainees,
-      tauxParrainage: tauxPourcent(
-        c.inscriptionsParrainees,
-        c.inscriptions,
-      ),
+      tauxParrainage: tauxPourcent(c.inscriptionsParrainees, c.inscriptions),
     },
   };
 }

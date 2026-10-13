@@ -4,10 +4,7 @@ import {
   netSolde,
   type TrialBalanceRow,
 } from '../accounting-gl/syscohada-statements';
-import {
-  POSTES_CR,
-  posteForAccount,
-} from '../accounting-gl/syscohada-liasse';
+import { POSTES_CR, posteForAccount } from '../accounting-gl/syscohada-liasse';
 
 export const TZ_BRIEFING = 'Africa/Abidjan';
 
@@ -240,7 +237,9 @@ export function cleSemaineIso(d = new Date()): string {
   const day = utc.getUTCDay() || 7;
   utc.setUTCDate(utc.getUTCDate() + 4 - day);
   const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  const week = Math.ceil(
+    ((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+  );
   return `${utc.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
@@ -250,7 +249,9 @@ export function inactifDepuisHeures(
   seuilHeures: number,
 ): boolean {
   if (!derniereConnexion) return true;
-  return maintenant.getTime() - derniereConnexion.getTime() >= seuilHeures * 3600_000;
+  return (
+    maintenant.getTime() - derniereConnexion.getTime() >= seuilHeures * 3600_000
+  );
 }
 
 export function shopNecessiteAttention(s: SnapshotShop): boolean {
@@ -294,7 +295,8 @@ export function assemblerSnapshotVentes(
 
 export function classementBoutiques(parBoutique: BoutiqueCa[]): BoutiqueCa[] {
   return [...parBoutique].sort(
-    (a, b) => b.ca - a.ca || b.tickets - a.tickets || a.nom.localeCompare(b.nom),
+    (a, b) =>
+      b.ca - a.ca || b.tickets - a.tickets || a.nom.localeCompare(b.nom),
   );
 }
 
@@ -332,7 +334,9 @@ export function pointsAttentionVentes(s: SnapshotVentes): string[] {
   if (s.tickets === 0 && s.commandesWeb === 0) {
     points.push('Aucune vente magasin ni commande web sur la période.');
   }
-  const silencieuses = s.parBoutique.filter((b) => b.tickets === 0).map((b) => b.nom);
+  const silencieuses = s.parBoutique
+    .filter((b) => b.tickets === 0)
+    .map((b) => b.nom);
   if (silencieuses.length > 0 && s.boutiquesTotal > 1) {
     points.push(
       `${silencieuses.length} magasin(s) sans ticket : ${silencieuses.join(', ')}.`,
@@ -457,7 +461,8 @@ export function messageRelance(
       return {
         objet: 'Votre espace CRM vous attend',
         accroche: 'Des faits métier ont été enregistrés pendant votre absence.',
-        pourquoi: 'Connectez-vous pour consulter uniquement le périmètre de votre rôle.',
+        pourquoi:
+          'Connectez-vous pour consulter uniquement le périmètre de votre rôle.',
       };
   }
 }

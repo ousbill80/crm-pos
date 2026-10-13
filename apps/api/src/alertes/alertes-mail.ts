@@ -19,7 +19,12 @@ export type MailAlerteFonds = {
   html: string;
 };
 
-function cadre(title: string, inner: string, ctaUrl: string, ctaLabel: string): string {
+function cadre(
+  title: string,
+  inner: string,
+  ctaUrl: string,
+  ctaLabel: string,
+): string {
   return `<!DOCTYPE html><html lang="fr"><body style="margin:0;padding:0;background:#f4f4f5;font-family:Georgia,system-ui,sans-serif">
   <div style="max-width:640px;margin:0 auto;padding:24px;background:#fff">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px">
@@ -145,6 +150,11 @@ export function renderMailDigestDaf(opts: {
   return {
     objet,
     text: textParts.join('\n'),
-    html: cadre(objet, blocs.join(''), opts.ctaUrl, 'Ouvrir la réception centrale'),
+    html: cadre(
+      objet,
+      blocs.join(''),
+      opts.ctaUrl,
+      'Ouvrir la réception centrale',
+    ),
   };
 }

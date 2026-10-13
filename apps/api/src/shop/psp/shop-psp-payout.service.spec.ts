@@ -138,7 +138,10 @@ describe('ShopPspPayoutService', () => {
 
     expect(prisma.payoutWave.update).toHaveBeenCalledWith({
       where: { id: 'payout-1' },
-      data: expect.objectContaining({ referenceProvider: 'pt-1', statut: 'REUSSI' }),
+      data: expect.objectContaining({
+        referenceProvider: 'pt-1',
+        statut: 'REUSSI',
+      }),
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_REUSSI' }),

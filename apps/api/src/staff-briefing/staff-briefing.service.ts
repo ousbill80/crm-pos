@@ -7,7 +7,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stocks/stock.service';
 import { STATUTS_COMMANDE_REVENUE } from '../shop/shop-aarrr.engine';
 import { StaffBriefingMailer } from './staff-briefing.mailer';
-import { renderBriefing, type BriefingHtml, type LiensBriefing } from './staff-briefing.templates';
+import {
+  renderBriefing,
+  type BriefingHtml,
+  type LiensBriefing,
+} from './staff-briefing.templates';
 import { echantillonsIllustration } from './staff-briefing-echantillons';
 import { AlertesMailer } from '../alertes/alertes-mailer';
 import {
@@ -70,7 +74,9 @@ export class StaffBriefingService {
   ): Promise<{ type: string; to: string; ok: boolean }[]> {
     const dest = [
       ...new Set(
-        emails.map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@')),
+        emails
+          .map((e) => e.trim().toLowerCase())
+          .filter((e) => e.includes('@')),
       ),
     ];
     if (dest.length === 0) return [];
@@ -89,9 +95,7 @@ export class StaffBriefingService {
               ? await this.mailer.envoyer(to, p.mail)
               : await this.alertesMailer.envoyer(to, p.mail);
         } catch (err) {
-          this.logger.warn(
-            `Échantillon ${p.type} → ${to}: ${String(err)}`,
-          );
+          this.logger.warn(`Échantillon ${p.type} → ${to}: ${String(err)}`);
         }
         resultats.push({ type: p.type, to, ok: Boolean(id) });
         await new Promise((r) => setTimeout(r, 250));
@@ -118,7 +122,9 @@ export class StaffBriefingService {
 
   private async construireEchantillons(
     now: Date,
-  ): Promise<Array<{ type: string; canal: 'briefing' | 'alerte'; mail: BriefingHtml }>> {
+  ): Promise<
+    Array<{ type: string; canal: 'briefing' | 'alerte'; mail: BriefingHtml }>
+  > {
     const jour = jourCleAbidjan(now);
     const fin = finJourAbidjan(now);
     const debutJour = debutJourAbidjan(now);
@@ -163,18 +169,25 @@ export class StaffBriefingService {
   }
 
   private rendrePieces(ctx: {
-      ventesJour: SnapshotVentes;
-      ventesSemaine: SnapshotVentes;
-      ventesMois: SnapshotVentes;
-      cloture: SnapshotCloture;
-      stocks: SnapshotStocks;
-      finance: SnapshotFinance;
-      gl: SnapshotGl;
-      shop: SnapshotShop;
-    },
-  ) {
-    const { ventesJour, ventesSemaine, ventesMois, cloture, stocks, finance, gl, shop } =
-      ctx;
+    ventesJour: SnapshotVentes;
+    ventesSemaine: SnapshotVentes;
+    ventesMois: SnapshotVentes;
+    cloture: SnapshotCloture;
+    stocks: SnapshotStocks;
+    finance: SnapshotFinance;
+    gl: SnapshotGl;
+    shop: SnapshotShop;
+  }) {
+    const {
+      ventesJour,
+      ventesSemaine,
+      ventesMois,
+      cloture,
+      stocks,
+      finance,
+      gl,
+      shop,
+    } = ctx;
     const role = RoleLibelle.DAF;
     const prenom = 'Équipe';
     const liens = this.liens();
@@ -209,7 +222,10 @@ export class StaffBriefingService {
       },
       {
         type: 'CLOTURE_CAISSE',
-        mail: renderBriefing('CLOTURE_CAISSE', role, prenom, { cloture, liens }),
+        mail: renderBriefing('CLOTURE_CAISSE', role, prenom, {
+          cloture,
+          liens,
+        }),
       },
       {
         type: 'RELANCE_CONNEXION',
@@ -283,7 +299,12 @@ export class StaffBriefingService {
   async cycleSoir(now = new Date()): Promise<number> {
     const jour = jourCleAbidjan(now);
     const [ventes, cloture] = await Promise.all([
-      this.snapshotVentes(debutJourAbidjan(now), finJourAbidjan(now), jour, 'JOUR'),
+      this.snapshotVentes(
+        debutJourAbidjan(now),
+        finJourAbidjan(now),
+        jour,
+        'JOUR',
+      ),
       this.snapshotCloture(now, debutJourAbidjan(now)),
     ]);
     return this.diffuser('SOIR', ROLES_BRIEFING_SOIR, `SOIR:${jour}`, {
@@ -320,18 +341,28 @@ export class StaffBriefingService {
     const jour = jourCleAbidjan(now);
     const mois = jour.slice(0, 7);
     const debut = new Date(`${mois}-01T00:00:00.000Z`);
-    const ventes = await this.snapshotVentes(debut, finJourAbidjan(now), mois, 'MOIS');
+    const ventes = await this.snapshotVentes(
+      debut,
+      finJourAbidjan(now),
+      mois,
+      'MOIS',
+    );
     const [stocks, finance, gl] = await Promise.all([
       this.snapshotStocks(),
       this.snapshotFinance(debut, finJourAbidjan(now)),
       this.snapshotGl(debut, finJourAbidjan(now)),
     ]);
-    return this.diffuser('MOIS', ROLES_BRIEFING_EXECUTIF, `ETAT_FIN:MOIS:${mois}`, {
-      ventes,
-      stocks,
-      finance,
-      gl,
-    });
+    return this.diffuser(
+      'MOIS',
+      ROLES_BRIEFING_EXECUTIF,
+      `ETAT_FIN:MOIS:${mois}`,
+      {
+        ventes,
+        stocks,
+        finance,
+        gl,
+      },
+    );
   }
 
   async cycleRelances(now = new Date()): Promise<number> {
@@ -344,7 +375,9 @@ export class StaffBriefingService {
         orderBy: { dateHeure: 'desc' },
         select: { dateHeure: true },
       });
-      if (!inactifDepuisHeures(last?.dateHeure ?? null, now, SEUIL_INACTIVITE_H)) {
+      if (
+        !inactifDepuisHeures(last?.dateHeure ?? null, now, SEUIL_INACTIVITE_H)
+      ) {
         continue;
       }
       const heures = last
@@ -538,54 +571,54 @@ export class StaffBriefingService {
     const prec = this.periodePrecedente(from, to, horizon);
     const [ventes, web, litiges, retards, boutiques, precAgg, precWeb] =
       await Promise.all([
-      this.prisma.vente.findMany({
-        where: { dateVente: { gte: from, lte: to } },
-        select: {
-          montantTotal: true,
-          modePaiement: true,
-          paiements: { select: { modePaiement: true, montant: true } },
-          caisse: { select: { boutique: { select: { nom: true } } } },
-        },
-      }),
-      this.prisma.commandeWeb.aggregate({
-        where: {
-          createdAt: { gte: from, lte: to },
-          statut: { in: [...STATUTS_COMMANDE_REVENUE] },
-        },
-        _sum: { montantTotal: true },
-        _count: { _all: true },
-      }),
-      this.prisma.transactionCaisse.count({
-        where: {
-          type: TypeTransaction.SORTIE_FONDS,
-          statut: StatutTransaction.LITIGE,
-        },
-      }),
-      this.delaiHeures().then((h) =>
+        this.prisma.vente.findMany({
+          where: { dateVente: { gte: from, lte: to } },
+          select: {
+            montantTotal: true,
+            modePaiement: true,
+            paiements: { select: { modePaiement: true, montant: true } },
+            caisse: { select: { boutique: { select: { nom: true } } } },
+          },
+        }),
+        this.prisma.commandeWeb.aggregate({
+          where: {
+            createdAt: { gte: from, lte: to },
+            statut: { in: [...STATUTS_COMMANDE_REVENUE] },
+          },
+          _sum: { montantTotal: true },
+          _count: { _all: true },
+        }),
         this.prisma.transactionCaisse.count({
           where: {
             type: TypeTransaction.SORTIE_FONDS,
-            statut: {
-              in: [StatutTransaction.INITIEE, StatutTransaction.EN_TRANSIT],
-            },
-            dateHeure: { lte: new Date(Date.now() - h * 3600_000) },
+            statut: StatutTransaction.LITIGE,
           },
         }),
-      ),
-      this.prisma.boutique.findMany({ select: { nom: true } }),
-      this.prisma.vente.aggregate({
-        where: { dateVente: { gte: prec.from, lte: prec.to } },
-        _sum: { montantTotal: true },
-        _count: { _all: true },
-      }),
-      this.prisma.commandeWeb.aggregate({
-        where: {
-          createdAt: { gte: prec.from, lte: prec.to },
-          statut: { in: [...STATUTS_COMMANDE_REVENUE] },
-        },
-        _sum: { montantTotal: true },
-      }),
-    ]);
+        this.delaiHeures().then((h) =>
+          this.prisma.transactionCaisse.count({
+            where: {
+              type: TypeTransaction.SORTIE_FONDS,
+              statut: {
+                in: [StatutTransaction.INITIEE, StatutTransaction.EN_TRANSIT],
+              },
+              dateHeure: { lte: new Date(Date.now() - h * 3600_000) },
+            },
+          }),
+        ),
+        this.prisma.boutique.findMany({ select: { nom: true } }),
+        this.prisma.vente.aggregate({
+          where: { dateVente: { gte: prec.from, lte: prec.to } },
+          _sum: { montantTotal: true },
+          _count: { _all: true },
+        }),
+        this.prisma.commandeWeb.aggregate({
+          where: {
+            createdAt: { gte: prec.from, lte: prec.to },
+            statut: { in: [...STATUTS_COMMANDE_REVENUE] },
+          },
+          _sum: { montantTotal: true },
+        }),
+      ]);
     const parMap = new Map<string, { ca: number; tickets: number }>();
     for (const b of boutiques) {
       parMap.set(b.nom, { ca: 0, tickets: 0 });
@@ -616,7 +649,8 @@ export class StaffBriefingService {
     }
     const webCa = Number(web._sum.montantTotal ?? 0);
     const precCa =
-      Number(precAgg._sum.montantTotal ?? 0) + Number(precWeb._sum.montantTotal ?? 0);
+      Number(precAgg._sum.montantTotal ?? 0) +
+      Number(precWeb._sum.montantTotal ?? 0);
     return assemblerSnapshotVentes({
       horizon,
       periodeLabel,

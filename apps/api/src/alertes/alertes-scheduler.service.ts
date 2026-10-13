@@ -161,7 +161,9 @@ export class AlertesSchedulerService {
   }
 
   private async diffuserDigestDaf(alertes: AlerteDto[]): Promise<void> {
-    const nonTransferes = alertes.filter((a) => a.type === 'POINT_JOUR_NON_VERSE');
+    const nonTransferes = alertes.filter(
+      (a) => a.type === 'POINT_JOUR_NON_VERSE',
+    );
     const aReceptionner = alertes.filter(
       (a) => a.type === 'RECEPTION_DAF_EN_ATTENTE',
     );

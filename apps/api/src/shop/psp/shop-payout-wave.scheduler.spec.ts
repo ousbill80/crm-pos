@@ -80,7 +80,9 @@ describe('ShopPayoutWaveScheduler', () => {
 
   it('processing -> incrémente tentatives sans changer le statut', async () => {
     const { scheduler, prisma, waveAdapter } = build();
-    prisma.payoutWave.findMany.mockResolvedValue([payoutRow({ tentatives: 3 })]);
+    prisma.payoutWave.findMany.mockResolvedValue([
+      payoutRow({ tentatives: 3 }),
+    ]);
     waveAdapter.verifierPayout.mockResolvedValue({ status: 'processing' });
 
     await scheduler.sonderPayoutsEnCours();

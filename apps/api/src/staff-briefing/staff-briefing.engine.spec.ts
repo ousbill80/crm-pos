@@ -121,10 +121,18 @@ describe('staff-briefing.engine', () => {
   it('adapte relance et astuces au rôle', () => {
     expect(inactifDepuisHeures(null, new Date(), 48)).toBe(true);
     expect(
-      inactifDepuisHeures(new Date('2026-08-28T10:00:00Z'), new Date('2026-08-28T12:00:00Z'), 48),
+      inactifDepuisHeures(
+        new Date('2026-08-28T10:00:00Z'),
+        new Date('2026-08-28T12:00:00Z'),
+        48,
+      ),
     ).toBe(false);
     expect(
-      inactifDepuisHeures(new Date('2026-08-26T10:00:00Z'), new Date('2026-08-28T12:00:00Z'), 48),
+      inactifDepuisHeures(
+        new Date('2026-08-26T10:00:00Z'),
+        new Date('2026-08-28T12:00:00Z'),
+        48,
+      ),
     ).toBe(true);
     const dg = messageRelance(RoleLibelle.DIRECTION_GENERALE, 72);
     const daf = messageRelance(RoleLibelle.DAF, 72);
@@ -185,15 +193,15 @@ describe('staff-briefing.engine', () => {
       boutiqueNom: 'Yopougon',
       caisseLibelle: 'T1',
     };
-    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-28T15:00:00Z'), 20)).toBe(
-      false,
-    );
-    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-28T20:05:00Z'), 20)).toBe(
-      true,
-    );
-    expect(sessionEnRetardCloture(ouverte, new Date('2026-08-29T08:00:00Z'), 20)).toBe(
-      true,
-    );
+    expect(
+      sessionEnRetardCloture(ouverte, new Date('2026-08-28T15:00:00Z'), 20),
+    ).toBe(false);
+    expect(
+      sessionEnRetardCloture(ouverte, new Date('2026-08-28T20:05:00Z'), 20),
+    ).toBe(true);
+    expect(
+      sessionEnRetardCloture(ouverte, new Date('2026-08-29T08:00:00Z'), 20),
+    ).toBe(true);
     const fermee: SessionClotureVue = {
       ...ouverte,
       id: 's2',

@@ -232,8 +232,8 @@ model Utilisateur {
   retoursVente               RetourVente[]
   campagnesCreees            CampagneCrm[]
   devisClientsCrees          DevisClient[]
-  facturesClientCrees        FactureClient[]              @relation("FactureClientCreateur")
-  facturesClientEmises       FactureClient[]              @relation("FactureClientEmission")
+  facturesClientCrees        FactureClient[]                  @relation("FactureClientCreateur")
+  facturesClientEmises       FactureClient[]                  @relation("FactureClientEmission")
   paiementsFactureClient     PaiementFactureClient[]
   sessionsInventaireInitiees SessionInventaire[]              @relation("InventaireInitiateur")
   sessionsInventaireValidees SessionInventaire[]              @relation("InventaireValidateur")
@@ -263,11 +263,11 @@ model Utilisateur {
   paiementsExceptionnels     PropositionPaiementFournisseur[] @relation("PropositionPaiementException")
   paiementsExecutes          PropositionPaiementFournisseur[] @relation("PropositionPaiementExecuteur")
   rapprochementsBancaires    RapprochementBancaire[]          @relation("RapprochementBancaireAuteur")
-  evidencesP2pDeposees        EvidenceP2p[]                    @relation("EvidenceP2pUploader")
+  evidencesP2pDeposees       EvidenceP2p[]                    @relation("EvidenceP2pUploader")
   challengesActionSensible   ChallengeActionSensible[]
-  filesEcritureComptable     FileEcritureComptable[]   @relation("FileEcritureAuteur")
-  immobilisationsCreees      Immobilisation[]          @relation("ImmobilisationAuteur")
-  ordresPoseTechnicien       OrdreDePose[]             @relation("TechnicienOrdrePose")
+  filesEcritureComptable     FileEcritureComptable[]          @relation("FileEcritureAuteur")
+  immobilisationsCreees      Immobilisation[]                 @relation("ImmobilisationAuteur")
+  ordresPoseTechnicien       OrdreDePose[]                    @relation("TechnicienOrdrePose")
 
   @@map("utilisateur")
 }
@@ -284,13 +284,13 @@ enum PurposeActionSensible {
 // Jeton opaque, très court et à usage unique. Le mot de passe n'est jamais
 // conservé ; seule la preuve de ré-authentification et sa consommation le sont.
 model ChallengeActionSensible {
-  id            String                 @id @default(uuid())
-  utilisateur   Utilisateur            @relation(fields: [utilisateurId], references: [id])
+  id            String                @id @default(uuid())
+  utilisateur   Utilisateur           @relation(fields: [utilisateurId], references: [id])
   utilisateurId String
   purpose       PurposeActionSensible
   expiresAt     DateTime
   consumedAt    DateTime?
-  createdAt     DateTime               @default(now())
+  createdAt     DateTime              @default(now())
 
   @@index([utilisateurId, purpose, expiresAt, consumedAt])
   @@map("challenge_action_sensible")
@@ -371,10 +371,10 @@ model TransactionCaisse {
   // rejouée à la reconnexion ne crée pas de doublon.
   clientOperationId String? @unique
 
-  bordereau      BordereauVersement?
-  sessionRemiseMagasin  SessionCaisse? @relation("SessionRemiseMagasin")
-  sessionSortieCentrale SessionCaisse? @relation("SessionSortieCentrale")
-  regularisation RegularisationLitige?
+  bordereau             BordereauVersement?
+  sessionRemiseMagasin  SessionCaisse?        @relation("SessionRemiseMagasin")
+  sessionSortieCentrale SessionCaisse?        @relation("SessionSortieCentrale")
+  regularisation        RegularisationLitige?
 
   @@index([caisseId])
   @@index([statut])
@@ -2057,14 +2057,14 @@ enum SensMouvementTresorerie {
 }
 
 model NatureDepense {
-  id        String           @id @default(uuid())
-  societe   Societe          @relation(fields: [societeId], references: [id])
+  id        String                    @id @default(uuid())
+  societe   Societe                   @relation(fields: [societeId], references: [id])
   societeId String
   code      String
   libelle   String
-  compte    CompteComptable  @relation(fields: [compteId], references: [id])
+  compte    CompteComptable           @relation(fields: [compteId], references: [id])
   compteId  String
-  actif     Boolean          @default(true)
+  actif     Boolean                   @default(true)
   lignes    LigneFactureFournisseur[]
 
   @@unique([societeId, code])
@@ -2073,20 +2073,20 @@ model NatureDepense {
 }
 
 model FileEcritureComptable {
-  id             String                       @id @default(uuid())
-  societe        Societe                      @relation(fields: [societeId], references: [id])
+  id             String                      @id @default(uuid())
+  societe        Societe                     @relation(fields: [societeId], references: [id])
   societeId      String
   sourceType     TypeSourceComptable
   sourceId       String
-  auteur         Utilisateur                  @relation("FileEcritureAuteur", fields: [auteurId], references: [id])
+  auteur         Utilisateur                 @relation("FileEcritureAuteur", fields: [auteurId], references: [id])
   auteurId       String
   dateComptable  DateTime
-  statut         StatutFileEcritureComptable  @default(EN_ATTENTE)
+  statut         StatutFileEcritureComptable @default(EN_ATTENTE)
   motif          String?
-  dateCreation   DateTime                     @default(now())
+  dateCreation   DateTime                    @default(now())
   dateTraitement DateTime?
-  ecriture       EcritureComptable?           @relation(fields: [ecritureId], references: [id])
-  ecritureId     String?                      @unique
+  ecriture       EcritureComptable?          @relation(fields: [ecritureId], references: [id])
+  ecritureId     String?                     @unique
 
   @@unique([sourceType, sourceId])
   @@index([societeId, statut, dateCreation])
@@ -2094,16 +2094,16 @@ model FileEcritureComptable {
 }
 
 model PeriodeComptable {
-  id         String              @id @default(uuid())
-  societe    Societe             @relation(fields: [societeId], references: [id])
-  societeId  String
-  exercice   ExerciceComptable   @relation(fields: [exerciceId], references: [id])
-  exerciceId String
-  code       String
-  dateDebut  DateTime
-  dateFin    DateTime
-  cloture    Boolean             @default(false)
-  ecritures  EcritureComptable[]
+  id                      String                   @id @default(uuid())
+  societe                 Societe                  @relation(fields: [societeId], references: [id])
+  societeId               String
+  exercice                ExerciceComptable        @relation(fields: [exerciceId], references: [id])
+  exerciceId              String
+  code                    String
+  dateDebut               DateTime
+  dateFin                 DateTime
+  cloture                 Boolean                  @default(false)
+  ecritures               EcritureComptable[]
   dotationsImmobilisation DotationImmobilisation[]
 
   @@unique([exerciceId, code])
@@ -2147,35 +2147,35 @@ model LigneModeleComptabilisation {
 }
 
 model EcritureComptable {
-  id                    String                   @id @default(uuid())
-  numero                String                   @unique
-  societe               Societe                  @relation(fields: [societeId], references: [id])
-  societeId             String
-  exercice              ExerciceComptable        @relation(fields: [exerciceId], references: [id])
-  exerciceId            String
-  periode               PeriodeComptable         @relation(fields: [periodeId], references: [id])
-  periodeId             String
-  journal               JournalComptable         @relation(fields: [journalId], references: [id])
-  journalId             String
-  modele                ModeleComptabilisation   @relation(fields: [modeleId], references: [id])
-  modeleId              String
-  modeleCodeSnapshot    String
-  modeleVersionSnapshot Int
-  sourceType            TypeSourceComptable
-  sourceId              String
-  facture               FactureFournisseur?      @relation(fields: [factureId], references: [id])
-  factureId             String?
-  libelle               String
-  dateComptable         DateTime
-  devise                String                   @default("XOF")
-  tauxChangeSnapshot    Decimal?                 @db.Decimal(18, 6)
-  clientOperationId     String                   @unique
-  auteur                Utilisateur              @relation("EcritureComptableAuteur", fields: [auteurId], references: [id])
-  auteurId              String
-  dateCreation          DateTime                 @default(now())
-  lignes                LigneEcritureComptable[]
-  paiement              PaiementFournisseur?
-  fileEcriture          FileEcritureComptable?
+  id                     String                   @id @default(uuid())
+  numero                 String                   @unique
+  societe                Societe                  @relation(fields: [societeId], references: [id])
+  societeId              String
+  exercice               ExerciceComptable        @relation(fields: [exerciceId], references: [id])
+  exerciceId             String
+  periode                PeriodeComptable         @relation(fields: [periodeId], references: [id])
+  periodeId              String
+  journal                JournalComptable         @relation(fields: [journalId], references: [id])
+  journalId              String
+  modele                 ModeleComptabilisation   @relation(fields: [modeleId], references: [id])
+  modeleId               String
+  modeleCodeSnapshot     String
+  modeleVersionSnapshot  Int
+  sourceType             TypeSourceComptable
+  sourceId               String
+  facture                FactureFournisseur?      @relation(fields: [factureId], references: [id])
+  factureId              String?
+  libelle                String
+  dateComptable          DateTime
+  devise                 String                   @default("XOF")
+  tauxChangeSnapshot     Decimal?                 @db.Decimal(18, 6)
+  clientOperationId      String                   @unique
+  auteur                 Utilisateur              @relation("EcritureComptableAuteur", fields: [auteurId], references: [id])
+  auteurId               String
+  dateCreation           DateTime                 @default(now())
+  lignes                 LigneEcritureComptable[]
+  paiement               PaiementFournisseur?
+  fileEcriture           FileEcritureComptable?
   dotationImmobilisation DotationImmobilisation?
 
   @@unique([sourceType, sourceId])
@@ -2214,38 +2214,38 @@ enum StatutImmobilisation {
 }
 
 model Immobilisation {
-  id                 String                 @id @default(uuid())
-  societe            Societe                @relation(fields: [societeId], references: [id])
-  societeId          String
-  compte             CompteComptable        @relation(fields: [compteId], references: [id])
-  compteId           String
-  libelle            String
-  dateMiseEnService  DateTime
-  valeurBrute        Decimal                @db.Decimal(18, 2)
-  dureeMois          Int
-  valeurResiduelle   Decimal                @default(0) @db.Decimal(18, 2)
-  statut             StatutImmobilisation   @default(EN_SERVICE)
-  dateCreation       DateTime               @default(now())
-  auteur             Utilisateur            @relation("ImmobilisationAuteur", fields: [auteurId], references: [id])
-  auteurId           String
-  dateSortie         DateTime?
-  motifSortie        String?
-  dotations          DotationImmobilisation[]
+  id                String                   @id @default(uuid())
+  societe           Societe                  @relation(fields: [societeId], references: [id])
+  societeId         String
+  compte            CompteComptable          @relation(fields: [compteId], references: [id])
+  compteId          String
+  libelle           String
+  dateMiseEnService DateTime
+  valeurBrute       Decimal                  @db.Decimal(18, 2)
+  dureeMois         Int
+  valeurResiduelle  Decimal                  @default(0) @db.Decimal(18, 2)
+  statut            StatutImmobilisation     @default(EN_SERVICE)
+  dateCreation      DateTime                 @default(now())
+  auteur            Utilisateur              @relation("ImmobilisationAuteur", fields: [auteurId], references: [id])
+  auteurId          String
+  dateSortie        DateTime?
+  motifSortie       String?
+  dotations         DotationImmobilisation[]
 
   @@index([societeId, statut])
   @@map("immobilisation")
 }
 
 model DotationImmobilisation {
-  id               String          @id @default(uuid())
-  immobilisation   Immobilisation  @relation(fields: [immobilisationId], references: [id])
+  id               String            @id @default(uuid())
+  immobilisation   Immobilisation    @relation(fields: [immobilisationId], references: [id])
   immobilisationId String
-  periode          PeriodeComptable @relation(fields: [periodeId], references: [id])
+  periode          PeriodeComptable  @relation(fields: [periodeId], references: [id])
   periodeId        String
-  montant          Decimal         @db.Decimal(18, 2)
+  montant          Decimal           @db.Decimal(18, 2)
   ecriture         EcritureComptable @relation(fields: [ecritureId], references: [id])
-  ecritureId       String          @unique
-  dateCreation     DateTime        @default(now())
+  ecritureId       String            @unique
+  dateCreation     DateTime          @default(now())
 
   @@unique([immobilisationId, periodeId])
   @@index([periodeId])
@@ -2428,36 +2428,36 @@ enum StatutSessionCaisse {
 }
 
 model SessionCaisse {
-  id                     String              @id @default(uuid())
-  caisse                 Caisse              @relation(fields: [caisseId], references: [id])
-  caisseId               String
-  statut                 StatutSessionCaisse @default(OUVERTE)
-  ouvertureDateHeure     DateTime            @default(now())
-  fondInitial            Decimal             @db.Decimal(14, 2)
-  ouvertureUtilisateur   Utilisateur         @relation("OuvertureSession", fields: [ouvertureUtilisateurId], references: [id])
-  ouvertureUtilisateurId String
+  id                          String              @id @default(uuid())
+  caisse                      Caisse              @relation(fields: [caisseId], references: [id])
+  caisseId                    String
+  statut                      StatutSessionCaisse @default(OUVERTE)
+  ouvertureDateHeure          DateTime            @default(now())
+  fondInitial                 Decimal             @db.Decimal(14, 2)
+  ouvertureUtilisateur        Utilisateur         @relation("OuvertureSession", fields: [ouvertureUtilisateurId], references: [id])
+  ouvertureUtilisateurId      String
   // Comptage contradictoire (§5.1) : le témoin EST ré-authentifié par mot de
   // passe côté serveur (resoudreTemoin, bcrypt.compare réel) — pas une simplification.
-  ouvertureTemoin        Utilisateur         @relation("OuvertureTemoin", fields: [ouvertureTemoinId], references: [id])
-  ouvertureTemoinId      String
-  clotureDateHeure       DateTime?
-  fondCompteCloture      Decimal?            @db.Decimal(14, 2)
-  clotureUtilisateur     Utilisateur?        @relation("ClotureSession", fields: [clotureUtilisateurId], references: [id])
-  clotureUtilisateurId   String?
-  clotureTemoin          Utilisateur?        @relation("ClotureTemoin", fields: [clotureTemoinId], references: [id])
-  clotureTemoinId        String?
-  transactionVersement   TransactionCaisse?  @relation("SessionRemiseMagasin", fields: [transactionVersementId], references: [id])
-  transactionVersementId String?             @unique
+  ouvertureTemoin             Utilisateur         @relation("OuvertureTemoin", fields: [ouvertureTemoinId], references: [id])
+  ouvertureTemoinId           String
+  clotureDateHeure            DateTime?
+  fondCompteCloture           Decimal?            @db.Decimal(14, 2)
+  clotureUtilisateur          Utilisateur?        @relation("ClotureSession", fields: [clotureUtilisateurId], references: [id])
+  clotureUtilisateurId        String?
+  clotureTemoin               Utilisateur?        @relation("ClotureTemoin", fields: [clotureTemoinId], references: [id])
+  clotureTemoinId             String?
+  transactionVersement        TransactionCaisse?  @relation("SessionRemiseMagasin", fields: [transactionVersementId], references: [id])
+  transactionVersementId      String?             @unique
   // Bordereau magasin → centrale du point du jour (§6.4), créé à la clôture
   // sans écart. Réception / validation : Caissier Central ou DAF.
   transactionSortieCentrale   TransactionCaisse?  @relation("SessionSortieCentrale", fields: [transactionSortieCentraleId], references: [id])
   transactionSortieCentraleId String?             @unique
   // Idempotence hors-ligne (§6.7) : UUID généré côté appareil, unique si renseigné.
-  clientOperationId      String?             @unique
-  ventes                 Vente[]
-  retours                RetourVente[]
-  reservations           ReservationStock[]
-  ticketsAttente         TicketAttente[]
+  clientOperationId           String?             @unique
+  ventes                      Vente[]
+  retours                     RetourVente[]
+  reservations                ReservationStock[]
+  ticketsAttente              TicketAttente[]
 
   @@map("session_caisse")
 }
@@ -2789,23 +2789,23 @@ enum StatutDevisClient {
 }
 
 model DevisClient {
-  id           String             @id @default(uuid())
-  numero       String             @unique
-  statut       StatutDevisClient  @default(BROUILLON)
-  client       Client             @relation(fields: [clientId], references: [id])
-  clientId     String
-  boutique     Boutique?          @relation(fields: [boutiqueId], references: [id])
-  boutiqueId   String?
-  montantTotal Decimal            @db.Decimal(14, 2)
-  notes        String?
-  vente          Vente?             @relation(fields: [venteId], references: [id])
-  venteId        String?            @unique
-  factureClient  FactureClient?
-  createdBy      Utilisateur        @relation(fields: [createdById], references: [id])
-  createdById    String
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  lignes         LigneDevisClient[]
+  id            String             @id @default(uuid())
+  numero        String             @unique
+  statut        StatutDevisClient  @default(BROUILLON)
+  client        Client             @relation(fields: [clientId], references: [id])
+  clientId      String
+  boutique      Boutique?          @relation(fields: [boutiqueId], references: [id])
+  boutiqueId    String?
+  montantTotal  Decimal            @db.Decimal(14, 2)
+  notes         String?
+  vente         Vente?             @relation(fields: [venteId], references: [id])
+  venteId       String?            @unique
+  factureClient FactureClient?
+  createdBy     Utilisateur        @relation(fields: [createdById], references: [id])
+  createdById   String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  lignes        LigneDevisClient[]
 
   @@index([clientId])
   @@index([statut])
@@ -2845,28 +2845,28 @@ enum ModeEncaissementFactureClient {
 }
 
 model FactureClient {
-  id           String                 @id @default(uuid())
-  numero       String                 @unique
-  statut       StatutFactureClient    @default(BROUILLON)
-  client       Client                 @relation(fields: [clientId], references: [id])
+  id           String                  @id @default(uuid())
+  numero       String                  @unique
+  statut       StatutFactureClient     @default(BROUILLON)
+  client       Client                  @relation(fields: [clientId], references: [id])
   clientId     String
-  boutique     Boutique?              @relation(fields: [boutiqueId], references: [id])
+  boutique     Boutique?               @relation(fields: [boutiqueId], references: [id])
   boutiqueId   String?
-  devis        DevisClient?           @relation(fields: [devisId], references: [id])
-  devisId      String?                @unique
-  dateFacture  DateTime               @default(now())
+  devis        DevisClient?            @relation(fields: [devisId], references: [id])
+  devisId      String?                 @unique
+  dateFacture  DateTime                @default(now())
   dateEcheance DateTime?
-  montantHt    Decimal                @db.Decimal(14, 2)
-  montantTva   Decimal                @db.Decimal(14, 2)
-  montantTtc   Decimal                @db.Decimal(14, 2)
+  montantHt    Decimal                 @db.Decimal(14, 2)
+  montantTva   Decimal                 @db.Decimal(14, 2)
+  montantTtc   Decimal                 @db.Decimal(14, 2)
   notes        String?
-  createdBy    Utilisateur            @relation("FactureClientCreateur", fields: [createdById], references: [id])
+  createdBy    Utilisateur             @relation("FactureClientCreateur", fields: [createdById], references: [id])
   createdById  String
-  emisePar     Utilisateur?           @relation("FactureClientEmission", fields: [emiseParId], references: [id])
+  emisePar     Utilisateur?            @relation("FactureClientEmission", fields: [emiseParId], references: [id])
   emiseParId   String?
   emiseAt      DateTime?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
   lignes       LigneFactureClient[]
   paiements    PaiementFactureClient[]
 
@@ -2895,16 +2895,16 @@ model LigneFactureClient {
 }
 
 model PaiementFactureClient {
-  id           String                       @id @default(uuid())
-  facture      FactureClient                @relation(fields: [factureId], references: [id])
+  id           String                        @id @default(uuid())
+  facture      FactureClient                 @relation(fields: [factureId], references: [id])
   factureId    String
-  montant      Decimal                      @db.Decimal(14, 2)
+  montant      Decimal                       @db.Decimal(14, 2)
   mode         ModeEncaissementFactureClient
-  datePaiement DateTime                     @default(now())
+  datePaiement DateTime                      @default(now())
   reference    String?
-  createdBy    Utilisateur                  @relation(fields: [createdById], references: [id])
+  createdBy    Utilisateur                   @relation(fields: [createdById], references: [id])
   createdById  String
-  createdAt    DateTime                     @default(now())
+  createdAt    DateTime                      @default(now())
 
   @@index([factureId])
   @@map("paiement_facture_client")
@@ -3009,20 +3009,20 @@ model ParametreShop {
 }
 
 model CompteClient {
-  id               String          @id @default(uuid())
-  email            String          @unique
+  id               String            @id @default(uuid())
+  email            String            @unique
   passwordHash     String
-  client           Client          @relation(fields: [clientId], references: [id])
-  clientId         String          @unique
-  emailVerifie     Boolean         @default(false)
-  actif            Boolean         @default(true)
+  client           Client            @relation(fields: [clientId], references: [id])
+  clientId         String            @unique
+  emailVerifie     Boolean           @default(false)
+  actif            Boolean           @default(true)
   refreshTokenHash String?
-  codeParrainage   String          @unique
-  parrain          CompteClient?   @relation("ParrainageShop", fields: [parrainId], references: [id], onDelete: SetNull)
+  codeParrainage   String            @unique
+  parrain          CompteClient?     @relation("ParrainageShop", fields: [parrainId], references: [id], onDelete: SetNull)
   parrainId        String?
-  filleuls         CompteClient[]  @relation("ParrainageShop")
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  filleuls         CompteClient[]    @relation("ParrainageShop")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   adresses         AdresseClient[]
   commandesWeb     CommandeWeb[]
   funnelEvents     ShopFunnelEvent[]
@@ -3233,7 +3233,9 @@ model ConversionCommandeVente {
   @@map("conversion_commande_vente")
 }
 
-/** Avis service post-livraison / post-retrait (token public). */
+/**
+ * Avis service post-livraison / post-retrait (token public).
+ */
 model AvisCommandeWeb {
   id            String      @id @default(uuid())
   commande      CommandeWeb @relation(fields: [commandeWebId], references: [id], onDelete: Cascade)
@@ -3347,19 +3349,19 @@ enum AccountingAuditFindingStatus {
 }
 
 model AccountingAiWorkItem {
-  id                    String                 @id @default(uuid())
+  id                    String                   @id @default(uuid())
   societeId             String
   sourceType            AccountingAiSourceType
   sourceId              String
   sourceSnapshot        Json
   sourceHash            String
-  status                AccountingAiWorkStatus @default(QUEUED)
+  status                AccountingAiWorkStatus   @default(QUEUED)
   deterministicChecks   Json
   deterministicBlockers Json
   providerMode          String
   providerErrorCode     String?
   createdById           String
-  createdAt             DateTime               @default(now())
+  createdAt             DateTime                 @default(now())
   suggestions           AccountingAiSuggestion[]
   findings              AccountingAuditFinding[]
   evidence              AccountingAiEvidence[]
@@ -3370,52 +3372,52 @@ model AccountingAiWorkItem {
 }
 
 model AccountingAiSuggestion {
-  id             String                       @id @default(uuid())
-  workItem       AccountingAiWorkItem         @relation(fields: [workItemId], references: [id])
-  workItemId     String
-  kind           AccountingAiSuggestionKind
-  value          Json
-  confidence     Decimal                      @db.Decimal(5, 4)
-  evidence       Json
-  ruleCitations  Json
-  risk           AccountingAiRisk
-  modelVersion   String
-  modelHash      String
-  promptHash     String
-  createdAt      DateTime                     @default(now())
-  decisions      AccountingAiDecisionEvent[]
+  id            String                      @id @default(uuid())
+  workItem      AccountingAiWorkItem        @relation(fields: [workItemId], references: [id])
+  workItemId    String
+  kind          AccountingAiSuggestionKind
+  value         Json
+  confidence    Decimal                     @db.Decimal(5, 4)
+  evidence      Json
+  ruleCitations Json
+  risk          AccountingAiRisk
+  modelVersion  String
+  modelHash     String
+  promptHash    String
+  createdAt     DateTime                    @default(now())
+  decisions     AccountingAiDecisionEvent[]
 
   @@index([workItemId, kind])
   @@map("accounting_ai_suggestion")
 }
 
 model AccountingAiDecisionEvent {
-  id           String                   @id @default(uuid())
-  suggestion   AccountingAiSuggestion   @relation(fields: [suggestionId], references: [id])
+  id           String                 @id @default(uuid())
+  suggestion   AccountingAiSuggestion @relation(fields: [suggestionId], references: [id])
   suggestionId String
   decision     AccountingAiDecision
   actorId      String
   reason       String?
   evidenceHash String
-  createdAt    DateTime                 @default(now())
+  createdAt    DateTime               @default(now())
 
   @@index([suggestionId, createdAt])
   @@map("accounting_ai_decision_event")
 }
 
 model AccountingAiPolicy {
-  id                  String                 @id @default(uuid())
-  societeId           String
-  sourceType          AccountingAiSourceType
-  suggestionKind      AccountingAiSuggestionKind
-  minimumConfidence   Decimal                @db.Decimal(5, 4)
-  maximumRisk         AccountingAiRisk       @default(LOW)
-  active              Boolean                @default(false)
-  approvedByDafId     String?
-  approvedAt          DateTime?
-  version             Int
-  createdById         String
-  createdAt           DateTime               @default(now())
+  id                String                     @id @default(uuid())
+  societeId         String
+  sourceType        AccountingAiSourceType
+  suggestionKind    AccountingAiSuggestionKind
+  minimumConfidence Decimal                    @db.Decimal(5, 4)
+  maximumRisk       AccountingAiRisk           @default(LOW)
+  active            Boolean                    @default(false)
+  approvedByDafId   String?
+  approvedAt        DateTime?
+  version           Int
+  createdById       String
+  createdAt         DateTime                   @default(now())
 
   @@unique([societeId, sourceType, suggestionKind, version])
   @@index([societeId, active])
@@ -3423,34 +3425,34 @@ model AccountingAiPolicy {
 }
 
 model AccountingAuditFinding {
-  id                String                        @id @default(uuid())
-  workItem          AccountingAiWorkItem          @relation(fields: [workItemId], references: [id])
-  workItemId        String
-  severity          AccountingAuditSeverity
-  ruleCode          String
-  title             String
-  details           Json
-  status            AccountingAuditFindingStatus  @default(OPEN)
-  assignedToId      String?
-  resolution        String?
-  stornoEntryId     String?
-  resolvedById      String?
-  resolvedAt        DateTime?
-  createdAt         DateTime                      @default(now())
+  id            String                       @id @default(uuid())
+  workItem      AccountingAiWorkItem         @relation(fields: [workItemId], references: [id])
+  workItemId    String
+  severity      AccountingAuditSeverity
+  ruleCode      String
+  title         String
+  details       Json
+  status        AccountingAuditFindingStatus @default(OPEN)
+  assignedToId  String?
+  resolution    String?
+  stornoEntryId String?
+  resolvedById  String?
+  resolvedAt    DateTime?
+  createdAt     DateTime                     @default(now())
 
   @@index([status, severity, assignedToId])
   @@map("accounting_audit_finding")
 }
 
 model AccountingAiEvidence {
-  id          String               @id @default(uuid())
-  workItem    AccountingAiWorkItem @relation(fields: [workItemId], references: [id])
-  workItemId  String
-  eventType   String
-  actorId     String?
-  evidence    Json
+  id           String               @id @default(uuid())
+  workItem     AccountingAiWorkItem @relation(fields: [workItemId], references: [id])
+  workItemId   String
+  eventType    String
+  actorId      String?
+  evidence     Json
   evidenceHash String
-  createdAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
 
   @@index([workItemId, createdAt])
   @@map("accounting_ai_evidence")

@@ -81,9 +81,9 @@ describe('Shop compte client (e2e)', () => {
       .get('/shop/compte/moi')
       .set('Authorization', `Bearer ${tokenFilleul}`)
       .expect(200);
-    expect((moiFilleul.body as { codeParrainage: string }).codeParrainage).not.toBe(
-      code,
-    );
+    expect(
+      (moiFilleul.body as { codeParrainage: string }).codeParrainage,
+    ).not.toBe(code);
 
     const moiParrain = await request(app.getHttpServer())
       .get('/shop/compte/moi')

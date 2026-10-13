@@ -115,7 +115,7 @@ describe('Staff briefing Direction (e2e)', () => {
     expect(rows).toHaveLength(2);
     await expect(
       prisma.staffBriefingEnvoi.update({
-        where: { id: rows[0]!.id },
+        where: { id: rows[0].id },
         data: { type: 'HEBDO' },
       }),
     ).rejects.toThrow(/append-only/i);

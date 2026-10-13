@@ -29,10 +29,7 @@ export class StaffBriefingMailer {
     );
   }
 
-  async envoyer(
-    to: string,
-    briefing: BriefingHtml,
-  ): Promise<string | null> {
+  async envoyer(to: string, briefing: BriefingHtml): Promise<string | null> {
     if (!to.includes('@')) return null;
     const provider =
       this.config.get<string>('EMAIL_PROVIDER')?.trim().toLowerCase() ||
@@ -41,7 +38,9 @@ export class StaffBriefingMailer {
       .update(to.toLowerCase())
       .digest('hex')
       .slice(0, 12);
-    this.logger.log(`Briefing → dest:${destRef} | ${briefing.objet} [${provider}]`);
+    this.logger.log(
+      `Briefing → dest:${destRef} | ${briefing.objet} [${provider}]`,
+    );
     if (provider === 'mock' || !this.resend) {
       return 'mock';
     }

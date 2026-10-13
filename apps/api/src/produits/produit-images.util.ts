@@ -1,7 +1,5 @@
 /** Parse le champ JSON `imagesUrls` (array de strings). */
-export function parseImagesUrls(
-  raw: string | null | undefined,
-): string[] {
+export function parseImagesUrls(raw: string | null | undefined): string[] {
   if (!raw?.trim()) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;

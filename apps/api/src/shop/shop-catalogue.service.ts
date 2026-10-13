@@ -280,7 +280,8 @@ export class ShopCatalogueService {
   ) {
     if (typeProduit !== 'ARTICLE' || !params.retraitActif) return [];
 
-    const boutiques = await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
+    const boutiques =
+      await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
     const rows: Array<{
       boutiqueId: string;
       nom: string;
@@ -306,7 +307,8 @@ export class ShopCatalogueService {
   async listBoutiquesRetrait() {
     const params = await this.shopBase.assertShopActif();
     if (!params.retraitActif) return [];
-    const boutiques = await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
+    const boutiques =
+      await this.shopStockWeb.listBoutiquesRetraitAvecEntrepot();
     return boutiques.map((b) => ({
       id: b.boutiqueId,
       nom: b.nom,

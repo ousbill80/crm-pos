@@ -133,7 +133,7 @@ describe('Shop AARRR (e2e)', () => {
     expect(rows[0]?.etape).toBe('ACQUISITION');
     await expect(
       env.prisma.shopFunnelEvent.update({
-        where: { id: rows[0]!.id },
+        where: { id: rows[0].id },
         data: { action: 'SEARCH' },
       }),
     ).rejects.toThrow(/append-only/i);
@@ -150,9 +150,9 @@ describe('Shop AARRR (e2e)', () => {
     }>(res);
     expect(feed.flash[0]?.id).toBe(chaudId);
     expect(feed.tendances[0]?.id).toBe(chaudId);
-    expect(feed.pourVous.some((p) => p.id === froidId || p.id === chaudId)).toBe(
-      true,
-    );
+    expect(
+      feed.pourVous.some((p) => p.id === froidId || p.id === chaudId),
+    ).toBe(true);
     expect(feed.flash[0]?.unitesVendues30j).toBe(8);
   });
 });

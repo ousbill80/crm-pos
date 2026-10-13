@@ -43,7 +43,9 @@ export class AlertesMailer {
       .update(to.toLowerCase())
       .digest('hex')
       .slice(0, 12);
-    this.logger.log(`Alerte fonds → dest:${destRef} | ${mail.objet} [${provider}]`);
+    this.logger.log(
+      `Alerte fonds → dest:${destRef} | ${mail.objet} [${provider}]`,
+    );
     if (provider === 'mock' || !this.resend) {
       return 'mock';
     }

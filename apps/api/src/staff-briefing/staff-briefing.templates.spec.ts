@@ -55,7 +55,11 @@ describe('templates briefing ventes', () => {
   it('l’état hebdo reprend le bloc ventes KPI avant la finance', () => {
     const gl = synthetiserCompteResultat([]);
     const mail = renderBriefing('HEBDO', RoleLibelle.DAF, 'Mariam', {
-      ventes: { ...ventes, horizon: 'SEMAINE', periodeLabel: 'semaine 2026-W35' },
+      ventes: {
+        ...ventes,
+        horizon: 'SEMAINE',
+        periodeLabel: 'semaine 2026-W35',
+      },
       stocks: { valeurStock: 1_000_000, ruptures: 2, sousSeuil: 4 },
       finance: {
         initiee: { n: 1, montant: 10_000 },
@@ -91,8 +95,10 @@ describe('échantillons de test', () => {
         'SOIR',
       ].sort(),
     );
-    expect(pieces.every((p: { mail: { objet: string } }) => p.mail.objet.startsWith('[TEST]'))).toBe(
-      true,
-    );
+    expect(
+      pieces.every((p: { mail: { objet: string } }) =>
+        p.mail.objet.startsWith('[TEST]'),
+      ),
+    ).toBe(true);
   });
 });

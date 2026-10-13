@@ -254,9 +254,9 @@ describe('Shop checkout (e2e)', () => {
       .set('Cookie', cookie)
       .send({ lignes: [{ produitId, quantite: 5 }] })
       .expect(200);
-    const panier = body<{ lignes: Array<{ quantite: number; stockDisponible: number }> }>(
-      res,
-    );
+    const panier = body<{
+      lignes: Array<{ quantite: number; stockDisponible: number }>;
+    }>(res);
     expect(panier.lignes[0].quantite).toBe(5);
     expect(panier.lignes[0].stockDisponible).toBe(5);
   });

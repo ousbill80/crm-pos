@@ -410,8 +410,7 @@ export class InvoiceMatchService {
     for (const line of invoice.lignes) {
       const orderLine =
         line.ligneCommande ?? line.reception?.ligneCommande ?? null;
-      const commande =
-        orderLine?.commande ?? line.reception?.commande ?? null;
+      const commande = orderLine?.commande ?? line.reception?.commande ?? null;
       if (!orderLine || !commande) {
         continue;
       }
@@ -440,9 +439,7 @@ export class InvoiceMatchService {
       );
     }
 
-    const statutRapprochement = discrepancies.length
-      ? 'LITIGE'
-      : 'RAPPROCHEE';
+    const statutRapprochement = discrepancies.length ? 'LITIGE' : 'RAPPROCHEE';
     await this.prisma.$transaction(async (tx) => {
       if (discrepancies.length) {
         await tx.litigeRapprochementFacture.createMany({
@@ -465,11 +462,17 @@ export class InvoiceMatchService {
           netAPayer: invoice.netAPayer ?? invoice.montant,
         },
       });
-      await this.auditTx(tx, user.userId, 'FACTURE_P2P_RAPPROCHEE', invoice.id, {
-        parcours: 'receptions',
-        discrepancies: discrepancies.map((item) => item.dimension),
-        statutRapprochement,
-      });
+      await this.auditTx(
+        tx,
+        user.userId,
+        'FACTURE_P2P_RAPPROCHEE',
+        invoice.id,
+        {
+          parcours: 'receptions',
+          discrepancies: discrepancies.map((item) => item.dimension),
+          statutRapprochement,
+        },
+      );
     });
     return statutRapprochement;
   }

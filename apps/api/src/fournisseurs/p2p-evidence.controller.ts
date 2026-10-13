@@ -39,7 +39,7 @@ export class P2pEvidenceController {
   @UseInterceptors(
     FileInterceptor('file', {
       // multer.memoryStorage() n’est pas résolu par le projectService ESLint.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call -- typage multer
+
       storage: memoryStorage(),
       limits: {
         files: 1,

@@ -77,7 +77,8 @@ function liste(items: string[]): string {
 }
 
 function badgeEvo(pct: number | null): string {
-  if (pct === null) return `<span style="color:#888;font-size:12px">n/a vs préc.</span>`;
+  if (pct === null)
+    return `<span style="color:#888;font-size:12px">n/a vs préc.</span>`;
   const couleur = pct > 0 ? '#1a7f37' : pct < 0 ? '#b42318' : '#666';
   const signe = pct > 0 ? '+' : '';
   return `<span style="color:${couleur};font-size:12px;font-weight:700">${signe}${pct} % vs préc.</span>`;
@@ -211,7 +212,8 @@ export function renderSoir(
     role === RoleLibelle.DAF
       ? `${prenom}, tableau de bord encaissements (POS + web) pour le pôle financier.`
       : `${prenom}, photographie du réseau — CA par magasin, panier moyen, web, alertes fonds.`;
-  const blocCloture = cloture && s.horizon === 'JOUR' ? htmlDisciplineCloture(cloture) : '';
+  const blocCloture =
+    cloture && s.horizon === 'JOUR' ? htmlDisciplineCloture(cloture) : '';
   const html = cadre(
     titre,
     `<p>${esc(intro)}</p>
@@ -282,7 +284,9 @@ export function renderCloture(
   const text = [
     objet,
     pourquoi,
-    ...c.enRetard.map((s) => `NON CLÔTURÉE: ${s.boutiqueNom} (${s.caisseLibelle})`),
+    ...c.enRetard.map(
+      (s) => `NON CLÔTURÉE: ${s.boutiqueNom} (${s.caisseLibelle})`,
+    ),
     ...c.bienFermees.map((s) => `OK: ${s.boutiqueNom} (${s.caisseLibelle})`),
     liens.crm,
   ].join('\n');
@@ -355,7 +359,10 @@ export function renderExecutif(
      ${liste([
        ligneFile('Initiée', finance.initiee),
        ligneFile('En transit', finance.enTransit),
-       ligneFile('Réceptionnée (en attente de validation)', finance.receptionnee),
+       ligneFile(
+         'Réceptionnée (en attente de validation)',
+         finance.receptionnee,
+       ),
        ligneFile('Validée sur la période', finance.valideePeriode),
        ligneFile('Litige ouvert', finance.litige),
        finance.versementsEnRetard > 0
@@ -401,7 +408,11 @@ export function renderRelance(
      <p style="font-size:13px;color:#666">Aucun identifiant n’est inclus dans cet e-mail. Utilisez votre accès habituel.</p>`,
     liens,
   );
-  return { objet: m.objet, text: `${prenom},\n${m.accroche}\n${m.pourquoi}\n${liens.crm}`, html };
+  return {
+    objet: m.objet,
+    text: `${prenom},\n${m.accroche}\n${m.pourquoi}\n${liens.crm}`,
+    html,
+  };
 }
 
 export function renderShopInactif(
@@ -410,9 +421,10 @@ export function renderShopInactif(
   shop: SnapshotShop,
   liens: LiensBriefing,
 ): BriefingHtml {
-  const objet = shop.produitsVisibles === 0
-    ? 'Boutique en ligne : catalogue non publié'
-    : 'Boutique en ligne : aucune commande depuis 7 jours';
+  const objet =
+    shop.produitsVisibles === 0
+      ? 'Boutique en ligne : catalogue non publié'
+      : 'Boutique en ligne : aucune commande depuis 7 jours';
   const html = cadre(
     objet,
     `<p>${esc(prenom)}, le site e-commerce est actif mais ne produit pas encore de commandes utiles.</p>
@@ -444,7 +456,13 @@ export function renderBriefing(
   if (type === 'SOIR' && ctx.ventes) {
     return renderSoir(role, prenom, ctx.ventes, ctx.liens, ctx.cloture);
   }
-  if ((type === 'HEBDO' || type === 'MOIS') && ctx.ventes && ctx.stocks && ctx.finance && ctx.gl) {
+  if (
+    (type === 'HEBDO' || type === 'MOIS') &&
+    ctx.ventes &&
+    ctx.stocks &&
+    ctx.finance &&
+    ctx.gl
+  ) {
     return renderExecutif(
       type,
       role,
@@ -457,7 +475,12 @@ export function renderBriefing(
     );
   }
   if (type === 'RELANCE_CONNEXION') {
-    return renderRelance(role, prenom, ctx.heuresSansConnexion ?? 48, ctx.liens);
+    return renderRelance(
+      role,
+      prenom,
+      ctx.heuresSansConnexion ?? 48,
+      ctx.liens,
+    );
   }
   if (type === 'SHOP_INACTIF' && ctx.shop) {
     return renderShopInactif(role, prenom, ctx.shop, ctx.liens);

@@ -66,10 +66,7 @@ export class ShopController {
   ) {}
 
   @Get('decouverte')
-  listDecouverte(
-    @Req() req: Request,
-    @Query('sessionId') sessionId?: string,
-  ) {
+  listDecouverte(@Req() req: Request, @Query('sessionId') sessionId?: string) {
     let compteClientId: string | undefined;
     const auth = req.headers.authorization;
     if (auth?.startsWith('Bearer ')) {

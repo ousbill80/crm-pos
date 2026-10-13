@@ -84,11 +84,7 @@ export class ProduitsService {
       );
     }
     const prixWeb =
-      dto.prixWeb != null
-        ? dto.prixWeb
-        : visibleWeb
-          ? dto.prixUnitaire
-          : null;
+      dto.prixWeb != null ? dto.prixWeb : visibleWeb ? dto.prixUnitaire : null;
     let slug: string | null = null;
     if (visibleWeb) {
       slug = await this.resoudreSlugUnique(
@@ -739,7 +735,10 @@ export class ProduitsService {
     const rootId = await this.resoudreFamilleRootId(id);
     const membres = await this.prisma.produit.findMany({
       where: { OR: [{ id: rootId }, { parentId: rootId }] },
-      orderBy: [{ parentId: { sort: 'asc', nulls: 'first' } }, { designation: 'asc' }],
+      orderBy: [
+        { parentId: { sort: 'asc', nulls: 'first' } },
+        { designation: 'asc' },
+      ],
     });
     return {
       rootId,
@@ -773,8 +772,7 @@ export class ProduitsService {
     });
 
     const visibleWeb = dto.visibleWeb !== false;
-    const prixUnitaire =
-      dto.prixUnitaire ?? Number(root.prixUnitaire);
+    const prixUnitaire = dto.prixUnitaire ?? Number(root.prixUnitaire);
     const prixWeb = dto.prixWeb ?? prixUnitaire;
     const slug = await this.resoudreSlugUnique(
       dto.slug?.trim() || slugifyProduitDesignation(dto.designation),

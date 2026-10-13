@@ -1,5 +1,20 @@
 import { WaveAdapter } from './wave.adapter';
 
+type FetchFn = (
+  input: string,
+  init?: RequestInit,
+) => Promise<{ ok: boolean; status?: number; json: () => Promise<unknown> }>;
+
+function requeteEnvoyee(fetchMock: jest.Mock<FetchFn>): {
+  url: string;
+  init: RequestInit;
+  body: Record<string, string>;
+} {
+  const [url, init] = fetchMock.mock.calls[0];
+  const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, string>;
+  return { url, init: init ?? {}, body };
+}
+
 describe('WaveAdapter payout', () => {
   const originalFetch = global.fetch;
 
@@ -15,14 +30,23 @@ describe('WaveAdapter payout', () => {
     } as never);
   }
 
+  function mockFetch(responseBody: unknown, ok = true, status = 200) {
+    const fetchMock = jest.fn<FetchFn>().mockResolvedValue({
+      ok,
+      status,
+      json: () => Promise.resolve(responseBody),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
   describe('payout()', () => {
     it('envoie la requête Wave attendue avec Idempotency-Key', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({ id: 'pt-123', status: 'processing', fee: '5' }),
+      const fetchMock = mockFetch({
+        id: 'pt-123',
+        status: 'processing',
+        fee: '5',
       });
-      global.fetch = fetchMock as never;
 
       const result = await adapter().payout({
         mobile: '+2250700000000',
@@ -32,20 +56,13 @@ describe('WaveAdapter payout', () => {
         nom: 'Major Auto Parts',
       });
 
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://api.wave.com/v1/payout',
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            Authorization: 'Bearer wave-test-key',
-            'Idempotency-Key': 'wave-payout:op-1',
-            'Content-Type': 'application/json',
-          }),
-        }),
-      );
-      const body = JSON.parse(
-        (fetchMock.mock.calls[0][1] as { body: string }).body,
-      );
+      const { url, init, body } = requeteEnvoyee(fetchMock);
+      expect(url).toBe('https://api.wave.com/v1/payout');
+      expect(init.method).toBe('POST');
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer wave-test-key');
+      expect(headers['Idempotency-Key']).toBe('wave-payout:op-1');
+      expect(headers['Content-Type']).toBe('application/json');
       expect(body).toMatchObject({
         currency: 'XOF',
         mobile: '+2250700000000',
@@ -57,11 +74,7 @@ describe('WaveAdapter payout', () => {
     });
 
     it('arrondit receive_amount à un entier', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ id: 'pt-1', status: 'succeeded' }),
-      });
-      global.fetch = fetchMock as never;
+      const fetchMock = mockFetch({ id: 'pt-1', status: 'succeeded' });
 
       await adapter().payout({
         mobile: '+2250700000000',
@@ -70,18 +83,12 @@ describe('WaveAdapter payout', () => {
         clientReference: 'op-1',
       });
 
-      const body = JSON.parse(
-        (fetchMock.mock.calls[0][1] as { body: string }).body,
-      );
+      const { body } = requeteEnvoyee(fetchMock);
       expect(body.receive_amount).toBe('986');
     });
 
     it('tronque payment_reason à 40 caractères', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ id: 'pt-1', status: 'succeeded' }),
-      });
-      global.fetch = fetchMock as never;
+      const fetchMock = mockFetch({ id: 'pt-1', status: 'succeeded' });
 
       await adapter().payout({
         mobile: '+2250700000000',
@@ -90,23 +97,16 @@ describe('WaveAdapter payout', () => {
         clientReference: 'op-1',
       });
 
-      const body = JSON.parse(
-        (fetchMock.mock.calls[0][1] as { body: string }).body,
-      );
+      const { body } = requeteEnvoyee(fetchMock);
       expect(body.payment_reason.length).toBeLessThanOrEqual(40);
     });
 
     it('mappe une erreur de validation non réessayable (statut failed)', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: 'pt-err',
-            status: 'failed',
-            payout_error: { code: 'insufficient-funds' },
-          }),
+      mockFetch({
+        id: 'pt-err',
+        status: 'failed',
+        payout_error: { code: 'insufficient-funds' },
       });
-      global.fetch = fetchMock as never;
 
       const result = await adapter().payout({
         mobile: '+2250700000000',
@@ -137,13 +137,7 @@ describe('WaveAdapter payout', () => {
     });
 
     it('lève une erreur réseau/HTTP (réessayable par l’appelant)', async () => {
-      global.fetch = jest
-        .fn()
-        .mockResolvedValue({
-          ok: false,
-          status: 503,
-          json: () => Promise.resolve({ message: 'unavailable' }),
-        }) as never;
+      mockFetch({ message: 'unavailable' }, false, 503);
 
       await expect(
         adapter().payout({
@@ -158,33 +152,23 @@ describe('WaveAdapter payout', () => {
 
   describe('verifierPayout()', () => {
     it('interroge GET /v1/payout/:id et mappe le statut', async () => {
-      const fetchMock = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ id: 'pt-123', status: 'succeeded' }),
-      });
-      global.fetch = fetchMock as never;
+      const fetchMock = mockFetch({ id: 'pt-123', status: 'succeeded' });
 
       const result = await adapter().verifierPayout('pt-123');
 
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://api.wave.com/v1/payout/pt-123',
-        expect.objectContaining({
-          headers: { Authorization: 'Bearer wave-test-key' },
-        }),
-      );
+      const { url, init } = requeteEnvoyee(fetchMock);
+      expect(url).toBe('https://api.wave.com/v1/payout/pt-123');
+      const headers = init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer wave-test-key');
       expect(result).toEqual({ status: 'succeeded' });
     });
 
     it('remonte erreurCode si failed', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: 'pt-123',
-            status: 'failed',
-            payout_error: { code: 'recipient-account-blocked' },
-          }),
-      }) as never;
+      mockFetch({
+        id: 'pt-123',
+        status: 'failed',
+        payout_error: { code: 'recipient-account-blocked' },
+      });
 
       const result = await adapter().verifierPayout('pt-123');
       expect(result).toEqual({
@@ -194,11 +178,7 @@ describe('WaveAdapter payout', () => {
     });
 
     it('lève une erreur réseau/HTTP (réessayable par l’appelant)', async () => {
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({}),
-      }) as never;
+      mockFetch({}, false, 500);
 
       await expect(adapter().verifierPayout('pt-123')).rejects.toThrow();
     });

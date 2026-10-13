@@ -14,7 +14,9 @@ import {
   type ProduitSignal,
 } from './shop-aarrr.engine';
 
-function signal(partial: Partial<ProduitSignal> & { produitId: string }): ProduitSignal {
+function signal(
+  partial: Partial<ProduitSignal> & { produitId: string },
+): ProduitSignal {
   return {
     ventes24h: 0,
     ventes7j: 0,
@@ -64,9 +66,9 @@ describe('shop-aarrr.engine', () => {
     expect(
       badgeDecouverte(signal({ produitId: 'd', stockDisponible: 2 })),
     ).toBe('Stock limité');
-    expect(
-      badgeDecouverte(signal({ produitId: 'e', ventes30j: 8 })),
-    ).toBe('Plus vendu');
+    expect(badgeDecouverte(signal({ produitId: 'e', ventes30j: 8 }))).toBe(
+      'Plus vendu',
+    );
   });
 
   it('sépare flash (24 h), pour vous (score) et tendances (30 j)', () => {
@@ -110,9 +112,7 @@ describe('shop-aarrr.engine', () => {
     expect(profil.personnalise).toBe(true);
     expect(profil.categories[0]?.libelle).toBe('Phares');
     expect(profil.produitIds).toContain('p1');
-    expect(
-      affiniteCategoriePourProduit('Phares', profil),
-    ).toBeGreaterThan(
+    expect(affiniteCategoriePourProduit('Phares', profil)).toBeGreaterThan(
       affiniteCategoriePourProduit('Accessoires Premium', profil),
     );
     const perso = signal({

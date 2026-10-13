@@ -524,7 +524,9 @@ export class AlertesService {
       }
       const boutique = s.caisse.boutique?.nom ?? 'inconnue';
       const cloture = s.clotureDateHeure ?? s.ouvertureDateHeure;
-      const ageH = Math.floor((Date.now() - cloture.getTime()) / (60 * 60 * 1000));
+      const ageH = Math.floor(
+        (Date.now() - cloture.getTime()) / (60 * 60 * 1000),
+      );
       return [
         {
           type: 'POINT_JOUR_NON_VERSE' as const,

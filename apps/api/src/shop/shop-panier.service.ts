@@ -81,13 +81,21 @@ export class ShopPanierService {
   ): Promise<
     Map<
       string,
-      { imageUrl: string | null; slug: string | null; stockDisponible: number | null }
+      {
+        imageUrl: string | null;
+        slug: string | null;
+        stockDisponible: number | null;
+      }
     >
   > {
     const ids = [...new Set(lignes.map((l) => l.produitId))];
     const map = new Map<
       string,
-      { imageUrl: string | null; slug: string | null; stockDisponible: number | null }
+      {
+        imageUrl: string | null;
+        slug: string | null;
+        stockDisponible: number | null;
+      }
     >();
     if (!ids.length) return map;
 

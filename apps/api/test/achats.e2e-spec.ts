@@ -421,7 +421,8 @@ describe('Achats — commandes, factures, paiements (e2e)', () => {
     );
     expect(lignesFacture.every((l) => Boolean(l.dateReception))).toBe(true);
     expect(
-      (ficheFacture.body as { statutRapprochement?: string }).statutRapprochement,
+      (ficheFacture.body as { statutRapprochement?: string })
+        .statutRapprochement,
     ).toBe('A_RAPPROCHER');
 
     await request(app.getHttpServer())

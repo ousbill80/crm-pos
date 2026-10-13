@@ -42,10 +42,7 @@ export class ShopAarrrService {
     private readonly shopStockWeb: ShopStockWebService,
   ) {}
 
-  async ingestPublic(
-    dto: ShopFunnelEventDto,
-    compteClientId?: string,
-  ) {
+  async ingestPublic(dto: ShopFunnelEventDto, compteClientId?: string) {
     return this.persist({
       action: dto.action,
       sessionId: dto.sessionId,
@@ -63,10 +60,7 @@ export class ShopAarrrService {
     return this.persist(evt);
   }
 
-  async decouverte(opts: {
-    sessionId?: string;
-    compteClientId?: string;
-  }) {
+  async decouverte(opts: { sessionId?: string; compteClientId?: string }) {
     const params = await this.shopBase.assertShopActif();
     const paramsPrix = this.shopBase.toParametresPrix(params);
     const maintenant = Date.now();
@@ -117,19 +111,14 @@ export class ShopAarrrService {
           where: {
             actif: true,
             visibleWeb: true,
-            ...(paramsPrix.fallbackPrixMagasin
-              ? {}
-              : { prixWeb: { gt: 0 } }),
+            ...(paramsPrix.fallbackPrixMagasin ? {} : { prixWeb: { gt: 0 } }),
           },
           take: 80,
           orderBy: { designation: 'asc' },
         }),
       ]);
 
-    const ventes = new Map<
-      string,
-      { v24: number; v7: number; v30: number }
-    >();
+    const ventes = new Map<string, { v24: number; v7: number; v30: number }>();
     const bumpVente = (produitId: string, at: Date, qty: number) => {
       const row = ventes.get(produitId) ?? { v24: 0, v7: 0, v30: 0 };
       row.v30 += qty;
@@ -198,10 +187,7 @@ export class ShopAarrrService {
       profil.categories.map((c) => c.libelle.toLowerCase()),
     );
     const rechercheFold = profil.recherches.map((r) =>
-      r
-        .normalize('NFD')
-        .replace(/\p{M}/gu, '')
-        .toLowerCase(),
+      r.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase(),
     );
 
     const items: Array<{

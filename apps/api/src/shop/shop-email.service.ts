@@ -24,8 +24,7 @@ const SANS_REF_COMMANDE = new Set<ShopEmailTemplate>([
 ]);
 
 const SUBJECTS: Record<ShopEmailTemplate, string> = {
-  bienvenue_compte:
-    'Bienvenue chez MAJOR AUTO PARTS — votre compte est prêt',
+  bienvenue_compte: 'Bienvenue chez MAJOR AUTO PARTS — votre compte est prêt',
   confirmation_commande:
     'Confirmation de votre commande — merci pour votre confiance',
   commande_recue_attente_paiement:
