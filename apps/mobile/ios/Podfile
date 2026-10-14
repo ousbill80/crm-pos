@@ -59,5 +59,23 @@ target 'CaissePOS' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Le chemin du repo contient des espaces ("PROJET APPLICATION", "CAISSE
+    # CRM"). Le script phase généré par EXConstants.podspec imbrique deux
+    # `bash -l -c "..."` : le premier `sh` développe $PODS_TARGET_SRCROOT en
+    # un seul argument quoté, mais ce texte (avec espaces non protégés) est
+    # ensuite repassé tel quel comme code au second `bash -c`, qui le
+    # redécoupe sur les espaces. On corrige la citation pour que $VAR soit
+    # développé par le bash interne, pas par le sh externe.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'EXConstants'
+      target.build_phases.each do |phase|
+        next unless phase.respond_to?(:shell_script) && phase.name == '[CP-User] Generate app.config for prebuilt Constants.manifest'
+        phase.shell_script = phase.shell_script.sub(
+          /bash -l -c "([^"]*)\$PODS_TARGET_SRCROOT([^"]*)"/,
+          'bash -l -c \'\1"$PODS_TARGET_SRCROOT\2"\''
+        )
+      end
+    end
   end
 end
