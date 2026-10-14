@@ -398,6 +398,22 @@ describe('Reporting — dashboard §6.3.4 (e2e)', () => {
     });
   });
 
+  it('GET /reporting/ventes-quotidiennes renvoie le nombre de ventes par jour en plus du total', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/reporting/ventes-quotidiennes?jours=1')
+      .set('Authorization', `Bearer ${tokens.central}`)
+      .expect(200);
+    const jours = response.body as Array<{
+      date: string;
+      total: string;
+      nombre: number;
+    }>;
+    expect(jours).toHaveLength(1);
+    // Fixture : 2 ventes créées aujourd'hui (10000 + 4000, boutiques 1 et 3).
+    expect(jours[0].nombre).toBe(2);
+    expect(Number(jours[0].total)).toBe(14000);
+  });
+
   it('délai de versement configurable (Societe.delaiVersementHeures, §6.3.5) — enRetard24h reflète le seuil configuré, pas 24h en dur', async () => {
     // Versement âgé de 10h : pas en retard avec le défaut (24h).
     await env.prisma.transactionCaisse.create({

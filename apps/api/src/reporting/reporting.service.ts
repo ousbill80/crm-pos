@@ -680,7 +680,7 @@ export class ReportingService {
   async ventesQuotidiennes(
     user: AuthenticatedUser,
     jours: number,
-  ): Promise<Array<{ date: string; total: string }>> {
+  ): Promise<Array<{ date: string; total: string; nombre: number }>> {
     if (!ROLES_LECTURE_CAISSES.includes(user.role)) {
       throw new ForbiddenException(
         `Rôle "${user.role}" non habilité à consulter le reporting trésorerie.`,
@@ -700,23 +700,36 @@ export class ReportingService {
       select: { dateVente: true, montantTotal: true },
     });
 
-    const parJour = new Map<string, Prisma.Decimal>();
+    const parJour = new Map<
+      string,
+      { total: Prisma.Decimal; nombre: number }
+    >();
     for (let i = 0; i < jours; i++) {
       const jour = new Date(depuis);
       jour.setDate(depuis.getDate() + i);
-      parJour.set(jour.toISOString().slice(0, 10), zero());
+      parJour.set(jour.toISOString().slice(0, 10), {
+        total: zero(),
+        nombre: 0,
+      });
     }
     for (const vente of ventes) {
       const cle = vente.dateVente.toISOString().slice(0, 10);
       const courant = parJour.get(cle);
       if (courant !== undefined) {
-        parJour.set(cle, courant.plus(vente.montantTotal));
+        parJour.set(cle, {
+          total: courant.total.plus(vente.montantTotal),
+          nombre: courant.nombre + 1,
+        });
       }
     }
 
     return [...parJour.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date, total: money(total) }));
+      .map(([date, { total, nombre }]) => ({
+        date,
+        total: money(total),
+        nombre,
+      }));
   }
 
   async getDashboardCsv(
