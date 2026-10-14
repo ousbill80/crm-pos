@@ -131,6 +131,18 @@ describe('Parametres shop — reversement Wave (e2e)', () => {
     expect(body.waveBeneficiaireNom).toBe('Major Auto Parts');
   });
 
+  it('journalise PARAMETRE_SHOP_MODIFIE avec le détail des champs changés', async () => {
+    const audit = await env.prisma.journalAudit.findFirst({
+      where: { action: 'PARAMETRE_SHOP_MODIFIE' },
+      orderBy: { dateHeure: 'desc' },
+    });
+    expect(audit).not.toBeNull();
+    expect(audit?.entite).toBe('ParametreShop');
+    expect(audit?.details).toContain('waveCommissionPourcent');
+    expect(audit?.details).toContain('waveBeneficiaireMobile');
+    expect(audit?.details).toContain('+2250700000000');
+  });
+
   it('rejette un numéro de téléphone bénéficiaire mal formé (400)', async () => {
     await request(app.getHttpServer())
       .patch('/parametres-shop')

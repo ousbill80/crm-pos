@@ -65,12 +65,36 @@ export class ParametresShopController {
   }
 
   @Patch()
-  async patch(@Body() dto: PatchParametresShopDto) {
+  async patch(
+    @Body() dto: PatchParametresShopDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const current = await this.prisma.parametreShop.findFirstOrThrow();
-    return this.prisma.parametreShop.update({
+    const updated = await this.prisma.parametreShop.update({
       where: { id: current.id },
       data: dto,
     });
+
+    const champsModifies = (
+      Object.keys(dto) as Array<keyof PatchParametresShopDto>
+    ).filter((champ) => dto[champ] !== undefined);
+    if (champsModifies.length > 0) {
+      const diff = champsModifies
+        .map(
+          (champ) =>
+            `${champ}: ${String(current[champ as keyof typeof current])} → ${String(dto[champ])}`,
+        )
+        .join(', ');
+      await this.audit.record({
+        utilisateurId: user.userId,
+        action: 'PARAMETRE_SHOP_MODIFIE',
+        entite: 'ParametreShop',
+        entiteId: current.id,
+        details: diff,
+      });
+    }
+
+    return updated;
   }
 
   @Post('wave-payout/tester')
