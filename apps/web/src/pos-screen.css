@@ -1785,16 +1785,27 @@ form.pos-gate-card {
 }
 
 .pos-ticket-lines th:nth-child(2),
-.pos-ticket-lines td:nth-child(2),
+.pos-ticket-lines td:nth-child(2) {
+  text-align: center;
+}
+
 .pos-ticket-lines th:nth-child(3),
 .pos-ticket-lines td:nth-child(3) {
   text-align: right;
 }
 
 .pos-ticket-lines td {
-  padding: 4px 0;
+  padding: 6px 0;
   border-bottom: 1px dashed var(--border);
   vertical-align: top;
+}
+
+.pos-ticket-col-qty {
+  width: 34px;
+}
+
+.pos-ticket-col-amount {
+  width: 76px;
 }
 
 .pos-receipt-thanks {
@@ -2187,10 +2198,35 @@ form.pos-gate-card {
 }
 
 .pos-receipt-client,
-.pos-receipt-pay,
 .pos-receipt-meta {
+  margin: 2px 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.pos-receipt-infos {
+  margin: 4px 0;
+}
+
+.pos-receipt-ticket-id {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.pos-receipt-pay {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pos-receipt-pay span:last-child {
+  font-weight: 700;
+  color: var(--text-h);
 }
 
 .pos-receipt-paiements {
@@ -2212,6 +2248,29 @@ form.pos-gate-card {
   font-weight: 700;
 }
 
+.pos-receipt-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 10px 12px;
+  background: var(--accent-bg, #f0fdfa);
+  border-radius: var(--radius-sm);
+}
+
+.pos-receipt-total-row .pos-receipt-total {
+  margin: 0;
+}
+
+.pos-receipt-total-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .pos-receipt-cash {
   margin: 0 0 8px;
   padding: 8px 0;
@@ -2224,6 +2283,11 @@ form.pos-gate-card {
   justify-content: space-between;
   gap: 8px;
   margin: 4px 0;
+}
+
+.pos-receipt-cash .money {
+  font-weight: 700;
+  color: var(--text-h);
 }
 
 .pos-receipt-actions {
@@ -2350,6 +2414,14 @@ form.pos-gate-card {
   .pos-receipt:not(.pos-etat-print) .major-brand-mark .brand-major,
   .pos-receipt:not(.pos-etat-print) .major-brand-mark .brand-auto {
     color: #000;
+  }
+
+  /* Idem pour le total : la teinte d’accent ne sort pas sur 1 bit, on garde juste un encadré net. */
+  .pos-receipt:not(.pos-etat-print) .pos-receipt-total-row {
+    background: none;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 6px 0;
   }
 
   .pos-etat-print {

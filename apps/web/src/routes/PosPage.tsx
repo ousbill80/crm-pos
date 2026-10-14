@@ -880,13 +880,20 @@ function TicketVente({
           <p className="pos-receipt-addr">{societe.telephone}</p>
         )}
         <div className="pos-receipt-rule" />
-        <h2>Ticket {idCourt(vente.id)}</h2>
-        <p className="pos-receipt-meta">
-          {new Date(vente.dateVente).toLocaleString('fr-FR')}
-        </p>
-        <p className="pos-receipt-meta">{caissier}</p>
+        <div className="pos-receipt-infos">
+          <p className="pos-receipt-ticket-id">Ticket {idCourt(vente.id)}</p>
+          <p className="pos-receipt-meta">
+            {new Date(vente.dateVente).toLocaleString('fr-FR')}
+          </p>
+          <p className="pos-receipt-meta">Caissier : {caissier}</p>
+        </div>
         <div className="pos-receipt-rule" />
         <table className="pos-ticket-lines">
+          <colgroup>
+            <col />
+            <col className="pos-ticket-col-qty" />
+            <col className="pos-ticket-col-amount" />
+          </colgroup>
           <thead>
             <tr>
               <th>Article</th>
@@ -930,11 +937,17 @@ function TicketVente({
             ))}
           </ul>
         ) : (
-          <p className="pos-receipt-pay">{mode.label}</p>
+          <p className="pos-receipt-pay">
+            <span>Mode de paiement</span>
+            <span>{mode.label}</span>
+          </p>
         )}
-        <p className="pos-receipt-total money">
-          {formatMontant(Number(vente.montantTotal))} FCFA
-        </p>
+        <div className="pos-receipt-total-row">
+          <span className="pos-receipt-total-label">Total</span>
+          <span className="pos-receipt-total money">
+            {formatMontant(Number(vente.montantTotal))} FCFA
+          </span>
+        </div>
         {montantRecu != null && montantRecu > 0 && (
           <div className="pos-receipt-cash">
             <p>
