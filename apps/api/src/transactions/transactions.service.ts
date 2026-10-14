@@ -42,14 +42,23 @@ import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
 
 type TxClient = Prisma.TransactionClient;
 
+const NOM_UTILISATEUR_SELECT = { nom: true, prenom: true } as const;
+
 const DETAIL_INCLUDE = {
-  bordereau: { include: { reception: true } },
+  initiateur: { select: NOM_UTILISATEUR_SELECT },
+  bordereau: {
+    include: {
+      reception: {
+        include: { validateur: { select: NOM_UTILISATEUR_SELECT } },
+      },
+    },
+  },
   caisse: { include: { boutique: { select: { id: true, nom: true } } } },
   contreparties: true,
-  regularisation: true,
+  regularisation: {
+    include: { validateur: { select: NOM_UTILISATEUR_SELECT } },
+  },
 } as const;
-
-const NOM_UTILISATEUR_SELECT = { nom: true, prenom: true } as const;
 
 const BORDEREAU_PDF_INCLUDE = {
   caisse: { include: { boutique: { select: { id: true, nom: true } } } },
