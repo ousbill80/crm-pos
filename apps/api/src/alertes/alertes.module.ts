@@ -10,5 +10,6 @@ import { AlertesSchedulerService } from './alertes-scheduler.service';
   imports: [CaissesModule, TransactionsModule],
   controllers: [AlertesController],
   providers: [AlertesService, AlertesMailer, AlertesSchedulerService],
+  exports: [AlertesMailer],
 })
 export class AlertesModule {}

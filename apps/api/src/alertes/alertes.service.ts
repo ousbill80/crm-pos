@@ -671,6 +671,7 @@ export class AlertesService {
         montant: p.montantNet.toFixed(2),
         erreurCode: p.erreurCode,
         commandeWebId: p.commandeWebId,
+        commandeRef: p.commande.clientOperationId,
       },
     }));
   }

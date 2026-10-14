@@ -21,6 +21,11 @@ function parametreShop(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function premierAppel(mockFn: jest.Mock): { data: Record<string, unknown> } {
+  const appel = mockFn.mock.calls[0] as unknown[];
+  return appel[0] as { data: Record<string, unknown> };
+}
+
 describe('ShopPspPayoutService', () => {
   function build() {
     const prisma = {
@@ -73,16 +78,14 @@ describe('ShopPspPayoutService', () => {
 
     await service.declencherPayout(commandeWeb());
 
-    expect(prisma.payoutWave.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        commandeWebId: 'cmd-1',
-        montantBrut: 1000,
-        commissionPourcent: 1.5,
-        commissionMontant: 15,
-        montantNet: 985,
-        mobileBeneficiaire: '+2250700000000',
-        idempotencyKey: 'wave-payout:op-1',
-      }),
+    expect(premierAppel(prisma.payoutWave.create).data).toMatchObject({
+      commandeWebId: 'cmd-1',
+      montantBrut: 1000,
+      commissionPourcent: 1.5,
+      commissionMontant: 15,
+      montantNet: 985,
+      mobileBeneficiaire: '+2250700000000',
+      idempotencyKey: 'wave-payout:op-1',
     });
     expect(waveAdapter.payout).toHaveBeenCalledWith({
       mobile: '+2250700000000',
@@ -90,6 +93,50 @@ describe('ShopPspPayoutService', () => {
       idempotencyKey: 'wave-payout:op-1',
       clientReference: 'op-1',
       nom: 'Major Auto Parts',
+    });
+  });
+
+  it('marque EN_COURS quand Wave répond processing (pris en charge par le scheduler)', async () => {
+    const { service, prisma, audit, waveAdapter } = build();
+    prisma.parametreShop.findFirst.mockResolvedValue(parametreShop());
+    prisma.payoutWave.create.mockResolvedValue({ id: 'payout-1' });
+    waveAdapter.payout.mockResolvedValue({ id: 'pt-1', status: 'processing' });
+
+    await service.declencherPayout(commandeWeb());
+
+    const appelUpdate = premierAppel(prisma.payoutWave.update);
+    expect(appelUpdate).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelUpdate.data).toMatchObject({
+      referenceProvider: 'pt-1',
+      statut: 'EN_COURS',
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PAYOUT_WAVE_INITIE' }),
+    );
+    expect(audit.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PAYOUT_WAVE_REUSSI' }),
+    );
+    expect(audit.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PAYOUT_WAVE_ECHEC' }),
+    );
+  });
+
+  it('arrondit le net au demi exact (Math.round, arrondi au supérieur)', async () => {
+    const { service, prisma, waveAdapter } = build();
+    prisma.parametreShop.findFirst.mockResolvedValue(
+      parametreShop({ waveCommissionPourcent: new Prisma.Decimal('50') }),
+    );
+    prisma.payoutWave.create.mockResolvedValue({ id: 'payout-1' });
+    waveAdapter.payout.mockResolvedValue({ id: 'pt-1', status: 'processing' });
+
+    // 201 * (1 - 50/100) = 100.5 -> Math.round(100.5) = 101
+    await service.declencherPayout(
+      commandeWeb({ montantTotal: new Prisma.Decimal('201.00') }),
+    );
+
+    expect(premierAppel(prisma.payoutWave.create).data).toMatchObject({
+      montantNet: 101,
+      commissionMontant: 100,
     });
   });
 
@@ -103,12 +150,10 @@ describe('ShopPspPayoutService', () => {
 
     await service.declencherPayout(commandeWeb());
 
-    expect(prisma.payoutWave.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        commissionPourcent: 3,
-        commissionMontant: 30,
-        montantNet: 970,
-      }),
+    expect(premierAppel(prisma.payoutWave.create).data).toMatchObject({
+      commissionPourcent: 3,
+      commissionMontant: 30,
+      montantNet: 970,
     });
   });
 
@@ -136,12 +181,11 @@ describe('ShopPspPayoutService', () => {
 
     await service.declencherPayout(commandeWeb());
 
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({
-        referenceProvider: 'pt-1',
-        statut: 'REUSSI',
-      }),
+    const appelUpdate1 = premierAppel(prisma.payoutWave.update);
+    expect(appelUpdate1).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelUpdate1.data).toMatchObject({
+      referenceProvider: 'pt-1',
+      statut: 'REUSSI',
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_REUSSI' }),
@@ -160,12 +204,11 @@ describe('ShopPspPayoutService', () => {
 
     await service.declencherPayout(commandeWeb());
 
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({
-        statut: 'ECHEC',
-        erreurCode: 'insufficient-funds',
-      }),
+    const appelUpdate2 = premierAppel(prisma.payoutWave.update);
+    expect(appelUpdate2).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelUpdate2.data).toMatchObject({
+      statut: 'ECHEC',
+      erreurCode: 'insufficient-funds',
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_ECHEC' }),
@@ -181,10 +224,9 @@ describe('ShopPspPayoutService', () => {
     await expect(
       service.declencherPayout(commandeWeb()),
     ).resolves.toBeUndefined();
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({ statut: 'ECHEC' }),
-    });
+    const appelUpdate3 = premierAppel(prisma.payoutWave.update);
+    expect(appelUpdate3).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelUpdate3.data).toMatchObject({ statut: 'ECHEC' });
   });
 
   it('ne propage jamais une erreur inattendue (ex: ParametreShop.findFirst qui échoue)', async () => {

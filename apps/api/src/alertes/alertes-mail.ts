@@ -112,6 +112,26 @@ export function renderMailReceptionDaf(opts: {
   };
 }
 
+export function renderMailPayoutWaveEchec(opts: {
+  commandeRef: string;
+  montant: string;
+  erreurCode: string;
+  ctaUrl: string;
+}): MailAlerteFonds {
+  const objet = `Reversement Wave en échec — commande ${opts.commandeRef}`;
+  const intro = `Le reversement automatique de ${opts.montant} FCFA vers le compte Wave Business de Major Auto Parts n'a pas abouti (commande ${opts.commandeRef}, erreur « ${opts.erreurCode} »). L'encaissement client est déjà acté côté Wave : seul le transfert vers le bénéficiaire est en cause et doit être régularisé manuellement.`;
+  return {
+    objet,
+    text: intro,
+    html: cadre(
+      objet,
+      `<p style="color:#333;line-height:1.5">${esc(intro)}</p>`,
+      opts.ctaUrl,
+      'Voir les alertes',
+    ),
+  };
+}
+
 export function renderMailDigestDaf(opts: {
   nonTransferes: LigneAlerteFonds[];
   aReceptionner: LigneAlerteFonds[];

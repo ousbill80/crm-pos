@@ -9,6 +9,7 @@ import { StatutTransaction, TypeCaisse, TypeTransaction } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AlertesSchedulerService } from '../src/alertes/alertes-scheduler.service';
+import { AlertesMailer } from '../src/alertes/alertes-mailer';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
 
 process.env.JWT_SECRET ??= 'test-secret-alertes-scheduler-e2e';
@@ -320,5 +321,70 @@ describe('Notifications proactives — §6.7, §5.1 (e2e)', () => {
       where: { id: societe.id },
       data: { delaiVersementHeures: 24, delaiVersementHeuresEscaladeDg: 48 },
     });
+  });
+
+  it('PAYOUT_WAVE_ECHEC notifie aussi l’admin ZenAPI (ot@zenapi.net), en plus des rôles internes', async () => {
+    process.env.EMAIL_PROVIDER = 'mock';
+    // AlertesMailer est fourni (sans export) à la fois par AlertesModule et
+    // StaffBriefingModule : deux instances distinctes coexistent dans le
+    // conteneur Nest. On espionne la méthode sur le prototype partagé plutôt
+    // que sur une instance précise, pour capturer l'appel quelle que soit
+    // l'instance réellement injectée dans AlertesSchedulerService.
+    const envoyerSpy = jest.spyOn(AlertesMailer.prototype, 'envoyer');
+
+    const entrepot = await env.prisma.entrepot.create({
+      data: {
+        nom: 'Entrepôt Wave',
+        code: 'ENT-SCHED-WAVE',
+        boutiqueId: boutique1Id,
+      },
+    });
+    const commande = await env.prisma.commandeWeb.create({
+      data: {
+        clientOperationId: 'sched-wave-op-1',
+        statut: 'PREPARATION',
+        modeFulfillment: 'LIVRAISON',
+        modeReglement: 'PREPAYE_PSP',
+        providerPsp: 'WAVE',
+        entrepotId: entrepot.id,
+        montantTotal: 2000,
+      },
+    });
+    const payout = await env.prisma.payoutWave.create({
+      data: {
+        commandeWebId: commande.id,
+        montantBrut: 2000,
+        commissionPourcent: 1.5,
+        commissionMontant: 30,
+        montantNet: 1970,
+        mobileBeneficiaire: '+2250700000001',
+        statut: 'ECHEC',
+        erreurCode: 'recipient-account-blocked',
+        idempotencyKey: 'wave-payout:sched-wave-op-1',
+      },
+    });
+
+    await scheduler.cycle();
+
+    const notifiee = await env.prisma.alerteNotifiee.findUnique({
+      where: { cleUnique: `PAYOUT_WAVE_ECHEC:${payout.id}:CRITICAL` },
+    });
+    expect(notifiee).not.toBeNull();
+
+    const appelsAdmin = envoyerSpy.mock.calls.filter(
+      ([destinataire]) => destinataire === 'ot@zenapi.net',
+    );
+    expect(appelsAdmin).toHaveLength(1);
+    const [, mailEnvoye] = appelsAdmin[0];
+    expect(mailEnvoye.text).toContain('sched-wave-op-1');
+    expect(mailEnvoye.text).toContain('recipient-account-blocked');
+
+    // Rôles internes toujours notifiés (DAF créé en amont).
+    const appelsDaf = envoyerSpy.mock.calls.filter(
+      ([destinataire]) => destinataire === 'daf@example.test',
+    );
+    expect(appelsDaf.length).toBeGreaterThanOrEqual(1);
+
+    envoyerSpy.mockRestore();
   });
 });

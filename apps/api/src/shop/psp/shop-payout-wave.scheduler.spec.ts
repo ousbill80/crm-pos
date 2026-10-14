@@ -1,5 +1,10 @@
 import { ShopPayoutWaveScheduler } from './shop-payout-wave.scheduler';
 
+function premierAppel(mockFn: jest.Mock): { data: Record<string, unknown> } {
+  const appel = mockFn.mock.calls[0] as unknown[];
+  return appel[0] as { data: Record<string, unknown> };
+}
+
 function payoutRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'payout-1',
@@ -40,6 +45,18 @@ describe('ShopPayoutWaveScheduler', () => {
     expect(waveAdapter.verifierPayout).not.toHaveBeenCalled();
   });
 
+  it('referenceProvider absent (résultat Wave jamais reçu côté create) -> ignore la ligne sans sonder', async () => {
+    const { scheduler, prisma, waveAdapter } = build();
+    prisma.payoutWave.findMany.mockResolvedValue([
+      payoutRow({ referenceProvider: null }),
+    ]);
+
+    await scheduler.sonderPayoutsEnCours();
+
+    expect(waveAdapter.verifierPayout).not.toHaveBeenCalled();
+    expect(prisma.payoutWave.update).not.toHaveBeenCalled();
+  });
+
   it('succeeded -> REUSSI + audit', async () => {
     const { scheduler, prisma, audit, waveAdapter } = build();
     prisma.payoutWave.findMany.mockResolvedValue([payoutRow()]);
@@ -47,10 +64,9 @@ describe('ShopPayoutWaveScheduler', () => {
 
     await scheduler.sonderPayoutsEnCours();
 
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({ statut: 'REUSSI' }),
-    });
+    const appelReussi = premierAppel(prisma.payoutWave.update);
+    expect(appelReussi).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelReussi.data).toMatchObject({ statut: 'REUSSI' });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_REUSSI' }),
     );
@@ -66,12 +82,11 @@ describe('ShopPayoutWaveScheduler', () => {
 
     await scheduler.sonderPayoutsEnCours();
 
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({
-        statut: 'ECHEC',
-        erreurCode: 'recipient-account-blocked',
-      }),
+    const appelEchec1 = premierAppel(prisma.payoutWave.update);
+    expect(appelEchec1).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelEchec1.data).toMatchObject({
+      statut: 'ECHEC',
+      erreurCode: 'recipient-account-blocked',
     });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_ECHEC' }),
@@ -102,10 +117,9 @@ describe('ShopPayoutWaveScheduler', () => {
 
     await scheduler.sonderPayoutsEnCours();
 
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-1' },
-      data: expect.objectContaining({ tentatives: 20, statut: 'ECHEC' }),
-    });
+    const appelEchec2 = premierAppel(prisma.payoutWave.update);
+    expect(appelEchec2).toMatchObject({ where: { id: 'payout-1' } });
+    expect(appelEchec2.data).toMatchObject({ tentatives: 20, statut: 'ECHEC' });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'PAYOUT_WAVE_ECHEC' }),
     );
@@ -133,9 +147,8 @@ describe('ShopPayoutWaveScheduler', () => {
     await scheduler.sonderPayoutsEnCours();
 
     expect(prisma.payoutWave.update).toHaveBeenCalledTimes(1);
-    expect(prisma.payoutWave.update).toHaveBeenCalledWith({
-      where: { id: 'payout-2' },
-      data: expect.objectContaining({ statut: 'REUSSI' }),
-    });
+    const appelContinue = premierAppel(prisma.payoutWave.update);
+    expect(appelContinue).toMatchObject({ where: { id: 'payout-2' } });
+    expect(appelContinue.data).toMatchObject({ statut: 'REUSSI' });
   });
 });

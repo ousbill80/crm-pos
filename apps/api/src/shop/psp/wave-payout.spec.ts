@@ -1,17 +1,23 @@
 import { WaveAdapter } from './wave.adapter';
 
-type FetchFn = (
-  input: string,
-  init?: RequestInit,
-) => Promise<{ ok: boolean; status?: number; json: () => Promise<unknown> }>;
+type FetchResult = {
+  ok: boolean;
+  status?: number;
+  json: () => Promise<unknown>;
+};
+type FetchArgs = [input: string, init?: RequestInit];
+type FetchMock = jest.Mock<Promise<FetchResult>, FetchArgs>;
 
-function requeteEnvoyee(fetchMock: jest.Mock<FetchFn>): {
+function requeteEnvoyee(fetchMock: FetchMock): {
   url: string;
   init: RequestInit;
   body: Record<string, string>;
 } {
   const [url, init] = fetchMock.mock.calls[0];
-  const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, string>;
+  const body = JSON.parse((init?.body as string | undefined) ?? '{}') as Record<
+    string,
+    string
+  >;
   return { url, init: init ?? {}, body };
 }
 
@@ -30,12 +36,18 @@ describe('WaveAdapter payout', () => {
     } as never);
   }
 
-  function mockFetch(responseBody: unknown, ok = true, status = 200) {
-    const fetchMock = jest.fn<FetchFn>().mockResolvedValue({
-      ok,
-      status,
-      json: () => Promise.resolve(responseBody),
-    });
+  function mockFetch(
+    responseBody: unknown,
+    ok = true,
+    status = 200,
+  ): FetchMock {
+    const fetchMock: FetchMock = jest
+      .fn<Promise<FetchResult>, FetchArgs>()
+      .mockResolvedValue({
+        ok,
+        status,
+        json: () => Promise.resolve(responseBody),
+      });
     global.fetch = fetchMock as unknown as typeof fetch;
     return fetchMock;
   }
@@ -85,6 +97,20 @@ describe('WaveAdapter payout', () => {
 
       const { body } = requeteEnvoyee(fetchMock);
       expect(body.receive_amount).toBe('986');
+    });
+
+    it('omet "name" du corps de la requête quand nom n’est pas fourni', async () => {
+      const fetchMock = mockFetch({ id: 'pt-1', status: 'succeeded' });
+
+      await adapter().payout({
+        mobile: '+2250700000000',
+        montantNet: 100,
+        idempotencyKey: 'k',
+        clientReference: 'op-1',
+      });
+
+      const { body } = requeteEnvoyee(fetchMock);
+      expect(body.name).toBeUndefined();
     });
 
     it('tronque payment_reason à 40 caractères', async () => {

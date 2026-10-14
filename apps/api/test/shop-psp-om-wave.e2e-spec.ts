@@ -10,6 +10,7 @@ import { json } from 'express';
 import type { Request } from 'express';
 import { createHmac } from 'node:crypto';
 import { AppModule } from '../src/app.module';
+import { WaveAdapter } from '../src/shop/psp/wave.adapter';
 import { PostgresTestEnvironment } from './utils/postgres-test-environment';
 import { shopPanierCookie } from './utils/http';
 
@@ -304,5 +305,76 @@ describe('Shop OM/Wave webhooks (e2e)', () => {
     expect(Number(payout?.montantNet)).toBe(montantNetAttendu);
     expect(payout?.mobileBeneficiaire).toBe('+2250700000000');
     expect(payout?.statut).toBe('ECHEC');
+  });
+
+  it('flux complet checkout → capture Wave → declencherPayout réel → REUSSI, audit en base réelle', async () => {
+    // Pas de sandbox Wave disponible en CI (gap §9 du schéma de test) : seule
+    // la frontière HTTP externe (WaveAdapter.payout) est doublée pour
+    // simuler une réponse « succeeded ». Le reste du flux — checkout,
+    // webhook signé, ShopPspPayoutService.declencherPayout appelé
+    // réellement, écriture PayoutWave et journalAudit — tourne contre la
+    // vraie base Postgres, de bout en bout.
+    await env.prisma.parametreShop.updateMany({
+      data: { waveBeneficiaireMobile: '+2250700000000' },
+    });
+    await env.prisma.stockQuant.updateMany({
+      where: { produitId, entrepotId },
+      data: { quantite: 10 },
+    });
+    const payoutSpy = jest
+      .spyOn(WaveAdapter.prototype, 'payout')
+      .mockResolvedValueOnce({
+        id: 'payout-e2e-reussi-1',
+        status: 'succeeded',
+      });
+
+    const opId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const cmd = await checkoutWave(opId);
+
+    const event = {
+      id: 'EV_4',
+      type: 'checkout.session.completed',
+      data: {
+        id: 'cos-wave-4',
+        amount: Math.round(Number(cmd.montantTotal)).toString(),
+        currency: 'XOF',
+        payment_status: 'succeeded',
+        checkout_status: 'complete',
+        client_reference: opId,
+      },
+    };
+    const { payload, header } = signWave(event);
+    await request(app.getHttpServer())
+      .post('/shop/webhooks/wave')
+      .set('wave-signature', header)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(201);
+
+    const updated = await env.prisma.commandeWeb.findUnique({
+      where: { id: cmd.id },
+    });
+    expect(updated?.statut).toBe('PREPARATION');
+
+    const payout = await env.prisma.payoutWave.findUnique({
+      where: { commandeWebId: cmd.id },
+    });
+    expect(payout?.statut).toBe('REUSSI');
+    expect(payout?.referenceProvider).toBe('payout-e2e-reussi-1');
+    const montantBrut = Math.round(Number(cmd.montantTotal));
+    const montantNetAttendu = Math.round(montantBrut * (1 - 1.5 / 100));
+    expect(Number(payout?.montantNet)).toBe(montantNetAttendu);
+
+    const auditInitie = await env.prisma.journalAudit.findFirst({
+      where: { action: 'PAYOUT_WAVE_INITIE', entiteId: cmd.id },
+    });
+    expect(auditInitie).not.toBeNull();
+    const auditReussi = await env.prisma.journalAudit.findFirst({
+      where: { action: 'PAYOUT_WAVE_REUSSI', entiteId: cmd.id },
+    });
+    expect(auditReussi).not.toBeNull();
+    expect(auditReussi?.details).toContain('payout-e2e-reussi-1');
+
+    payoutSpy.mockRestore();
   });
 });

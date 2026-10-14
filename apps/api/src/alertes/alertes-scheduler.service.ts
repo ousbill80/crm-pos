@@ -8,6 +8,7 @@ import { AlertesService, AlerteDto } from './alertes.service';
 import { AlertesMailer } from './alertes-mailer';
 import {
   renderMailDigestDaf,
+  renderMailPayoutWaveEchec,
   renderMailPointNonVerse,
   renderMailReceptionDaf,
   type LigneAlerteFonds,
@@ -17,6 +18,14 @@ const INTERVALLE_MINUTES = Math.max(
   1,
   Number(process.env.ALERTES_INTERVALLE_MINUTES ?? 15),
 );
+
+// Intégrateur technique Wave (ZenAPI) : seul destinataire externe au
+// réseau Major Auto Parts, à notifier en plus des rôles internes (DAF,
+// Caissier central, Direction Générale) car un reversement en échec peut
+// nécessiter une intervention côté intégrateur (compte bénéficiaire bloqué,
+// plafond atteint, etc.). Surchargeable sans redéploiement via env var.
+const ADMIN_PAYOUT_WAVE_EMAIL =
+  process.env.WAVE_PAYOUT_ADMIN_EMAIL?.trim() || 'ot@zenapi.net';
 
 // Notifications proactives (§6.7, §5.1) : diffusion temps réel (WebSocket)
 // + e-mail HTML (Resend) / SMS. Dédoublonnage append-only (AlerteNotifiee).
@@ -154,6 +163,7 @@ export class AlertesSchedulerService {
           RoleLibelle.CAISSIER_CENTRAL,
           RoleLibelle.DIRECTION_GENERALE,
         ]);
+        await this.notifierAdminZenapi(alerte);
         break;
       default:
         break;
@@ -247,6 +257,20 @@ export class AlertesSchedulerService {
     }
   }
 
+  // Destinataire externe (hors Utilisateur réseau) : pas de passage par
+  // notifierRoles, qui ne connaît que les comptes internes.
+  private async notifierAdminZenapi(alerte: AlerteDto): Promise<void> {
+    const mail = this.mailPour(alerte);
+    if (!mail) return;
+    try {
+      await this.mailer.envoyer(ADMIN_PAYOUT_WAVE_EMAIL, mail);
+    } catch (err) {
+      this.logger.warn(
+        `Échec de notification admin ZenAPI (${alerte.type}) : ${String(err)}`,
+      );
+    }
+  }
+
   private mailPour(alerte: AlerteDto) {
     const boutique =
       (alerte.details?.boutiqueNom as string | undefined) ?? 'Boutique';
@@ -280,6 +304,15 @@ export class AlertesSchedulerService {
         montant,
         ageHeures,
         ctaUrl: this.mailer.crmUrl(`/transactions/${alerte.entiteId}`),
+      });
+    }
+    if (alerte.type === 'PAYOUT_WAVE_ECHEC') {
+      return renderMailPayoutWaveEchec({
+        commandeRef: (alerte.details?.commandeRef as string | undefined) ?? '—',
+        montant,
+        erreurCode:
+          (alerte.details?.erreurCode as string | undefined) ?? 'inconnue',
+        ctaUrl: this.mailer.crmUrl('/alertes'),
       });
     }
     return null;
