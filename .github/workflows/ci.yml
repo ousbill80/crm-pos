@@ -149,6 +149,66 @@ jobs:
       - name: Web E2E (POS, trésorerie, CRM, …)
         run: pnpm --filter web test:e2e
 
+  # §6.7 « Sauvegarde et continuité » : vérifie que scripts/backup-postgres.sh
+  # produit un dump restaurable par scripts/restore-postgres.sh, et que les
+  # données restaurées sont identiques à l'original — pas seulement que les
+  # scripts s'exécutent sans erreur.
+  backup-restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Démarrer la base (docker compose)
+        run: docker compose up -d db
+
+      - name: Attendre que la base soit prête
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose exec -T db pg_isready -U caisse -d caisse_crm; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "La base n'est pas devenue disponible à temps" >&2
+          exit 1
+
+      - name: Migrer et amorcer la base (données non vides à sauvegarder)
+        run: |
+          pnpm --filter api exec prisma migrate deploy
+          pnpm --filter api prisma:seed
+        env:
+          DATABASE_URL: postgresql://caisse:caisse@127.0.0.1:5433/caisse_crm?schema=public
+
+      - name: Sauvegarder (scripts/backup-postgres.sh)
+        run: ./scripts/backup-postgres.sh
+
+      - name: Restaurer vers une base de test distincte (scripts/restore-postgres.sh)
+        run: |
+          dump="$(ls -t backups/*.dump | head -1)"
+          echo "RESTAURER" | ./scripts/restore-postgres.sh "$dump" --target-db caisse_crm_restore_ci
+
+      - name: Vérifier que la base restaurée contient les mêmes données que l'originale
+        run: |
+          original=$(docker compose exec -T db psql -U caisse -d caisse_crm -t -A -c "SELECT count(*) FROM role;")
+          restored=$(docker compose exec -T db psql -U caisse -d caisse_crm_restore_ci -t -A -c "SELECT count(*) FROM role;")
+          echo "role : original=${original} restauré=${restored}"
+          if [ "$original" != "$restored" ]; then
+            echo "Divergence entre la base d'origine et la base restaurée — sauvegarde non fiable" >&2
+            exit 1
+          fi
+
   docker-staging:
     runs-on: ubuntu-latest
     steps:
@@ -172,6 +232,7 @@ jobs:
       - docker-staging
       - shop-isolation-e2e
       - playwright-e2e
+      - backup-restore
     runs-on: ubuntu-latest
     environment: staging
     steps:
