@@ -26,6 +26,21 @@ export function accesInventaireMobile(role: RoleLibelle): boolean {
   return profilOf(role).apps.inventory !== undefined;
 }
 
+/**
+ * Onglet Ventes (consultation réseau lecture seule) : rôles trésorerie qui
+ * ne saisissent pas en caisse et ont un besoin réel de pilotage/suivi du CA
+ * (DG, DAF, Contrôleur interne, Caissier Central, Superviseur de zone) — le
+ * convoyeur, bien que rattaché à la trésorerie, n'a qu'un rôle de transit et
+ * n'a aucun intérêt métier à consulter les ventes.
+ */
+export function accesVentesLectureMobile(role: RoleLibelle): boolean {
+  return (
+    accesTresorerieMobile(role) &&
+    !peutEncaisserPos(role) &&
+    role !== RoleLibelle.CONVOYEUR
+  );
+}
+
 export function accesAppMobile(role: RoleLibelle): boolean {
   return (
     accesTresorerieMobile(role) ||
@@ -37,6 +52,7 @@ export function accesAppMobile(role: RoleLibelle): boolean {
 
 export type OngletMobile =
   | 'Caisse'
+  | 'Ventes'
   | 'Circuit'
   | 'Caisses'
   | 'Inventaire'
@@ -50,13 +66,12 @@ export function accesPoseMobile(role: RoleLibelle): boolean {
 
 export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
   const tabs: OngletMobile[] = [];
-  if (accesTresorerieMobile(role)) {
-    tabs.push(
-      ...(peutEncaisserPos(role)
-        ? (['Caisse', 'Circuit', 'Caisses'] as const)
-        : (['Circuit', 'Caisses'] as const)),
-    );
+  if (peutEncaisserPos(role)) {
+    tabs.push('Caisse');
+  } else if (accesVentesLectureMobile(role)) {
+    tabs.push('Ventes');
   }
+  if (accesTresorerieMobile(role)) tabs.push('Circuit', 'Caisses');
   if (accesInventaireMobile(role)) tabs.push('Inventaire');
   if (hasP2pMobileAccess(role)) tabs.push('P2p');
   if (accesPoseMobile(role)) tabs.push('Pose');
@@ -65,6 +80,7 @@ export function ongletsMobile(role: RoleLibelle): OngletMobile[] {
 
 export function accueilOnglet(role: RoleLibelle): OngletMobile {
   if (peutEncaisserPos(role)) return 'Caisse';
+  if (accesVentesLectureMobile(role)) return 'Ventes';
   if (accesTresorerieMobile(role)) return 'Circuit';
   if (hasP2pMobileAccess(role)) return 'P2p';
   if (accesPoseMobile(role)) return 'Pose';

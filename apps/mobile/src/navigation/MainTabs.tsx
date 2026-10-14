@@ -7,6 +7,7 @@ import { useSession } from '../session-context';
 import { colors } from '../ui';
 import { CaissesStack } from './CaissesStack';
 import { CircuitStack } from './CircuitStack';
+import { VentesStack } from './VentesStack';
 import { GlassTabBackground, glassTabStyles } from './GlassTabBar';
 import { InventaireStack } from './InventaireStack';
 import { PosStack } from './PosStack';
@@ -28,6 +29,11 @@ const TAB_META: Record<
     label: 'Vente',
     icon: 'storefront-outline',
     iconOn: 'storefront',
+  },
+  Ventes: {
+    label: 'Ventes',
+    icon: 'trending-up-outline',
+    iconOn: 'trending-up',
   },
   Circuit: {
     label: 'Circuit',
@@ -130,6 +136,9 @@ export function MainTabs() {
             tabBarBadgeStyle: glassTabStyles.badge,
           }}
         />
+      ) : null}
+      {tabs.includes('Ventes') ? (
+        <Tab.Screen name="Ventes" component={VentesStack} />
       ) : null}
       {tabs.includes('Circuit') ? (
         <Tab.Screen

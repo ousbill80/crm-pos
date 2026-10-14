@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { StatutTransaction, TypeTransaction } from '@caisse-crm/shared';
 import { ApiError } from '../api';
 import {
@@ -24,12 +25,13 @@ import {
   formatFcfa,
   labelStatut,
   labelType,
+  labelTypeCaisse,
   peutPasserEnTransit,
   peutRapprocher,
   peutReceptionner,
   peutRegulariser,
 } from '../circuit/actions';
-import { Money, ScreenHeader, StatusPill } from '../components/ScreenChrome';
+import { Banner, Money, ScreenHeader, StatusPill } from '../components/ScreenChrome';
 import { useSession } from '../session-context';
 import { colors, ui } from '../ui';
 import type {
@@ -41,6 +43,124 @@ import type {
 type Props =
   | NativeStackScreenProps<CircuitStackParamList, 'CircuitDetail'>
   | NativeStackScreenProps<CaissesStackParamList, 'CircuitDetail'>;
+
+const ETAPES = [
+  { key: StatutTransaction.INITIEE, label: 'Initiée' },
+  { key: StatutTransaction.EN_TRANSIT, label: 'En transit' },
+  { key: StatutTransaction.RECEPTIONNEE, label: 'Réceptionnée' },
+  { key: StatutTransaction.VALIDEE, label: 'Validée' },
+] as const;
+
+function iconDuType(type: string): keyof typeof Ionicons.glyphMap {
+  if (type === TypeTransaction.SORTIE_FONDS) return 'business-outline';
+  if (type === TypeTransaction.TRANSFERT_INTERNE) return 'swap-horizontal-outline';
+  if (type === TypeTransaction.VENTE) return 'cart-outline';
+  return 'repeat-outline';
+}
+
+function nomComplet(p?: { nom: string; prenom: string } | null): string | null {
+  if (!p) return null;
+  return `${p.prenom} ${p.nom}`.trim() || null;
+}
+
+function dateCourte(iso: string): string {
+  return new Date(iso).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+type EtapeInfo = { acteur: string | null; date: string | null };
+
+/**
+ * Visualise le parcours Initiée → En transit → Réceptionnée → Validée (§6.4).
+ * Seules les étapes réellement tracées côté serveur (initiation, rapprochement)
+ * exposent un acteur/horodatage — « En transit »/« Réceptionnée » brutes ne
+ * capturent pas d'acteur dédié (seul le journal d'audit le fait).
+ */
+function CircuitStepper({
+  statut,
+  infos,
+}: {
+  statut: string;
+  infos: Partial<Record<(typeof ETAPES)[number]['key'], EtapeInfo>>;
+}) {
+  const isLitige = statut === StatutTransaction.LITIGE;
+  const currentIndex = isLitige
+    ? 2
+    : ETAPES.findIndex((e) => e.key === statut);
+
+  return (
+    <View style={[ui.card, { gap: 10 }]}>
+      <Text style={ui.sectionLabel}>Avancement du circuit</Text>
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {ETAPES.map((etape, i) => {
+          const atteinte = i <= currentIndex;
+          const bloqueeParLitige = isLitige && i === currentIndex;
+          return (
+            <View
+              key={etape.key}
+              style={{
+                flex: 1,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: !atteinte
+                  ? colors.surfaceMuted
+                  : bloqueeParLitige
+                    ? colors.danger
+                    : colors.accent,
+              }}
+            />
+          );
+        })}
+      </View>
+      <View style={{ flexDirection: 'row' }}>
+        {ETAPES.map((etape, i) => {
+          const info = infos[etape.key];
+          const align =
+            i === 0 ? 'flex-start' : i === ETAPES.length - 1 ? 'flex-end' : 'center';
+          return (
+            <View key={etape.key} style={{ flex: 1, alignItems: align, gap: 2 }}>
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: i === currentIndex ? '800' : '600',
+                  color: i <= currentIndex ? colors.text : colors.muted,
+                }}
+              >
+                {etape.label}
+              </Text>
+              {info?.acteur ? (
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 9.5, fontWeight: '700', color: colors.muted }}
+                >
+                  {info.acteur}
+                </Text>
+              ) : null}
+              {info?.date ? (
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 9, color: colors.tabInactive }}
+                >
+                  {dateCourte(info.date)}
+                </Text>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+      {isLitige ? (
+        <Banner tone="danger">
+          Rapprochement en litige — bloqué jusqu'à régularisation (§6.4).
+        </Banner>
+      ) : null}
+    </View>
+  );
+}
 
 export function CircuitDetailScreen({ navigation, route }: Props) {
   const { user } = useSession();
@@ -114,6 +234,26 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
   const statut = tx.statut as (typeof StatutTransaction)[keyof typeof StatutTransaction];
   const type = tx.type as (typeof TypeTransaction)[keyof typeof TypeTransaction];
 
+  const caisseLabel =
+    tx.caisse?.libelle ??
+    (tx.caisse?.type ? labelTypeCaisse(tx.caisse.type) : tx.caisseId.slice(0, 8));
+  const etapeInfos: Partial<Record<(typeof ETAPES)[number]['key'], EtapeInfo>> = {
+    [StatutTransaction.INITIEE]: {
+      acteur: nomComplet(tx.initiateur),
+      date: tx.dateHeure,
+    },
+    ...(tx.bordereau?.reception
+      ? {
+          [tx.bordereau.reception.statutFinal === StatutTransaction.LITIGE
+            ? StatutTransaction.RECEPTIONNEE
+            : StatutTransaction.VALIDEE]: {
+            acteur: nomComplet(tx.bordereau.reception.validateur),
+            date: tx.bordereau.reception.dateReception,
+          },
+        }
+      : {}),
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -122,7 +262,7 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={ui.wrap}>
       <ScreenHeader
         title={labelType(tx.type)}
-        subtitle={`${new Date(tx.dateHeure).toLocaleString('fr-FR')} · ${tx.caisse?.boutique?.nom ?? '—'} · ${tx.caisse?.libelle ?? tx.caisseId}`}
+        subtitle={`${new Date(tx.dateHeure).toLocaleString('fr-FR')} · ${tx.caisse?.boutique?.nom ?? '—'} · ${caisseLabel}`}
         onBack={() => navigation.goBack()}
         backLabel="Circuit"
         right={<StatusPill label={labelStatut(tx.statut)} tone={
@@ -133,10 +273,26 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
             : 'neutral'
         } />}
       />
-      <View style={[ui.card, { alignItems: 'flex-start', gap: 6 }]}>
-        <Text style={ui.muted}>Montant</Text>
-        <Money value={formatFcfa(tx.montant)} size="lg" />
+      <View style={[ui.card, { flexDirection: 'row', alignItems: 'center', gap: 14 }]}>
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 14,
+            backgroundColor: colors.accentSoft,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name={iconDuType(tx.type)} size={23} color={colors.accent} />
+        </View>
+        <View style={{ gap: 4 }}>
+          <Text style={ui.muted}>Montant</Text>
+          <Money value={formatFcfa(tx.montant)} size="lg" />
+        </View>
       </View>
+
+      <CircuitStepper statut={tx.statut} infos={etapeInfos} />
       {error ? <Text style={ui.error}>{error}</Text> : null}
 
       {role && peutPasserEnTransit(role, statut) ? (
@@ -208,23 +364,82 @@ export function CircuitDetailScreen({ navigation, route }: Props) {
       ) : null}
 
       {tx.bordereau ? (
-        <View style={ui.card}>
-          <Text style={{ fontWeight: '700' }}>Bordereau</Text>
-          <Text>Déclaré {formatFcfa(tx.bordereau.montantDeclare)}</Text>
+        <View style={[ui.card, { gap: 10 }]}>
+          <View style={ui.row}>
+            <Text style={ui.sectionLabel}>Bordereau</Text>
+            {tx.bordereau.reception ? (
+              <StatusPill
+                label={
+                  Number(tx.bordereau.reception.ecart) === 0
+                    ? 'Sans écart'
+                    : 'Écart constaté'
+                }
+                tone={
+                  Number(tx.bordereau.reception.ecart) === 0 ? 'ok' : 'danger'
+                }
+              />
+            ) : null}
+          </View>
+          <View style={ui.row}>
+            <Text style={ui.muted}>Déclaré</Text>
+            <Text style={{ fontWeight: '700', color: colors.text }}>
+              {formatFcfa(tx.bordereau.montantDeclare)}
+            </Text>
+          </View>
           {tx.bordereau.reception ? (
             <>
-              <Text>Reçu {formatFcfa(tx.bordereau.reception.montantRecu)}</Text>
-              <Text>Écart {formatFcfa(tx.bordereau.reception.ecart)}</Text>
+              <View style={ui.row}>
+                <Text style={ui.muted}>Reçu</Text>
+                <Text style={{ fontWeight: '700', color: colors.text }}>
+                  {formatFcfa(tx.bordereau.reception.montantRecu)}
+                </Text>
+              </View>
+              <View style={ui.row}>
+                <Text style={ui.muted}>Écart</Text>
+                <Text
+                  style={{
+                    fontWeight: '800',
+                    color:
+                      Number(tx.bordereau.reception.ecart) === 0
+                        ? colors.ok
+                        : colors.danger,
+                  }}
+                >
+                  {formatFcfa(tx.bordereau.reception.ecart)}
+                </Text>
+              </View>
+              {nomComplet(tx.bordereau.reception.validateur) ? (
+                <View style={ui.row}>
+                  <Text style={ui.muted}>Rapproché par</Text>
+                  <Text style={{ fontWeight: '700', color: colors.text }}>
+                    {nomComplet(tx.bordereau.reception.validateur)} ·{' '}
+                    {dateCourte(tx.bordereau.reception.dateReception)}
+                  </Text>
+                </View>
+              ) : null}
             </>
           ) : null}
         </View>
       ) : null}
 
       {tx.regularisation ? (
-        <View style={ui.card}>
-          <Text style={{ fontWeight: '700' }}>Régularisation</Text>
-          <Text>{formatFcfa(tx.regularisation.montantRetenu)}</Text>
-          <Text>{tx.regularisation.motif}</Text>
+        <View style={[ui.card, { gap: 8 }]}>
+          <Text style={ui.sectionLabel}>Régularisation</Text>
+          <View style={ui.row}>
+            <Text style={ui.muted}>Montant retenu</Text>
+            <Text style={{ fontWeight: '800', color: colors.text }}>
+              {formatFcfa(tx.regularisation.montantRetenu)}
+            </Text>
+          </View>
+          <Text style={{ color: colors.text }}>{tx.regularisation.motif}</Text>
+          <Text style={[ui.muted, { fontSize: 11 }]}>
+            {[
+              nomComplet(tx.regularisation.validateur),
+              new Date(tx.regularisation.dateRegularisation).toLocaleString('fr-FR'),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
         </View>
       ) : null}
 

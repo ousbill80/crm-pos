@@ -128,31 +128,34 @@ export function SessionBanner({
   return (
     <>
       <View style={[styles.wrap, compact && styles.wrapCompact]}>
-        <View style={styles.placeBlock}>
-          <Text style={styles.placeEyebrow}>
-            {user.boutiqueId ? 'Magasin' : 'Périmètre'}
-          </Text>
-          <Text style={styles.placeName} numberOfLines={1}>
-            {magasinLabel}
-            {caisseLibelle ? ` · ${caisseLibelle}` : ''}
-          </Text>
+        <View style={styles.placeChip}>
+          <View style={styles.placeIcon}>
+            <Ionicons
+              name={user.boutiqueId ? 'storefront' : 'globe-outline'}
+              size={14}
+              color={colors.accentText}
+            />
+          </View>
+          <View style={styles.placeBlock}>
+            <Text style={styles.placeEyebrow}>
+              {user.boutiqueId ? 'Magasin' : 'Périmètre'}
+            </Text>
+            <Text style={styles.placeName} numberOfLines={1}>
+              {magasinLabel}
+              {caisseLibelle ? ` · ${caisseLibelle}` : ''}
+            </Text>
+          </View>
         </View>
+
+        <View style={styles.divider} />
 
         <Pressable
           style={styles.profileHit}
           onPress={() => setMenuOpen(true)}
-          accessibilityLabel="Menu compte"
+          accessibilityLabel={`Menu compte, ${displayName}`}
           accessibilityHint="Ouvre le profil et la déconnexion"
           hitSlop={6}
         >
-          <View style={styles.profileText}>
-            <Text style={styles.name} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Text style={styles.role} numberOfLines={1}>
-              {labelProfil(user.role)}
-            </Text>
-          </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
               {initials(prenom, nom, user.login)}
@@ -160,9 +163,8 @@ export function SessionBanner({
           </View>
           <Ionicons
             name="chevron-down"
-            size={14}
-            color={colors.muted}
-            style={styles.chevron}
+            size={16}
+            color={colors.tabInactive}
           />
         </Pressable>
       </View>
@@ -252,10 +254,25 @@ const styles = StyleSheet.create({
   wrapCompact: {
     paddingVertical: 10,
   },
+  placeChip: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  placeIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   placeBlock: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 1,
   },
   placeEyebrow: {
     fontSize: 10,
@@ -270,26 +287,16 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -0.2,
   },
+  divider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.hair,
+  },
   profileHit: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    maxWidth: '48%',
-  },
-  profileText: {
-    alignItems: 'flex-end',
-    minWidth: 0,
-    flexShrink: 1,
-  },
-  name: {
-    fontWeight: '700',
-    color: colors.text,
-    fontSize: 13,
-  },
-  role: {
-    color: colors.muted,
-    fontWeight: '600',
-    fontSize: 11,
+    gap: 4,
+    flexShrink: 0,
   },
   avatar: {
     width: 36,
@@ -311,9 +318,6 @@ const styles = StyleSheet.create({
   },
   avatarTextLg: {
     fontSize: 16,
-  },
-  chevron: {
-    marginLeft: -2,
   },
   backdrop: {
     flex: 1,
