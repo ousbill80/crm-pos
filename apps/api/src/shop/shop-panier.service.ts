@@ -106,9 +106,6 @@ export class ShopPanierService {
     const stockByProduit = new Map<string, number>();
     if (entrepotId) {
       const params = await this.shopBase.getParametresShop();
-      const retraitEntrepots = params.retraitActif
-        ? await this.shopStockWeb.listEntrepotsRetraitWeb()
-        : [];
       await Promise.all(
         produits.map(async (p) => {
           if (p.typeProduit !== 'ARTICLE') return;
@@ -116,7 +113,6 @@ export class ShopPanierService {
             p.id,
             p.typeProduit,
             params,
-            retraitEntrepots,
           );
           if (qty != null) stockByProduit.set(p.id, qty);
         }),
@@ -161,10 +157,6 @@ export class ShopPanierService {
       throw new BadRequestException('Entrepôt web par défaut non configuré.');
     }
 
-    const retraitEntrepots = params.retraitActif
-      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
-      : [];
-
     for (const ligne of lignes) {
       const produit = produits.find((p) => p.id === ligne.produitId)!;
       if (produit.typeProduit !== 'ARTICLE') continue;
@@ -172,7 +164,6 @@ export class ShopPanierService {
         produit.id,
         produit.typeProduit,
         params,
-        retraitEntrepots,
       );
       if (dispo != null && dispo <= 0) {
         throw new BadRequestException(

@@ -196,10 +196,6 @@ export class ShopAarrrService {
       mapped: NonNullable<ReturnType<typeof mapProduitCatalogue>>;
     }> = [];
 
-    const retraitEntrepots = params.retraitActif
-      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
-      : [];
-
     for (const p of catalogue) {
       let stockDisponible: number | undefined;
       if (p.typeProduit === 'ARTICLE') {
@@ -207,7 +203,6 @@ export class ShopAarrrService {
           p.id,
           p.typeProduit,
           params,
-          retraitEntrepots,
         );
       }
       const mapped = mapProduitCatalogue(p, paramsPrix, stockDisponible);

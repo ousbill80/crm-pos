@@ -25,10 +25,10 @@ describe('ShopStockWebService', () => {
   });
 
   it('retourne le stock hub (retrait exposé à part)', async () => {
-    stockService.getDisponible.mockImplementation(async (_id, entrepotId) => {
-      if (entrepotId === 'hub-1') return 20;
-      if (entrepotId === 'boutique-ext') return 0;
-      return 0;
+    stockService.getDisponible.mockImplementation((_id, entrepotId) => {
+      if (entrepotId === 'hub-1') return Promise.resolve(20);
+      if (entrepotId === 'boutique-ext') return Promise.resolve(0);
+      return Promise.resolve(0);
     });
 
     await expect(

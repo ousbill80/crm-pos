@@ -34,9 +34,6 @@ export class ShopCatalogueService {
   }) {
     const params = await this.shopBase.assertShopActif();
     const paramsPrix = this.shopBase.toParametresPrix(params);
-    const retraitEntrepots = params.retraitActif
-      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
-      : [];
 
     const page = Math.max(1, Math.floor(query.page ?? 1));
     const limit = Math.min(
@@ -93,7 +90,6 @@ export class ShopCatalogueService {
           p.id,
           p.typeProduit,
           params,
-          retraitEntrepots,
         );
       }
       const mapped = mapProduitCatalogue(p, paramsPrix, stockDisponible);
@@ -209,9 +205,6 @@ export class ShopCatalogueService {
     });
 
     const stockById = new Map<string, number | undefined>();
-    const retraitEntrepots = params.retraitActif
-      ? await this.shopStockWeb.listEntrepotsRetraitWeb()
-      : [];
     await Promise.all(
       family.map(async (p) => {
         if (p.typeProduit !== 'ARTICLE') {
@@ -224,7 +217,6 @@ export class ShopCatalogueService {
             p.id,
             p.typeProduit,
             params,
-            retraitEntrepots,
           ),
         );
       }),

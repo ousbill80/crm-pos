@@ -18,10 +18,10 @@ jest.setTimeout(120_000);
 describe('Shop checkout (e2e)', () => {
   const env = new PostgresTestEnvironment();
   let app: INestApplication<App>;
-  let produitId: string;
   let entrepotId: string;
   let boutiqueRetraitId: string;
   let zoneId: string;
+  let produitCompteur = 0;
 
   beforeAll(async () => {
     await env.start();
@@ -62,22 +62,6 @@ describe('Shop checkout (e2e)', () => {
     });
     zoneId = zoneLiv.id;
 
-    const produit = await env.prisma.produit.create({
-      data: {
-        designation: 'Coque test',
-        prixUnitaire: 5000,
-        prixWeb: 5500,
-        visibleWeb: true,
-        slug: 'coque-test',
-        imageUrl: '/catalogue/coque-test.jpg',
-        stock: 10,
-      },
-    });
-    produitId = produit.id;
-    await env.prisma.stockQuant.create({
-      data: { produitId, entrepotId, quantite: 5 },
-    });
-
     const role = await env.prisma.role.upsert({
       where: { libelle: 'RESPONSABLE_SI' },
       update: {},
@@ -114,7 +98,30 @@ describe('Shop checkout (e2e)', () => {
     return shopPanierCookie(res);
   }
 
-  async function panierAvecLigne(quantite: number) {
+  async function creerProduit(
+    quantiteStock: number,
+    overrides?: { designation?: string; slug?: string; imageUrl?: string },
+  ): Promise<string> {
+    produitCompteur += 1;
+    const n = produitCompteur;
+    const produit = await env.prisma.produit.create({
+      data: {
+        designation: overrides?.designation ?? `Produit test ${n}`,
+        prixUnitaire: 5000,
+        prixWeb: 5500,
+        visibleWeb: true,
+        slug: overrides?.slug ?? `produit-test-${n}`,
+        imageUrl: overrides?.imageUrl ?? `/catalogue/produit-test-${n}.jpg`,
+        stock: quantiteStock,
+      },
+    });
+    await env.prisma.stockQuant.create({
+      data: { produitId: produit.id, entrepotId, quantite: quantiteStock },
+    });
+    return produit.id;
+  }
+
+  async function panierAvecLigne(quantite: number, produitId: string) {
     const create = await request(app.getHttpServer())
       .post('/shop/panier')
       .expect(201);
@@ -128,7 +135,12 @@ describe('Shop checkout (e2e)', () => {
   }
 
   it('checkout PREPAYE → EN_ATTENTE_PAIEMENT', async () => {
-    const cookie = await panierAvecLigne(1);
+    const produitId = await creerProduit(5, {
+      designation: 'Coque test',
+      slug: 'coque-test',
+      imageUrl: '/catalogue/coque-test.jpg',
+    });
+    const cookie = await panierAvecLigne(1, produitId);
     const res = await request(app.getHttpServer())
       .post('/shop/checkout')
       .set('Cookie', cookie)
@@ -179,7 +191,8 @@ describe('Shop checkout (e2e)', () => {
   });
 
   it('checkout différé retrait → PREPARATION', async () => {
-    const cookie = await panierAvecLigne(1);
+    const produitId = await creerProduit(5);
+    const cookie = await panierAvecLigne(1, produitId);
     const res = await request(app.getHttpServer())
       .post('/shop/checkout')
       .set('Cookie', cookie)
@@ -196,7 +209,8 @@ describe('Shop checkout (e2e)', () => {
   });
 
   it('checkout paiement à la livraison → PREPARATION (pas EN_ATTENTE_PAIEMENT)', async () => {
-    const cookie = await panierAvecLigne(1);
+    const produitId = await creerProduit(5);
+    const cookie = await panierAvecLigne(1, produitId);
     const res = await request(app.getHttpServer())
       .post('/shop/checkout')
       .set('Cookie', cookie)
@@ -216,8 +230,15 @@ describe('Shop checkout (e2e)', () => {
     expect(checkout.modeReglement).toBe('PAIEMENT_LIVRAISON');
   });
 
-  it('rupture stock → 400', async () => {
-    const cookie = await panierAvecLigne(100);
+  it('rupture stock → 400 (stock épuisé par une vente concurrente entre l’ajout au panier et le checkout)', async () => {
+    const produitId = await creerProduit(1);
+    const cookie = await panierAvecLigne(1, produitId);
+
+    await env.prisma.stockQuant.updateMany({
+      where: { produitId },
+      data: { quantite: 0 },
+    });
+
     await request(app.getHttpServer())
       .post('/shop/checkout')
       .set('Cookie', cookie)
@@ -233,6 +254,7 @@ describe('Shop checkout (e2e)', () => {
   });
 
   it('panier : quantité > stock hub → 400', async () => {
+    const produitId = await creerProduit(5);
     const create = await request(app.getHttpServer())
       .post('/shop/panier')
       .expect(201);
@@ -245,6 +267,7 @@ describe('Shop checkout (e2e)', () => {
   });
 
   it('panier : quantité = stock hub → 200', async () => {
+    const produitId = await creerProduit(5);
     const create = await request(app.getHttpServer())
       .post('/shop/panier')
       .expect(201);

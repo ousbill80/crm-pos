@@ -73,7 +73,6 @@ export class ShopStockWebService {
     produitId: string,
     typeProduit: string,
     params: ShopStockParams,
-    retraitEntrepotIds?: string[],
   ): Promise<number | undefined> {
     if (typeProduit !== 'ARTICLE') return undefined;
     if (!params.entrepotWebDefautId) return undefined;
