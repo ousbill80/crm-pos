@@ -15,3 +15,11 @@ process.env.TURNSTILE_SECRET = '';
 // specs qui testent Wave fixent elles-mêmes WAVE_WEBHOOK_SECRET (déjà
 // protégé par le même mécanisme dotenv) ; seule la clé API doit être neutralisée.
 process.env.WAVE_API_KEY = '';
+
+// Idem pour RESEND_API_KEY : une vraie clé en .env ferait envoyer de vrais
+// e-mails (via Resend) à chaque run e2e — y compris vers des adresses
+// factices (@test.local) qui rebondissent, et vers l'admin shop réel.
+// ShopEmailService / AlertesMailer / StaffBriefingMailer basculent en mode
+// mock (log uniquement) quand la clé est absente, donc neutraliser ici ne
+// casse aucun test — ils vérifient le comportement applicatif, pas Resend.
+process.env.RESEND_API_KEY = '';
