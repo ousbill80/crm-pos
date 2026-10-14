@@ -1641,6 +1641,14 @@ code {
   box-shadow: var(--shadow-md);
 }
 
+.dash-kpi-hero {
+  grid-column: 1 / -1;
+}
+
+.dash-kpi-hero .kpi-value {
+  font-size: 2.6rem;
+}
+
 a.kpi-card {
   text-decoration: none;
   color: inherit;

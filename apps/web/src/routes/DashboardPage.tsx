@@ -39,8 +39,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { RoleLibelle } from '@caisse-crm/shared';
 import { apiDownload, apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { DashboardDgSimple } from './DashboardDgSimple';
 import { PageHeader } from '../components/PageChrome';
 import { LoadingState } from '../components/LoadingState';
 import { InfoTooltip } from '../components/InfoTooltip';
@@ -344,6 +346,12 @@ function dashboardPourMagasin(
 }
 
 export function DashboardPage() {
+  const { user } = useAuth();
+  if (user?.role === RoleLibelle.DIRECTION_GENERALE) return <DashboardDgSimple />;
+  return <DashboardReseauPage />;
+}
+
+function DashboardReseauPage() {
   const { user } = useAuth();
   const magasin = useFiltreMagasinSiege();
   const [searchParams, setSearchParams] = useSearchParams();
