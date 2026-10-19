@@ -8,7 +8,10 @@ PRISMA=apps/api/node_modules/.bin/prisma
 
 if [ "${SEED_ON_START:-false}" = "true" ]; then
   echo "SEED_ON_START=true — chargement des données démo…"
-  (cd apps/api && ./node_modules/.bin/prisma db seed)
+  # `prisma db seed` spawne `ts-node` directement (pas via pnpm, qui
+  # l'ajouterait au PATH) ; avec node-linker=hoisted (.npmrc), son binaire
+  # vit dans le node_modules local du package, pas à la racine du monorepo.
+  (cd apps/api && PATH="$PWD/node_modules/.bin:$PATH" ./node_modules/.bin/prisma db seed)
 fi
 
 exec node apps/api/dist/src/main.js
