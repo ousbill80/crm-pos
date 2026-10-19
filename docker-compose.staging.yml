@@ -82,7 +82,7 @@ services:
       timeout: 5s
       retries: 6
       start_period: 50s
-    mem_limit: 768m
+    mem_limit: 1536m
     read_only: true
     tmpfs:
       - /tmp
@@ -115,6 +115,7 @@ services:
     logging: *default-log
     networks:
       - staging
+      - edge_net
 
   gateway-shop:
     build:
@@ -137,9 +138,12 @@ services:
     logging: *default-log
     networks:
       - staging
+      - edge_net
 
 networks:
   staging:
+  edge_net:
+    external: true
 
 volumes:
   caisse_crm_pgdata_staging:
