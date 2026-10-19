@@ -21,10 +21,11 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "prisma": "prisma",
     "prisma:seed": "prisma db seed",
-    "mail:test-echantillons": "ts-node --transpile-only -P tsconfig.scripts.json -r tsconfig-paths/register -r reflect-metadata scripts/envoyer-echantillons-mail.ts"
+    "mail:test-echantillons": "ts-node --transpile-only -P tsconfig.scripts.json -r tsconfig-paths/register -r reflect-metadata scripts/envoyer-echantillons-mail.ts",
+    "create:super-admin": "ts-node --transpile-only -P tsconfig.scripts.json -r tsconfig-paths/register -r reflect-metadata scripts/create-super-admin.ts"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@caisse-crm/shared": "workspace:*",
